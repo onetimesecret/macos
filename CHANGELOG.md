@@ -15,9 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tooltip and its spoken error line, and the ↗ page tab's tooltip and
   label now name the one-time link and the API token, in the menu's
   verb, create (ADR-0055 rule 3). Conceal stays the code's and the
-  server's word. The new sentences are pinned by test. A failure that
-  comes back with no reason reads `no reason was given`, so the spoken
-  line says the link was not created once.
+  server's word. The new sentences are pinned by test. The server
+  caption and the two tooltips are lower case sentences, as ADR-0055
+  rule 1 keeps captions and tooltips. A failure that comes back with no
+  reason reads `no reason was given`, so the spoken line says the link
+  was not created once.
 
 - **Days down the side follow the wrap setting** (app 0.39.0; the
   2026-10-16 wrapping amendment to the vertical time tabs spec, issue

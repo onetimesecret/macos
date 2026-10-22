@@ -445,7 +445,7 @@ final class EmptySlotGestureTests: XCTestCase {
     /// The ↗ page tab speaks the menu's verb, create, with the one-time
     /// link as its object (ADR-0055 rule 3, issue #295).
     func testThePageLinkTabNamesTheLinkInTheMenusWords() {
-        XCTAssertEqual(TabStripView.concealPageHelp, "Create a one-time link from this page")
+        XCTAssertEqual(TabStripView.concealPageHelp, "create a one-time link from this page")
         XCTAssertEqual(TabStripView.concealPageLabel, "Create one-time link from page")
     }
 
