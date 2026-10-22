@@ -316,7 +316,7 @@ pub(super) fn summary_json(
             || "this tab holds no page".to_string(),
             |_| super::spoken_remaining(remaining),
         ),
-        title: Zeroizing::new(tab.label(utc_offset_seconds)),
+        title: tab.label(utc_offset_seconds),
         title_source: tab.label_source().as_str(),
         uuid: tab.uuid().to_string(),
     }
