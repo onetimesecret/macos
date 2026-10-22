@@ -198,8 +198,6 @@ private struct FileMenuItems: View {
             .keyboardShortcut(saveAsShortcut)
             .disabled(!onAFile)
         Divider()
-        // One item, so the NSMenuItem and its ⌘W equivalent stay put
-        // while the title and enablement follow the key window.
         Button(closeItem.title) {
             pages.closeWhatIsShowing(keyWindow.closeTarget, closeKeyWindow: closeKeyWindow)
         }
@@ -210,21 +208,25 @@ private struct FileMenuItems: View {
     private var closeItem: CloseMenuItem {
         CloseMenuItem.resolve(
             target: keyWindow.closeTarget, showing: pages.activeTarget,
-            keyWindowCanClose: keyWindow.canClose)
+            ledgerShowing: pages.showingLedger, keyWindowCanClose: keyWindow.canClose)
     }
 }
 
 /// The File menu's ⌘W item (issue #201), one row per `CloseChordTarget`.
+/// On the surface the rows follow `perform(.pageClose)`: a file first, then the ledger.
 enum CloseMenuItem: Equatable {
     case closeFile
+    case closeLedger
     case closePage(enabled: Bool)
     case closeWindow(enabled: Bool)
 
     static func resolve(
-        target: CloseChordTarget, showing: SurfaceTarget, keyWindowCanClose: Bool
+        target: CloseChordTarget, showing: SurfaceTarget, ledgerShowing: Bool,
+        keyWindowCanClose: Bool
     ) -> CloseMenuItem {
         switch (target, showing) {
         case (.surface, .file): return .closeFile
+        case (.surface, _) where ledgerShowing: return .closeLedger
         case (.surface, .tab): return .closePage(enabled: true)
         case (.surface, .today): return .closePage(enabled: false)
         case (.companionWindow, _): return .closeWindow(enabled: keyWindowCanClose)
@@ -235,6 +237,7 @@ enum CloseMenuItem: Equatable {
     var title: String {
         switch self {
         case .closeFile: return "Close File"
+        case .closeLedger: return "Close Ledger"
         case .closePage: return "Close Page"
         case .closeWindow: return "Close Window"
         }
@@ -242,7 +245,7 @@ enum CloseMenuItem: Equatable {
 
     var isEnabled: Bool {
         switch self {
-        case .closeFile: return true
+        case .closeFile, .closeLedger: return true
         case .closePage(let enabled), .closeWindow(let enabled): return enabled
         }
     }
@@ -750,7 +753,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             },
             raisePanel: { [model] raise in model.raise(raise) },
             summonPanel: { [model] in model.summon() },
-            closeEditorForPanel: { [self] in editorWindow.closeForAmbientPanel() }
+            closeEditorForPanel: { [self] in madeEditorWindow?.closeForAmbientPanel() }
         )
     }
 
@@ -1356,6 +1359,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         panel?.collectionBehavior.insert(.moveToActiveSpace)
         // Kept by identity, so the lookup runs here once and not on every key event.
         aboutPanel = panel
+        // An active app keyed the panel inside the order front, before it was known.
+        keyWindow.refresh()
         // About sits at the surface's keyless altitude for as long as
         // it is open, as Settings does and through the same follower
         // (ADR-0032, #188). Otherwise About opens at .normal beneath a
@@ -1385,8 +1390,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// carries no title text, and following it would hand the About
     /// follower a window that closes with the answer. So a sheet is
     /// never the panel, and neither is the Settings window itself,
-    /// whatever its title reads at the time. If a future macOS builds
-    /// the panel differently the lookup finds nothing and the panel
+    /// whatever its title reads at the time, or an open or save panel.
+    /// If a future macOS builds the panel differently the lookup finds nothing and the panel
     /// keeps the behavior it had before this existed.
     private func standardAboutPanel() -> NSWindow? {
         NSApp.windows.first { window in
@@ -1395,16 +1400,18 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 titled: window.styleMask.contains(.titled),
                 title: window.title,
                 isSheet: window.isSheet,
-                isSettings: madeSettings?.owns(window) == true
+                isSettings: madeSettings?.owns(window) == true,
+                isFilePanel: window is NSSavePanel
             )
         }
     }
 
     /// The lookup's rule, pure so each exclusion is an assertion.
     nonisolated static func looksLikeTheAboutPanel(
-        visible: Bool, titled: Bool, title: String, isSheet: Bool, isSettings: Bool
+        visible: Bool, titled: Bool, title: String, isSheet: Bool, isSettings: Bool,
+        isFilePanel: Bool
     ) -> Bool {
-        visible && titled && title.isEmpty && !isSheet && !isSettings
+        visible && titled && title.isEmpty && !isSheet && !isSettings && !isFilePanel
     }
 
     /// What this app calls itself to the user, for the places a bundle

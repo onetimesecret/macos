@@ -91,6 +91,23 @@ final class KeyWindowFactsTests: XCTestCase {
         XCTAssertFalse(facts.canClose)
     }
 
+    /// About is keyed before `showAbout` records it, so the first read
+    /// says nothing; the refresh after the record recovers the companion.
+    func testARefreshAfterALateRecordRecoversTheCompanionTarget() {
+        let about = window(styleMask: [.titled, .closable])
+        var known: NSWindow?
+        let facts = KeyWindowFacts(
+            keyWindow: { about }, isOwnerWindow: { _ in false }, isCompanionWindow: { $0 === known })
+
+        facts.stand(about)
+        XCTAssertEqual(facts.closeTarget, .nothing)
+
+        known = about
+        facts.refresh()
+        XCTAssertEqual(facts.closeTarget, .companionWindow)
+        XCTAssertTrue(facts.canClose)
+    }
+
     func testTheFactsPublishOnlyWhenTheyChange() {
         let companion = window(styleMask: [.titled, .closable])
         let facts = KeyWindowFacts(isOwnerWindow: { _ in false }, isCompanionWindow: { $0 === companion })
