@@ -2063,6 +2063,15 @@ public final class PageModel: ObservableObject {
         // `saveState` keeps it while `draftsHeld` (issue #296).
         guard draftsLicence else {
             terminationLatch.acquire()
+            // No save settles a session that writes neither sealed file, so the mark does,
+            // against the core's roster: the published one trails an edit.
+            if !Self.writesEitherFile(
+                loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence)
+            {
+                terminationLatch.settle(
+                    saved: !Self.draftsHeld(
+                        draftsLicence: false, draftsDirty: true, files: client.fileRoster()))
+            }
             return
         }
         armDraftsWrite()
@@ -2175,7 +2184,12 @@ public final class PageModel: ObservableObject {
         )
         // Drafts owe a write on their own terms, so this stands down
         // only when neither of the two has anything to do.
-        guard licensed || (draftsDirty && draftsLicence) else { return true }
+        guard licensed || (draftsDirty && draftsLicence) else {
+            terminationLatch.settle(
+                saved: !Self.draftsHeld(
+                    draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles))
+            return true
+        }
         // Both files rest in this directory, so one preparation covers
         // them: it is created if missing, and marked so Time Machine
         // leaves the ciphertext generations alone (`.noindex` in the

@@ -1706,6 +1706,37 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
     }
 
+    /// Every licence withheld, so no save comes to settle the latch: the hold a
+    /// file edit takes goes once the file is saved, and comes back with the next edit.
+    func testASessionWithEveryLicenceWithheldReleasesItsHoldOnceTheFileIsSaved() throws {
+        let fixture = try makeFixture()
+        try sealOwnerFiles(fixture)
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(),
+            client: DraftsCountingClient(tag: "stranger-\(UUID().uuidString)"))
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        XCTAssertTrue(model.ledgerRestoreRefused)
+        XCTAssertTrue(model.draftsRestoreRefused)
+        let url = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("more ", at: 0, into: id, on: model)
+        XCTAssertGreaterThan(model.terminationHolds, 0)
+
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertEqual(model.terminationHolds, 0, "nothing is in memory only now")
+
+        try type("again ", at: 0, into: id, on: model)
+        XCTAssertGreaterThan(model.terminationHolds, 0)
+        XCTAssertTrue(model.saveState())
+        XCTAssertGreaterThan(model.terminationHolds, 0, "the stand-down keeps a hold the edits still need")
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertTrue(model.saveState())
+        XCTAssertEqual(model.terminationHolds, 0)
+    }
+
     /// The ordinary launch: the restore reads the file, and the next
     /// save writes it as it always has.
     func testASaveAfterTheRestoreWritesTheDraftsFile() throws {
