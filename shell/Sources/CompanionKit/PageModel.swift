@@ -1988,6 +1988,9 @@ public final class PageModel: ObservableObject {
     private static let shareDomainKey = "connection.shareDomain"
 
     #if DEBUG
+    /// The termination latch's depth, for the tests that pin when a hold stands.
+    var terminationHolds: Int { terminationLatch.depth }
+
     /// How many times a mutation has asked for a write, counted before
     /// the licence guard. The invariant test for issue #52 reads this,
     /// because a test session never loads a state file and the guard
@@ -2057,9 +2060,12 @@ public final class PageModel: ObservableObject {
     private func markFilesDirty() {
         draftsDirty = true
         mutatedSinceLoad = true
-        // No hold and no saving word under a withheld licence, as in
-        // `markDirty`: there is no write to wait for (issue #296).
-        guard draftsLicence else { return }
+        // The hold stands under a withheld licence too, so logout asks first;
+        // `saveState` keeps it while `draftsHeld` (issue #296).
+        guard draftsLicence else {
+            terminationLatch.acquire()
+            return
+        }
         armDraftsWrite()
     }
 
@@ -2275,7 +2281,11 @@ public final class PageModel: ObservableObject {
             // stays taken either way: holding is not writing.
             scheduleSave(after: saveRetryDebounce, mode: .default)
         }
-        terminationLatch.settle(saved: settled)
+        // A file's edits that no drafts write may reach keep the hold until saved or discarded.
+        terminationLatch.settle(
+            saved: settled
+                && !Self.draftsHeld(
+                    draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles))
         return settled
     }
 
