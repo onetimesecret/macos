@@ -66,6 +66,9 @@ extension PageModel {
             // ⇧⌘W is the Window menu's and sends `performClose:` to the
             // key window (issue #201). The model has no window to close.
             return false
+        case .appHelp:
+            // ⌘? is the Help menu's item, which opens the docs (issue #294).
+            return false
         case .pageSelect1, .pageSelect2, .pageSelect3, .pageSelect4, .pageSelect5,
             .pageSelect6, .pageSelect7, .pageSelect8, .pageSelect9:
             // Answered above, by number, so the nine cases stay one

@@ -129,6 +129,8 @@ struct BackdropApp: App {
                         appDelegate.showAbout()
                     }
                 }
+                // The delegate puts OnetimePad Help above these once
+                // AppKit has built the menu (`installHelpItem`, issue #294).
                 CommandGroup(replacing: .help) {
                     Button("Export Diagnostics…") { appDelegate.exportDiagnostics() }
                     Button("Copy Diagnostic Summary") { appDelegate.copyDiagnosticSummary() }
@@ -568,6 +570,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         Self.moveFileMenuAfterAppMenu()
         Self.routeUndoRedoThroughResponder(in: NSApp.mainMenu)
         keyWindow.observe()
+        installHelpMenuItem()
 
         // The Dock and the ⌘Tab card draw from `applicationIconImage`.
         // Re-publish the bundled icon here rather than leaving AppKit to
@@ -843,6 +846,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// in an older day is coming back to that sentence. What hangs off
     /// the distinction is the roll's anchor, see `BackdropRaise`.
     func applicationDidBecomeActive(_ notification: Notification) {
+        // The Help item is ours inside a menu SwiftUI owns; put it back if a rebuild dropped it.
+        installHelpMenuItem()
         guard startupComplete else {
             activationDuringStartup = true
             return
@@ -1479,6 +1484,52 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             item.action = action
             item.isEnabled = true
         }
+    }
+
+    /// Where OnetimePad Help goes until the docs site has a page of its
+    /// own (issue #294).
+    static let helpURL = URL(string: "https://docs.onetimesecret.dev/macos")!
+
+    /// The Help menu's item, through the model's external link route so
+    /// a test records the URL rather than starting a browser.
+    @objc func openHelp(_ sender: Any?) {
+        model.pages.openExternal(Self.helpURL)
+    }
+
+    /// Installs the Help item (issue #294) at launch and on every activation,
+    /// and names its menu `helpMenu` only when there is one and it moved.
+    private func installHelpMenuItem() {
+        guard let menu = Self.installHelpItem(
+            in: NSApp.mainMenu, productName: Self.productName,
+            keystroke: model.pages.keymap.menuKeystroke(for: .appHelp), target: self)
+        else { return }
+        if NSApp.helpMenu !== menu { NSApp.helpMenu = menu }
+    }
+
+    /// Puts "<product> Help" above the app's own items in the Help menu
+    /// SwiftUI built, on the keymap's `app::Help` chord or none, and returns
+    /// that menu. Nil when there is no Help menu to find; a menu that
+    /// already has the item anywhere is returned as it is.
+    @discardableResult
+    static func installHelpItem(in mainMenu: NSMenu?, productName: String,
+                                keystroke: Keystroke?,
+                                target: BackdropAppDelegate) -> NSMenu? {
+        guard let helpMenu = mainMenu?.items.first(where: { $0.title == "Help" })?.submenu
+        else { return nil }
+        if helpMenu.items.contains(where: { $0.action == #selector(openHelp(_:)) }) { return helpMenu }
+        let help = NSMenuItem(title: "\(productName) Help",
+                              action: #selector(openHelp(_:)),
+                              keyEquivalent: keystroke?.menuKeyEquivalent ?? "")
+        help.keyEquivalentModifierMask = keystroke?.menuModifierMask ?? []
+        help.target = target
+        // Below any item drawn by a view of its own, which none of ours is.
+        let at = helpMenu.items.firstIndex { $0.view == nil } ?? helpMenu.numberOfItems
+        helpMenu.insertItem(help, at: at)
+        let next = at + 1
+        if next < helpMenu.numberOfItems, !helpMenu.items[next].isSeparatorItem {
+            helpMenu.insertItem(.separator(), at: next)
+        }
+        return helpMenu
     }
 
     /// What sits in the menu bar: the onetimesecret.com logo mark, the

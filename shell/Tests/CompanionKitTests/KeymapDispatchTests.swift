@@ -65,6 +65,13 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertFalse(model.perform(.windowClose))
     }
 
+    /// app::Help is the Help menu's (issue #294); the delegate opens the docs.
+    func testHelpIsNotTheModelsToRun() throws {
+        let model = try makeModel()
+        XCTAssertEqual(CommandID.appHelp.dispatch, .window)
+        XCTAssertFalse(model.perform(.appHelp))
+    }
+
     /// ⌘W's target from the shell's two identity facts (issue #201): the
     /// owner's window first, then a companion window, and nothing else.
     func testTheCloseChordTargetReadsTheKeyWindowsIdentity() {
