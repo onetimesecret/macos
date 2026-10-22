@@ -1740,6 +1740,23 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
     }
 
+    /// The quit leg reads the core's roster: an edit the published roster has
+    /// not caught up with still makes the quit ask.
+    func testTheQuitLegReadsEditsThePublishedRosterHasNotCaughtUpWith() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = try modelOverUnreadableDrafts(fixture, client: client)
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        XCTAssertTrue(model.draftsDirty, "the open marked the drafts")
+
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "well ")]))
+        XCTAssertTrue(client.applyFileOps(id, json: ops), "an edit past the model")
+        XCTAssertFalse(try XCTUnwrap(model.openFiles.first).isDirty, "the published roster trails")
+        XCTAssertEqual(model.saveStateForQuit(), .unsavableWithDrafts)
+    }
+
     /// Every licence withheld, so no save comes to settle the latch: the hold a
     /// file edit takes goes once the file is saved, and comes back with the next edit.
     func testASessionWithEveryLicenceWithheldReleasesItsHoldOnceTheFileIsSaved() throws {

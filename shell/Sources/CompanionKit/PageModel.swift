@@ -2068,9 +2068,7 @@ public final class PageModel: ObservableObject {
             if !Self.writesEitherFile(
                 loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence)
             {
-                terminationLatch.settle(
-                    saved: !Self.draftsHeld(
-                        draftsLicence: false, draftsDirty: true, files: client.fileRoster()))
+                terminationLatch.settle(saved: !draftsHeldInCore())
             } else {
                 // A sealed file is written, so its save settles the hold; no saving word.
                 scheduleSave(after: saveDebounce)
@@ -2188,9 +2186,7 @@ public final class PageModel: ObservableObject {
         // Drafts owe a write on their own terms, so this stands down
         // only when neither of the two has anything to do.
         guard licensed || (draftsDirty && draftsLicence) else {
-            terminationLatch.settle(
-                saved: !Self.draftsHeld(
-                    draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles))
+            terminationLatch.settle(saved: !draftsHeldInCore())
             return true
         }
         // Both files rest in this directory, so one preparation covers
@@ -2298,10 +2294,7 @@ public final class PageModel: ObservableObject {
             scheduleSave(after: saveRetryDebounce, mode: .default)
         }
         // A file's edits that no drafts write may reach keep the hold until saved or discarded.
-        terminationLatch.settle(
-            saved: settled
-                && !Self.draftsHeld(
-                    draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles))
+        terminationLatch.settle(saved: settled && !draftsHeldInCore())
         return settled
     }
 
@@ -2796,9 +2789,17 @@ public final class PageModel: ObservableObject {
         !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
     }
 
-    /// `draftsHeld` for this session now, read by the header's drafts word.
+    /// `draftsHeld` for this session now, read by the header's drafts word; it redraws
+    /// with `openFiles`, which every change to `draftsDirty` is followed by.
     public var draftsHeldInMemory: Bool {
         Self.draftsHeld(draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles)
+    }
+
+    /// `draftsHeld` against the core's roster, which the published one trails by an
+    /// edit (issue #296). The roster is asked only when the licence leaves it open.
+    private func draftsHeldInCore() -> Bool {
+        guard !draftsLicence, draftsDirty else { return false }
+        return Self.draftsHeld(draftsLicence: false, draftsDirty: true, files: client.fileRoster())
     }
 
     /// The terminate path's flush: `saveState` plus the one question it
@@ -2814,9 +2815,7 @@ public final class PageModel: ObservableObject {
             contentLicence: saveLicence,
             loaded: stateLoaded,
             mutatedSinceLoad: mutatedSinceLoad,
-            draftsHeld: Self.draftsHeld(
-                draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles
-            )
+            draftsHeld: draftsHeldInCore()
         )
     }
 
