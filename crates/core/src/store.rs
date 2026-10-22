@@ -1357,10 +1357,10 @@ impl<C: Clock> SheetStore<C> {
         id: ChipId,
         selection: Option<TextSelection>,
     ) -> bool {
-        let Some((_, chip)) = self.chip_home(id) else {
+        if self.chip_home(id).is_none() {
             return false;
-        };
-        if let Some(note) = &chip.note {
+        }
+        if let Some(note) = self.chip_mut(id).and_then(|chip| chip.note.as_mut()) {
             note.finish_editing_group(selection);
         }
         true
