@@ -755,6 +755,26 @@ final class SealedNoteTests: XCTestCase {
         }
     }
 
+    /// The model's own note step past the deadline answers a refusal and settles with
+    /// the expired line, whichever surface asked for it.
+    func testANoteStepPastItsPagesDeadlineAnswersARefusalAndSettles() throws {
+        for (name, back) in [("undo", true), ("redo", false)] {
+            let page = try makePage()
+            page.coordinator.beginNote(at: 3)
+            type("rotate", into: try note(page))
+            try age(page)
+
+            let outcome = page.model.stepNote(chip: page.chip, back: back)
+
+            XCTAssertFalse(outcome.applied, name)
+            XCTAssertTrue(outcome.refused, name)
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, name)
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == page.sheet },
+                "\(name): the page outlived its refusal")
+        }
+    }
+
     /// A ⌘Z or ⇧⌘Z that finds no step on a live note reads none of the note's
     /// text and leaves the note open; only a refusal closes it.
     func testANoteStepWithNoneToTakeReadsNoNoteTextAndLeavesTheNoteOpen() throws {
