@@ -2796,6 +2796,11 @@ public final class PageModel: ObservableObject {
         !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
     }
 
+    /// `draftsHeld` for this session now, read by the header's drafts word.
+    public var draftsHeldInMemory: Bool {
+        Self.draftsHeld(draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles)
+    }
+
     /// The terminate path's flush: `saveState` plus the one question it
     /// cannot answer alone, whether a settled flush still left this
     /// session's work nowhere but in memory. Work is `mutatedSinceLoad`

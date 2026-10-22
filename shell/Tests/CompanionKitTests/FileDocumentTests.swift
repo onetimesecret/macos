@@ -1629,6 +1629,26 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(relaunched.storage(for: back).string, "well one\n")
     }
 
+    /// The header's drafts word reads `draftsHeldInMemory`: quiet with no file open,
+    /// shown while a file's edits are in memory only, gone once the file is saved.
+    func testTheHeaderDraftsWordFollowsTheEditsHeldInMemory() throws {
+        let fixture = try makeFixture()
+        let model = try modelOverUnreadableDrafts(
+            fixture, client: DraftsCountingClient(tag: fixture.tag))
+        XCTAssertFalse(model.draftsHeldInMemory, "a launch with no file open stays quiet")
+
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        XCTAssertFalse(model.draftsHeldInMemory, "an open file with nothing typed holds nothing")
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.draftsHeldInMemory)
+
+        XCTAssertTrue(model.saveFile(id))
+        XCTAssertFalse(model.draftsHeldInMemory)
+    }
+
     /// A page's save settles while a file's edits have no drafts write to reach:
     /// the hold stays until the file is saved, and the save that mark arms returns it.
     func testAPageSaveKeepsTheHoldWhileAFileEditIsInMemoryOnly() throws {

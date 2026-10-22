@@ -573,6 +573,13 @@ struct BackdropRootView: View {
                 .foregroundStyle(Color.emberText)
                 .help("The existing state file would not open, so this session is not being saved. The page shows the recovery.")
                 .accessibilityLabel(Text("This session is not being saved"))
+        } else if pages.draftsHeldInMemory {
+            // Only while typed text is in memory only, so it never sits under "saved" (issue #296).
+            Text("drafts not kept")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(Color.emberText)
+                .help("The existing drafts file could not be read, so unsaved edits to open files are not kept as drafts. The page shows the recovery.")
+                .accessibilityLabel(Text("Unsaved file edits are not kept as drafts"))
         } else {
             switch pages.saveStatus {
             case .idle:
