@@ -1514,28 +1514,31 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertFalse(relaunched.draftsRestoreRefused)
     }
 
-    /// Drafts that restored beside a state file that did not: a surviving key
-    /// half rotated their key away, so the next save writes them again.
-    func testAContentDiscardWhoseEraseSurvivedRewritesDraftsThatRestored() throws {
-        let fixture = try makeFixture()
-        try sealOwnerFiles(fixture)
-        try Data("not a state file".utf8).write(to: FormFactor.stateFileURL(in: fixture.state))
-        let client = DraftsCountingClient(tag: fixture.tag)
-        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
-        model.loadStateIfNeeded()
-        XCTAssertTrue(model.contentRestoreRefused)
-        XCTAssertFalse(model.draftsRestoreRefused)
-        XCTAssertFalse(model.draftsDirty)
+    /// Drafts that restored beside a state file that did not: whatever the erase
+    /// answers, a reseal it could not finish included, the next save writes them again.
+    func testAContentDiscardRewritesDraftsThatRestoredWhateverTheEraseAnswers() throws {
+        for answer in [DraftsCountingClient.EraseAnswer.real, .survived] {
+            let fixture = try makeFixture()
+            try sealOwnerFiles(fixture)
+            try Data("not a state file".utf8).write(to: FormFactor.stateFileURL(in: fixture.state))
+            let client = DraftsCountingClient(tag: fixture.tag)
+            let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+            model.loadStateIfNeeded()
+            XCTAssertTrue(model.contentRestoreRefused, "\(answer)")
+            XCTAssertFalse(model.draftsRestoreRefused, "\(answer)")
+            XCTAssertFalse(model.draftsDirty, "\(answer)")
 
-        client.eraseAnswer = .survived
-        model.clearUnreadableStateFile()
-        XCTAssertTrue(model.saveState())
-        XCTAssertEqual(client.draftsWrites, 1)
+            client.eraseAnswer = answer
+            model.clearUnreadableStateFile()
+            XCTAssertTrue(model.draftsDirty, "the write is armed either way: \(answer)")
+            XCTAssertTrue(model.saveState(), "\(answer)")
+            XCTAssertEqual(client.draftsWrites, 1, "\(answer)")
 
-        let relaunched = makeModel(fixture, panels: ScriptedFilePanels())
-        relaunched.loadStateIfNeeded()
-        let back = try XCTUnwrap(relaunched.openFiles.first?.id)
-        XCTAssertEqual(relaunched.storage(for: back).string, "well one\n")
+            let relaunched = makeModel(fixture, panels: ScriptedFilePanels())
+            relaunched.loadStateIfNeeded()
+            let back = try XCTUnwrap(relaunched.openFiles.first?.id, "\(answer)")
+            XCTAssertEqual(relaunched.storage(for: back).string, "well one\n", "\(answer)")
+        }
     }
 
     /// Every licence withheld: a file's edits mark the drafts dirty, and the

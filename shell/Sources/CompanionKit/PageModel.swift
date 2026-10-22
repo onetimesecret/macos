@@ -5289,9 +5289,9 @@ public final class PageModel: ObservableObject {
         )
         saveLicence = licences.content
         ledgerLicence = licences.ledger
-        // A refused erase may leave the drafts under halves it rotated away, so
-        // the write `markDirty` arms restates them from the roster in memory.
-        if !erased { draftsDirty = true }
+        // The erase may leave drafts under halves nobody has, refused or after a failed
+        // reseal, so the write `markDirty` arms restates them from the roster in memory.
+        draftsDirty = true
         if !draftsLicence { grantDraftsLicence() }
         contentRestoreRefused = false
         quitRefusal = Self.quitOfferAfterDraftsClear(
