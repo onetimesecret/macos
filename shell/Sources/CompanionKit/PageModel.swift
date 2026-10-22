@@ -2818,6 +2818,8 @@ public final class PageModel: ObservableObject {
     /// write, everything recorded since the load is exactly what the
     /// quit loses, and the empty page launch itself mints is not.
     public func saveStateForQuit() -> QuitSaveOutcome {
+        // The offer and its named files read the published roster, which trails an edit.
+        refreshOpenFiles()
         let settled = saveState()
         return Self.quitOutcome(
             settled: settled,
@@ -2866,11 +2868,6 @@ public final class PageModel: ObservableObject {
     ///
     /// The request goes through the `requestTermination` seam, `NSApp` read optionally by default.
     public func requestQuitAnyway() {
-        // Files at risk since the line went up: restate it, as a second ⌘Q would.
-        if let quitRefusal, !quitAnywayOffered {
-            offerQuitAnyway(after: quitRefusal)
-            return
-        }
         requestTermination()
     }
 
