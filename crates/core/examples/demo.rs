@@ -11,6 +11,7 @@ use companion_credentials::default_credential_store;
 use companion_pasteboard::{ContentKind, MemoryPasteboard, Pasteboard, WriteOptions};
 use companion_transport::UreqTransport;
 use ots_client::{Api, BasicAuth, Client, ConcealPayload, NoAuth, share_link};
+use zeroize::Zeroizing;
 
 const DEMO_SERVER: &str = "https://eu.onetimesecret.com";
 
@@ -37,10 +38,10 @@ fn main() {
     let stdin = std::io::stdin();
     loop {
         let title = current.and_then(|id| tab_holding(&store, id)).map_or_else(
-            || "no page".to_string(),
+            || Zeroizing::new("no page".to_string()),
             |tab| tab.label(store.local_offset_seconds()),
         );
-        print!("companionapp:{title}> ");
+        print!("companionapp:{}> ", title.as_str());
         std::io::stdout().flush().ok();
         let Some(Ok(line)) = stdin.lock().lines().next() else {
             break;
@@ -325,7 +326,11 @@ fn render(store: &SheetStore<ManualClock>, current: Option<SheetId>) {
         } else {
             ""
         };
-        strip.push_str(&format!("[{marker}{} {held}{}]", i + 1, tab.label(offset)));
+        strip.push_str(&format!(
+            "[{marker}{} {held}{}]",
+            i + 1,
+            tab.label(offset).as_str()
+        ));
     }
     strip.push_str(&format!("[◌ {}]", store.ledger().count()));
     println!("{strip}");
@@ -346,7 +351,7 @@ fn render(store: &SheetStore<ManualClock>, current: Option<SheetId>) {
     };
     println!(
         "┌ {} ── {} of {}{held} ┐",
-        tab.label(offset),
+        tab.label(offset).as_str(),
         sheet.remaining_label(now),
         tab.rung()
     );
