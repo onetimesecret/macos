@@ -1440,7 +1440,7 @@ mod tests {
             origin,
             "the origin rides the materialized record through the round trip"
         );
-        // A slice of the decrypted snapshot, copied once into its wiping owner (C17).
+        // A wiping owner whose capacity is its length (C17).
         wiping_owner(restored);
         assert_eq!(
             restored.capacity(),

@@ -672,10 +672,10 @@ mod tests {
         );
     }
 
-    /// An origin read out of a change is copied once into a wiping owner at its exact size,
-    /// and the frozen record keeps that owner (Law 0004, C17).
+    /// An origin read out of a change, and the frozen record's, are wiping owners whose
+    /// capacity is their length (Law 0004, C17).
     #[test]
-    fn a_blocks_origin_is_one_exact_wiping_copy_of_its_changes_message() {
+    fn a_blocks_origin_is_a_wiping_owner_the_size_of_its_changes_message() {
         fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
 
         let (doc, mut index) = empty();
