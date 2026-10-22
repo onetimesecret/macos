@@ -145,7 +145,8 @@ final class FileDocumentTests: XCTestCase {
         _ fixture: Fixture,
         panels: ScriptedFilePanels,
         fileLanguageDetection: LanguageDetectionService? = nil,
-        client: CompanionClient? = nil
+        client: CompanionClient? = nil,
+        requestTermination: (@MainActor () -> Void)? = nil
     ) -> PageModel {
         let model = PageModel(
             formFactor: .panel,
@@ -154,7 +155,9 @@ final class FileDocumentTests: XCTestCase {
                 stateDirectory: fixture.state,
                 client: client ?? CompanionClient.ephemeral(tag: fixture.tag),
                 saveDebounce: 0.05,
-                fileLanguageDetection: fileLanguageDetection
+                fileLanguageDetection: fileLanguageDetection,
+                // No test asks `NSApp` to terminate its runner.
+                requestTermination: requestTermination ?? {}
             )
         )
         model.fileCoordinator = FileCoordinator(panels: panels)
@@ -1514,28 +1517,31 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertFalse(relaunched.draftsRestoreRefused)
     }
 
-    /// Drafts that restored beside a state file that did not: a surviving key
-    /// half rotated their key away, so the next save writes them again.
-    func testAContentDiscardWhoseEraseSurvivedRewritesDraftsThatRestored() throws {
-        let fixture = try makeFixture()
-        try sealOwnerFiles(fixture)
-        try Data("not a state file".utf8).write(to: FormFactor.stateFileURL(in: fixture.state))
-        let client = DraftsCountingClient(tag: fixture.tag)
-        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
-        model.loadStateIfNeeded()
-        XCTAssertTrue(model.contentRestoreRefused)
-        XCTAssertFalse(model.draftsRestoreRefused)
-        XCTAssertFalse(model.draftsDirty)
+    /// Drafts that restored beside a state file that did not: whatever the erase
+    /// answers, a reseal it could not finish included, the next save writes them again.
+    func testAContentDiscardRewritesDraftsThatRestoredWhateverTheEraseAnswers() throws {
+        for answer in [DraftsCountingClient.EraseAnswer.real, .survived] {
+            let fixture = try makeFixture()
+            try sealOwnerFiles(fixture)
+            try Data("not a state file".utf8).write(to: FormFactor.stateFileURL(in: fixture.state))
+            let client = DraftsCountingClient(tag: fixture.tag)
+            let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+            model.loadStateIfNeeded()
+            XCTAssertTrue(model.contentRestoreRefused, "\(answer)")
+            XCTAssertFalse(model.draftsRestoreRefused, "\(answer)")
+            XCTAssertFalse(model.draftsDirty, "\(answer)")
 
-        client.eraseAnswer = .survived
-        model.clearUnreadableStateFile()
-        XCTAssertTrue(model.saveState())
-        XCTAssertEqual(client.draftsWrites, 1)
+            client.eraseAnswer = answer
+            model.clearUnreadableStateFile()
+            XCTAssertTrue(model.draftsDirty, "the write is armed either way: \(answer)")
+            XCTAssertTrue(model.saveState(), "\(answer)")
+            XCTAssertEqual(client.draftsWrites, 1, "\(answer)")
 
-        let relaunched = makeModel(fixture, panels: ScriptedFilePanels())
-        relaunched.loadStateIfNeeded()
-        let back = try XCTUnwrap(relaunched.openFiles.first?.id)
-        XCTAssertEqual(relaunched.storage(for: back).string, "well one\n")
+            let relaunched = makeModel(fixture, panels: ScriptedFilePanels())
+            relaunched.loadStateIfNeeded()
+            let back = try XCTUnwrap(relaunched.openFiles.first?.id, "\(answer)")
+            XCTAssertEqual(relaunched.storage(for: back).string, "well one\n", "\(answer)")
+        }
     }
 
     /// Every licence withheld: a file's edits mark the drafts dirty, and the
@@ -1567,13 +1573,16 @@ final class FileDocumentTests: XCTestCase {
     /// A readable state file beside a drafts file that fails the core's envelope
     /// check, under the owner's key.
     private func modelOverUnreadableDrafts(
-        _ fixture: Fixture, client: DraftsCountingClient
+        _ fixture: Fixture, client: DraftsCountingClient,
+        requestTermination: (@MainActor () -> Void)? = nil
     ) throws -> PageModel {
         let owner = makeModel(fixture, panels: ScriptedFilePanels())
         owner.loadStateIfNeeded()
         XCTAssertTrue(owner.saveState())
         try Data("not a drafts file".utf8).write(to: FormFactor.draftsFileURL(in: fixture.state))
-        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(), client: client,
+            requestTermination: requestTermination)
         model.loadStateIfNeeded()
         XCTAssertFalse(model.contentRestoreRefused, "the state file opened")
         XCTAssertTrue(model.draftsRestoreRefused, "the drafts file did not")
@@ -1735,6 +1744,59 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertTrue(model.saveFile(id))
         XCTAssertNil(model.quitRefusal, "nothing is held in memory now")
         XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
+    }
+
+    /// The quit leg reads the core's roster: an edit the published roster has
+    /// not caught up with still makes the quit ask.
+    func testTheQuitLegReadsEditsThePublishedRosterHasNotCaughtUpWith() throws {
+        let fixture = try makeFixture()
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = try modelOverUnreadableDrafts(fixture, client: client)
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        XCTAssertTrue(model.draftsDirty, "the open marked the drafts")
+
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "well ")]))
+        XCTAssertTrue(client.applyFileOps(id, json: ops), "an edit past the model")
+        XCTAssertFalse(try XCTUnwrap(model.openFiles.first).isDirty, "the published roster trails")
+        XCTAssertEqual(model.saveStateForQuit(), .unsavableWithDrafts)
+    }
+
+    /// Quit Anyway answers the line as a second ⌘Q would: over a file the line
+    /// never named it restates the line rather than quitting.
+    func testQuitAnywayOverAFileTheLineNeverNamedRestatesTheLine() throws {
+        let fixture = try makeFixture()
+        var terminations = 0
+        let model = try modelOverUnreadableDrafts(
+            fixture, client: DraftsCountingClient(tag: fixture.tag),
+            requestTermination: { terminations += 1 })
+        let first = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: first)
+        let a = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: a)
+        try type("well ", at: 0, into: a, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertTrue(model.quitAnywayOffered)
+
+        let second = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: second)
+        let b = try XCTUnwrap(model.openFiles.first(where: { $0.name == "b.txt" })?.id)
+        _ = model.storage(for: b)
+        try type("more ", at: 0, into: b, on: model)
+        XCTAssertFalse(model.quitAnywayOffered, "b.txt was never named")
+
+        model.requestQuitAnyway()
+        XCTAssertEqual(terminations, 0, "the press restated the line")
+        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+        XCTAssertTrue(model.quitAnywayOffered)
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .unsavableWithDrafts, files: model.openFiles, draftsUnwritten: model.draftsDirty),
+            "the drafts file would not open and was not written over, so the unsaved changes to a.txt and b.txt will not survive the quit")
+
+        model.requestQuitAnyway()
+        XCTAssertEqual(terminations, 1, "the line names b.txt now, so the press quits")
     }
 
     /// Every licence withheld, so no save comes to settle the latch: the hold a

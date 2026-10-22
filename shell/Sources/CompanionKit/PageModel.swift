@@ -1328,6 +1328,9 @@ public final class PageModel: ObservableObject {
     /// Where a link the person opens goes: the shared workspace, or a test's recorder.
     private let openURL: @MainActor (URL) -> Void
 
+    /// Where Quit Anyway asks for termination: `NSApp`, or a test's recorder.
+    private let requestTermination: @MainActor () -> Void
+
     /// Opens a link outside the app through the seam above, for the editor's
     /// links and the Help menu alike (issue #294).
     public func openExternal(_ url: URL) {
@@ -1387,6 +1390,9 @@ public final class PageModel: ObservableObject {
         /// Where a link the person opens goes: a recorder of the test's own, so
         /// a suite never starts a browser; nil is the shared workspace's.
         let openURL: (@MainActor (URL) -> Void)?
+        /// Where Quit Anyway asks for termination: a recorder of the test's own, so
+        /// a suite never terminates its runner; nil is `NSApp`'s.
+        let requestTermination: (@MainActor () -> Void)?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1403,7 +1409,8 @@ public final class PageModel: ObservableObject {
             ambientPasteboard: NSPasteboard? = nil,
             writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)? = nil,
             wakeNotifications: NotificationCenter? = nil,
-            openURL: (@MainActor (URL) -> Void)? = nil
+            openURL: (@MainActor (URL) -> Void)? = nil,
+            requestTermination: (@MainActor () -> Void)? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1418,6 +1425,7 @@ public final class PageModel: ObservableObject {
             self.writeCutFragment = writeCutFragment
             self.wakeNotifications = wakeNotifications
             self.openURL = openURL
+            self.requestTermination = requestTermination
         }
     }
 
@@ -1501,6 +1509,7 @@ public final class PageModel: ObservableObject {
         ambientPasteboard = seams.ambientPasteboard ?? .general
         writeCutFragment = seams.writeCutFragment ?? { $0.write(to: $1) }
         openURL = seams.openURL ?? { NSWorkspace.shared.open($0) }
+        requestTermination = seams.requestTermination ?? { NSApp?.terminate(nil) }
         wakeCenter = seams.wakeNotifications ?? NSWorkspace.shared.notificationCenter
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         ownershipLogger = Logger(subsystem: formFactor.loggerSubsystem, category: "ownership")
@@ -2068,9 +2077,7 @@ public final class PageModel: ObservableObject {
             if !Self.writesEitherFile(
                 loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence)
             {
-                terminationLatch.settle(
-                    saved: !Self.draftsHeld(
-                        draftsLicence: false, draftsDirty: true, files: client.fileRoster()))
+                terminationLatch.settle(saved: !draftsHeldInCore())
             } else {
                 // A sealed file is written, so its save settles the hold; no saving word.
                 scheduleSave(after: saveDebounce)
@@ -2188,9 +2195,7 @@ public final class PageModel: ObservableObject {
         // Drafts owe a write on their own terms, so this stands down
         // only when neither of the two has anything to do.
         guard licensed || (draftsDirty && draftsLicence) else {
-            terminationLatch.settle(
-                saved: !Self.draftsHeld(
-                    draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles))
+            terminationLatch.settle(saved: !draftsHeldInCore())
             return true
         }
         // Both files rest in this directory, so one preparation covers
@@ -2298,10 +2303,7 @@ public final class PageModel: ObservableObject {
             scheduleSave(after: saveRetryDebounce, mode: .default)
         }
         // A file's edits that no drafts write may reach keep the hold until saved or discarded.
-        terminationLatch.settle(
-            saved: settled
-                && !Self.draftsHeld(
-                    draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles))
+        terminationLatch.settle(saved: settled && !draftsHeldInCore())
         return settled
     }
 
@@ -2796,9 +2798,17 @@ public final class PageModel: ObservableObject {
         !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
     }
 
-    /// `draftsHeld` for this session now, read by the header's drafts word.
+    /// `draftsHeld` for this session now, read by the header's drafts word; it redraws
+    /// with `openFiles`, which every change to `draftsDirty` is followed by.
     public var draftsHeldInMemory: Bool {
         Self.draftsHeld(draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles)
+    }
+
+    /// `draftsHeld` against the core's roster, which the published one trails by an
+    /// edit (issue #296). The roster is asked only when the licence leaves it open.
+    private func draftsHeldInCore() -> Bool {
+        guard !draftsLicence, draftsDirty else { return false }
+        return Self.draftsHeld(draftsLicence: false, draftsDirty: true, files: client.fileRoster())
     }
 
     /// The terminate path's flush: `saveState` plus the one question it
@@ -2814,9 +2824,7 @@ public final class PageModel: ObservableObject {
             contentLicence: saveLicence,
             loaded: stateLoaded,
             mutatedSinceLoad: mutatedSinceLoad,
-            draftsHeld: Self.draftsHeld(
-                draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles
-            )
+            draftsHeld: draftsHeldInCore()
         )
     }
 
@@ -2860,9 +2868,12 @@ public final class PageModel: ObservableObject {
     /// application object, and a status action that traps the runner is
     /// worse than one that does nothing there.
     public func requestQuitAnyway() {
-        // The button answers the line as it reads now, files included.
-        if let quitRefusal { offerQuitAnyway(after: quitRefusal) }
-        NSApp?.terminate(nil)
+        // Files at risk since the line went up: restate it, as a second ⌘Q would.
+        if let quitRefusal, !quitAnywayOffered {
+            offerQuitAnyway(after: quitRefusal)
+            return
+        }
+        requestTermination()
     }
 
     /// The cancelled quit's standing line goes up, naming the files at
@@ -5289,9 +5300,9 @@ public final class PageModel: ObservableObject {
         )
         saveLicence = licences.content
         ledgerLicence = licences.ledger
-        // A refused erase may leave the drafts under halves it rotated away, so
-        // the write `markDirty` arms restates them from the roster in memory.
-        if !erased { draftsDirty = true }
+        // The erase may leave drafts under halves nobody has, refused or after a failed
+        // reseal, so the write `markDirty` arms restates them from the roster in memory.
+        draftsDirty = true
         if !draftsLicence { grantDraftsLicence() }
         contentRestoreRefused = false
         quitRefusal = Self.quitOfferAfterDraftsClear(
