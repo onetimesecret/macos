@@ -4,6 +4,8 @@
 
 use std::collections::VecDeque;
 
+use zeroize::Zeroizing;
+
 use crate::sheet::ItemId;
 
 /// The retention window: 90 days of records, keyed on wall-clock time.
@@ -112,15 +114,43 @@ impl std::fmt::Display for DestinationClass {
 }
 
 /// One thing that happened, in metadata only.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct LedgerRecord {
     pub(crate) event: LedgerEvent,
     pub(crate) item: ItemId,
-    pub(crate) title: String,
+    /// A wiping owner, the one content derived field here (Law 0004, C16).
+    pub(crate) title: Zeroizing<String>,
     pub(crate) at_wall_ms: u64,
     pub(crate) item_created_wall_ms: u64,
     pub(crate) size: SizeClass,
     pub(crate) destination: DestinationClass,
+}
+
+/// The title is the one content derived field, so a record formats without it, as
+/// `Segment` does (Law 0004, C16).
+impl std::fmt::Debug for LedgerRecord {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Destructured in full, so a new field is a compile error here, not a silent print.
+        let Self {
+            event,
+            item,
+            title: _,
+            at_wall_ms,
+            item_created_wall_ms,
+            size,
+            destination,
+        } = self;
+        formatter
+            .debug_struct("LedgerRecord")
+            .field("event", event)
+            .field("item", item)
+            .field("title", &"[REDACTED]")
+            .field("at_wall_ms", at_wall_ms)
+            .field("item_created_wall_ms", item_created_wall_ms)
+            .field("size", size)
+            .field("destination", destination)
+            .finish()
+    }
 }
 
 impl LedgerRecord {
@@ -139,7 +169,7 @@ impl LedgerRecord {
     /// The owning page's title at the event, capped by the page.
     #[must_use]
     pub fn title(&self) -> &str {
-        &self.title
+        self.title.as_str()
     }
 
     /// When the event happened, in Unix epoch milliseconds.
@@ -183,12 +213,28 @@ mod tests {
         LedgerRecord {
             event: LedgerEvent::Created,
             item: ItemId::random(),
-            title: String::from("a page"),
+            title: Zeroizing::new(String::from("a page")),
             at_wall_ms,
             item_created_wall_ms: at_wall_ms,
             size: SizeClass::Tiny,
             destination: DestinationClass::None,
         }
+    }
+
+    /// The title, the one content derived field here, is a wiping owner (Law 0004, C16), and a
+    /// record formats without it.
+    #[test]
+    fn the_title_is_a_wiping_owner() {
+        let record = record(1);
+        let title: &Zeroizing<String> = &record.title;
+        assert_eq!(title.as_str(), "a page");
+        assert_eq!(record.title(), "a page");
+        let formatted = format!("{record:?}");
+        assert!(formatted.contains("[REDACTED]"), "{formatted}");
+        assert!(
+            !formatted.contains("a page"),
+            "the title reached a debug line: {formatted}"
+        );
     }
 
     #[test]
