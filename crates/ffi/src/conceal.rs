@@ -514,7 +514,7 @@ mod tests {
 
     #[cfg(feature = "test-util")]
     #[test]
-    fn the_summary_never_contains_the_secret_or_its_passphrase() {
+    fn the_summary_and_record_omit_an_escaped_secret_and_passphrase() {
         let (stub, wire) = stubbed();
         let opts = ConcealOpts::parse(Some(
             r#"{"passphrase":"swordfish \"pw\" é","recipient":"a@b.c"}"#,
