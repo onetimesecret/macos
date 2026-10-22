@@ -19,9 +19,8 @@ import Foundation
 /// its day, how many empty days fall between two, where the seven day
 /// window ends, where each node stands for a given rail height, where
 /// the band and the line slivers fall, and what a click on bare track
-/// scrolls to. In the idiom `TimeRailView.selectedBucket` and
-/// `TimeUnitTab.target(for:)` set, so the whole navigator is under test
-/// without a window.
+/// scrolls to. In the idiom `TabStripView.newPageHelp` set, so the
+/// whole navigator is under test without a window.
 ///
 /// What it never carries is text. `RollGeometry` hands it rectangles
 /// (a page's span, a line's width) and it hands the view rectangles
@@ -100,8 +99,8 @@ public enum StreamNavigator {
     /// `selection` is the selected slot, as `PageModel.selection` names
     /// it. A page node is active when its slot is the selection; the
     /// empty place is active only by elimination, when no drawn page
-    /// holds the selection, the same rule `TimeRailView.selectedBucket`
-    /// states for the old rows. With `surfaceShowsRoll` false (a file or
+    /// holds the selection, the rule the rail's rows stated before the
+    /// navigator replaced them. With `surfaceShowsRoll` false (a file or
     /// the ledger has replaced the roll) no node is active at all: what
     /// is on screen is then not on the rail.
     public static func nodes(
@@ -287,7 +286,7 @@ public enum StreamNavigator {
     /// the one line the gutter already shows.
     @MainActor
     public static func help(for node: Node, chord: Keystroke?) -> String {
-        guard node.hasPage else { return TimeUnitTab.todayHelp(hasPage: false, chord: chord) }
+        guard node.hasPage else { return TimeUnitTab.todayHelp(chord: chord) }
         var first = "\(node.spokenDay) · \(node.stamp)"
         if let chord { first += " (\(chord.displaySymbol))" }
         guard !node.title.isEmpty else { return first }
@@ -362,9 +361,11 @@ public enum StreamNavigator {
         public let node: Node
         /// The node's centre line, where its dot is drawn.
         public let y: CGFloat
-        /// The box the slivers keep clear of.
-        public let rowTop: CGFloat
+        /// The height of the drawn row.
         public let rowHeight: CGFloat
+        /// Where the row's ground begins: the note or the window mark reserved above it,
+        /// or the sliver box when it keeps none. A reveal brings the ground in with the row.
+        public let groundTop: CGFloat
         /// Where the empty days note is drawn, when there is one.
         public let noteY: CGFloat?
         /// The top of the page in the document, for the jump.
@@ -375,9 +376,12 @@ public enum StreamNavigator {
         /// The top of the row as drawn, `Metrics.rowLift` above the centre line.
         public var drawnTop: CGFloat { y - Metrics.rowLift(firstOfDay: node.firstOfDay) }
 
-        /// Whether the row may seat its node's drop target: not once the foot cap pushed it
-        /// above the column, where nothing clips the target off the heading (issue 267, #277).
-        public var seatsDropTarget: Bool { drawnTop >= 0 }
+        /// The top of the box the slivers keep clear of: the whole point above the first
+        /// one the drawn row paints (#277).
+        public var rowTop: CGFloat { drawnTop.rounded(.down) - 1 }
+
+        /// The foot of that box: the last whole point the drawn row paints.
+        public var rowBottom: CGFloat { (drawnTop + rowHeight).rounded(.up) - 1 }
     }
 
     /// The part of the roll the reader can see, in rail coordinates.
@@ -424,10 +428,9 @@ public enum StreamNavigator {
         public let band: Band?
         public let activeSegment: Segment?
         public let slivers: [Sliver]
-        /// The rail height this document-proportional layout was prepared
-        /// for. Viewport-only updates reuse it rather than accepting an
-        /// unchecked height from a caller.
-        let sourceHeight: CGFloat
+        /// How tall the drawing is: the column's height, or more when the rows outrun it,
+        /// in which case the column scrolls (#277). `.empty` alone reads 0, having no column.
+        public let contentHeight: CGFloat
         /// The map, kept so a click on bare track can be inverted.
         public let anchors: [Anchor]
 
@@ -455,7 +458,7 @@ public enum StreamNavigator {
 
         public static let empty = Layout(
             placed: [], trackTop: 0, trackBottom: 0, windowY: nil, band: nil,
-            activeSegment: nil, slivers: [], sourceHeight: 0, anchors: []
+            activeSegment: nil, slivers: [], contentHeight: 0, anchors: []
         )
     }
 
@@ -490,17 +493,71 @@ public enum StreamNavigator {
         max(0, top - Metrics.jumpLead)
     }
 
+    /// The least scroll of the column that shows a row, as every
+    /// navigator makes it when its selection moves: a row above the
+    /// clip comes to its top, a row below it to its bottom, and a row
+    /// already in view asks for nothing (nil). Never past either end
+    /// of the drawing (#277).
+    public static func revealOffset(
+        rowTop: CGFloat, rowHeight: CGFloat,
+        visibleTop: CGFloat, visibleHeight: CGFloat, contentHeight: CGFloat
+    ) -> CGFloat? {
+        let furthest = max(0, contentHeight - visibleHeight)
+        if rowTop < visibleTop { return min(furthest, max(0, rowTop)) }
+        if rowTop + rowHeight > visibleTop + visibleHeight {
+            return min(furthest, max(0, rowTop + rowHeight - visibleHeight))
+        }
+        return nil
+    }
+
+    /// What the column remembers of its reveals: the node last brought
+    /// into view. A node is revealed once, so a later layout that moves
+    /// its row leaves the reader's own scrolling alone, and a reveal
+    /// that could not be made stays due. With no active node at all (a
+    /// file or the ledger showing) the column calls `forget()`, so the
+    /// same node is revealed again when the roll comes back (#277).
+    public struct RevealMemory: Equatable, Sendable {
+        public private(set) var revealed: UInt64?
+
+        public init() {}
+
+        /// Whether a reveal of `id` is due.
+        public func isDue(_ id: UInt64) -> Bool {
+            revealed != id
+        }
+
+        /// The roll left, so the node it comes back to is due again.
+        public mutating func forget() {
+            revealed = nil
+        }
+
+        /// The reveal of `id` was made.
+        public mutating func record(_ id: UInt64) {
+            revealed = id
+        }
+    }
+
+    /// Whether a wheel over the column turns the roll (D-38) rather
+    /// than the column: while the drawing fits the column, with the
+    /// foot's margin as tolerance so a hair of overflow does not change
+    /// what the wheel means (#277).
+    public static func relaysWheel(contentHeight: CGFloat, columnHeight: CGFloat) -> Bool {
+        contentHeight <= columnHeight + Metrics.bottom
+    }
+
     /// The drawing, decided.
     ///
     /// Each node starts where its page's share of the roll puts it
     /// (`top / documentHeight` of the column), then the nodes are
     /// pushed apart just far enough that no node's words overlap the
-    /// next, from the top down, and pulled back up from the foot so the
-    /// last one stays on the rail. A node reserves room above itself
-    /// for its empty days note and, at the window, for the seven day
-    /// mark. The map from document to rail then runs through the nodes
-    /// as they were finally placed, so the band and the slivers are
-    /// level with the nodes and not with the roll's raw proportions.
+    /// next, from the top down. No row is ever moved back up: rows that
+    /// outrun the column lengthen the drawing past it (`contentHeight`)
+    /// and the column scrolls to reach them, as a sidebar does (#277).
+    /// A node reserves room above itself for its empty days note and,
+    /// at the window, for the seven day mark. The map from document to
+    /// rail then runs through the nodes as they were finally placed, so
+    /// the band and the slivers are level with the nodes and not with
+    /// the roll's raw proportions.
     ///
     /// An unmeasured roll has no proportions: every node starts at the
     /// top and the packing alone decides, which is where the nodes go
@@ -538,20 +595,17 @@ public enum StreamNavigator {
         // A row drawn higher than the one above it (`Metrics.rowLift`) needs that difference,
         // less its own reserve, between the two.
         let lifts = nodes.map { Metrics.rowLift(firstOfDay: $0.firstOfDay) }
-        let clearances = nodes.indices.map { index in
+        let liftGaps = nodes.indices.map { index in
             index == 0 ? 0 : max(0, lifts[index] - lifts[index - 1] - reserves[index])
         }
-        let span = height - Metrics.top - Metrics.bottom
+        let span = max(0, height - Metrics.top - Metrics.bottom)
         var ys = documentTops.map { Metrics.top + ($0 / document) * span }
         for index in 1..<ys.count {
-            ys[index] = max(ys[index], ys[index - 1] + heights[index - 1] + clearances[index])
+            ys[index] = max(ys[index], ys[index - 1] + heights[index - 1] + liftGaps[index])
         }
-        let limit = height - Metrics.bottom
-        for index in ys.indices.reversed() {
-            let cap = index == ys.count - 1
-                ? limit - heights[index] : ys[index + 1] - heights[index] - clearances[index + 1]
-            ys[index] = min(ys[index], cap)
-        }
+        let lastBottom = ys[ys.count - 1] + heights[ys.count - 1]
+        let contentHeight = max(height, lastBottom + Metrics.bottom)
+        let limit = contentHeight - Metrics.bottom
         let nodeYs = ys.indices.map { ys[$0] + reserves[$0] }
 
         let anchors = [Anchor(document: 0, y: Metrics.top - 8)]
@@ -564,13 +618,15 @@ public enum StreamNavigator {
         let placed = nodes.indices.map { index in
             Placed(
                 node: nodes[index], y: nodeYs[index],
-                rowTop: nodeYs[index] - 8, rowHeight: heights[index] - reserves[index],
+                rowHeight: heights[index] - reserves[index],
+                groundTop: min(ys[index], (nodeYs[index] - lifts[index]).rounded(.down) - 1),
                 noteY: nodes[index].emptyDays > 0 ? ys[index] + 1 : nil,
                 documentTop: documentTops[index]
             )
         }
 
-        let band = band(anchors: anchors, trackBottom: limit, geometry: geometry, height: height)
+        let band = band(
+            anchors: anchors, trackBottom: limit, geometry: geometry, height: contentHeight)
 
         var segment: Segment?
         if let active = nodes.firstIndex(where: \.active) {
@@ -586,9 +642,7 @@ public enum StreamNavigator {
         if available > 2 {
             // A node's words, and the note and the mark reserved above
             // them, are ground no sliver may cross.
-            let rows = placed.indices.map {
-                (min(ys[$0], placed[$0].rowTop), placed[$0].rowTop + placed[$0].rowHeight)
-            }
+            let rows = placed.map { ($0.groundTop, $0.rowBottom) }
             for extent in geometry.extents {
                 for line in extent.lines {
                     // Whole points: a one point sliver is drawn on a
@@ -617,7 +671,7 @@ public enum StreamNavigator {
             band: band,
             activeSegment: segment,
             slivers: slivers.values.sorted { $0.y < $1.y },
-            sourceHeight: height,
+            contentHeight: contentHeight,
             anchors: anchors
         )
     }
@@ -630,7 +684,7 @@ public enum StreamNavigator {
     ) -> Layout {
         let band = band(
             anchors: layout.anchors, trackBottom: layout.trackBottom,
-            geometry: geometry, height: layout.sourceHeight)
+            geometry: geometry, height: layout.contentHeight)
         let slivers = layout.slivers.map { sliver in
             Sliver(
                 id: sliver.id, y: sliver.y, width: sliver.width,
@@ -644,7 +698,7 @@ public enum StreamNavigator {
             band: band,
             activeSegment: layout.activeSegment,
             slivers: slivers,
-            sourceHeight: layout.sourceHeight,
+            contentHeight: layout.contentHeight,
             anchors: layout.anchors
         )
     }

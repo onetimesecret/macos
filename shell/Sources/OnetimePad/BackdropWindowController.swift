@@ -779,6 +779,12 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         model.keyStatusChanged(of: .panel, keyed: false)
     }
 
+    /// Whether a window is the panel or its key relay, for ⌘W (#201). The
+    /// relay by class, so that asking does not build it.
+    func owns(_ candidate: NSWindow) -> Bool {
+        candidate === panel || candidate is BackdropKeyRelayPanel
+    }
+
     /// The keyboard's waypoint on its way back to the active app: a
     /// zero-alpha, borderless speck that exists only to take key status
     /// from the surface and immediately vanish with it.

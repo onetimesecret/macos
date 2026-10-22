@@ -65,13 +65,12 @@ public enum CommandID: String, CaseIterable, Sendable {
     case surfaceHandBackKeys = "surface::HandBackKeys"
     case stateSaveNow = "state::SaveNow"
     case appSettings = "app::Settings"
+    // The Help menu's first item, from that menu only (issue #294).
+    case appHelp = "app::Help"
 
-    // The window around the surface (ADR-0033, issue #201). Distinct
-    // from `page::Close`, which closes the page or file on the strip:
-    // this one closes the window the keyboard is in, and reaches Settings
-    // and the editor window alike. The Window menu carries its chord;
-    // the surface installer never does, so a raised panel that owns
-    // the keyboard does not fight the menu for it.
+    // The window around the surface (ADR-0033, issue #201): ⇧⌘W closes
+    // the window the keyboard is in, from the Window menu only. ⌘W is
+    // `page::Close` on the surface and closes a companion window that is key.
     case windowClose = "window::Close"
 
     /// Which piece of the app listens for this command.
@@ -103,7 +102,7 @@ public enum CommandID: String, CaseIterable, Sendable {
         case .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorToggleWrap,
             .editorDetectCodeLanguage, .editorUndo, .editorRedo, .noteToggleExpanded:
             return .editor
-        case .windowClose:
+        case .windowClose, .appHelp:
             return .window
         default:
             return .surface

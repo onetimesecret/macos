@@ -3853,7 +3853,7 @@ mod tests {
                     "has_page": page.is_some(),
                     "page_id": page.map(|sheet| sheet.id().raw()),
                     "page_uuid": page.map(|sheet| sheet.uuid().to_string()),
-                    "title": tab.label(offset),
+                    "title": tab.label(offset).as_str(),
                     "title_source": tab.label_source().as_str(),
                     "rung_code": ttl_to_code(tab.rung()),
                     "rung_label": tab.rung().to_string(),

@@ -1,7 +1,8 @@
 # Feature: file backed documents on the pad
 
-Status: **landed** on `feature/regular-text-files`, decision still
-proposed · 2026-09-05
+Status: **built**, on `main` since PR 153 (82972fb1, 2026-09-05);
+the decision, ADR-0028, still proposed · 2026-09-05, status updated
+2026-10-21
 Scope: an additional content class, a peer to pages, with both first
 class features of the pad. The pad can open a plain
 text or Markdown file from disk, edit it in the same editor a page
@@ -580,6 +581,14 @@ The app gains its first **File** menu, listing Open, Save, Save As and
 Close File, and reading each chord from the keymap rather than spelling
 it in the menu code. Save, Save As and Close File are inert when the
 active tab is a page rather than a file.
+
+Note, 2026-10-21 (issue #201): the close item follows the key window.
+While the owner's window is key it reads Close File on a file and Close
+Page on a page, enabled, since ⌘W closes the page there. While Settings,
+About or Send Feedback has the keyboard it reads Close Window, enabled
+when that window can close, and ⌘W sends `performClose:` to it. While a
+sheet, a save panel or an alert has the keyboard, or no window does, it
+reads Close Window, dimmed.
 
 ## Accessibility
 
