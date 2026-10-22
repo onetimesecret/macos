@@ -418,6 +418,36 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertTrue(memory.isDue(11), "the roll came back and its node stayed out of view")
     }
 
+    /// A hop that finds the clip with no height, or the drawing not yet as tall as the clip,
+    /// moves nothing and leaves the reveal due; a later hop over a laid out clip makes it.
+    func testARevealThatMeasuredNothingStaysDueForALaterHop() {
+        final class Document: NSView {
+            override var isFlipped: Bool { true }
+        }
+        let request = RailReveal.Request(id: 11, top: 900, bottom: 930)
+        for (clipHeight, drawingHeight): (CGFloat, CGFloat) in [(0, 1000), (400, 100)] {
+            let label = "a \(clipHeight) point clip over a \(drawingHeight) point drawing"
+            let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 100, height: clipHeight))
+            let document = Document(frame: NSRect(x: 0, y: 0, width: 100, height: drawingHeight))
+            scroll.documentView = document
+            let reveal = RailRevealView(frame: NSRect(x: 0, y: 0, width: 100, height: 1000))
+            document.addSubview(reveal)
+
+            reveal.reveal(request)
+            drainMainQueue()
+            XCTAssertTrue(reveal.memory.isDue(11), "\(label) used up the reveal")
+            XCTAssertEqual(scroll.contentView.bounds.minY, 0, "\(label) moved the clip")
+
+            scroll.setFrameSize(NSSize(width: 100, height: 400))
+            document.setFrameSize(NSSize(width: 100, height: 1000))
+            reveal.reveal(request)
+            drainMainQueue()
+            XCTAssertFalse(reveal.memory.isDue(11), "the hop after \(label) left the reveal due")
+            XCTAssertEqual(
+                scroll.contentView.bounds.minY, 530, "the hop after \(label) did not bring the row to the clip's bottom")
+        }
+    }
+
     /// A row's ground begins at the note or the mark it keeps above itself, and at its own
     /// sliver box when it keeps none, so a reveal brings the note in with the row.
     func testARowsGroundBeginsAtItsNoteWhenItKeepsOne() throws {

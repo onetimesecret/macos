@@ -816,7 +816,7 @@ private final class StreamNavigatorLayoutCache {
 /// shows the row, by `StreamNavigator.revealOffset`. The move waits one
 /// hop on the main queue, for the content to have taken the new row
 /// heights before the clip is measured against them.
-private struct RailReveal: NSViewRepresentable {
+struct RailReveal: NSViewRepresentable {
     /// The active node's ground, from the note or mark above its row through the row's bottom.
     struct Request: Equatable {
         let id: UInt64
@@ -837,8 +837,8 @@ private struct RailReveal: NSViewRepresentable {
     }
 }
 
-private final class RailRevealView: NSView {
-    private var memory = StreamNavigator.RevealMemory()
+final class RailRevealView: NSView {
+    private(set) var memory = StreamNavigator.RevealMemory()
     /// The request standing when the hop runs, so two in one hop make one move, the last.
     private var pending: RailReveal.Request?
 
@@ -849,7 +849,8 @@ private final class RailRevealView: NSView {
 
     /// Scroll the ground into the clip, by `StreamNavigator.RevealMemory`: the node is
     /// recorded only once its ground was measured against the clip, so an attempt made
-    /// before the view sits under a scroll view is made again by the next update.
+    /// before the view sits under a scroll view, or before the clip has its height, is
+    /// made again by the next update.
     func reveal(_ request: RailReveal.Request?) {
         guard let request else {
             memory.forget()
@@ -872,11 +873,13 @@ private final class RailRevealView: NSView {
               // only over a flipped document, the one SwiftUI's scroll view keeps.
               document.isFlipped
         else { return }
-        memory.record(request.id)
         let clip = scrollView.contentView
+        let visible = clip.documentVisibleRect
+        // A clip with no height, or a drawing that has not yet filled it, measures nothing.
+        guard visible.height > 0, document.frame.height >= clip.bounds.height else { return }
+        memory.record(request.id)
         let ground = convert(
             NSRect(x: 0, y: request.top, width: 1, height: request.bottom - request.top), to: document)
-        let visible = clip.documentVisibleRect
         guard let offset = StreamNavigator.revealOffset(
             rowTop: ground.minY, rowHeight: ground.height,
             visibleTop: visible.minY, visibleHeight: visible.height,
