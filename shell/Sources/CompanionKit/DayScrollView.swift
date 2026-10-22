@@ -532,7 +532,7 @@ final class DayStackView: NSView {
                   place.reading == .source else { return }
             readingPlace = place.rebased(
                 throughEdit: edited, changeInLength: delta, length: length,
-                byProjection: model.isApplyingProjection)
+                text: mounted.string, byProjection: model.isApplyingProjection)
         }
     }
 
