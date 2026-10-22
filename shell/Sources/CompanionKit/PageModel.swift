@@ -1319,10 +1319,10 @@ public final class PageModel: ObservableObject {
     private let writeCutFragment: @MainActor (SealedFragment, NSPasteboard) -> Bool
 
     /// Where a link the person opens goes: the shared workspace, or a test's recorder.
-    let openURL: @MainActor (URL) -> Void
+    private let openURL: @MainActor (URL) -> Void
 
-    /// Opens a link outside the app through the seam above; the Help menu's
-    /// route (issue #294).
+    /// Opens a link outside the app through the seam above, for the editor's
+    /// links and the Help menu alike (issue #294).
     public func openExternal(_ url: URL) {
         openURL(url)
     }
