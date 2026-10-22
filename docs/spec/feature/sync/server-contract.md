@@ -45,11 +45,36 @@ supports). No row names which side moves unless an accepted record
 already does (2.5); otherwise that is the owner's decision.
 
 The server column is a reading at f7c8288bda and `b0e7ceb0`, not run,
-and no check in this repository notices when either moves. After any
-bump of either pin, re-read the column rather than trust it; the symbol
-beside each line is there to find a moved line again. Server file names
-are short: `features/oauth.rb` and `hooks/oauth.rb` are under
-`apps/web/auth/config/` on develop, and `router.rb`, `initializers/`
+and no check in this repository notices when either moves. The step
+this draft proposes, with the person moving a pin as its owner, in the
+same change as the bump:
+
+1. Re-read every row of the **Server today** column whose reading
+   depends on the repository that moved, against its new commit. A row
+   citing both repositories, or reading one repository's override of
+   the other's method, is re-read on either bump. The short file names
+   in the next paragraph say which repository a short citation is in;
+   a longer path names its own.
+2. Re-read, on the same terms, every statement outside the column that
+   describes develop or the fork as it stands at a pin: the ADR-0027
+   comparison above, §4's statement that no `/channel/*` route exists,
+   §6's readings, and the rest.
+3. Update the symbol, file and line beside each entry, and revise
+   **Standing** where the reading changed.
+4. Write the new pin in the opening paragraph and in this one, with
+   its date or version where the opening paragraph gives one; redate
+   §4's grep; set the status line's revised date to the day of the
+   re-read. The document then always says which commits it describes.
+5. Where a row's **Standing** changed, say so in the pull request's
+   body, so the owner's decision on which side moves is not left in a
+   citation update.
+
+An automated check against the two server repositories is out of
+scope; the reading is by hand. The symbol beside each line is there to
+find a moved line again.
+
+Server file names are short: `features/oauth.rb` and `hooks/oauth.rb`
+are under `apps/web/auth/config/` on develop, and `router.rb`, `initializers/`
 and `docs/` are under `apps/web/auth/`; `oauth-server.md` is develop's
 `docs/authentication/oauth-server.md`. `oauth_*.rb` and `oidc.rb` are
 under `lib/rodauth/features/` in the fork, and `authorize.str` under
