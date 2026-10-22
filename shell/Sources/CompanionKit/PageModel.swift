@@ -2071,6 +2071,9 @@ public final class PageModel: ObservableObject {
                 terminationLatch.settle(
                     saved: !Self.draftsHeld(
                         draftsLicence: false, draftsDirty: true, files: client.fileRoster()))
+            } else {
+                // A sealed file is written, so its save settles the hold; no saving word.
+                scheduleSave(after: saveDebounce)
             }
             return
         }
@@ -2791,6 +2794,11 @@ public final class PageModel: ObservableObject {
         draftsLicence: Bool, draftsDirty: Bool, files: [FileSummary]
     ) -> Bool {
         !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
+    }
+
+    /// `draftsHeld` for this session now, read by the header's drafts word.
+    public var draftsHeldInMemory: Bool {
+        Self.draftsHeld(draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles)
     }
 
     /// The terminate path's flush: `saveState` plus the one question it

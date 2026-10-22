@@ -740,7 +740,10 @@ blocked while they stand (status lines stay 12 × 4).
   *Amendment proposed 2026-10-21, not ratified:* a second ⌘Q over file
   edits the standing line did not name when it went up cancels again
   and names them, and the ⌘Q after that quits; the button quits at
-  once (issue #296, PR 304). The build behaves so from app 0.40.9.
+  once (issue #296, PR 304). The rule reaches all three cancelled
+  outcomes: a refused write, an unsavable session and file edits held
+  in memory (`.refused`, `.unsavableWithContent`,
+  `.unsavableWithDrafts`). The build behaves so from app 0.40.9.
 
 ## 7 · The sync surface
 
