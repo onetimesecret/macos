@@ -1656,20 +1656,25 @@ mod tests {
         assert_eq!(store.expire_due(), vec![id], "the timer still reaps it");
     }
 
-    /// The note's text and steps, and the name, of the object at `chip` as they stand,
-    /// read past the deadline gate.
-    fn note_and_name(
-        store: &SheetStore<ManualClock>,
-        chip: ChipId,
-    ) -> (String, bool, bool, String) {
+    /// An object's note and name as they stand.
+    #[derive(Debug, PartialEq)]
+    struct NoteAndName {
+        text: String,
+        can_undo: bool,
+        can_redo: bool,
+        name: Option<String>,
+    }
+
+    /// The note and name of the object at `chip`, read past the deadline gate.
+    fn note_and_name(store: &SheetStore<ManualClock>, chip: ChipId) -> NoteAndName {
         let face = store.sheets().find_map(|s| s.chip(chip)).unwrap();
         let note = face.note.as_ref().unwrap();
-        (
-            note.text().to_string(),
-            note.can_undo(),
-            note.can_redo(),
-            face.name().unwrap_or_default().to_owned(),
-        )
+        NoteAndName {
+            text: note.text().to_string(),
+            can_undo: note.can_undo(),
+            can_redo: note.can_redo(),
+            name: face.name().map(str::to_owned),
+        }
     }
 
     #[test]
