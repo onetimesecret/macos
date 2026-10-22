@@ -222,6 +222,11 @@ reading and not something the ADR says.
   shortcut.
 - **The Window menu.** The editor window participates. The panel does
   not appear in the Window menu.
+- **The Help menu.** Its first item is the product's help (`app::Help`,
+  issue #294), titled with the product name, on ⌘? from the keymap
+  (`"cmd-?": "app::Help"`). It opens https://docs.onetimesecret.dev/macos
+  in the browser through the model's external link route. A keymap
+  override that unbinds the chord leaves the item without a shortcut.
 
 ## Activation routing
 
