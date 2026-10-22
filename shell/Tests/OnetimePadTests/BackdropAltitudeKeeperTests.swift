@@ -394,7 +394,7 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
         )
     }
 
-    // MARK: A companion window holding the keyboard (ADR-0032 Amendment 1, #293)
+    // MARK: The keyboard in a companion window (ADR-0032 Amendment 1, #293)
 
     /// A stand in for Settings, About or Send Feedback: titled, built
     /// deferred and never ordered. Its key turns are posted by hand,
@@ -435,7 +435,11 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
             window.collectionBehavior, [.canJoinAllSpaces, .ignoresCycle, .fullScreenNone]
         )
 
+        // A window never on screen resigns nothing, so the close releases,
+        // one main queue hop later.
         settings.close()
+        XCTAssertEqual(window.level, .normal, "not inside the close")
+        drainMainQueue()
         XCTAssertFalse(keeper.companionKeyed)
         XCTAssertEqual(window.level, .floating)
         XCTAssertEqual(
@@ -462,8 +466,36 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
         XCTAssertEqual(window.collectionBehavior, [.canJoinAllSpaces, .fullScreenNone])
 
         resignedKey(settings)
+        drainMainQueue()
         XCTAssertEqual(window.level, .floating)
         XCTAssertEqual(window.collectionBehavior, [.canJoinAllSpaces, .fullScreenAuxiliary])
+    }
+
+    func testClosingTheKeyCompanionReappliesTheTablesLevelAsItIsNow() {
+        // The preference turned on inside Settings moves the table, not the
+        // card; the close's resign and willClose then write the float once.
+        let model = makeModel(tag: "close-reapplies")
+        let settings = makeCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        raise(keeper)
+        keeper.reapply(keyed: false, pinned: false, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { $0 === settings })
+        becameKey(settings)
+        model.keepsAboveWhenInactive = true
+        XCTAssertEqual(window.level, .normal)
+        window.forgetWrites()
+
+        resignedKey(settings)
+        settings.close()
+        XCTAssertEqual(window.level, .normal, "not inside the close")
+        drainMainQueue()
+
+        XCTAssertFalse(keeper.companionKeyed)
+        XCTAssertEqual(window.level, .floating)
+        XCTAssertEqual(window.collectionBehavior, [.canJoinAllSpaces, .fullScreenAuxiliary])
+        XCTAssertEqual(window.levelWrites, 1)
+        XCTAssertEqual(window.behaviorWrites, 1)
     }
 
     func testACompanionWindowStaysAtNormalUnderEveryPinAndPreferenceState() {
@@ -510,6 +542,7 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
         window.forgetWrites()
 
         resignedKey(settings)
+        drainMainQueue()
 
         XCTAssertFalse(keeper.companionKeyed)
         XCTAssertEqual(window.level, .normal)
@@ -569,6 +602,7 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
 
         resignedKey(other)
         other.close()
+        drainMainQueue()
 
         XCTAssertTrue(keeper.companionKeyed)
         XCTAssertEqual(window.level, .normal)
@@ -593,8 +627,101 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
         XCTAssertEqual(window.level, .floating)
         keys.held = true
         resignedKey(settings)
+        drainMainQueue()
 
         XCTAssertFalse(keeper.companionKeyed)
+        XCTAssertEqual(window.level, .floating)
+    }
+
+    func testAHandOffBetweenCompanionsWritesNoFloatInBetween() {
+        // AppKit posts Settings' resign before About's key gain; the key
+        // gain cancels the waiting release.
+        let model = makeModel(tag: "hand-off")
+        model.pinned = true
+        let settings = makeCompanion()
+        let about = makeCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        keeper.commit(.resting, keyed: false, pinned: true, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { $0 === settings || $0 === about })
+        becameKey(settings)
+        window.forgetWrites()
+
+        resignedKey(settings)
+        becameKey(about)
+        drainMainQueue()
+
+        XCTAssertTrue(keeper.keyedCompanion === about)
+        XCTAssertEqual(window.level, .normal)
+        XCTAssertEqual(window.levelWrites, 0)
+        XCTAssertEqual(window.behaviorWrites, 0)
+
+        resignedKey(about)
+        drainMainQueue()
+        XCTAssertFalse(keeper.companionKeyed)
+        XCTAssertEqual(window.level, .floating)
+    }
+
+    /// A sheet stand in that answers `sheetParent` by hand, since a real
+    /// sheet needs a window on screen.
+    private final class SheetStandIn: OrderCountingWindow {
+        weak var pretendParent: NSWindow?
+        override var sheetParent: NSWindow? { pretendParent }
+    }
+
+    func testASheetOnACompanionCountsAsTheCompanionAndItsParentIsOrdered() {
+        // Export runs a save sheet on Send Feedback. A sheet that lowers
+        // the card has its parent ordered front, never itself.
+        let model = makeModel(tag: "sheet")
+        model.pinned = true
+        let feedback = makeOrderCountingCompanion()
+        let sheet = SheetStandIn(
+            contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: true
+        )
+        sheet.isReleasedWhenClosed = false
+        sheet.pretendsToBeKeyAndVisible = true
+        sheet.pretendParent = feedback
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        keeper.commit(.resting, keyed: false, pinned: true, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { $0 === feedback })
+
+        becameKey(sheet)
+        XCTAssertEqual(window.level, .normal)
+        drainMainQueue()
+        XCTAssertEqual(feedback.orderFrontCalls, 1)
+        XCTAssertEqual(sheet.orderFrontCalls, 0)
+
+        // The parent hands the keyboard to its sheet: no write.
+        resignedKey(sheet)
+        drainMainQueue()
+        becameKey(feedback)
+        window.forgetWrites()
+        resignedKey(feedback)
+        becameKey(sheet)
+        drainMainQueue()
+        XCTAssertEqual(window.level, .normal)
+        XCTAssertEqual(window.levelWrites, 0)
+    }
+
+    func testObservingAgainForgetsTheKeyCompanion() {
+        let model = makeModel(tag: "observe-resets")
+        model.pinned = true
+        let settings = makeCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        keeper.commit(.resting, keyed: false, pinned: true, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { $0 === settings })
+        becameKey(settings)
+
+        keeper.observe(model, keyed: { false }, companion: { _ in false })
+        XCTAssertFalse(keeper.companionKeyed)
+
+        // The next write reads the table again.
+        model.keepsAboveWhenInactive = true
         XCTAssertEqual(window.level, .floating)
     }
 
@@ -618,7 +745,7 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
     /// Counts ordering calls and answers the key and visible questions
     /// by hand, so the settle can be asked of a window that is never on
     /// screen. `orderFront` deliberately does not reach AppKit.
-    private final class OrderCountingWindow: NSWindow {
+    private class OrderCountingWindow: NSWindow {
         var orderFrontCalls = 0
         var pretendsToBeKeyAndVisible = false
 

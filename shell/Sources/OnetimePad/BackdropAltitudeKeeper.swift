@@ -6,7 +6,8 @@ import os
 /// The part of the window controller that turns a stance, a key event,
 /// the pin, the keep above preference and a key companion window into
 /// what is written on the window: its level and its collection
-/// behavior, and nothing else.
+/// behavior. Past those two writes it orders a key companion front
+/// once the card has lowered under it.
 ///
 /// It is a type of its own so that it can be tested against a window
 /// that is never put on screen. The controller cannot be built under a
@@ -17,7 +18,7 @@ import os
 /// which stance a key event is judged against, whether a write happens
 /// at all, which value of a changing pin or preference is read, and
 /// which key window counts as a companion of the card's, and all four
-/// are held in this type. What stays a hand check is that the
+/// live in this type. What stays a hand check is that the
 /// controller commits before it calls `makeKeyAndOrderFront`.
 @MainActor
 final class BackdropAltitudeKeeper {
@@ -33,6 +34,10 @@ final class BackdropAltitudeKeeper {
     /// it, so the key delegate turns and the pin and preference sinks
     /// need not be told.
     var companionKeyed: Bool { keyedCompanion != nil }
+
+    /// A companion's release, waiting one main queue hop so that a hand
+    /// off to another companion or a sheet writes no float in between.
+    private var pendingRelease: DispatchWorkItem?
 
     private weak var model: BackdropModel?
     private var keyStatus: @MainActor () -> Bool = { false }
@@ -116,6 +121,10 @@ final class BackdropAltitudeKeeper {
         self.model = model
         keyStatus = keyed
         isCompanion = companion
+        // New inputs start with no companion remembered.
+        pendingRelease?.cancel()
+        pendingRelease = nil
+        keyedCompanion = nil
         for token in windowObservers {
             NotificationCenter.default.removeObserver(token)
         }
@@ -169,9 +178,12 @@ final class BackdropAltitudeKeeper {
 
     /// A window of ours took the keyboard. A companion, or a sheet on
     /// one, lowers the card; any other window is none of the keeper's
-    /// business, the panel's own key turns included.
+    /// business, the panel's own key turns included. It cancels a release
+    /// still waiting its hop.
     private func companionBecameKey(_ window: NSWindow) {
         guard isCompanion(window) || window.sheetParent.map(isCompanion) == true else { return }
+        pendingRelease?.cancel()
+        pendingRelease = nil
         keyedCompanion = window
         let before = self.window.level
         reapplyFromModel()
@@ -179,20 +191,34 @@ final class BackdropAltitudeKeeper {
         // which can be the companion's. Order the companion front once
         // the key gain has settled, and only when the card did move:
         // a card already at normal or on the desktop was never over it.
+        // For a sheet, the parent is what is ordered.
         guard self.window.level != before else { return }
-        DispatchQueue.main.async { [weak window] in
-            guard let window, window.isKeyWindow, window.isVisible else { return }
-            window.orderFront(nil)
+        let companion = window.sheetParent ?? window
+        DispatchQueue.main.async { [weak window, weak companion] in
+            guard let window, let companion, window.isKeyWindow, companion.isVisible else {
+                return
+            }
+            companion.orderFront(nil)
         }
     }
 
     /// The key companion gave the keyboard up, or is closing. A close
     /// counts on its own because a window that was never on screen
     /// resigns nothing, and because the close is what the person sees.
+    /// AppKit posts a resign before the next key gain, so the release
+    /// waits one main queue hop for a companion's key gain to cancel it.
     private func companionReleasedKeys(_ window: NSWindow) {
-        guard keyedCompanion === window else { return }
-        keyedCompanion = nil
-        reapplyFromModel()
+        guard keyedCompanion === window, pendingRelease == nil else { return }
+        let release = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.pendingRelease = nil
+                self.keyedCompanion = nil
+                self.reapplyFromModel()
+            }
+        }
+        pendingRelease = release
+        DispatchQueue.main.async(execute: release)
     }
 
     private func reapplyFromModel() {
