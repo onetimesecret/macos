@@ -1630,7 +1630,7 @@ final class FileDocumentTests: XCTestCase {
     }
 
     /// A page's save settles while a file's edits have no drafts write to reach:
-    /// the hold stays until the file is saved to disk.
+    /// the hold stays until the file is saved, and the save that mark arms returns it.
     func testAPageSaveKeepsTheHoldWhileAFileEditIsInMemoryOnly() throws {
         let fixture = try makeFixture()
         let model = try modelOverUnreadableDrafts(
@@ -1648,7 +1648,9 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertGreaterThan(model.terminationHolds, 0, "the file's edits are not")
 
         XCTAssertTrue(model.saveFile(id))
-        XCTAssertTrue(model.saveState())
+        waitUntil(model.$saveStatus.dropFirst(), description: "the save the file's mark armed") {
+            $0 == .saved
+        }
         XCTAssertEqual(model.terminationHolds, 0, "nothing is in memory only now")
     }
 

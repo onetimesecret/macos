@@ -2071,6 +2071,9 @@ public final class PageModel: ObservableObject {
                 terminationLatch.settle(
                     saved: !Self.draftsHeld(
                         draftsLicence: false, draftsDirty: true, files: client.fileRoster()))
+            } else {
+                // A sealed file is written, so its save settles the hold; no saving word.
+                scheduleSave(after: saveDebounce)
             }
             return
         }
