@@ -66,6 +66,12 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// it; the diagnostics report prints the altitude it expects from it.
     var companionWindowKeyed: Bool { altitude.companionKeyed }
 
+    /// A companion window that took the keyboard before the delegate
+    /// could name it (the About panel, keyed inside its own order front).
+    func noticeCompanionWindow(_ window: NSWindow) {
+        altitude.noticeKeyWindow(window)
+    }
+
     /// `isCompanionWindow` names the app's own ordinary windows
     /// (Settings, About, Send Feedback), which the delegate owns; the
     /// card lowers while one of them has the keyboard (#293).

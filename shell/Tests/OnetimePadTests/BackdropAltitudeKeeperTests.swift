@@ -707,6 +707,28 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
         XCTAssertEqual(window.levelWrites, 0)
     }
 
+    func testNoticingAKeyCompanionLowersTheCardAndANonKeyOneDoesNot() {
+        // About is keyed inside `orderFrontStandardAboutPanel`, before the
+        // delegate has it by identity, so `showAbout` asks afterwards.
+        let model = makeModel(tag: "notice")
+        model.pinned = true
+        let about = makeOrderCountingCompanion()
+        let window = makeWindow()
+        let keeper = BackdropAltitudeKeeper(window: window)
+        keeper.commit(.resting, keyed: false, pinned: true, keepsAbove: false)
+        keeper.observe(model, keyed: { false }, companion: { $0 === about })
+
+        about.pretendsToBeKeyAndVisible = false
+        keeper.noticeKeyWindow(about)
+        XCTAssertFalse(keeper.companionKeyed)
+        XCTAssertEqual(window.level, .floating)
+
+        about.pretendsToBeKeyAndVisible = true
+        keeper.noticeKeyWindow(about)
+        XCTAssertTrue(keeper.companionKeyed)
+        XCTAssertEqual(window.level, .normal)
+    }
+
     func testObservingAgainForgetsTheKeyCompanion() {
         let model = makeModel(tag: "observe-resets")
         model.pinned = true

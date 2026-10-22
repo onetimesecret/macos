@@ -176,6 +176,13 @@ final class BackdropAltitudeKeeper {
         }
     }
 
+    /// Reads a window that took the keyboard before the delegate could name
+    /// it: the About panel is keyed inside `orderFrontStandardAboutPanel`.
+    func noticeKeyWindow(_ window: NSWindow) {
+        guard window.isKeyWindow else { return }
+        companionBecameKey(window)
+    }
+
     /// A window of ours took the keyboard. A companion, or a sheet on
     /// one, lowers the card; any other window is none of the keeper's
     /// business, the panel's own key turns included. It cancels a release

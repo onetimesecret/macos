@@ -390,10 +390,27 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var summonKey: BackdropHotKey?
     private var summonKeyFailure: BackdropHotKey.RegistrationFailure?
     private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "shortcut")
-    private lazy var settings = BackdropSettingsWindowController(model: model)
-    private lazy var feedback = FeedbackWindowController(model: model) { [unowned self] in
-        diagnosticReport()
+    /// Settings and Send Feedback, made on first use. Optionals rather than
+    /// `lazy`, so that `isCompanionWindow` makes neither controller.
+    private(set) var madeSettings: BackdropSettingsWindowController?
+    private var settings: BackdropSettingsWindowController {
+        if let madeSettings { return madeSettings }
+        let made = BackdropSettingsWindowController(model: model)
+        madeSettings = made
+        return made
     }
+    private(set) var madeFeedback: FeedbackWindowController?
+    private var feedback: FeedbackWindowController {
+        if let madeFeedback { return madeFeedback }
+        let made = FeedbackWindowController(model: model) { [unowned self] in
+            diagnosticReport()
+        }
+        madeFeedback = made
+        return made
+    }
+
+    /// The About panel `showAbout` last put up, by identity.
+    private weak var aboutPanel: NSWindow?
 
 
     /// The primary editor window (ADR-0033), the second of the two
@@ -402,9 +419,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Whether a window is one of the app's own ordinary windows:
     /// Settings, Send Feedback, or the About panel AppKit put up. The
-    /// card lowers while one of them has the keyboard (#293).
-    private func isCompanionWindow(_ window: NSWindow) -> Bool {
-        settings.owns(window) || feedback.owns(window) || standardAboutPanel() === window
+    /// card lowers while one of them has the keyboard (#293). By identity,
+    /// so an alert or an open panel is never one of them.
+    func isCompanionWindow(_ window: NSWindow) -> Bool {
+        madeSettings?.owns(window) == true
+            || madeFeedback?.owns(window) == true
+            || aboutPanel === window
     }
 
     /// Not every activation is the same raise, and one kind of launch
@@ -1272,10 +1292,14 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // surface, and Settings takes the same bit at creation. This
         // panel is not ours to construct, so the bit goes on after
         // AppKit has put it up.
-        standardAboutPanel()?.collectionBehavior.insert(.moveToActiveSpace)
+        let panel = standardAboutPanel()
+        panel?.collectionBehavior.insert(.moveToActiveSpace)
         // About stays at normal level, as Settings does; the card lowers
         // under it while it has the keyboard (`isCompanionWindow`,
-        // ADR-0032 Amendment 1, #293).
+        // ADR-0032 Amendment 1, #293). Kept by identity; an active app has
+        // already keyed it, before it had a name here, so the keeper reads it now.
+        aboutPanel = panel
+        if let panel { controller?.noticeCompanionWindow(panel) }
         // The app is usually inactive when About is chosen from the
         // status item; without activation the panel appears behind
         // whatever is frontmost. This activation is About's, not a
@@ -1306,7 +1330,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 titled: window.styleMask.contains(.titled),
                 title: window.title,
                 isSheet: window.isSheet,
-                isSettings: settings.owns(window)
+                isSettings: madeSettings?.owns(window) == true
             )
         }
     }
