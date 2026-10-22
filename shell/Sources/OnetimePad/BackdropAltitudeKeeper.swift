@@ -26,9 +26,8 @@ final class BackdropAltitudeKeeper {
 
     /// The companion window of ours that has the keyboard, if one
     /// does: Settings, About, Send Feedback, or a sheet run on one of
-    /// them (ADR-0032 Amendment 1, #293). Weak because the About panel
-    /// is AppKit's and is let go of on its own terms.
-    private(set) weak var keyedCompanion: NSWindow?
+    /// them (ADR-0032 Amendment 1, #293).
+    private(set) var keyedCompanion: NSWindow?
 
     /// Whether a companion window has the keyboard. Every write reads
     /// it, so the key delegate turns and the pin and preference sinks
@@ -159,9 +158,8 @@ final class BackdropAltitudeKeeper {
 
     private var observers: [AnyCancellable] = []
 
-    /// One window notification, any window, delivered to the keeper on
-    /// the main actor. AppKit posts the three it asks for on the main
-    /// thread, and only the window itself crosses into the isolation.
+    /// One window notification from any window, handed to the keeper on the
+    /// main actor; a post off the main thread traps in `assumeIsolated`.
     private func watch(
         _ name: Notification.Name,
         _ handle: @escaping @MainActor (BackdropAltitudeKeeper, NSWindow) -> Void
@@ -187,22 +185,24 @@ final class BackdropAltitudeKeeper {
     /// one, lowers the card; any other window is none of the keeper's
     /// business, the panel's own key turns included. It cancels a release
     /// still waiting its hop.
-    private func companionBecameKey(_ window: NSWindow) {
-        guard isCompanion(window) || window.sheetParent.map(isCompanion) == true else { return }
+    private func companionBecameKey(_ keyWindow: NSWindow) {
+        guard isCompanion(keyWindow) || keyWindow.sheetParent.map(isCompanion) == true else {
+            return
+        }
         pendingRelease?.cancel()
         pendingRelease = nil
-        keyedCompanion = window
-        let before = self.window.level
+        keyedCompanion = keyWindow
+        let before = window.level
         reapplyFromModel()
         // A level written puts the card at the front of its new level,
         // which can be the companion's. Order the companion front once
         // the key gain has settled, and only when the card did move:
         // a card already at normal or on the desktop was never over it.
         // For a sheet, the parent is what is ordered.
-        guard self.window.level != before else { return }
-        let companion = window.sheetParent ?? window
-        DispatchQueue.main.async { [weak window, weak companion] in
-            guard let window, let companion, window.isKeyWindow, companion.isVisible else {
+        guard window.level != before else { return }
+        let companion = keyWindow.sheetParent ?? keyWindow
+        DispatchQueue.main.async { [weak keyWindow, weak companion] in
+            guard let keyWindow, let companion, keyWindow.isKeyWindow, companion.isVisible else {
                 return
             }
             companion.orderFront(nil)
