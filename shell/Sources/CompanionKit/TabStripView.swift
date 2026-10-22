@@ -195,8 +195,8 @@ public struct TabStripView: View {
 
     /// The ↗ page tab's tooltip and spoken label, in one-time link
     /// vocabulary (ADR-0055 rule 3, issue #295).
-    static let concealPageHelp = "create a one-time link from this page"
-    static let concealPageLabel = "Create one-time link from page"
+    nonisolated static let concealPageHelp = "create a one-time link from this page"
+    nonisolated static let concealPageLabel = "Create one-time link from page"
 
     /// The dashed residue tab: the audit trail, one line per event. A
     /// toggle, so a second click returns to the page. Built and not
