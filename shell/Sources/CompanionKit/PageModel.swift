@@ -2790,25 +2790,28 @@ public final class PageModel: ObservableObject {
         return .settled
     }
 
-    /// Whether a file's unsaved edits are in memory only: the drafts licence
-    /// withheld and a dirty file open (issue #296).
+    /// Whether a file's unsaved edits are in memory only: a loaded session, the
+    /// drafts licence withheld and a dirty file open (issue #296).
     public nonisolated static func draftsHeld(
-        draftsLicence: Bool, draftsDirty: Bool, files: [FileSummary]
+        loaded: Bool, draftsLicence: Bool, draftsDirty: Bool, files: [FileSummary]
     ) -> Bool {
-        !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
+        loaded && !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
     }
 
     /// `draftsHeld` for this session now, read by the header's drafts word; it redraws
     /// with `openFiles`, which every change to `draftsDirty` is followed by.
     public var draftsHeldInMemory: Bool {
-        Self.draftsHeld(draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles)
+        Self.draftsHeld(
+            loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
+            files: openFiles)
     }
 
     /// `draftsHeld` against the core's roster, which the published one trails by an
     /// edit (issue #296). The roster is asked only when the licence leaves it open.
     private func draftsHeldInCore() -> Bool {
-        guard !draftsLicence, draftsDirty else { return false }
-        return Self.draftsHeld(draftsLicence: false, draftsDirty: true, files: client.fileRoster())
+        guard stateLoaded, !draftsLicence, draftsDirty else { return false }
+        return Self.draftsHeld(
+            loaded: true, draftsLicence: false, draftsDirty: true, files: client.fileRoster())
     }
 
     /// The terminate path's flush: `saveState` plus the one question it
@@ -3688,7 +3691,8 @@ public final class PageModel: ObservableObject {
         quitRefusal = Self.quitOfferAfterFiles(
             offer: quitRefusal,
             draftsHeld: Self.draftsHeld(
-                draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: files))
+                loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
+                files: files))
         if stateLoaded && padFileRosterReady { pads.reconcileFiles(Set(files.map(\.path))) }
         if let pending = pendingFileClose {
             if let file = files.first(where: { $0.id == pending.fileID }) {

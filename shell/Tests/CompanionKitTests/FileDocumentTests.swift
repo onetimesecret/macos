@@ -1775,6 +1775,25 @@ final class FileDocumentTests: XCTestCase {
             "the drafts file would not open and was not written over, so the unsaved changes to a.txt will not survive the quit")
     }
 
+    /// A session that never loaded holds no file's edits: the hold and the quit
+    /// outcome agree, as `quitOutcome` reads such a session.
+    func testASessionThatNeverLoadedHoldsNoFileEdits() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(), client: DraftsCountingClient(tag: fixture.tag))
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertTrue(try XCTUnwrap(model.openFiles.first).isDirty)
+
+        XCTAssertFalse(model.draftsHeldInMemory)
+        XCTAssertEqual(model.terminationHolds, 0)
+        XCTAssertEqual(model.saveStateForQuit(), .settled)
+        XCTAssertEqual(model.terminationHolds, 0)
+    }
+
     /// The drafts discard with nothing typed and the erase refused: the write it
     /// arms still drops or replaces the unreadable file.
     func testTheDraftsDiscardArmsTheWriteWhateverTheEraseAnswers() throws {
