@@ -635,7 +635,7 @@ final class SealedDragTests: XCTestCase {
     }
 
     /// Every other drag from inside this app never meets drop to seal: the shared field
-    /// editor (the gutter's, strip's, slot rail's and settings' fields), the name field's
+    /// editor (the gutter's, strip's and settings' fields), the name field's
     /// own, a field editor in another window (the pad list's) and any other view. An
     /// editable page takes its text as ink; a read only page and the note refuse it.
     func testEveryOtherDragFromThisAppLandsAsInkAndNeverSeals() throws {

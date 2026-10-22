@@ -46,7 +46,7 @@ public enum TabRename {
     }
 
     /// A SwiftUI rename field's state from opening to ending, so a test
-    /// drives the code the strip and the slot rail run (Law 0007).
+    /// drives the code the strip runs (Law 0007).
     public struct Field: Equatable, Sendable {
         /// The text the field shows, bound to it.
         public var draft = ""

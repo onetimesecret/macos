@@ -991,6 +991,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns `Zeroizing<String>` to any caller of the core crate. A ledger
   record formats its title as `[REDACTED]`, as a segment's ink is. The
   register records what each row still leaves ordinary.
+- **One poll round posts a pairing message** (`companion-ffi` 0.43.1;
+  issue #280). The outbox drain claims the head of the queue under the
+  lock before it sends, so a round overlapping another cannot post the
+  same message twice; a declined send puts it back for the next poll, a
+  message on the wire still counts as owed, so a confirmed ceremony
+  does not read done early, and the claim is released when the round
+  is done with it even when the send unwinds. Each claim is numbered,
+  so a round whose ceremony was replaced under its send leaves the
+  replacement's queue alone.
 - **Menus, dialogs and rows follow the platform's conventions** (app
   0.39.1; ADR-0055, the 2026-10-21 audit). File gains New Page at its
   head, on the chord the keymap binds; asked from Settings, About or
