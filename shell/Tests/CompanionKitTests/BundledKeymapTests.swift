@@ -62,7 +62,7 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-shift-s": .fileSaveAs,
         "cmd-s": .stateSaveNow,
         "cmd-,": .appSettings,
-        // The Help menu's first item (issue #294), carried by that menu only.
+        // The Help menu's product help item (issue #294), fired by that menu only.
         "cmd-?": .appHelp,
         "escape": .surfaceHandBackKeys,
     ]

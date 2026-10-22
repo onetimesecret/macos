@@ -9,12 +9,18 @@ import XCTest
 final class AboutPanelLookupTests: XCTestCase {
     private func matches(
         visible: Bool = true, titled: Bool = true, title: String = "",
-        isSheet: Bool = false, isSettings: Bool = false
+        isSheet: Bool = false, isSettings: Bool = false, isFilePanel: Bool = false
     ) -> Bool {
         BackdropAppDelegate.looksLikeTheAboutPanel(
             visible: visible, titled: titled, title: title,
-            isSheet: isSheet, isSettings: isSettings
+            isSheet: isSheet, isSettings: isSettings, isFilePanel: isFilePanel
         )
+    }
+
+    /// A standalone open or save panel can be visible, titled, untitled
+    /// and no sheet; ⌘W in About must not reach it (issue #201).
+    func testAnUntitledFilePanelThatIsNoSheetIsNotThePanel() {
+        XCTAssertFalse(matches(isFilePanel: true))
     }
 
     func testAVisibleTitledWindowWithNoTitleTextIsThePanel() {

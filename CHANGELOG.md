@@ -484,11 +484,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **OnetimePad Help heads the Help menu** (app 0.40.6; issue #294). The
-  item is ⌘?, bound in the keymap as `app::Help`, and opens
-  https://docs.onetimesecret.dev/macos, where the docs site will get a
-  page of its own. A keymap that unbinds the chord leaves the item
-  without a shortcut. The menu is assigned as the app's help menu.
+- **OnetimePad Help sits above the Help menu's diagnostics items** (app
+  0.40.6; issue #294). The item is ⌘?, bound in the keymap as
+  `app::Help`, and opens https://docs.onetimesecret.dev/macos, where the
+  docs site will get a page of its own. A keymap that unbinds the chord
+  leaves the item without a shortcut. The menu is assigned as the app's
+  help menu, and the item is put back on each activation if a menu
+  rebuild dropped it.
 
 - **A Timeline page node takes a drop** (app 0.40.0; Law 0001's drag
   row, the 2026-10-20 Timeline node amendment, issue #267). In the
@@ -1006,10 +1008,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file showing. It now closes that window, as in Xcode, Safari and
   Terminal, and the File menu's item reads Close Window. On the pad or
   the editor window it is `page::Close`, and the item reads Close File
-  on a file and Close Page on a page, enabled. While a sheet, a save
-  panel or an alert has the keyboard, or no window does, the item dims
-  and the chord closes nothing. The Window menu's ⇧⌘W item dims when
-  the key window cannot close, on the same fact as the File menu's.
+  on a file, Close Ledger while the ledger is showing, and Close Page on
+  a page, enabled. While a sheet, a save panel or an alert has the
+  keyboard, or no window does, the item dims and the chord closes
+  nothing; with no key window it used to read Close File and close the
+  file on the resting surface. The Window menu's ⇧⌘W item dims when the
+  key window cannot close, on the same fact as the File menu's.
+
 - **A Timeline too dense to fit scrolls instead of climbing over the
   Pad heading** (app 0.40.4; issue #277). The side Timeline packed its
   rows down from the top and then pulled them up from the foot, so a
