@@ -265,6 +265,9 @@ public enum QuitSaveOutcome: Equatable, Sendable {
     /// work after the load, none of which was ever written. The writes
     /// that were owed, if any, settled.
     case unsavableWithContent
+    /// The drafts licence is withheld and a file has unsaved edits the
+    /// drafts leg left in memory. The other writes settled (issue #296).
+    case unsavableWithDrafts
 }
 
 /// What a navigation gesture can land on (issue #79).
@@ -652,6 +655,12 @@ public final class PageModel: ObservableObject {
     /// for the same reason as the content flag; quieter in the surface
     /// because no page is at stake.
     @Published public private(set) var ledgerRestoreRefused = false
+
+    /// The drafts file existed and would not open, so the drafts
+    /// licence is withheld and no unsaved file edit reaches disk until
+    /// the user discards that file (`clearUnreadableDraftsFile`), or
+    /// the state file with it. Standing for the session, as above.
+    @Published public private(set) var draftsRestoreRefused = false
 
     /// The write lifecycle the surface shows (issue #49). Moves in
     /// `markDirty` and `saveState` only, and deliberately not on the
@@ -1687,9 +1696,9 @@ public final class PageModel: ObservableObject {
     /// False until `restoreDrafts` has run, so a save that is asked
     /// before the restore writes nothing over a file nobody has read
     /// yet (issue #296); withheld afterwards when an existing drafts
-    /// file would not open. The one way back is the content discard
-    /// (`clearUnreadableStateFile`): the core drops or reseals the
-    /// drafts beside the state file it discards, on the user's word.
+    /// file would not open. Two ways back, both the user's word: the
+    /// drafts discard (`clearUnreadableDraftsFile`) and the content
+    /// discard (`clearUnreadableStateFile`).
     private var draftsLicence = false
 
     /// The persistence trail in the unified log: restore refusals and
@@ -1791,7 +1800,7 @@ public final class PageModel: ObservableObject {
         refresh()
         if pads.isEnabled { restorePadSelection() }
         // The third sealed file, after the pages and after the
-        // selection settles. It is licensed by nothing: a state file
+        // selection settles. It is licensed on its own: a state file
         // that would not open says nothing about the drafts, which are
         // a different file that either opens or does not, and refusing
         // to read them because of the other one would lose a person's
@@ -2048,6 +2057,15 @@ public final class PageModel: ObservableObject {
     private func markFilesDirty() {
         draftsDirty = true
         mutatedSinceLoad = true
+        // No hold and no saving word under a withheld licence, as in
+        // `markDirty`: there is no write to wait for (issue #296).
+        guard draftsLicence else { return }
+        armDraftsWrite()
+    }
+
+    /// The hold, the saving word and the timer for a licensed drafts write,
+    /// at a mark or where the licence arrives over edits already in memory.
+    private func armDraftsWrite() {
         terminationLatch.acquire()
         if saveStatus != .failed { saveStatus = .saving }
         scheduleSave(after: saveDebounce)
@@ -2280,7 +2298,7 @@ public final class PageModel: ObservableObject {
     private func saveDrafts(in directory: URL) -> Bool {
         guard draftsDirty else { return true }
         // Read before write, as for the state file: settled, not refused,
-        // and the dirtiness stays so the write is owed later (issue #296).
+        // and the dirtiness stays with the edits in memory (issue #296).
         guard draftsLicence else { return true }
         let path = FormFactor.draftsFileURL(in: directory).path
         let wrote = openFiles.isEmpty
@@ -2335,9 +2353,12 @@ public final class PageModel: ObservableObject {
             fileExists: FileManager.default.fileExists(atPath: path), restored: restored
         )
         padFileRosterReady = draftsLicence
+        draftsRestoreRefused = !draftsLicence
         guard restored else {
             if draftsLicence {
                 pads.reconcileFiles([])
+                // Edits typed before the restore owe the write it grants.
+                if draftsDirty { armDraftsWrite() }
             } else {
                 logger.error(
                     "restore failed over an existing drafts file; withholding the drafts write"
@@ -2728,13 +2749,27 @@ public final class PageModel: ObservableObject {
     /// quit regardless of the licence. A settled flush over a withheld
     /// content licence also cancels it when the session accumulated work
     /// after load; an untouched session under a withheld licence may
-    /// terminate. What a cancelled quit does next is `QuitPrompt`'s.
+    /// terminate. A settled flush that left a file's unsaved edits in
+    /// memory under a withheld drafts licence cancels it too, after the
+    /// content arm, which names the drafts along with the pages. What a
+    /// cancelled quit does next is `QuitPrompt`'s.
     public nonisolated static func quitOutcome(
-        settled: Bool, contentLicence: Bool, loaded: Bool, mutatedSinceLoad: Bool
+        settled: Bool, contentLicence: Bool, loaded: Bool, mutatedSinceLoad: Bool,
+        draftsHeld: Bool
     ) -> QuitSaveOutcome {
         if !settled { return .refused }
         if loaded && !contentLicence && mutatedSinceLoad { return .unsavableWithContent }
+        if loaded && draftsHeld { return .unsavableWithDrafts }
         return .settled
+    }
+
+    /// Whether the drafts leg is leaving a file's unsaved edits in
+    /// memory: the licence withheld and a dirty file with edits nobody
+    /// saved (issue #296). A record move alone is not at stake.
+    public nonisolated static func draftsHeld(
+        draftsLicence: Bool, draftsDirty: Bool, files: [FileSummary]
+    ) -> Bool {
+        !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
     }
 
     /// The terminate path's flush: `saveState` plus the one question it
@@ -2749,7 +2784,10 @@ public final class PageModel: ObservableObject {
             settled: settled,
             contentLicence: saveLicence,
             loaded: stateLoaded,
-            mutatedSinceLoad: mutatedSinceLoad
+            mutatedSinceLoad: mutatedSinceLoad,
+            draftsHeld: Self.draftsHeld(
+                draftsLicence: draftsLicence, draftsDirty: draftsDirty, files: openFiles
+            )
         )
     }
 
@@ -2821,7 +2859,31 @@ public final class PageModel: ObservableObject {
             return "the sealed state file was not written, so this session's \(loss) will not survive the quit"
         case .unsavableWithContent:
             return "nothing typed this session is on disk, so its \(loss) will not survive the quit"
+        case .unsavableWithDrafts:
+            let dirty = files.filter(\.holdsUnsavedEdits).map(\.name)
+            guard !dirty.isEmpty else { return nil }
+            return "the drafts file would not open and was not written over, so the unsaved changes to \(englishList(dirty)) will not survive the quit"
         }
+    }
+
+    /// Whether the offer survives the user's discard of the unreadable
+    /// drafts file. The mirror of the content rule above.
+    public nonisolated static func quitOfferAfterDraftsClear(
+        offer: QuitSaveOutcome?
+    ) -> QuitSaveOutcome? {
+        offer == .unsavableWithDrafts ? nil : offer
+    }
+
+    /// What the quit anyway button says it costs: the drafts arm names
+    /// the files alone, because its pages are on disk.
+    public nonisolated static func quitAnywayHelp(
+        _ outcome: QuitSaveOutcome, files: [FileSummary]
+    ) -> String {
+        let base = outcome == .unsavableWithDrafts
+            ? "Quits now."
+            : "Quits now. The pages this session could not save are lost."
+        guard let atRisk = draftsAtRiskSentence(files: files) else { return base }
+        return base + " " + atRisk
     }
 
     /// What a cancelled quit takes, as the object of the standing line.
@@ -5126,7 +5188,8 @@ public final class PageModel: ObservableObject {
     /// erase there would drop a file this session can and does write.
     public func clearUnreadableStateFile() {
         guard stateLoaded, !saveLicence else { return }
-        if !client.persistErase(at: stateFileURL.path) {
+        let erased = client.persistErase(at: stateFileURL.path)
+        if !erased {
             logger.error(
                 "the unreadable state file could not be dropped on a user discard; the reseal will try to replace it instead"
             )
@@ -5136,13 +5199,51 @@ public final class PageModel: ObservableObject {
         )
         saveLicence = licences.content
         ledgerLicence = licences.ledger
-        // The discard takes the drafts file with the state file (decisions.md
-        // item 14), so the drafts write is the user's to make again.
-        draftsLicence = true
+        if !draftsLicence {
+            // A refused erase returns before it reaches the drafts file
+            // (`companion_persist_erase`), so that file goes by path here.
+            if !erased { eraseUnreadableDraftsFile() }
+            grantDraftsLicence()
+            quitRefusal = Self.quitOfferAfterDraftsClear(offer: quitRefusal)
+        }
         contentRestoreRefused = false
         quitRefusal = Self.quitOfferAfterContentClear(offer: quitRefusal)
         markDirty()
         refresh()
+    }
+
+    /// Discard the drafts file this session could not read and start
+    /// writing drafts (the drafts banner's one action, issue #296). The
+    /// content clear's shape for the third file: the file goes by path,
+    /// the licence comes back on the user's word whatever the erase
+    /// managed, and a write owed by edits in memory is armed at once.
+    /// Guarded to the one condition it exists for, as the content clear is.
+    public func clearUnreadableDraftsFile() {
+        guard stateLoaded, !draftsLicence else { return }
+        eraseUnreadableDraftsFile()
+        grantDraftsLicence()
+        quitRefusal = Self.quitOfferAfterDraftsClear(offer: quitRefusal)
+        if draftsDirty { armDraftsWrite() }
+    }
+
+    /// The drafts file this session could not read, dropped by path on a
+    /// user discard. A refusal is logged; the next drafts write replaces it.
+    private func eraseUnreadableDraftsFile() {
+        guard !client.draftsErase(at: draftsFileURL.path) else { return }
+        logger.error(
+            "the unreadable drafts file could not be dropped on a user discard; the next drafts write will try to replace it instead"
+        )
+    }
+
+    /// The drafts licence back, with the pad roster it gates and the
+    /// standing line that said it was withheld.
+    private func grantDraftsLicence() {
+        draftsLicence = true
+        draftsRestoreRefused = false
+        if !padFileRosterReady {
+            padFileRosterReady = true
+            pads.reconcileFiles(Set(openFiles.map(\.path)))
+        }
     }
 
     /// The ◌ tab is a toggle: click to visit the ledger, click again

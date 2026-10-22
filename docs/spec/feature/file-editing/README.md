@@ -395,6 +395,14 @@ One unreadable file never fails the whole restore. Each record is
 settled on its own, so a file on an unmounted volume affects its own
 tab and no other.
 
+*Amended 2026-10-21:* a drafts file that does not open is left where it
+is, and the session writes no drafts over it (issue #296). A standing
+line under the page says so, with one action that deletes the
+unreadable file and keeps this session's drafts from there; the discard
+of an unreadable state file does the same. A quit with unsaved changes
+to an open file while the line stands is an unsavable flush, as Quit
+with unsaved changes describes.
+
 ## Closing a tab
 
 Closing a file tab leaves the file on disk exactly as it is. Nothing is

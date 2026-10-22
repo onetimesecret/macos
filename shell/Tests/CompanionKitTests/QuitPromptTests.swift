@@ -78,7 +78,7 @@ final class QuitPromptTests: XCTestCase {
     }
 
     func testTheSecondQuitTerminatesWhileTheOfferStands() {
-        for outcome in [QuitSaveOutcome.refused, .unsavableWithContent] {
+        for outcome in [QuitSaveOutcome.refused, .unsavableWithContent, .unsavableWithDrafts] {
             let model = FlushSpy(outcome)
             XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel, "\(outcome)")
             XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow, "\(outcome)")
@@ -96,7 +96,9 @@ final class QuitPromptTests: XCTestCase {
     }
 
     func testEveryOutcomeFlushesExactlyOncePerRequest() {
-        for outcome in [QuitSaveOutcome.settled, .refused, .unsavableWithContent] {
+        for outcome in [
+            QuitSaveOutcome.settled, .refused, .unsavableWithContent, .unsavableWithDrafts,
+        ] {
             let model = FlushSpy(outcome)
             _ = QuitPrompt.terminateReply(flushing: model)
             XCTAssertEqual(model.flushes, 1, "\(outcome)")
@@ -113,6 +115,33 @@ final class QuitPromptTests: XCTestCase {
         XCTAssertEqual(
             PageModel.quitRefusalSentence(.unsavableWithContent),
             "nothing typed this session is on disk, so its pages will not survive the quit")
+        // The drafts arm names the files alone: the pages are on disk.
+        let dirty = FileSummary(
+            id: CompanionClient.fileIDTag | 1, name: "a.txt", path: "/tmp/a.txt",
+            isDirty: true, conflict: .none, lineEnding: .lf, hasBOM: false,
+            lastEditedAt: 0, restoredFromDraft: false)
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(.unsavableWithDrafts, files: [dirty], draftsUnwritten: true),
+            "the drafts file would not open and was not written over, so the unsaved changes to a.txt will not survive the quit")
+        XCTAssertNil(PageModel.quitRefusalSentence(.unsavableWithDrafts))
+        XCTAssertNil(PageModel.quitOfferAfterDraftsClear(offer: .unsavableWithDrafts))
+        XCTAssertEqual(PageModel.quitOfferAfterDraftsClear(offer: .refused), .refused)
+    }
+
+    func testTheQuitAnywayHelpNamesNoPagesOnTheDraftsArm() {
+        let dirty = FileSummary(
+            id: CompanionClient.fileIDTag | 1, name: "a.txt", path: "/tmp/a.txt",
+            isDirty: true, conflict: .none, lineEnding: .lf, hasBOM: false,
+            lastEditedAt: 0, restoredFromDraft: false)
+        XCTAssertEqual(
+            PageModel.quitAnywayHelp(.unsavableWithDrafts, files: [dirty]),
+            "Quits now. Unsaved changes to a.txt go with it.")
+        XCTAssertEqual(
+            PageModel.quitAnywayHelp(.refused, files: []),
+            "Quits now. The pages this session could not save are lost.")
+        XCTAssertEqual(
+            PageModel.quitAnywayHelp(.unsavableWithContent, files: [dirty]),
+            "Quits now. The pages this session could not save are lost. Unsaved changes to a.txt go with it.")
     }
 
     func testARefusalsOfferComesDownOnASettledWriteOnly() {

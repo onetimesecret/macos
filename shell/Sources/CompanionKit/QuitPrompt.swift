@@ -42,7 +42,7 @@ public enum QuitPrompt {
         switch outcome {
         case .settled:
             return .terminateNow
-        case .refused, .unsavableWithContent:
+        case .refused, .unsavableWithContent, .unsavableWithDrafts:
             if offered { return .terminateNow }
             model.offerQuitAnyway(after: outcome)
             return .terminateCancel
