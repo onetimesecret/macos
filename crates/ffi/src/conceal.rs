@@ -171,6 +171,24 @@ pub(crate) struct WireRecord {
     recipient: Option<String>,
 }
 
+/// A conceal body as [`StubWire`] reads it, the payload nested under `secret`.
+#[cfg(feature = "test-util")]
+#[derive(serde::Deserialize)]
+struct SummaryBody {
+    secret: Option<SummaryFields>,
+}
+
+/// The payload fields a [`WireRecord`] keeps. The secret's text and any field
+/// not named here pass as `IgnoredAny`, and so does a passphrase (C27).
+#[cfg(feature = "test-util")]
+#[derive(Default, serde::Deserialize)]
+struct SummaryFields {
+    ttl: Option<u64>,
+    share_domain: Option<String>,
+    passphrase: Option<serde::de::IgnoredAny>,
+    recipient: Option<String>,
+}
+
 #[cfg(feature = "test-util")]
 impl StubWire {
     /// A `status` of zero makes every send an outage.
@@ -207,24 +225,20 @@ impl StubWire {
 
     /// Reads four non-secret conceal fields by name; nothing else.
     fn summarize(request: &HttpRequest) -> WireRecord {
-        let body = request
+        let fields = request
             .body
             .as_deref()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok());
-        let secret = body.as_ref().and_then(|value| value.get("secret"));
-        let field = |name: &str| secret.and_then(|value| value.get(name));
+            .and_then(|bytes| serde_json::from_slice::<SummaryBody>(bytes).ok())
+            .and_then(|body| body.secret)
+            .unwrap_or_default();
         WireRecord {
             method: request.method.to_owned(),
             url: request.url.clone(),
             authorized: request.header("Authorization").is_some(),
-            ttl: field("ttl").and_then(serde_json::Value::as_u64),
-            share_domain: field("share_domain")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
-            has_passphrase: field("passphrase").is_some_and(|value| !value.is_null()),
-            recipient: field("recipient")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
+            ttl: fields.ttl,
+            share_domain: fields.share_domain,
+            has_passphrase: fields.passphrase.is_some(),
+            recipient: fields.recipient,
         }
     }
 }
@@ -424,5 +438,116 @@ mod tests {
         assert_eq!(opts.ttl_secs, Some(60));
         assert_eq!(opts.passphrase.as_deref().map(String::as_str), Some("pw"));
         assert_eq!(opts.recipient.as_deref(), Some("a@b.c"));
+    }
+
+    #[cfg(feature = "test-util")]
+    fn stubbed() -> (std::sync::Arc<StubWire>, Wire) {
+        let stub = std::sync::Arc::new(StubWire::answering(200, OK_BODY));
+        (std::sync::Arc::clone(&stub), Wire::Stub(stub))
+    }
+
+    #[cfg(feature = "test-util")]
+    fn bare(method: &'static str, body: Option<&[u8]>) -> HttpRequest {
+        HttpRequest {
+            method,
+            url: "https://eu.onetimesecret.com/api/v3/status".into(),
+            headers: Vec::new(),
+            body: body.map(|bytes| Zeroizing::new(bytes.to_vec())),
+        }
+    }
+
+    // The expected bytes are those the `serde_json::Value` reading wrote (C27).
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn the_summary_matches_the_bytes_the_value_reading_wrote() {
+        let (stub, wire) = stubbed();
+        conceal(
+            &conn(),
+            None,
+            Zeroizing::new("p".into()),
+            &defaults(),
+            wire.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            stub.last_json().unwrap(),
+            r#"{"authorized":false,"has_passphrase":false,"method":"POST","recipient":null,"share_domain":"eu.onetimesecret.com","ttl":604800,"url":"https://eu.onetimesecret.com/api/v3/guest/secret/conceal"}"#
+        );
+
+        let opts = ConcealOpts::parse(Some(
+            r#"{"ttl_secs":60,"passphrase":"pw","recipient":"a@b.c"}"#,
+        ))
+        .unwrap();
+        let shared = Connection {
+            share_domain: "secrets.example.com".into(),
+            ..conn()
+        };
+        conceal(
+            &shared,
+            Some(Zeroizing::new("tok".into())),
+            Zeroizing::new("p".into()),
+            &opts,
+            wire,
+        )
+        .unwrap();
+        assert_eq!(
+            stub.last_json().unwrap(),
+            r#"{"authorized":true,"has_passphrase":true,"method":"POST","recipient":"a@b.c","share_domain":"secrets.example.com","ttl":60,"url":"https://eu.onetimesecret.com/api/v3/secret/conceal"}"#
+        );
+
+        // The connection test's GET, and bodies with no conceal fields to read.
+        let empty = r#"{"authorized":false,"has_passphrase":false,"method":"GET","recipient":null,"share_domain":null,"ttl":null,"url":"https://eu.onetimesecret.com/api/v3/status"}"#;
+        for body in [
+            None,
+            Some("not json"),
+            Some("{}"),
+            Some(r#"{"secret":null}"#),
+            Some(r#"{"secret":{}}"#),
+        ] {
+            stub.send(bare("GET", body.map(str::as_bytes))).unwrap();
+            assert_eq!(stub.last_json().unwrap(), empty);
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn the_summary_never_contains_the_secret_or_its_passphrase() {
+        let (stub, wire) = stubbed();
+        let opts = ConcealOpts::parse(Some(
+            r#"{"passphrase":"swordfish \"pw\" é","recipient":"a@b.c"}"#,
+        ))
+        .unwrap();
+        conceal(
+            &conn(),
+            Some(Zeroizing::new("tok".into())),
+            Zeroizing::new("hunter2 \"quoted\" \\ tab\t caf\u{e9} \u{1F600}".into()),
+            &opts,
+            wire,
+        )
+        .unwrap();
+        let summary = stub.last_json().unwrap();
+        let record = format!("{:?}", stub.seen.lock().unwrap());
+        for text in [&summary, &record] {
+            for secret in ["hunter2", "quoted", "\u{1F600}", "swordfish", "pw"] {
+                assert!(!text.contains(secret), "{secret} reached {text}");
+            }
+        }
+        assert!(summary.contains(r#""has_passphrase":true"#), "{summary}");
+        assert!(summary.contains(r#""recipient":"a@b.c""#), "{summary}");
+    }
+
+    // A lone surrogate refuses any decode of the text, so fields read past it
+    // show that the summary skips the secret and passphrase undecoded (C27).
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn the_summary_reads_past_a_secret_it_never_decodes() {
+        let body = r#"{"secret":{"kind":"conceal","secret":"\ud800 hunter2","share_domain":"s.example","ttl":5,"passphrase":"\ud800"}}"#;
+        assert!(serde_json::from_str::<serde_json::Value>(body).is_err());
+        let (stub, _wire) = stubbed();
+        stub.send(bare("POST", Some(body.as_bytes()))).unwrap();
+        assert_eq!(
+            stub.last_json().unwrap(),
+            r#"{"authorized":false,"has_passphrase":true,"method":"POST","recipient":null,"share_domain":"s.example","ttl":5,"url":"https://eu.onetimesecret.com/api/v3/status"}"#
+        );
     }
 }
