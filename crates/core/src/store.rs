@@ -1406,7 +1406,7 @@ impl<C: Clock> SheetStore<C> {
         self.step_note(id, true)
     }
 
-    /// Put back the step [`SheetStore::undo_note`] took.
+    /// Put back the step [`SheetStore::undo_note`] took, on the same terms.
     pub fn redo_note(&mut self, id: ChipId) -> Option<StepOutcome> {
         self.step_note(id, false)
     }
