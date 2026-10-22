@@ -155,37 +155,12 @@ struct BackdropApp: App {
     }
 }
 
-/// The File menu: New Page, Open, Save, Save As and Close File (ADR-0028).
-///
-/// A view of its own because a `CommandMenu`'s content is a view, and a
-/// view is what can observe the model whose state greys three of these
-/// five out. New Page heads the menu as New does in every macOS app; it
-/// is the same `page::New` the chord and the strip's + run, an explicit
-/// ask that always mints.
-///
-/// Every item goes through `perform`, the same route the chord takes,
-/// so each verb has one implementation. Save, Save As and Close File
-/// are dimmed while a page rather than a file is showing, because on a
-/// page those chords mean something else entirely and a menu that
-/// offered them under a file's names would be lying about what the
-/// click does.
-///
-/// Enablement is display and never a gate: the model's own arms decide
-/// what happens, and a click that arrives anyway lands on the page
-/// reading of the chord rather than on nothing.
-///
-/// New Page asked from a window that is not the surface (Settings,
-/// About, Feedback) also brings the owner surface back, so the command
-/// shows what it made the way Open… shows its panel.
-///
-/// The close item reads `closeChordTarget` (issue #201). On the surface
-/// it is Close File, dimmed on a page because the page's own ⌘W is the
-/// surface's hidden button; while Settings, About or Send Feedback has
-/// the keyboard it is Close Window, dimmed unless the key window can close.
+/// The File menu: New Page, Open, Save and Save As through `perform`, dimming
+/// Save and Save As off a file (ADR-0028), and the ⌘W item `CloseMenuItem` resolves (#201).
 @MainActor
 private struct FileMenuItems: View {
     @ObservedObject var pages: PageModel
-    /// Which window is key: a companion one, and one with a close box.
+    /// What ⌘W closes, and whether the key window can close.
     @ObservedObject var keyWindow: KeyWindowFacts
     /// Brings the owner surface back, the editor window or the panel.
     let present: () -> Void
@@ -197,8 +172,7 @@ private struct FileMenuItems: View {
     /// Sends `performClose:` to the key window.
     let closeKeyWindow: () -> Void
 
-    /// Whether the surface is showing a file, which is what the three
-    /// file verbs need to be true.
+    /// Whether the surface is showing a file, which Save and Save As need.
     private var onAFile: Bool {
         if case .file = pages.activeTarget { return true }
         return false
@@ -223,8 +197,7 @@ private struct FileMenuItems: View {
         // One item, so the NSMenuItem and its ⌘W equivalent stay put
         // while the title and enablement follow the key window.
         Button(closeItem.title) {
-            pages.closeWhatIsShowing(
-                companionWindowIsKey: keyWindow.companionIsKey, closeKeyWindow: closeKeyWindow)
+            pages.closeWhatIsShowing(keyWindow.closeTarget, closeKeyWindow: closeKeyWindow)
         }
         .keyboardShortcut(closeShortcut)
         .disabled(!closeItem.isEnabled)
@@ -232,37 +205,41 @@ private struct FileMenuItems: View {
 
     private var closeItem: CloseMenuItem {
         CloseMenuItem.resolve(
-            target: pages.closeChordTarget(companionWindowIsKey: keyWindow.companionIsKey),
-            onAFile: onAFile, keyWindowCanClose: keyWindow.canClose)
+            target: keyWindow.closeTarget, showing: pages.activeTarget,
+            keyWindowCanClose: keyWindow.canClose)
     }
 }
 
-/// The File menu's ⌘W item (issue #201): Close File on the surface,
-/// enabled on a file, or Close Window while a companion window is key,
-/// enabled when that window can close.
+/// The File menu's ⌘W item (issue #201), one row per `CloseChordTarget`.
 enum CloseMenuItem: Equatable {
-    case closeFile(enabled: Bool)
+    case closeFile
+    case closePage(enabled: Bool)
     case closeWindow(enabled: Bool)
 
     static func resolve(
-        target: CloseChordTarget, onAFile: Bool, keyWindowCanClose: Bool
+        target: CloseChordTarget, showing: SurfaceTarget, keyWindowCanClose: Bool
     ) -> CloseMenuItem {
-        switch target {
-        case .surface: return .closeFile(enabled: onAFile)
-        case .auxiliaryWindow: return .closeWindow(enabled: keyWindowCanClose)
+        switch (target, showing) {
+        case (.surface, .file): return .closeFile
+        case (.surface, .tab): return .closePage(enabled: true)
+        case (.surface, .today): return .closePage(enabled: false)
+        case (.companionWindow, _): return .closeWindow(enabled: keyWindowCanClose)
+        case (.nothing, _): return .closeWindow(enabled: false)
         }
     }
 
     var title: String {
         switch self {
         case .closeFile: return "Close File"
+        case .closePage: return "Close Page"
         case .closeWindow: return "Close Window"
         }
     }
 
     var isEnabled: Bool {
         switch self {
-        case .closeFile(let enabled), .closeWindow(let enabled): return enabled
+        case .closeFile: return true
+        case .closePage(let enabled), .closeWindow(let enabled): return enabled
         }
     }
 }
@@ -459,8 +436,14 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
 
     /// The primary editor window (ADR-0033), the second of the two
-    /// content windows over the one model.
-    private lazy var editorWindow = PrimaryEditorWindowController(model: model)
+    /// content windows over the one model. Optional backed, as Settings is.
+    private var madeEditorWindow: PrimaryEditorWindowController?
+    private var editorWindow: PrimaryEditorWindowController {
+        if let madeEditorWindow { return madeEditorWindow }
+        let made = PrimaryEditorWindowController(model: model)
+        madeEditorWindow = made
+        return made
+    }
 
     /// Whether a window is one of the app's own ordinary windows:
     /// Settings, Send Feedback, or the About panel AppKit put up. ⌘W
@@ -476,6 +459,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         _ window: NSWindow, settings: NSWindow?, feedback: NSWindow?, about: NSWindow?
     ) -> Bool {
         [settings, feedback, about].contains { $0 === window }
+    }
+
+    /// Whether a window is the owner's: the panel, its key relay, or the
+    /// primary editor window. ⌘W closes the surface's page or file there.
+    private func isOwnerWindow(_ window: NSWindow) -> Bool {
+        controller?.owns(window) == true || madeEditorWindow?.owns(window) == true
     }
 
     /// Holds the About panel at the surface's keyless altitude while
@@ -540,11 +529,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// (`BackdropModel.auxiliaryWindowReleasedKeys`).
     private var windowCloseObserver: NSObjectProtocol?
 
-    /// Which window is key, for the File menu's ⌘W item (issue #201).
+    /// Which window is key, for the ⌘W and ⇧⌘W items (issue #201).
     /// Starts observing once the app has finished launching.
-    private(set) lazy var keyWindow = KeyWindowFacts { [weak self] window in
-        self?.isCompanionWindow(window) ?? false
-    }
+    private(set) lazy var keyWindow = KeyWindowFacts(
+        isOwnerWindow: { [weak self] window in self?.isOwnerWindow(window) ?? false },
+        isCompanionWindow: { [weak self] window in self?.isCompanionWindow(window) ?? false }
+    )
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         launchedAt = Date()

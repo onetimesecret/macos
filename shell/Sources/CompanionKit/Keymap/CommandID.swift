@@ -68,7 +68,7 @@ public enum CommandID: String, CaseIterable, Sendable {
 
     // The window around the surface (ADR-0033, issue #201): ⇧⌘W closes
     // the window the keyboard is in, from the Window menu only. ⌘W is
-    // `page::Close` on the surface and the key window's close elsewhere.
+    // `page::Close` on the surface and closes a companion window that is key.
     case windowClose = "window::Close"
 
     /// Which piece of the app listens for this command.

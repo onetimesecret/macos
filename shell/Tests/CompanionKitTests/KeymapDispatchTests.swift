@@ -65,21 +65,25 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertFalse(model.perform(.windowClose))
     }
 
-    /// ⌘W closes what the key window shows (issue #201). While Settings,
-    /// About or Send Feedback has the keyboard there is no page target,
-    /// and the chord closes that window instead of beeping.
-    func testTheCloseChordClosesAKeyWindowWithoutAPageTarget() throws {
+    /// ⌘W's target from the shell's two identity facts (issue #201): the
+    /// owner's window first, then a companion window, and nothing else.
+    func testTheCloseChordTargetReadsTheKeyWindowsIdentity() {
+        XCTAssertEqual(CloseChordTarget(ownerWindowIsKey: true, companionWindowIsKey: false), .surface)
+        XCTAssertEqual(CloseChordTarget(ownerWindowIsKey: true, companionWindowIsKey: true), .surface)
+        XCTAssertEqual(
+            CloseChordTarget(ownerWindowIsKey: false, companionWindowIsKey: true), .companionWindow)
+        XCTAssertEqual(CloseChordTarget(ownerWindowIsKey: false, companionWindowIsKey: false), .nothing)
+    }
+
+    /// While Settings, About or Send Feedback has the keyboard there is no
+    /// page target, and the chord closes that window instead of beeping.
+    func testTheCloseChordClosesACompanionWindowAndNoPage() throws {
         let model = try makeModel()
         model.perform(.pageNew)
         model.perform(.pageNew)
-        // The pad had the keys, then Settings took them.
-        model.reportKeys(true, from: .panel)
-        XCTAssertEqual(model.closeChordTarget(companionWindowIsKey: false), .surface)
-        model.reportKeys(false, from: .panel)
-        XCTAssertEqual(model.closeChordTarget(companionWindowIsKey: true), .auxiliaryWindow)
 
         var windowCloses = 0
-        model.closeWhatIsShowing(companionWindowIsKey: true) { windowCloses += 1 }
+        model.closeWhatIsShowing(.companionWindow) { windowCloses += 1 }
 
         XCTAssertEqual(windowCloses, 1)
         XCTAssertEqual(model.tabs.count, 2, "a page is not closed from a window that does not show it")
@@ -92,40 +96,42 @@ final class KeymapDispatchTests: XCTestCase {
         model.perform(.pageNew)
         model.perform(.pageNew)
         model.reportKeys(true, from: .panel)
-        XCTAssertEqual(model.closeChordTarget(companionWindowIsKey: false), .surface)
 
         var windowCloses = 0
-        model.closeWhatIsShowing(companionWindowIsKey: false) { windowCloses += 1 }
+        model.closeWhatIsShowing(.surface) { windowCloses += 1 }
 
         XCTAssertEqual(windowCloses, 0)
         XCTAssertEqual(model.tabs.count, 1)
     }
 
-    /// A content window can be key before the owner has reported it: the
-    /// panel's rest handing the page to the editor window, the deferred
-    /// hand back after Settings closes, a modal session. None of those is
-    /// a companion window, so the chord never closes the window being
-    /// typed in.
-    func testAKeyContentWindowIsNeverTheAuxiliaryTarget() throws {
+    /// The surface target closes the page whether or not the owner has
+    /// reported the keys yet: the target is the shell's identity fact.
+    func testTheSurfaceTargetClosesAPageBeforeTheOwnerReportsKeys() throws {
         let model = try makeModel()
         model.perform(.pageNew)
         model.perform(.pageNew)
         XCTAssertFalse(model.holdsKeys)
-        XCTAssertEqual(model.closeChordTarget(companionWindowIsKey: false), .surface)
 
         var windowCloses = 0
-        model.closeWhatIsShowing(companionWindowIsKey: false) { windowCloses += 1 }
+        model.closeWhatIsShowing(.surface) { windowCloses += 1 }
 
         XCTAssertEqual(windowCloses, 0)
         XCTAssertEqual(model.tabs.count, 1)
     }
 
-    /// The owner's report outlives a companion window taking the keys by
-    /// a turn; in that turn the surface still answers.
-    func testAStaleOwnerReportKeepsTheChordOnTheSurface() throws {
+    /// A sheet, a save panel or an alert with the keys, or no key window:
+    /// the chord closes neither a page nor a window.
+    func testWithNothingToCloseTheChordDoesNothing() throws {
         let model = try makeModel()
+        model.perform(.pageNew)
+        model.perform(.pageNew)
         model.reportKeys(true, from: .panel)
-        XCTAssertEqual(model.closeChordTarget(companionWindowIsKey: true), .surface)
+
+        var windowCloses = 0
+        model.closeWhatIsShowing(.nothing) { windowCloses += 1 }
+
+        XCTAssertEqual(windowCloses, 0)
+        XCTAssertEqual(model.tabs.count, 2)
     }
 
     /// Edit → Seal Selected Content and the chord are one verb (D-30):

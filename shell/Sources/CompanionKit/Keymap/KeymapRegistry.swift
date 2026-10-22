@@ -28,8 +28,8 @@ extension PageModel {
             newPage()
         case .pageClose:
             // ⌘W closes what is on the surface: the file, with its dirty
-            // decision inline, or the page (ADR-0028). A key window with
-            // neither takes the chord through `closeWhatIsShowing` (issue #201).
+            // decision inline, or the page (ADR-0028). The File menu's item
+            // routes the chord by key window first (`closeWhatIsShowing`, #201).
             if case .file = activeTarget { closeActiveFile() } else { closeCurrent() }
         case .fileOpen:
             openFile()
@@ -76,31 +76,39 @@ extension PageModel {
     }
 }
 
-/// What ⌘W closes (issue #201): the page or file on the surface while
-/// the owner's window is key, otherwise the auxiliary window that has
-/// the keys, which is Settings, About or Send Feedback.
+/// What ⌘W closes (issue #201), from what the key window is.
 public enum CloseChordTarget: Equatable, Sendable {
+    /// The page or file on the surface: the panel, its key relay or the
+    /// primary editor window is key.
     case surface
-    case auxiliaryWindow
+    /// The key window itself: Settings, Send Feedback or About.
+    case companionWindow
+    /// Nothing: a sheet, a save panel or an alert is key, or no window is.
+    case nothing
+
+    /// From the shell's two identity facts about the key window.
+    public init(ownerWindowIsKey: Bool, companionWindowIsKey: Bool) {
+        if ownerWindowIsKey {
+            self = .surface
+        } else if companionWindowIsKey {
+            self = .companionWindow
+        } else {
+            self = .nothing
+        }
+    }
 }
 
 extension PageModel {
-    /// Where ⌘W goes, from two facts: the shell's, that a companion window
-    /// (Settings, Send Feedback, About) is key, and the owner's `holdsKeys`.
-    /// A content window that is key is never `.auxiliaryWindow`, whatever
-    /// the owner has reported so far.
-    public func closeChordTarget(companionWindowIsKey: Bool) -> CloseChordTarget {
-        companionWindowIsKey && !holdsKeys ? .auxiliaryWindow : .surface
-    }
-
-    /// Runs ⌘W: `page::Close` on the surface, or `closeKeyWindow` when
-    /// the keyboard is in a companion window with no page or file to close.
-    public func closeWhatIsShowing(companionWindowIsKey: Bool, closeKeyWindow: () -> Void) {
-        switch closeChordTarget(companionWindowIsKey: companionWindowIsKey) {
+    /// Runs ⌘W: `page::Close` on the surface, `closeKeyWindow` in a
+    /// companion window, and nothing otherwise.
+    public func closeWhatIsShowing(_ target: CloseChordTarget, closeKeyWindow: () -> Void) {
+        switch target {
         case .surface:
             perform(.pageClose)
-        case .auxiliaryWindow:
+        case .companionWindow:
             closeKeyWindow()
+        case .nothing:
+            break
         }
     }
 }

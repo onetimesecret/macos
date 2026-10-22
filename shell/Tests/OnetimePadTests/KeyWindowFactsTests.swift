@@ -1,9 +1,10 @@
 import AppKit
+import CompanionKit
 import XCTest
 
 @testable import OnetimePad
 
-/// The two key window facts the File menu's ⌘W item reads (issue #201).
+/// The two key window facts the ⌘W and ⇧⌘W items read (issue #201).
 /// The windows here are never ordered on screen.
 @MainActor
 final class KeyWindowFactsTests: XCTestCase {
@@ -41,29 +42,60 @@ final class KeyWindowFactsTests: XCTestCase {
         XCTAssertFalse(KeyWindowFacts.canClose(window))
     }
 
-    func testTheCompanionFactFollowsTheKeyWindow() {
+    func testTheCloseTargetFollowsTheKeyWindow() {
+        let editor = window(styleMask: [.titled, .closable])
         let companion = window(styleMask: [.titled, .closable])
-        let content = window(styleMask: [.titled, .closable])
-        let facts = KeyWindowFacts { $0 === companion }
+        let other = window(styleMask: [.titled, .closable])
+        let facts = KeyWindowFacts(isOwnerWindow: { $0 === editor }, isCompanionWindow: { $0 === companion })
+
+        facts.stand(editor)
+        XCTAssertEqual(facts.closeTarget, .surface)
+        XCTAssertTrue(facts.canClose)
 
         facts.stand(companion)
-        XCTAssertTrue(facts.companionIsKey)
+        XCTAssertEqual(facts.closeTarget, .companionWindow)
         XCTAssertTrue(facts.canClose)
 
-        facts.stand(content)
-        XCTAssertFalse(facts.companionIsKey, "a content window that is key is not a companion")
-        XCTAssertTrue(facts.canClose)
+        facts.stand(other)
+        XCTAssertEqual(facts.closeTarget, .nothing, "a window of neither kind closes nothing")
+    }
 
+    /// Send Feedback's Export puts a save panel on it as a sheet, and the
+    /// sheet is key: ⌘W closes neither the window behind it nor the surface.
+    func testTheFeedbackExportSheetClosesNothing() {
+        let feedback = window(styleMask: [.titled, .closable])
+        let exportSheet = window(styleMask: [.titled])
+        let facts = KeyWindowFacts(
+            isOwnerWindow: { _ in false },
+            isCompanionWindow: {
+                BackdropAppDelegate.isCompanionWindow($0, settings: nil, feedback: feedback, about: nil)
+            })
+        feedback.beginSheet(exportSheet)
+        defer { feedback.endSheet(exportSheet) }
+
+        facts.stand(exportSheet)
+        XCTAssertEqual(facts.closeTarget, .nothing)
+        XCTAssertFalse(facts.canClose)
+
+        facts.stand(feedback)
+        XCTAssertEqual(facts.closeTarget, .companionWindow)
+        XCTAssertFalse(facts.canClose, "the window behind the sheet cannot close yet")
+    }
+
+    func testNoKeyWindowClosesNothing() {
+        let editor = window(styleMask: [.titled, .closable])
+        let facts = KeyWindowFacts(isOwnerWindow: { $0 === editor }, isCompanionWindow: { _ in true })
+        facts.stand(editor)
         facts.stand(nil)
-        XCTAssertFalse(facts.companionIsKey)
+        XCTAssertEqual(facts.closeTarget, .nothing)
         XCTAssertFalse(facts.canClose)
     }
 
     func testTheFactsPublishOnlyWhenTheyChange() {
         let companion = window(styleMask: [.titled, .closable])
-        let facts = KeyWindowFacts { $0 === companion }
+        let facts = KeyWindowFacts(isOwnerWindow: { _ in false }, isCompanionWindow: { $0 === companion })
         var changes = 0
-        let sink = facts.$companionIsKey.dropFirst().sink { _ in changes += 1 }
+        let sink = facts.$closeTarget.dropFirst().sink { _ in changes += 1 }
         defer { sink.cancel() }
         facts.stand(companion)
         facts.stand(companion)
