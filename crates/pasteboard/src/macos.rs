@@ -60,11 +60,15 @@ impl SystemPasteboard {
         }
     }
 
-    fn types_present(&self) -> Vec<String> {
-        self.pasteboard
-            .types()
-            .map(|types| types.to_vec().iter().map(ToString::to_string).collect())
-            .unwrap_or_default()
+    /// Whether the board declares any of `names`, compared as `NSString`s, with no
+    /// conversion of the declared names.
+    fn declares(&self, names: &[&NSString]) -> bool {
+        self.pasteboard.types().is_some_and(|types| {
+            types
+                .to_vec()
+                .iter()
+                .any(|declared| names.iter().any(|name| declared.isEqualToString(name)))
+        })
     }
 }
 
@@ -84,7 +88,7 @@ impl Pasteboard for SystemPasteboard {
             return None;
         };
 
-        let nspasteboard_concealed = self.types_present().iter().any(|t| t == CONCEALED_TYPE);
+        let nspasteboard_concealed = self.declares(&[&NSString::from_str(CONCEALED_TYPE)]);
 
         // Only `public.url`: HTML has no standard place for its source
         // (ADR-0013).
@@ -147,13 +151,12 @@ impl Pasteboard for SystemPasteboard {
     }
 
     fn holds_external_content(&self) -> bool {
-        let types = self.types_present();
-        if types.iter().any(|t| t == TRANSIENT_TYPE) {
+        if self.declares(&[&NSString::from_str(TRANSIENT_TYPE)]) {
             return false;
         }
-        let string_type = unsafe { NSPasteboardTypeString }.to_string();
-        let png_type = unsafe { NSPasteboardTypePNG }.to_string();
-        types.iter().any(|t| *t == string_type || *t == png_type)
+        // SAFETY: reading static extern pasteboard-type constants.
+        let (string_type, png_type) = unsafe { (NSPasteboardTypeString, NSPasteboardTypePNG) };
+        self.declares(&[string_type, png_type])
     }
 }
 
@@ -305,7 +308,7 @@ mod tests {
         let item = pb.read().unwrap();
         assert!(item.nspasteboard_concealed);
         assert_eq!(item.content, PasteboardContent::Text("hunter2".into()));
-        assert!(pb.types_present().iter().any(|t| t == TRANSIENT_TYPE));
+        assert!(pb.declares(&[&NSString::from_str(TRANSIENT_TYPE)]));
     }
 
     #[test]
@@ -397,7 +400,8 @@ mod tests {
         write_text(&mut pb, "not a secret", false);
         let item = pb.read().unwrap();
         assert!(!item.nspasteboard_concealed);
-        assert!(pb.types_present().iter().any(|t| t == TRANSIENT_TYPE));
+        assert!(pb.declares(&[&NSString::from_str(TRANSIENT_TYPE)]));
+        assert!(!pb.declares(&[&NSString::from_str(CONCEALED_TYPE)]));
     }
 
     #[test]
@@ -456,11 +460,13 @@ mod tests {
 
         assert!(drag.provide("hunter2".as_bytes(), ContentKind::Text));
         let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
-        assert_eq!(
-            item.stringForType(string_type).map(|s| s.to_string()),
-            Some("hunter2".to_string())
+        assert!(
+            item.stringForType(string_type)
+                .is_some_and(|s| s.isEqualToString(&NSString::from_str("hunter2")))
         );
-        assert_eq!(string_type.to_string(), ContentKind::Text.pasteboard_type());
+        assert!(
+            string_type.isEqualToString(&NSString::from_str(ContentKind::Text.pasteboard_type()))
+        );
 
         let image = NSPasteboardItem::new();
         // SAFETY: as above.
@@ -472,7 +478,9 @@ mod tests {
             image.dataForType(png_type).map(|d| d.to_vec()),
             Some(vec![0x89, b'P', b'N', b'G'])
         );
-        assert_eq!(png_type.to_string(), ContentKind::Image.pasteboard_type());
+        assert!(
+            png_type.isEqualToString(&NSString::from_str(ContentKind::Image.pasteboard_type()))
+        );
         assert!(
             board
                 .pasteboard
