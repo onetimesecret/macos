@@ -8,7 +8,7 @@ metadata:
 PR 303 (2026-10-21, `fix/277-dense-rail-scrolls`) removed `StreamNavigator.layout`'s
 backward foot cap. `Layout.contentHeight` is the drawing's height, `Placed.rowTop` is
 computed as `drawnTop - 1`, `seatsDropTarget` is gone, and `StreamNavigatorView` draws
-inside `ScrollView(.vertical, showsIndicators: false)` sized to `contentHeight`.
+inside `ScrollView(.vertical, showsIndicators: true)` sized to `contentHeight`.
 
 **Why:** the maintainer's decision on #277: the rail scrolls like the Finder sidebar,
 rows are never compressed or folded.
@@ -18,7 +18,9 @@ rows are never compressed or folded.
   the clip at all in the hosted `TabDropTests` run (unordered window, main queue
   drained). `RailReveal` (a representable behind the drawing, `isFlipped`) asks its
   `enclosingScrollView` for `StreamNavigator.revealOffset` one hop later. It fires once
-  per active node id, so a layout change never snaps the reader's own scroll back.
+  per active node id, so a layout change never snaps the reader's own scroll back, and
+  records the id only once the hop finds the clip with a height and the drawing at
+  least as tall; the retry rides on the next `updateNSView`, nothing else asks again.
 - `NSView.visibleRect` is garbage in a never ordered window; a row is clipped iff
   `clip.bounds` does not intersect `clip.convert(target.bounds, from: target)` for the
   nearest `NSClipView` (`TabDropTests.isClipped`). SwiftUI's ScrollView hierarchy on
