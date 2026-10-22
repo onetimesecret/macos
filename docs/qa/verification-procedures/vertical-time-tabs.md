@@ -360,10 +360,14 @@ holding more writing is a taller stretch than a day holding a line, and
 two pages born on one day are one stretch rather than two. The bars are
 a scaled impression of the roll and not a diagram of the rail, so a
 stretch sitting well away from the row for the same day is the design
-rather than a bug: the whole document is mapped onto the whole column
-while the rows are packed from the top. What the two share is a count
-and an order. The band tracks the viewport as the roll moves and stays
-inside the column at both ends of an overscroll. Every day with a row
+rather than a bug: the whole document is mapped onto the whole drawing,
+which is the column unless the rail is too dense for it, while the rows
+are packed from the top. What the two share is a count and an order. The
+band tracks the viewport as the roll moves and stays inside the drawing
+at both ends of an overscroll. On a rail too dense for its column the
+drawing runs past the column's foot and scrolls, so the band can be out
+of view until the column is scrolled to it (D-34's 2026-10-21 note,
+issue #277); that is the design and not a fail. Every day with a row
 has a stretch you can see: the mapping keeps no bar it cannot draw, and
 it only runs out of room on a column with no two points left for a day,
 which takes far more days than the rail can draw rows for. A row with no

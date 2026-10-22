@@ -576,9 +576,10 @@ final class TabDropTests: XCTestCase {
         }
     }
 
-    /// A rail too dense for its pages' places, which the navigator packs up from the foot and
-    /// the pads rail scrolls, still stacks its targets in node order without one meeting another;
-    /// the navigator's rows pushed above the column seat none, so none lies over the heading.
+    /// A rail too dense for its pages' places, which both renderings scroll (issue #277), seats a
+    /// target on every node and stacks them in node order without one meeting another; the
+    /// navigator's first row sits inside its column, the rows past the column's foot are clipped
+    /// until the column scrolls, and a selection change scrolls the selected node into view.
     func testADenseTimelinesNodeTargetsStackInNodeOrderWithoutMeeting() throws {
         for pads in [false, true] {
             let rail = pads ? "the pads rail" : "the default rail"
@@ -592,27 +593,48 @@ final class TabDropTests: XCTestCase {
             }
             let host = mountTimeline(on: model, readOnly: false)
             let slots = clickedSlots(on: model)
-            if pads {
-                let targets = nodeTargets(in: host, on: model)
-                XCTAssertEqual(targets.map(\.slot), slots, rail)
-                assertTheTargetsStack(targets, in: host, footInside: false, rail)
-                continue
-            }
-            let targets = seatedTargets(in: host)
-            XCTAssertFalse(targets.isEmpty, "\(rail) seated no target")
-            XCTAssertLessThan(
-                targets.count, slots.count,
-                "the control: \(rail) pushed no row above its column; if #277 changed the dense layout, revisit this test")
-            XCTAssertEqual(
-                targets.map(\.slot), Array(slots.suffix(targets.count)),
-                "a row pushed above \(rail) seated a target, or a seated one left its node")
+            let targets = nodeTargets(in: host, on: model)
+            XCTAssertEqual(targets.map(\.slot), slots, rail)
+            assertTheTargetsStack(targets, in: host, footInside: false, rail)
+            if pads { continue }
+
             let bounds = host.convert(host.bounds, to: nil)
-            for target in targets {
-                XCTAssertTrue(
-                    bounds.contains(frame(of: target)), "a target at \(frame(of: target)) lies outside \(rail)")
+            let first = try XCTUnwrap(targets.first, rail)
+            let last = try XCTUnwrap(targets.last, rail)
+            XCTAssertLessThanOrEqual(frame(of: first).maxY, bounds.maxY, "the first row rose above \(rail)")
+            XCTAssertFalse(try isClipped(first), "the first row is clipped in \(rail)")
+            XCTAssertLessThan(frame(of: last).minY, bounds.minY, "the control: \(rail) fits every row")
+            XCTAssertTrue(try isClipped(last), "a row past the foot of \(rail) is drawn")
+
+            model.select(target: .tab(try XCTUnwrap(slots.last)))
+            let scrolled = nodeTargets(in: host, on: model)
+            let lastAfter = try XCTUnwrap(scrolled.last, rail)
+            XCTAssertEqual(lastAfter.slot, slots.last, rail)
+            XCTAssertTrue(
+                bounds.contains(frame(of: lastAfter)), "selecting the last page left its row out of view in \(rail)")
+            XCTAssertFalse(try isClipped(lastAfter), rail)
+            XCTAssertTrue(
+                try isClipped(try XCTUnwrap(scrolled.first)),
+                "the first row is still drawn after \(rail) scrolled to its foot")
+            for target in scrolled where !bounds.intersects(frame(of: target)) {
+                XCTAssertTrue(try isClipped(target), "a row outside \(rail) at \(frame(of: target)) is drawn")
             }
-            assertTheTargetsStack(targets, in: host, footInside: true, rail)
+
+            model.select(target: .tab(try XCTUnwrap(slots.first)))
+            let back = nodeTargets(in: host, on: model)
+            XCTAssertTrue(
+                bounds.contains(frame(of: try XCTUnwrap(back.first))),
+                "selecting the first page left its row out of view in \(rail)")
         }
+    }
+
+    /// Whether the clip around `target` leaves none of it to draw or to hit: the navigator's
+    /// column scrolls inside one (issue #277), and a target with no clip above it fails the test.
+    private func isClipped(_ target: TabDropTarget) throws -> Bool {
+        let clip = try XCTUnwrap(
+            sequence(first: target as NSView) { $0.superview }.first { $0 is NSClipView },
+            "no clip view encloses the target")
+        return !clip.bounds.intersects(clip.convert(target.bounds, from: target))
     }
 
     /// A node on a resting card takes no drop, as its read only page takes none (ADR-0015),

@@ -643,15 +643,25 @@ and with it on, which draws the pads rail.
       create path. **Fail:** a page is made or
       anything is placed.
 - [ ] **A drop on a rail too dense to fit** (Law 0001, drag row;
-      issue 277). In the stream navigator, make pages until its top
-      rows are drawn above the column, over the *Pad* heading. Drag a
-      run from a page over a row drawn above the column and release;
-      then drag it over a row inside the column and release. **Pass:**
-      the drop over the row above the column offers no operation and
-      leaves the text in place in its source, and the drop over the row
-      inside the column moves the run to the end of that row's page.
-      **Fail:** the drop above the column places the run anywhere, or
-      the row inside the column takes no drop.
+      issue 277). In the stream navigator, make pages until its rows
+      run past the column's foot and the column scrolls. Scroll the
+      column until a row that was below the fold is in view, drag a
+      run from a page over that row and release; then scroll back to
+      the top and drop a run on the first row. **Pass:** each drop
+      offers its operation and moves the run to the end of the page of
+      the row under the pointer, and no row is drawn over the *Pad*
+      heading at either end of the scroll. **Fail:** a row reached by
+      scrolling offers no operation or takes no drop, the run goes to
+      any other page, or a row shows above the column.
+- [ ] **A drag to a stream navigator node below the fold** (Law 0001,
+      drag row; issue 277). Nothing in this change scrolls the
+      navigator during a drag. With the column scrolled to its top and
+      a row below its visible bottom, drag a run from a page to the
+      column's lower edge, hold for two seconds, and write down whether
+      the column scrolls. Release over the last node in view. **Pass:**
+      the run moves to the end of the page of the node under the
+      pointer, whether or not the column scrolled. **Fail:** the run
+      goes to any other page.
 - [ ] **A drop on a pads rail node below the fold** (Law 0001, drag
       row). The pads rail scrolls instead of packing, and nothing in
       this change scrolls it during a drag. With pads on, make pages
@@ -662,9 +672,9 @@ and with it on, which draws the pads rail.
       node under the pointer, whether or not the rail scrolled.
       **Fail:** the run goes to any other page.
 
-| Surface | AppKit drag delivery and cursor | Move, ⌥ copy, TextEdit drop, decrypted drag | Node click, VoiceOver press, roll scroll, tooltip | Resting card | Window that does not own | Today's empty node | Rail too dense to fit (stream navigator) or a node below the fold (pads rail) |
+| Surface | AppKit drag delivery and cursor | Move, ⌥ copy, TextEdit drop, decrypted drag | Node click, VoiceOver press, roll scroll, tooltip | Resting card | Window that does not own | Today's empty node | Dense rail, rows below the fold |
 |---|---|---|---|---|---|---|---|
-| Card, stream navigator (pads off) | Not run | Not run | Not run | Not run | Not run | Not run | Not run |
-| Card, pads rail (pads on) | Not run | Not run | Not run | Not run | Not run | Not run | Not run |
-| Primary editor window, stream navigator (pads off) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | Not run |
-| Primary editor window, pads rail (pads on) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | Not run |
+| Card, stream navigator (pads off) | Not run | Not run | Not run | Not run | Not run | Not run | Not run (scrolled to, and held at the foot) |
+| Card, pads rail (pads on) | Not run | Not run | Not run | Not run | Not run | Not run | Not run (held at the foot) |
+| Primary editor window, stream navigator (pads off) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | Not run (scrolled to, and held at the foot) |
+| Primary editor window, pads rail (pads on) | Not run | Not run | Not run | n/a: no resting stance | Not run | Not run | Not run (held at the foot) |
