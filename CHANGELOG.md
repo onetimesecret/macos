@@ -991,6 +991,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   names a restore reads were already zeroizing owners. The register
   records what an edited note's document and the restored cut still
   leave ordinary.
+- **A Timeline too dense to fit scrolls instead of climbing over the
+  Pad heading** (app 0.40.4; issue #277). The side Timeline packed its
+  rows down from the top and then pulled them up from the foot, so a
+  rail with more pages than fit pushed its first rows above the column,
+  where they were drawn over the Pad heading, its plus and the Files
+  shelf and took clicks there. The rows now stay below the column's top
+  and the column scrolls inside its own clip, as the Finder sidebar
+  does; the heading, its plus and the Files shelf stay put above it.
+  Selecting a page scrolls its node into view, a wheel over a rail that
+  scrolls turns the rail (over one that fits, the roll, as before), and
+  a row scrolled out of the column is neither drawn nor clickable nor
+  a drop target, so a click and a drop land on the same rows. The box
+  the line slivers keep clear of now covers every whole point a row
+  paints and the one above it, at a fractional top as at a whole one,
+  so a sliver never crosses a row's last point.
+- **A large mixed rewrite of a day keeps the reader's share of it**
+  (app 0.40.3; issue #283). When a day the editor is not on changed by
+  a mixed edit too large for the reading anchor's bounded search, the
+  anchor went to the start of the changed stretch, often the top of the
+  page. It now keeps its share of that stretch, so the view stays near
+  where the reader was; an anchor in the unchanged head or tail still
+  maps exactly.
+- **The page under the editor takes a peer's edit** (app 0.40.2; issue
+  #276). With sync on, another device's edit to the page being written
+  on reached the core but not the editor, which kept the old text, and
+  the next keystroke's edit was read from that stale text. A pump's
+  applied edit is now merged into the editor's text one changed stretch
+  at a time, so the caret, the selection and the reader's line outside
+  those stretches keep their places, a sealed object the edit went
+  around keeps its block, and the next keystroke is read from the
+  merged text. A rewrite of the whole page is taken as one stretch. A
+  composition in flight when a peer's edit changes the page is dropped,
+  since the input method's provisional text is not the core's: the
+  characters being composed at that moment are lost and the page stands
+  as it did before them, a sealed object the composition had replaced
+  included.
+- **The roll's follow ups from the reading place review** (app 0.40.1;
+  issue #278). A peer's applied edit restates a page by the model's own
+  record of which page a surface shows, not by a count of layout
+  managers, so a second layout manager on a storage cannot leave a
+  quiet page stale. The roll sets its horizontal scroller only when it
+  differs from what the wrap setting asks, not on every keystroke's
+  pass. A test pins that a page switch handing the keys to the editor,
+  with its caret below the viewport, keeps the reader's place; the
+  switch already did. The mixed edit fallback in the reading anchor's
+  rebase has its own issue,
+  #283.
 - **A sealed object's excerpt and typed name are wiped when they go**
   (`companion-core` 0.34.1; issue #256, the content buffer register's
   C09, C10 and C19). The excerpt, which is the content's own head and
@@ -1079,8 +1126,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not the roll: a day the editor was not on kept its old text until
   something else redrew it, and a page left earlier reopened in the
   editor with the old text. Each applied event now redraws its page's
-  day and rereads that page's text. The page under the editor does
-  not take a peer's edit yet.
+  day and rereads that page's text. The page under the editor takes
+  a peer's edit since app 0.40.2.
 
 - **Turning wrapping on or off in a tab keeps the reader's line** (app
   0.39.0). ⌥Z or the Settings switch rebuilt a tab's layout without
