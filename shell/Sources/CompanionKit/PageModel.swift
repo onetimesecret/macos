@@ -1658,7 +1658,8 @@ public final class PageModel: ObservableObject {
     ///
     /// Readable so the cancelled quit's line can tell a drafts leg
     /// that failed from one that landed before another leg refused.
-    private(set) var draftsDirty = false
+    /// Published, so the header's drafts word redraws with it.
+    @Published private(set) var draftsDirty = false
 
     /// Whether the first reveal has run — restore is attempted once.
     private var stateLoaded = false
@@ -2799,8 +2800,7 @@ public final class PageModel: ObservableObject {
         loaded && !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
     }
 
-    /// `draftsHeld` for this session now, read by the header's drafts word; it redraws
-    /// with `openFiles`, which every change to `draftsDirty` is followed by.
+    /// `draftsHeld` for this session now, read by the header's drafts word.
     public var draftsHeldInMemory: Bool {
         Self.draftsHeld(
             loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
