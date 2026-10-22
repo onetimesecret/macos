@@ -1020,8 +1020,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commits and a block's frozen origin each kept it as an ordinary
   string, so the URL could stay in memory after those copies were
   released. Each is now a zeroizing copy made once at its exact size,
-  and the message is written without an intermediate JSON value. Where
-  the URL persists is unchanged. The register records what Foundation
+  and the message is written without an intermediate JSON value. The
+  pasteboard item's debug output writes `[REDACTED]` for it. Where the
+  URL persists is unchanged. The register records what Foundation
   and the document library still leave ordinary.
 - **A restored or pasted note that nobody edits is wiped when it goes**
   (`companion-core` 0.34.2; issue #256, the content buffer register's

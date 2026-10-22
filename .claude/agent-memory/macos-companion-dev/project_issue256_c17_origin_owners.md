@@ -18,6 +18,7 @@ it can bear a token; only `UNRECORDED_ORIGIN` (Loro transaction origin) is an N 
 - Loro 1.13.9 `get_change` returns a ref into an already parsed change block and clones the message's `Arc<str>`; the decode copy happens when a block is parsed, not per call. Do not write "per get_change" in the register.
 - Register status: use C31's form ("**Implemented** ..."), not "**W — implemented**"; the em dash breaks the no dashes rule even though older rows use it.
 - Versions taken: core 0.34.4, ffi 0.43.3 (#313 uses 0.34.3 and 0.43.2), pasteboard 0.5.0 (public field type change). See [[stacked-version-bumps]].
-- Still ordinary after C17: Foundation's NSString and UTF8String buffer, Loro's message copies (C01, C29), and derived `Debug` on `PasteboardItem` and `MemoryPasteboard` (now listed in C48).
+- Still ordinary after C17: Foundation's NSString and UTF8String buffer, and Loro's message copies (C01, C29). `PasteboardItem` and `MemoryPasteboard` now have hand written `Debug` that redacts only the origin; their content still prints (C48).
+- The review bot's other points on PR 315 were left: no diag on `origin_message`'s unreachable `None`, no shared count-and-write helper with `encode`, no restored "compaction reads it back" doc line (AGENTS.md forbids answering a finding with comment prose).
 
 Related: [[issue256-c31-resting-note]].
