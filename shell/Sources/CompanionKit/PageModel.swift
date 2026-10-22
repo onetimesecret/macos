@@ -2818,6 +2818,8 @@ public final class PageModel: ObservableObject {
     /// write, everything recorded since the load is exactly what the
     /// quit loses, and the empty page launch itself mints is not.
     public func saveStateForQuit() -> QuitSaveOutcome {
+        // The offer and its named files read the published roster, which trails an edit.
+        refreshOpenFiles()
         let settled = saveState()
         return Self.quitOutcome(
             settled: settled,

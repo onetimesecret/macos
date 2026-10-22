@@ -1764,7 +1764,12 @@ final class FileDocumentTests: XCTestCase {
         let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "well ")]))
         XCTAssertTrue(client.applyFileOps(id, json: ops), "an edit past the model")
         XCTAssertFalse(try XCTUnwrap(model.openFiles.first).isDirty, "the published roster trails")
-        XCTAssertEqual(model.saveStateForQuit(), .unsavableWithDrafts)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(
+                .unsavableWithDrafts, files: model.openFiles, draftsUnwritten: model.draftsDirty),
+            "the drafts file would not open and was not written over, so the unsaved changes to a.txt will not survive the quit")
     }
 
     /// Quit Anyway's termination request answered as the app delegate answers it,
