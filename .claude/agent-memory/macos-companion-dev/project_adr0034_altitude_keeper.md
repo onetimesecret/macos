@@ -46,7 +46,9 @@ then calls `noticeCompanionWindow` because an active app keys the panel
 before it has a name; `madeSettings`/`madeFeedback` replace `lazy` so the
 lookup makes no controller. An unordered NSWindow did not deallocate
 when its last Swift reference went, even in an autoreleasepool, so a
-weak reference nil-ing out cannot be staged in xctest.
+weak reference nil-ing out cannot be staged in xctest. Round three made
+`keyedCompanion` strong (cleared only by a release or `observe()`) and
+the controller's `isCompanionWindow` a required init parameter.
 
 **How to apply:** new window decisions go in a small type that takes any
 `NSWindow`, not in the controller. `@Published` emits on willSet, so sinks
