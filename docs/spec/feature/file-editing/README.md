@@ -1,7 +1,8 @@
 # Feature: file backed documents on the pad
 
-Status: **landed** on `feature/regular-text-files`, decision still
-proposed · 2026-09-05
+Status: **built**, on `main` since PR 153 (82972fb1, 2026-09-05);
+the decision, ADR-0028, still proposed · 2026-09-05, status updated
+2026-10-21
 Scope: an additional content class, a peer to pages, with both first
 class features of the pad. The pad can open a plain
 text or Markdown file from disk, edit it in the same editor a page
