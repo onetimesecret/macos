@@ -849,15 +849,17 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// come back down.
     func toggleZoom() {
         var zoomed = geometry
-        zoomed.origin.y = pane.minY
-        zoomed.height = pane.height
+        zoomed.origin.y = pane.origin.y
+        zoomed.height = pane.size.height
         toggle(to: zoomed)
     }
 
     /// Fill: the card takes the whole pane, and a second double-click
     /// returns it, by the same remembered geometry as the zoom.
     func toggleFill() {
-        toggle(to: BackdropGeometry(origin: pane.origin, width: pane.width, height: pane.height))
+        toggle(
+            to: BackdropGeometry(
+                origin: pane.origin, width: pane.size.width, height: pane.size.height))
     }
 
     /// Out to `target`, or back to the geometry an earlier trip left.
