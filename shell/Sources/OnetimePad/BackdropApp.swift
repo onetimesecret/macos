@@ -1383,8 +1383,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// carries no title text, and following it would hand the About
     /// follower a window that closes with the answer. So a sheet is
     /// never the panel, and neither is the Settings window itself,
-    /// whatever its title reads at the time. If a future macOS builds
-    /// the panel differently the lookup finds nothing and the panel
+    /// whatever its title reads at the time, or an open or save panel.
+    /// If a future macOS builds the panel differently the lookup finds nothing and the panel
     /// keeps the behavior it had before this existed.
     private func standardAboutPanel() -> NSWindow? {
         NSApp.windows.first { window in
@@ -1393,16 +1393,18 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 titled: window.styleMask.contains(.titled),
                 title: window.title,
                 isSheet: window.isSheet,
-                isSettings: madeSettings?.owns(window) == true
+                isSettings: madeSettings?.owns(window) == true,
+                isFilePanel: window is NSSavePanel
             )
         }
     }
 
     /// The lookup's rule, pure so each exclusion is an assertion.
     nonisolated static func looksLikeTheAboutPanel(
-        visible: Bool, titled: Bool, title: String, isSheet: Bool, isSettings: Bool
+        visible: Bool, titled: Bool, title: String, isSheet: Bool, isSettings: Bool,
+        isFilePanel: Bool
     ) -> Bool {
-        visible && titled && title.isEmpty && !isSheet && !isSettings
+        visible && titled && title.isEmpty && !isSheet && !isSettings && !isFilePanel
     }
 
     /// What this app calls itself to the user, for the places a bundle
