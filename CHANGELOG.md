@@ -21,7 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tooltip and its spoken error line, and the ↗ page tab's tooltip and
   label now name the one-time link and the API token, in the menu's
   verb, create (ADR-0055 rule 3). Conceal stays the code's and the
-  server's word. The new sentences are pinned by test.
+  server's word. The new sentences are pinned by test. The server
+  caption and the two tooltips are lower case sentences, as ADR-0055
+  rule 1 keeps captions and tooltips. A failure that comes back with no
+  reason reads `the link was not created`, and VoiceOver reads it
+  without the failure prefix, so once. The client puts the core's
+  refusals in the sheet's words: `nothing to conceal` reads `there is
+  nothing to send`, and a refusal it does not know, the encoding
+  failure and an answer that does not decode among them, is logged
+  under the `conceal` category and reaches the sheet as that fallback.
+  The log redacts an unrecognised string; only the client's two fixed
+  diagnostics are logged in the clear.
 
 - **Days down the side follow the wrap setting** (app 0.39.0; the
   2026-10-16 wrapping amendment to the vertical time tabs spec, issue
