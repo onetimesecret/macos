@@ -391,6 +391,16 @@ impl<C: Clock> SheetStore<C> {
         self.readable_sheets().find(|s| s.id == id)
     }
 
+    /// [`SheetStore::readable_sheets`], mutably, as [`SheetStore::chip_mut`]
+    /// reads them (Law 0001, expiry row).
+    fn readable_sheets_mut(&mut self) -> impl Iterator<Item = &mut Sheet> {
+        let now = self.clock.now();
+        self.tabs
+            .iter_mut()
+            .filter_map(|tab| tab.page.as_mut())
+            .filter(move |sheet| !sheet.is_due(now))
+    }
+
     /// Whether a page's clock has run out though no sweep has taken it yet.
     /// False for an unknown page.
     #[must_use]
@@ -1291,11 +1301,7 @@ impl<C: Clock> SheetStore<C> {
     /// An attached object, mutably, refused past its page's deadline as
     /// [`SheetStore::chip_home`] refuses (Law 0001, expiry row).
     fn chip_mut(&mut self, id: ChipId) -> Option<&mut SealedChip> {
-        let now = self.clock.now();
-        self.tabs
-            .iter_mut()
-            .filter_map(|tab| tab.page.as_mut())
-            .filter(|sheet| !sheet.is_due(now))
+        self.readable_sheets_mut()
             .find_map(|sheet| sheet.chips.iter_mut().find(|chip| chip.id == id))
     }
 

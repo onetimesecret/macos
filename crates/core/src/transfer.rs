@@ -1752,6 +1752,7 @@ mod tests {
             "the control: a restored note rests"
         );
         clock.advance(HOUR);
+        assert!(revived.chip_stands(chip), "the object is due, not gone");
 
         let typed = [EditOp::Insert {
             pos_u16: 0,
