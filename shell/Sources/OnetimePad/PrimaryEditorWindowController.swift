@@ -354,11 +354,7 @@ private struct PrimaryEditorRootView: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 if pages.showsPagesDownSide && !pages.isPageExpanded {
-                    if pages.showsTimeUnits {
-                        TimeRailView(model: pages, readOnly: false)
-                    } else {
-                        SlotRailView(model: pages)
-                    }
+                    TimeRailView(model: pages, readOnly: false)
                     Divider()
                 }
                 content
@@ -366,11 +362,7 @@ private struct PrimaryEditorRootView: View {
             PageStatusStack(model: pages)
             if !pages.showsPagesDownSide && !pages.isPageExpanded {
                 Divider()
-                if pages.showsTimeUnits {
-                    TimeStripView(model: pages)
-                } else {
-                    TabStripView(model: pages, readOnly: false)
-                }
+                TabStripView(model: pages, readOnly: false)
             }
         }
         .background(Color.panelBackground)
