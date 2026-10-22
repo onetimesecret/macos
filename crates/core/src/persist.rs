@@ -2346,8 +2346,11 @@ mod tests {
         let name = chip.name.as_ref().expect("the name came back");
         wiping_owner(name);
         assert_eq!(name.capacity(), name.len(), "the name grew past its size");
-        let note = chip.note.as_ref().and_then(Note::resting);
-        let note = note.expect("the restore made the note a document");
+        let note = chip
+            .note
+            .as_ref()
+            .and_then(Note::resting)
+            .expect("the restore made the note a document");
         wiping_owner(note);
         assert_eq!(note.capacity(), note.len(), "the note grew past its size");
         assert_eq!(note.as_str(), "kept \u{1F600} beside it");

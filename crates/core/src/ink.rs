@@ -72,25 +72,8 @@ pub(crate) fn apply_batch(
     if ops.is_empty() {
         return Some(true);
     }
-    // Phase one: simulate in UTF-16 so a refusal is atomic. Sized once and
-    // zeroized, so no reallocation leaves plaintext behind.
-    let text = text_of(document);
-    // Every variant named, so a new inserting op fails to compile here.
-    let room = ops
-        .iter()
-        .fold(text.encode_utf16().count(), |room, op| match op {
-            EditOp::Insert { text: inserted, .. } => {
-                room.saturating_add(inserted.encode_utf16().count())
-            }
-            EditOp::Delete { .. } | EditOp::InsertChip { .. } => room,
-        });
-    let mut sim: Zeroizing<Vec<u16>> = Zeroizing::new(Vec::new());
-    sim.try_reserve_exact(room).ok()?;
-    sim.extend(text.encode_utf16());
-    for op in ops {
-        if !sim_admit(&mut sim, op) {
-            return None;
-        }
+    if !admits(&text_of(document), ops) {
+        return None;
     }
     let before_selection =
         selection.and_then(|selection| document.snapshot_selection(selection.before));
@@ -118,6 +101,26 @@ pub(crate) fn apply_batch(
         document.commit_edit(intent, None);
     }
     Some(clean)
+}
+
+/// Phase one of a batch against `text`: whether every op applies, simulated in UTF-16 so
+/// a refusal moves nothing. Sized once and zeroized, so no reallocation leaves plaintext.
+pub(crate) fn admits(text: &str, ops: &[EditOp]) -> bool {
+    // Every variant named, so a new inserting op fails to compile here.
+    let room = ops
+        .iter()
+        .fold(text.encode_utf16().count(), |room, op| match op {
+            EditOp::Insert { text: inserted, .. } => {
+                room.saturating_add(inserted.encode_utf16().count())
+            }
+            EditOp::Delete { .. } | EditOp::InsertChip { .. } => room,
+        });
+    let mut sim: Zeroizing<Vec<u16>> = Zeroizing::new(Vec::new());
+    if sim.try_reserve_exact(room).is_err() {
+        return false;
+    }
+    sim.extend(text.encode_utf16());
+    ops.iter().all(|op| sim_admit(&mut sim, op))
 }
 
 /// Undo (`back`) or redo one step, and say where the caret belongs.
