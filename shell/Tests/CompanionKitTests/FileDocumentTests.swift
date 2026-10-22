@@ -38,9 +38,15 @@ final class ScriptedFilePanels: FilePanels {
 final class DraftsCountingClient: CompanionClient, @unchecked Sendable {
     private(set) var draftsWrites = 0
     private(set) var draftsErasures = 0
+    /// Answers every persist erase as a surviving key half does: false, nothing touched.
+    var refusesPersistErase = false
 
     init(tag: String) {
         super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+    }
+
+    override func persistErase(at path: String) -> Bool {
+        refusesPersistErase ? false : super.persistErase(at: path)
     }
 
     override func draftsSave(to path: String) -> Bool {
@@ -1331,10 +1337,40 @@ final class FileDocumentTests: XCTestCase {
         // drafts write is this session's to make from there.
         model.clearUnreadableStateFile()
         XCTAssertFalse(model.draftsRestoreRefused)
+        XCTAssertEqual(stranger.draftsErasures, 0, "the erase that landed resealed the drafts itself")
         XCTAssertTrue(model.saveState())
         XCTAssertEqual(stranger.draftsWrites, 1)
         XCTAssertFalse(model.draftsDirty)
         XCTAssertNotEqual(try Data(contentsOf: draftsFile), sealedByOwner)
+    }
+
+    /// A content discard whose erase refused, as a surviving key half
+    /// makes it, never reached the drafts file, so the discard drops
+    /// that file by path before it grants the drafts write.
+    func testAContentDiscardWhoseEraseRefusedDropsTheUnreadableDraftsFileByPath() throws {
+        let fixture = try makeFixture()
+        let draftsFile = FormFactor.draftsFileURL(in: fixture.state)
+        let owner = makeModel(fixture, panels: ScriptedFilePanels())
+        owner.loadStateIfNeeded()
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        owner.openFile(at: url)
+        let ownerID = try XCTUnwrap(owner.openFiles.first?.id)
+        _ = owner.storage(for: ownerID)
+        try type("well ", at: 0, into: ownerID, on: owner)
+        XCTAssertTrue(owner.saveState())
+
+        let stranger = DraftsCountingClient(tag: "stranger-\(UUID().uuidString)")
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: stranger)
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        XCTAssertTrue(model.draftsRestoreRefused)
+
+        stranger.refusesPersistErase = true
+        model.clearUnreadableStateFile()
+        XCTAssertEqual(stranger.draftsErasures, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: draftsFile.path))
+        XCTAssertFalse(model.contentRestoreRefused)
+        XCTAssertFalse(model.draftsRestoreRefused)
     }
 
     /// The drafts file alone would not open, beside a state file that

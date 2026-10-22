@@ -5180,7 +5180,8 @@ public final class PageModel: ObservableObject {
     /// erase there would drop a file this session can and does write.
     public func clearUnreadableStateFile() {
         guard stateLoaded, !saveLicence else { return }
-        if !client.persistErase(at: stateFileURL.path) {
+        let erased = client.persistErase(at: stateFileURL.path)
+        if !erased {
             logger.error(
                 "the unreadable state file could not be dropped on a user discard; the reseal will try to replace it instead"
             )
@@ -5191,6 +5192,9 @@ public final class PageModel: ObservableObject {
         saveLicence = licences.content
         ledgerLicence = licences.ledger
         if !draftsLicence {
+            // A refused erase returns before it reaches the drafts file
+            // (`companion_persist_erase`), so that file goes by path here.
+            if !erased { eraseUnreadableDraftsFile() }
             grantDraftsLicence()
             quitRefusal = Self.quitOfferAfterDraftsClear(offer: quitRefusal)
         }
