@@ -260,8 +260,8 @@ public struct PageStatusStack: View {
             .padding(.vertical, 4)
         }
         if model.draftsRestoreRefused {
-            // The drafts counterpart of the content banner (issue #296), standing
-            // for as long as the drafts leg settles without writing.
+            // As quiet as the ledger line, with no header word, since no page is at
+            // stake (issue #296); it stands because it is the one route to the discard.
             HStack(spacing: 8) {
                 Text("the existing drafts file could not be read, so unsaved edits to open files are not kept as drafts")
                     .font(.system(.caption, design: .monospaced))
