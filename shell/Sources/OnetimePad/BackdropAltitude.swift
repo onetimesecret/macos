@@ -75,7 +75,7 @@ enum BackdropAltitude {
     /// windows for nothing.
     static func resolve(
         stance: BackdropStance, keyed: Bool, pinned: Bool, keepsAbove: Bool,
-        companionKeyed: Bool = false
+        companionKeyed: Bool
     ) -> BackdropAltitude {
         let table: BackdropAltitude
         if pinned {

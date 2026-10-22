@@ -62,6 +62,10 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// Actual window visibility, including the resting desktop presentation.
     var isVisible: Bool { panel.isVisible }
 
+    /// Whether a companion window has the keyboard, as the keeper reads
+    /// it; the diagnostics report prints the altitude it expects from it.
+    var companionWindowKeyed: Bool { altitude.companionKeyed }
+
     /// `isCompanionWindow` names the app's own ordinary windows
     /// (Settings, About, Send Feedback), which the delegate owns; the
     /// card lowers while one of them has the keyboard (#293).

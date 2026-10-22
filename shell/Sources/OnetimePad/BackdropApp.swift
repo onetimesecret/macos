@@ -1187,7 +1187,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         let shortcutStatus = summonKeyFailure.map {
             "failed (\($0.stage.rawValue), OSStatus \($0.status))"
         } ?? (summonKey == nil ? "not registered" : "registered")
-        return DiagnosticsReport.capture(model: model, shortcutStatus: shortcutStatus)
+        return DiagnosticsReport.capture(
+            model: model,
+            companionKeyed: controller?.companionWindowKeyed ?? false,
+            shortcutStatus: shortcutStatus
+        )
     }
 
     @objc func exportDiagnostics() {

@@ -18,7 +18,8 @@ final class BackdropAltitudeTests: XCTestCase {
         // preference asking for lift, and no keys pulling it up either.
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .resting, keyed: false, pinned: false, keepsAbove: false
+                stance: .resting, keyed: false, pinned: false, keepsAbove: false,
+                companionKeyed: false
             ),
             .desktop
         )
@@ -32,7 +33,8 @@ final class BackdropAltitudeTests: XCTestCase {
         // pin exists precisely for the reader who wants that.
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .resting, keyed: false, pinned: false, keepsAbove: true
+                stance: .resting, keyed: false, pinned: false, keepsAbove: true,
+                companionKeyed: false
             ),
             .desktop
         )
@@ -46,7 +48,8 @@ final class BackdropAltitudeTests: XCTestCase {
         // furniture) gives desktop.
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .resting, keyed: true, pinned: false, keepsAbove: false
+                stance: .resting, keyed: true, pinned: false, keepsAbove: false,
+                companionKeyed: false
             ),
             .desktop
         )
@@ -55,7 +58,8 @@ final class BackdropAltitudeTests: XCTestCase {
     func testRestingUnpinnedKeyedPrefOnIsDesktop() {
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .resting, keyed: true, pinned: false, keepsAbove: true
+                stance: .resting, keyed: true, pinned: false, keepsAbove: true,
+                companionKeyed: false
             ),
             .desktop
         )
@@ -66,7 +70,8 @@ final class BackdropAltitudeTests: XCTestCase {
         // whether or not the person is typing into it.
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .resting, keyed: false, pinned: true, keepsAbove: false
+                stance: .resting, keyed: false, pinned: true, keepsAbove: false,
+                companionKeyed: false
             ),
             .floating
         )
@@ -75,7 +80,8 @@ final class BackdropAltitudeTests: XCTestCase {
     func testRestingPinnedKeylessPrefOnIsFloating() {
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .resting, keyed: false, pinned: true, keepsAbove: true
+                stance: .resting, keyed: false, pinned: true, keepsAbove: true,
+                companionKeyed: false
             ),
             .floating
         )
@@ -84,7 +90,8 @@ final class BackdropAltitudeTests: XCTestCase {
     func testRestingPinnedKeyedPrefOffIsFloating() {
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .resting, keyed: true, pinned: true, keepsAbove: false
+                stance: .resting, keyed: true, pinned: true, keepsAbove: false,
+                companionKeyed: false
             ),
             .floating
         )
@@ -93,7 +100,8 @@ final class BackdropAltitudeTests: XCTestCase {
     func testRestingPinnedKeyedPrefOnIsFloating() {
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .resting, keyed: true, pinned: true, keepsAbove: true
+                stance: .resting, keyed: true, pinned: true, keepsAbove: true,
+                companionKeyed: false
             ),
             .floating
         )
@@ -107,7 +115,8 @@ final class BackdropAltitudeTests: XCTestCase {
         // person and the window they are working in.
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .raised, keyed: false, pinned: false, keepsAbove: false
+                stance: .raised, keyed: false, pinned: false, keepsAbove: false,
+                companionKeyed: false
             ),
             .normal
         )
@@ -120,7 +129,8 @@ final class BackdropAltitudeTests: XCTestCase {
         // they are doing.
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .raised, keyed: false, pinned: false, keepsAbove: true
+                stance: .raised, keyed: false, pinned: false, keepsAbove: true,
+                companionKeyed: false
             ),
             .floating
         )
@@ -131,7 +141,8 @@ final class BackdropAltitudeTests: XCTestCase {
         // moot here because the keyboard is already keeping it up.
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .raised, keyed: true, pinned: false, keepsAbove: false
+                stance: .raised, keyed: true, pinned: false, keepsAbove: false,
+                companionKeyed: false
             ),
             .floating
         )
@@ -140,7 +151,8 @@ final class BackdropAltitudeTests: XCTestCase {
     func testRaisedUnpinnedKeyedPrefOnIsFloating() {
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .raised, keyed: true, pinned: false, keepsAbove: true
+                stance: .raised, keyed: true, pinned: false, keepsAbove: true,
+                companionKeyed: false
             ),
             .floating
         )
@@ -150,7 +162,8 @@ final class BackdropAltitudeTests: XCTestCase {
         // Pinned wins over everything else in the matrix.
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .raised, keyed: false, pinned: true, keepsAbove: false
+                stance: .raised, keyed: false, pinned: true, keepsAbove: false,
+                companionKeyed: false
             ),
             .floating
         )
@@ -159,7 +172,8 @@ final class BackdropAltitudeTests: XCTestCase {
     func testRaisedPinnedKeylessPrefOnIsFloating() {
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .raised, keyed: false, pinned: true, keepsAbove: true
+                stance: .raised, keyed: false, pinned: true, keepsAbove: true,
+                companionKeyed: false
             ),
             .floating
         )
@@ -168,7 +182,8 @@ final class BackdropAltitudeTests: XCTestCase {
     func testRaisedPinnedKeyedPrefOffIsFloating() {
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .raised, keyed: true, pinned: true, keepsAbove: false
+                stance: .raised, keyed: true, pinned: true, keepsAbove: false,
+                companionKeyed: false
             ),
             .floating
         )
@@ -177,7 +192,8 @@ final class BackdropAltitudeTests: XCTestCase {
     func testRaisedPinnedKeyedPrefOnIsFloating() {
         XCTAssertEqual(
             BackdropAltitude.resolve(
-                stance: .raised, keyed: true, pinned: true, keepsAbove: true
+                stance: .raised, keyed: true, pinned: true, keepsAbove: true,
+                companionKeyed: false
             ),
             .floating
         )
@@ -224,7 +240,8 @@ final class BackdropAltitudeTests: XCTestCase {
             for pinned in [false, true] {
                 for keepsAbove in [false, true] {
                     let joins = BackdropAltitude.resolve(
-                        stance: .raised, keyed: keyed, pinned: pinned, keepsAbove: keepsAbove
+                        stance: .raised, keyed: keyed, pinned: pinned, keepsAbove: keepsAbove,
+                        companionKeyed: false
                     ).joinsFullScreenSpaces
                     XCTAssertEqual(
                         joins, keyed || pinned || keepsAbove,
@@ -237,9 +254,9 @@ final class BackdropAltitudeTests: XCTestCase {
 
     // MARK: A key companion window lowers the card (ADR-0032 Amendment 1, #293)
 
-    /// Every stance × pin × preference row with a companion window
-    /// (Settings, About, Send Feedback) holding the keyboard, so the
-    /// card itself keyless. The expected altitude is stated per row
+    /// Every stance × pin × preference row with the keyboard in a
+    /// companion window (Settings, About, Send Feedback), so the card
+    /// itself keyless. The expected altitude is stated per row
     /// rather than derived so a regression names the row it broke.
     func testAKeyCompanionLowersEveryFloatingRowToNormal() {
         let cases:
