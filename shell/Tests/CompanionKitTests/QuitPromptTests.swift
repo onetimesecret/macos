@@ -123,7 +123,10 @@ final class QuitPromptTests: XCTestCase {
         XCTAssertEqual(
             PageModel.quitRefusalSentence(.unsavableWithDrafts, files: [dirty], draftsUnwritten: true),
             "the drafts file would not open and was not written over, so the unsaved changes to a.txt will not survive the quit")
-        XCTAssertNil(PageModel.quitRefusalSentence(.unsavableWithDrafts))
+        // A file saved since the cancel still leaves a line under the cancelled quit.
+        XCTAssertEqual(
+            PageModel.quitRefusalSentence(.unsavableWithDrafts),
+            "the drafts file would not open and was not written over, so unsaved changes to open files will not survive the quit")
         XCTAssertNil(PageModel.quitOfferAfterDraftsClear(offer: .unsavableWithDrafts))
         XCTAssertEqual(PageModel.quitOfferAfterDraftsClear(offer: .refused), .refused)
     }
@@ -135,13 +138,41 @@ final class QuitPromptTests: XCTestCase {
             lastEditedAt: 0, restoredFromDraft: false)
         XCTAssertEqual(
             PageModel.quitAnywayHelp(.unsavableWithDrafts, files: [dirty]),
-            "Quits now. Unsaved changes to a.txt go with it.")
+            "Quits now. Unsaved changes to a.txt are lost.")
+        XCTAssertEqual(PageModel.quitAnywayHelp(.unsavableWithDrafts, files: []), "Quits now.")
         XCTAssertEqual(
             PageModel.quitAnywayHelp(.refused, files: []),
             "Quits now. The pages this session could not save are lost.")
         XCTAssertEqual(
             PageModel.quitAnywayHelp(.unsavableWithContent, files: [dirty]),
             "Quits now. The pages this session could not save are lost. Unsaved changes to a.txt go with it.")
+    }
+
+    func testTheOfferAnswersAQuitOnlyOverTheFilesItNamed() {
+        let a = CompanionClient.fileIDTag | 1
+        let b = CompanionClient.fileIDTag | 2
+        XCTAssertTrue(PageModel.quitAnswersOffer(offer: .unsavableWithDrafts, named: [a], atRisk: [a]))
+        XCTAssertTrue(
+            PageModel.quitAnswersOffer(offer: .unsavableWithDrafts, named: [a, b], atRisk: [a]),
+            "fewer files at risk than named")
+        XCTAssertFalse(PageModel.quitAnswersOffer(offer: .unsavableWithDrafts, named: [a], atRisk: [a, b]))
+        XCTAssertFalse(PageModel.quitAnswersOffer(offer: .refused, named: [], atRisk: [b]))
+        XCTAssertTrue(PageModel.quitAnswersOffer(offer: .unsavableWithContent, named: [], atRisk: []))
+        XCTAssertFalse(PageModel.quitAnswersOffer(offer: nil, named: [a], atRisk: []))
+    }
+
+    func testFilesAreAtRiskOnlyWhenTheirDraftsAreUnwritten() {
+        let dirty = FileSummary(
+            id: CompanionClient.fileIDTag | 1, name: "a.txt", path: "/tmp/a.txt",
+            isDirty: true, conflict: .none, lineEnding: .lf, hasBOM: false,
+            lastEditedAt: 0, restoredFromDraft: false)
+        let clean = FileSummary(
+            id: CompanionClient.fileIDTag | 2, name: "b.txt", path: "/tmp/b.txt",
+            isDirty: false, conflict: .none, lineEnding: .lf, hasBOM: false,
+            lastEditedAt: 0, restoredFromDraft: false)
+        XCTAssertEqual(
+            PageModel.filesAtRiskAtQuit(files: [dirty, clean], draftsUnwritten: true), [dirty.id])
+        XCTAssertEqual(PageModel.filesAtRiskAtQuit(files: [dirty, clean], draftsUnwritten: false), [])
     }
 
     func testARefusalsOfferComesDownOnASettledWriteOnly() {

@@ -7,8 +7,8 @@ public protocol QuitFlushable {
     func saveStateForQuit() -> QuitSaveOutcome
 
     /// Whether an earlier cancelled quit left its "quit anyway" line
-    /// standing on the surface. While it stands, the next quit request
-    /// is the answer to that line and terminates.
+    /// standing on the surface over the files at risk now. While it does,
+    /// the next quit request is the answer to that line and terminates.
     var quitAnywayOffered: Bool { get }
 
     /// Record a cancelled quit so the surface can say why it was
@@ -28,22 +28,21 @@ extension PageModel: QuitFlushable {}
 /// asked twice, which is the inline confirmation D-14 allows and the
 /// only one the quit path asks for. Nothing here can hold the app open
 /// for the rest of a session.
+///
+/// A ⌘Q over file edits the line never named cancels again and names them.
 public enum QuitPrompt {
     @MainActor
     public static func terminateReply(
         flushing model: some QuitFlushable
     ) -> NSApplication.TerminateReply {
-        // The offer is read before the flush and the flush runs
-        // regardless: a second ⌘Q is still a chance for the write to
-        // land, and a flush that settles now terminates on its own
-        // merits rather than on the offer.
-        let offered = model.quitAnywayOffered
+        // The flush runs regardless, and the offer is read after it, so a
+        // file whose draft the flush wrote is not counted at risk.
         let outcome = model.saveStateForQuit()
         switch outcome {
         case .settled:
             return .terminateNow
         case .refused, .unsavableWithContent, .unsavableWithDrafts:
-            if offered { return .terminateNow }
+            if model.quitAnywayOffered { return .terminateNow }
             model.offerQuitAnyway(after: outcome)
             return .terminateCancel
         }

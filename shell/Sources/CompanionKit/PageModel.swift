@@ -2802,7 +2802,30 @@ public final class PageModel: ObservableObject {
         )
     }
 
-    public var quitAnywayOffered: Bool { quitRefusal != nil }
+    /// Whether a quit request now answers the standing line: it stands, and
+    /// no file's edits are at risk that the line did not name when it went up.
+    public var quitAnywayOffered: Bool {
+        Self.quitAnswersOffer(
+            offer: quitRefusal, named: quitRefusalNamed,
+            atRisk: Self.filesAtRiskAtQuit(files: openFiles, draftsUnwritten: draftsDirty))
+    }
+
+    /// The files whose unsaved edits the cancelled quit named.
+    private var quitRefusalNamed: Set<UInt64> = []
+
+    /// The files a quit would lose edits to, as the standing line names them.
+    public nonisolated static func filesAtRiskAtQuit(
+        files: [FileSummary], draftsUnwritten: Bool
+    ) -> Set<UInt64> {
+        draftsUnwritten ? Set(files.filter(\.holdsUnsavedEdits).map(\.id)) : []
+    }
+
+    /// The second ask goes through only over the files the first one named.
+    public nonisolated static func quitAnswersOffer(
+        offer: QuitSaveOutcome?, named: Set<UInt64>, atRisk: Set<UInt64>
+    ) -> Bool {
+        offer != nil && atRisk.isSubset(of: named)
+    }
 
     /// The standing line's button, answered.
     ///
@@ -2819,14 +2842,17 @@ public final class PageModel: ObservableObject {
     /// application object, and a status action that traps the runner is
     /// worse than one that does nothing there.
     public func requestQuitAnyway() {
+        // The button answers the line as it reads now, files included.
+        if let quitRefusal { offerQuitAnyway(after: quitRefusal) }
         NSApp?.terminate(nil)
     }
 
-    /// The cancelled quit's standing line goes up. A settled outcome is
-    /// never recorded: there is nothing to quit anyway from.
+    /// The cancelled quit's standing line goes up, naming the files at
+    /// risk now. A settled outcome is never recorded.
     public func offerQuitAnyway(after outcome: QuitSaveOutcome) {
         guard outcome != .settled else { return }
         quitRefusal = outcome
+        quitRefusalNamed = Self.filesAtRiskAtQuit(files: openFiles, draftsUnwritten: draftsDirty)
     }
 
     /// Whether the offer survives a write. A refusal's offer stands
@@ -2872,8 +2898,9 @@ public final class PageModel: ObservableObject {
             return "nothing typed this session is on disk, so its \(loss) will not survive the quit"
         case .unsavableWithDrafts:
             let dirty = files.filter(\.holdsUnsavedEdits).map(\.name)
-            guard !dirty.isEmpty else { return nil }
-            return "the drafts file would not open and was not written over, so the unsaved changes to \(englishList(dirty)) will not survive the quit"
+            let object = dirty.isEmpty
+                ? "unsaved changes to open files" : "the unsaved changes to \(englishList(dirty))"
+            return "the drafts file would not open and was not written over, so \(object) will not survive the quit"
         }
     }
 
@@ -2890,11 +2917,14 @@ public final class PageModel: ObservableObject {
     public nonisolated static func quitAnywayHelp(
         _ outcome: QuitSaveOutcome, files: [FileSummary]
     ) -> String {
-        let base = outcome == .unsavableWithDrafts
-            ? "Quits now."
-            : "Quits now. The pages this session could not save are lost."
-        guard let atRisk = draftsAtRiskSentence(files: files) else { return base }
-        return base + " " + atRisk
+        guard outcome == .unsavableWithDrafts else {
+            let base = "Quits now. The pages this session could not save are lost."
+            guard let atRisk = draftsAtRiskSentence(files: files) else { return base }
+            return base + " " + atRisk
+        }
+        let dirty = files.filter(\.holdsUnsavedEdits).map(\.name)
+        guard !dirty.isEmpty else { return "Quits now." }
+        return "Quits now. Unsaved changes to \(englishList(dirty)) are lost."
     }
 
     /// What a cancelled quit takes, as the object of the standing line.
@@ -3621,6 +3651,8 @@ public final class PageModel: ObservableObject {
             return (old.path, new.path)
         })
         openFiles = files
+        // A named file that came clean leaves the cancelled quit's list, so new edits ask again.
+        quitRefusalNamed.formIntersection(files.filter(\.holdsUnsavedEdits).map(\.id))
         if stateLoaded && padFileRosterReady { pads.reconcileFiles(Set(files.map(\.path))) }
         if let pending = pendingFileClose {
             if let file = files.first(where: { $0.id == pending.fileID }) {

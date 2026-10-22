@@ -1645,6 +1645,50 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(model.terminationHolds, 0, "nothing is in memory only now")
     }
 
+    /// Edits the cancelled quit's line never named, after a named file was saved
+    /// clean: the next ⌘Q asks again, and the one after it quits.
+    private func assertASecondQuitAsksOverNewEdits(
+        _ model: PageModel, file id: UInt64, line: UInt = #line
+    ) throws {
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel, line: line)
+        XCTAssertTrue(model.saveFile(id), line: line)
+        try type("again ", at: 0, into: id, on: model)
+        XCTAssertEqual(
+            QuitPrompt.terminateReply(flushing: model), .terminateCancel,
+            "the new edits were never named", line: line)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow, line: line)
+    }
+
+    func testASecondQuitOverEditsTheDraftsLineNeverNamedAsksAgain() throws {
+        let fixture = try makeFixture()
+        let model = try modelOverUnreadableDrafts(
+            fixture, client: DraftsCountingClient(tag: fixture.tag))
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try assertASecondQuitAsksOverNewEdits(model, file: id)
+        XCTAssertEqual(model.quitRefusal, .unsavableWithDrafts)
+    }
+
+    /// The content arm reads the same offer, so it asks again the same way.
+    func testASecondQuitOverEditsTheContentLineNeverNamedAsksAgain() throws {
+        let fixture = try makeFixture()
+        try sealOwnerFiles(fixture)
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(),
+            client: DraftsCountingClient(tag: "stranger-\(UUID().uuidString)"))
+        model.loadStateIfNeeded()
+        XCTAssertTrue(model.contentRestoreRefused)
+        let url = try write("two\n", named: "b.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try assertASecondQuitAsksOverNewEdits(model, file: id)
+        XCTAssertEqual(model.quitRefusal, .unsavableWithContent)
+    }
+
     /// The ordinary launch: the restore reads the file, and the next
     /// save writes it as it always has.
     func testASaveAfterTheRestoreWritesTheDraftsFile() throws {
