@@ -1298,6 +1298,32 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertFalse(model.draftsDirty)
     }
 
+    /// The edits typed before the restore are not left waiting on the
+    /// next keystroke: the restore that grants the licence arms their
+    /// write, over a state file that restored and so armed nothing.
+    func testTheRestoreThatGrantsTheLicenceArmsTheWriteEarlierEditsOwe() throws {
+        let fixture = try makeFixture()
+        let owner = makeModel(fixture, panels: ScriptedFilePanels())
+        owner.loadStateIfNeeded()
+        XCTAssertTrue(owner.saveState(), "a state file to restore, and no drafts file")
+
+        let client = DraftsCountingClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+        let url = try write("one\n", named: "a.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        try type("well ", at: 0, into: id, on: model)
+        XCTAssertNotEqual(model.saveStatus, .saving, "nothing is armed before the restore")
+
+        model.loadStateIfNeeded()
+        XCTAssertFalse(model.contentRestoreRefused)
+        XCTAssertFalse(model.draftsRestoreRefused)
+        waitForSave(on: model)
+        XCTAssertEqual(client.draftsWrites, 1, "the debounced write, with no saveState asked")
+        XCTAssertFalse(model.draftsDirty)
+    }
+
     /// The content file's rule, applied to the drafts: a session that
     /// could not read an existing drafts file does not write over it.
     func testASaveAfterAFailedRestoreOfAnExistingDraftsFileWritesNothing() throws {

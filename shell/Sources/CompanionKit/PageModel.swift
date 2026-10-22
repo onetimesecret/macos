@@ -2060,6 +2060,12 @@ public final class PageModel: ObservableObject {
         // No hold and no saving word under a withheld licence, as in
         // `markDirty`: there is no write to wait for (issue #296).
         guard draftsLicence else { return }
+        armDraftsWrite()
+    }
+
+    /// The hold, the saving word and the timer for a licensed drafts write,
+    /// at a mark or where the licence arrives over edits already in memory.
+    private func armDraftsWrite() {
         terminationLatch.acquire()
         if saveStatus != .failed { saveStatus = .saving }
         scheduleSave(after: saveDebounce)
@@ -2351,6 +2357,8 @@ public final class PageModel: ObservableObject {
         guard restored else {
             if draftsLicence {
                 pads.reconcileFiles([])
+                // Edits typed before the restore owe the write it grants.
+                if draftsDirty { armDraftsWrite() }
             } else {
                 logger.error(
                     "restore failed over an existing drafts file; withholding the drafts write"
@@ -5215,11 +5223,7 @@ public final class PageModel: ObservableObject {
         eraseUnreadableDraftsFile()
         grantDraftsLicence()
         quitRefusal = Self.quitOfferAfterDraftsClear(offer: quitRefusal)
-        if draftsDirty {
-            terminationLatch.acquire()
-            if saveStatus != .failed { saveStatus = .saving }
-            scheduleSave(after: saveDebounce)
-        }
+        if draftsDirty { armDraftsWrite() }
     }
 
     /// The drafts file this session could not read, dropped by path on a
