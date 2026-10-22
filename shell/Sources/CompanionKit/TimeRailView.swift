@@ -528,8 +528,8 @@ struct StreamNavigatorView: View {
         }
         .onChange(of: drivesRoll) { _ in scrollDrag = nil }
         .onDisappear { scrollDrag = nil }
-        .background(relays ? WheelRelay { event in roll.relay(wheel: event) } : nil)
-        .background(RailReveal(request: reveal))
+        .background(relays ? WheelRelay { event in roll.relay(wheel: event) }.accessibilityHidden(true) : nil)
+        .background(RailReveal(request: reveal).accessibilityHidden(true))
     }
 
     // MARK: The track
@@ -828,6 +828,7 @@ struct RailReveal: NSViewRepresentable {
 
     func makeNSView(context: Context) -> RailRevealView {
         let view = RailRevealView()
+        view.setAccessibilityElement(false)
         view.reveal(request)
         return view
     }
@@ -913,6 +914,7 @@ private struct WheelRelay: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WheelRelayView {
         let view = WheelRelayView()
+        view.setAccessibilityElement(false)
         view.relay = relay
         return view
     }
