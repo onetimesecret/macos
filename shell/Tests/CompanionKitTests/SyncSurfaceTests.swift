@@ -146,7 +146,7 @@ final class SyncSurfaceTests: XCTestCase {
         )
         XCTAssertEqual(
             ConnectionSettingsView.serverCaption,
-            "Where one-time links are created, over https only.")
+            "where one-time links are created, over https only.")
         XCTAssertEqual(ConnectionSettingsView.guestPrompt, "empty for guest links")
         XCTAssertEqual(
             ConnectionSettingsView.clearTokenMessage,

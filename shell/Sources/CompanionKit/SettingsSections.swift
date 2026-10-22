@@ -586,7 +586,7 @@ public struct ConnectionSettingsView: View {
 
     /// The server section's words in one-time link vocabulary (ADR-0055
     /// rule 3, issue #295): conceal is the server's verb, not the reader's.
-    nonisolated static let serverCaption = "Where one-time links are created, over https only."
+    nonisolated static let serverCaption = "where one-time links are created, over https only."
     nonisolated static let guestPrompt = "empty for guest links"
     nonisolated static let clearTokenMessage =
         "One-time links are created as guest links until you enter a new token."
