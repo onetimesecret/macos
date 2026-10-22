@@ -17,7 +17,7 @@ use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evic
 use crate::note::Note;
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock,
-    SheetId, TITLE_CAP, Tab, TabId, derive_title, judge_name,
+    SheetId, Tab, TabId, capped_title, derive_title, judge_name,
 };
 use crate::store::{HOLD_FIRST, HOLD_TOPUP, SheetStore};
 use crate::transfer::ActiveCut;
@@ -665,14 +665,7 @@ fn read_tab(
     let name = match reader.u8().ok_or(Malformed)? {
         0 => None,
         // Re-capped: the name is durable and reaches the ledger.
-        1 => Some(
-            reader
-                .str()
-                .ok_or(Malformed)?
-                .chars()
-                .take(TITLE_CAP)
-                .collect(),
-        ),
+        1 => Some(capped_title(reader.str().ok_or(Malformed)?)),
         _ => return Err(Malformed),
     };
     let rung = Ttl::from_secs(reader.u64().ok_or(Malformed)?).ok_or(Malformed)?;
@@ -899,7 +892,7 @@ fn read_chip(record: &mut Reader<'_>, next_chip_id: &mut u64) -> Result<SealedCh
             1 => judge_name(record.str().ok_or(Malformed)?)
                 .ok()
                 .flatten()
-                .map(str::to_owned),
+                .map(|name| Zeroizing::new(name.to_owned())),
             _ => return Err(Malformed),
         }
     };
@@ -993,12 +986,7 @@ fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
         _ => return Err(Malformed),
     };
     let item = reader.uuid().ok_or(Malformed)?;
-    let title: String = reader
-        .str()
-        .ok_or(Malformed)?
-        .chars()
-        .take(TITLE_CAP)
-        .collect();
+    let title = capped_title(reader.str().ok_or(Malformed)?);
     let at_wall_ms = reader.u64().ok_or(Malformed)?;
     let item_created_wall_ms = reader.u64().ok_or(Malformed)?;
     let size = match reader.u8().ok_or(Malformed)? {
@@ -1031,6 +1019,7 @@ fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
 mod tests {
     use super::*;
     use crate::clock::ManualClock;
+    use crate::sheet::TITLE_CAP;
 
     const HOUR: Duration = Duration::from_secs(60 * 60);
 
@@ -1124,7 +1113,7 @@ mod tests {
         let sheet = revived.sheet(first).unwrap();
         assert_eq!(sheet.derived_title(), Some("deploy notes"));
         assert_eq!(
-            revived.tabs().next().unwrap().label(0),
+            revived.tabs().next().unwrap().label(0).as_str(),
             "deploy notes",
             "the label falls through to it, this tab having no name"
         );
@@ -1545,7 +1534,7 @@ mod tests {
         revived.restore(&snapshot, 0).unwrap();
         let tab = revived.tabs().next().unwrap();
         assert_eq!(tab.name(), Some("quarterly numbers"));
-        assert_eq!(tab.label(0), "quarterly numbers");
+        assert_eq!(tab.label(0).as_str(), "quarterly numbers");
         assert_eq!(
             tab.page().unwrap().derived_title(),
             Some("something else"),
@@ -1590,10 +1579,14 @@ mod tests {
         assert_eq!(tabs.len(), 2);
         assert_eq!(tabs[0].name(), Some("quarterly numbers"));
         assert_eq!(tabs[0].rung(), Ttl::MIN);
-        assert_eq!(tabs[0].label(0), "quarterly numbers");
+        assert_eq!(tabs[0].label(0).as_str(), "quarterly numbers");
         assert_eq!(tabs[1].name(), None, "an unnamed tab stays unnamed");
         assert_eq!(tabs[1].rung(), Ttl::from_secs(8 * 60 * 60).unwrap());
-        assert_eq!(tabs[1].label(0), "errands", "its page supplies the label");
+        assert_eq!(
+            tabs[1].label(0).as_str(),
+            "errands",
+            "its page supplies the label"
+        );
         let before: Vec<ItemId> = store.tabs().map(Tab::uuid).collect();
         assert_eq!(revived.tabs().map(Tab::uuid).collect::<Vec<_>>(), before);
     }
@@ -1646,7 +1639,7 @@ mod tests {
         assert_eq!(tabs.len(), 1, "the slot itself came back");
         assert!(tabs[0].page().is_none());
         assert_eq!(tabs[0].name(), Some("payroll"));
-        assert_eq!(tabs[0].label(0), "payroll");
+        assert_eq!(tabs[0].label(0).as_str(), "payroll");
         assert_eq!(tabs[0].rung(), Ttl::from_secs(8 * 60 * 60).unwrap());
         assert!(
             store.sheet(survivor).is_none(),
@@ -1807,7 +1800,7 @@ mod tests {
         LedgerRecord {
             event: LedgerEvent::Sent,
             item,
-            title: String::from("a page"),
+            title: Zeroizing::new(String::from("a page")),
             at_wall_ms,
             item_created_wall_ms: at_wall_ms,
             size: SizeClass::Tiny,
@@ -2201,7 +2194,10 @@ mod tests {
             vec![first, second],
             "the tab after the unknown field was not found"
         );
-        assert_eq!(revived.tabs().next().unwrap().label(0), "deploy notes");
+        assert_eq!(
+            revived.tabs().next().unwrap().label(0).as_str(),
+            "deploy notes"
+        );
     }
 
     #[test]

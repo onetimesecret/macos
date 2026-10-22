@@ -77,8 +77,8 @@ pub(crate) enum Node {
 /// A sealed object as a fragment names it.
 pub(crate) struct Reference {
     pub(crate) uuid: ItemId,
-    /// The object's typed name, ink (issue #247).
-    pub(crate) name: Option<String>,
+    /// The object's typed name, ink, a wiping owner (issue #247; Law 0004, C19).
+    pub(crate) name: Option<Zeroizing<String>>,
     /// The object's note, ink, never empty (issue #247).
     pub(crate) note: Option<Zeroizing<String>>,
 }
@@ -142,7 +142,10 @@ impl Fragment {
                 Node::Ink(text) => WireNode::Ink(Cow::Borrowed(text.as_str())),
                 Node::Ref(reference) => WireNode::Ref(WireRef {
                     uuid: reference.uuid.to_string(),
-                    name: reference.name.clone(),
+                    name: reference
+                        .name
+                        .as_ref()
+                        .map(|name| Cow::Borrowed(name.as_str())),
                     note: reference
                         .note
                         .as_ref()
@@ -200,7 +203,10 @@ impl Fragment {
                     }
                     nodes.push(Node::Ref(Reference {
                         uuid,
-                        name: reference.name.filter(|name| !name.is_empty()),
+                        name: reference
+                            .name
+                            .filter(|name| !name.is_empty())
+                            .map(|name| Zeroizing::new(name.into_owned())),
                         note: reference.note.and_then(ink_of),
                     }));
                 }
@@ -374,8 +380,8 @@ enum WireNode<'a> {
 #[serde(deny_unknown_fields)]
 struct WireRef<'a> {
     uuid: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
+    #[serde(default, borrow, skip_serializing_if = "Option::is_none")]
+    name: Option<Cow<'a, str>>,
     #[serde(default, borrow, skip_serializing_if = "Option::is_none")]
     note: Option<Cow<'a, str>>,
 }
@@ -384,6 +390,9 @@ struct WireRef<'a> {
 mod tests {
     use super::*;
     use crate::clock::ManualClock;
+
+    /// Compiles only for a type that wipes on drop: the pin the owner test rests on.
+    fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
     use crate::sheet::{ChipId, SheetId};
     use crate::store::SheetStore;
 
@@ -632,11 +641,27 @@ mod tests {
     fn name_and_note(node: &Node) -> (Option<&str>, Option<&str>) {
         match node {
             Node::Ref(reference) => (
-                reference.name.as_deref(),
+                reference.name.as_deref().map(String::as_str),
                 reference.note.as_deref().map(String::as_str),
             ),
             Node::Ink(_) => panic!("not a reference"),
         }
+    }
+
+    /// A parsed reference's name and note are wiping owners (Law 0004, C19): a plain
+    /// `String` in either field would not compile here.
+    #[test]
+    fn a_references_name_and_note_are_wiping_owners() {
+        let mut store = store();
+        let (id, a, _) = mixed(&mut store);
+        named(&mut store, id, a);
+        let (fragment, _) = store.sheet(id).unwrap().select(0, BODY).unwrap();
+        let read = Fragment::parse(&fragment.envelope().unwrap()).unwrap();
+        let Node::Ref(reference) = &read.nodes[1] else {
+            panic!("not a reference")
+        };
+        wiping_owner(reference.name.as_ref().unwrap());
+        wiping_owner(reference.note.as_ref().unwrap());
     }
 
     #[test]
