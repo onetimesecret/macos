@@ -93,7 +93,7 @@ enum CompositionError: Error, Equatable {
 struct PreviewComposer {
     let dialect: PreviewDialect
     var limits = CompositionLimits()
-    var reservedPlaceholders = ["OTSAttachment", "\u{FFFC}"]
+    var reservedPlaceholders = ["\u{FFFC}"]
 
     /// The whole event sequence at once: every run, or an error and no composition.
     func compose(_ events: [PreviewEvent]) throws -> PreviewComposition {

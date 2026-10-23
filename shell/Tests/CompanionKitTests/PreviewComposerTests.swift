@@ -372,19 +372,22 @@ final class PreviewComposerTests: XCTestCase {
     }
 
     func testReservedPlaceholderAddressesAreRefusedAfterHTMLDecoding() throws {
-        for source in ["OTSAttachment123Z", "&#79;TSAttachment123Z", "&#xFFFC;"] {
+        for source in ["\u{FFFC}", "&#xFFFC;", "&#65532;"] {
             let result = try compose([html("<img src='https://example.invalid/\(source)' alt='a'>")])
             XCTAssertEqual(images(result).first?.destination, .refused(.sealedObject), source)
         }
-        let result = try compose([.markdownImage(alt: [], destination: [.text("https://example.invalid/OTSAttachment1Z")])])
+        let result = try compose([.markdownImage(alt: [], destination: [.text("https://example.invalid/\u{FFFC}")])])
         XCTAssertEqual(images(result).first?.destination, .refused(.sealedObject))
+        // The retired R3 token is an ordinary word now.
+        let word = try compose([html("<img src='https://example.invalid/OTSAttachment1Z' alt='a'>")])
+        XCTAssertEqual(images(word).first?.destination, .unreviewed("https://example.invalid/OTSAttachment1Z"))
     }
 
     func testReservedPlaceholdersInDuplicateDestinationsAreRefused() throws {
         for tag in ["img src", "a href"] {
             let pieces = tag.split(separator: " ")
             let result = try compose([
-                html("<\(pieces[0]) \(pieces[1])='https://example.invalid/' \(pieces[1])='&#79;TSAttachment1Z'>"),
+                html("<\(pieces[0]) \(pieces[1])='https://example.invalid/' \(pieces[1])='&#xFFFC;'>"),
                 .text("label"),
             ])
             if pieces[0] == "img" {
