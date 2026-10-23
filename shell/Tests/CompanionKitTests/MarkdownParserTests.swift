@@ -195,16 +195,16 @@ final class MarkdownParserTests: XCTestCase {
         }
     }
 
-    func testAnInlineLinksOwnDestinationAndTitleObjectsStandWhereItOpens() throws {
+    /// A link's own destination and title objects follow its label, as an image's follow its alt text,
+    /// and the address keeps a stand-in for each.
+    func testAnInlineLinksOwnDestinationAndTitleObjectsFollowItsLabel() throws {
         for dialect in PreviewDialect.allCases {
             let link: [String?] = ["a [label ", nil, "](https://e.example/", nil, " \"t ", nil, "\") b"]
             XCTAssertEqual(try parse(link, dialect).blocks, [
                 .paragraph([
                     .text("a "),
-                    .enterLink(
-                        destination: [.text("https://e.example/"), .object("1")], title: [.text("t "), .object("2")]
-                    ),
-                    .text("label "), .object("0"), .leaveLink, .text(" b"),
+                    .enterLink(destination: [.text("https://e.example/\u{FFFC}")], title: [.text("t \u{FFFC}")]),
+                    .text("label "), .object("0"), .leaveLink, .object("1"), .object("2"), .text(" b"),
                 ]),
             ], "\(dialect)")
             XCTAssertEqual(try parse(["![alt ", nil, "](/i", nil, " \"t ", nil, "\")"], dialect).blocks, [
@@ -213,6 +213,11 @@ final class MarkdownParserTests: XCTestCase {
                     title: [.text("t "), .object("2")]
                 )]),
             ], "\(dialect): image")
+            XCTAssertEqual(try parse(["![a [b](/u", nil, ") c](/i", nil, ")"], dialect).blocks, [
+                .paragraph([.markdownImage(
+                    alt: [.text("a b"), .object("0"), .text(" c")], destination: [.text("/i"), .object("1")]
+                )]),
+            ], "\(dialect): a link in alt text")
         }
     }
 

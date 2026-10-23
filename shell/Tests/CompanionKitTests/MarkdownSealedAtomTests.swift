@@ -503,22 +503,22 @@ final class MarkdownSealedAtomTests: XCTestCase {
         }
     }
 
-    /// P06: an inline destination's object stands where the element opens and refuses its address;
-    /// a title's object stands there too and leaves the address as it was.
-    func testP06InlineDestinationAndTitleObjectsStandWhereTheElementOpens() throws {
+    /// P06: an inline destination's object follows the element's text, as in the source, and refuses
+    /// its address; a title's object follows it too and leaves the address as it was.
+    func testP06InlineDestinationAndTitleObjectsFollowTheElementsText() throws {
         for dialect in PreviewDialect.allCases {
             try check("[label](https://example.com/{obj}) after", dialect, [.paragraph([
-                .enterLink(destination: [.text("https://example.com/"), .object("0")], title: []),
-                .text("label"), .leaveLink, .text(" after"),
-            ])], shows: "{obj}label after\n")
+                .enterLink(destination: [.text("https://example.com/\u{FFFC}")], title: []),
+                .text("label"), .leaveLink, .object("0"), .text(" after"),
+            ])], shows: "label{obj} after\n")
             try check("[a](<https://example.com/{obj}>)", dialect, [.paragraph([
-                .enterLink(destination: [.text("https://example.com/"), .object("0")], title: []),
-                .text("a"), .leaveLink,
-            ])], shows: "{obj}a\n")
+                .enterLink(destination: [.text("https://example.com/\u{FFFC}")], title: []),
+                .text("a"), .leaveLink, .object("0"),
+            ])], shows: "a{obj}\n")
             try check("[label](https://example.com/ \"t {obj}\") after", dialect, [.paragraph([
-                .enterLink(destination: [.text("https://example.com/")], title: [.text("t "), .object("0")]),
-                .text("label"), .leaveLink, .text(" after"),
-            ])], shows: "{obj}label after\n", links: [("label", "https://example.com/")])
+                .enterLink(destination: [.text("https://example.com/")], title: [.text("t \u{FFFC}")]),
+                .text("label"), .leaveLink, .object("0"), .text(" after"),
+            ])], shows: "label{obj} after\n", links: [("label", "https://example.com/")])
             try check("![alt](https://example.com/{obj}.png)", dialect, [.paragraph([
                 .markdownImage(
                     alt: [.text("alt")], destination: [.text("https://example.com/"), .object("0"), .text(".png")]

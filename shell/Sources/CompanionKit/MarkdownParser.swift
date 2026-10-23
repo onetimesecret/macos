@@ -599,9 +599,11 @@ private final class TreeWalker {
             let shown = Set(log[mark...])
             let destination = try address(library.url, of: node, shown: shown)
             let title = try address(library.title, of: node, shown: shown)
-            events.append(.enterLink(destination: destination, title: title))
+            // The address's own objects follow the label, outside the link, as an image's follow its alt text.
+            events.append(.enterLink(destination: destination.standingIn, title: title.standingIn))
             events += label
             events.append(.leaveLink)
+            events.appendParts((destination + title).objectIdentities.map(HTMLPart.object))
         case .image:
             try enter()
             defer { leave() }
@@ -629,7 +631,7 @@ private final class TreeWalker {
     }
 
     /// An image description as cmark's HTML writer gives it: text, code and raw HTML literals,
-    /// each break a space. A nested link or image's own address objects stand where it opens.
+    /// each break a space. A nested link or image's own address objects follow its text.
     private func appendAlt(of parent: UnsafeRawPointer, to alt: inout [HTMLPart]) throws {
         var child = library.firstChild(parent)
         while let node = child {
@@ -645,8 +647,8 @@ private final class TreeWalker {
                 let shown = Set(log[mark...])
                 let own = try address(library.url, of: node, shown: shown)
                     + address(library.title, of: node, shown: shown)
-                alt.appendParts(own.objectIdentities.map(HTMLPart.object))
                 alt.appendParts(inner)
+                alt.appendParts(own.objectIdentities.map(HTMLPart.object))
             default:
                 try enter()
                 defer { leave() }
@@ -772,6 +774,18 @@ private extension Array where Element == HTMLPart {
             case .object: append(part)
             }
         }
+    }
+
+    /// Each object as U+FFFC, the stand-in the composer refuses in an address.
+    var standingIn: [HTMLPart] {
+        var parts: [HTMLPart] = []
+        for part in self {
+            switch part {
+            case .text(let text): parts.appendText(text)
+            case .object: parts.appendText("\u{FFFC}")
+            }
+        }
+        return parts
     }
 }
 

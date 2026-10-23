@@ -411,9 +411,9 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertLessThan(lastObject.location, try range("after", in: rendered).location)
     }
 
-    /// An object inside a link's own destination is the link's: it stands where the link opens,
-    /// before its label, outside the link, which it refuses (plan R1).
-    func testAnObjectInALinkDestinationStandsWhereTheLinkOpens() throws {
+    /// An object inside a link's own destination is the link's: it follows the label, as in the
+    /// source, outside the link, which it refuses (plan R1).
+    func testAnObjectInALinkDestinationFollowsTheLabel() throws {
         let source = NSMutableAttributedString(string: "[label](https://example.com/")
         let hidden = chip(1)
         let visible = chip(2)
@@ -431,8 +431,8 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertTrue(found[2] === later)
         XCTAssertNil(try link("label", in: rendered))
         XCTAssertFalse(rendered.string.contains("OTSAttachment"))
-        XCTAssertEqual(rendered.string, "\u{FFFC}label then \u{FFFC} end\nnext \u{FFFC}\n")
-        XCTAssertNil(rendered.attribute(.link, at: 0, effectiveRange: nil), "an object never takes a link")
+        XCTAssertEqual(rendered.string, "label\u{FFFC} then \u{FFFC} end\nnext \u{FFFC}\n")
+        XCTAssertNil(rendered.attribute(.link, at: 5, effectiveRange: nil), "an object never takes a link")
     }
 
     /// A token's spelling in the ink, prefix and digits with no closing Z or naming no
