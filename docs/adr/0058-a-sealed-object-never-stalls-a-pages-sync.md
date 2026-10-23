@@ -80,10 +80,12 @@ Loro text of its own; its value never travels.
    converge. A local fragment or restore that names an identity twice
    stays refused.
 3. **The value follows its sentinel.** When a record with the value
-   detaches from one page while a record with no value for that
-   identity stands on another page of the same device, the value moves
-   into the standing record and lives on that page's clock, as ADR-0057
-   proposes for a local move. The value is never copied.
+   detaches from one page, or its page ends, while a record with no
+   value for that identity stands on another page of the same device,
+   the value moves into the standing record and lives on that page's
+   clock, as ADR-0057 proposes for a local move. A batch that stands an
+   identity this device keeps detached on another page moves that
+   record to the page it stands on. The value is never copied.
 4. **The face and its routes.** A record with no value shows its kind
    and size class when known and the line `value on another device`.
    The core refuses Copy Decrypted Contents, Copy Name=Value, the
@@ -118,8 +120,10 @@ Loro text of its own; its value never travels.
    applied, and its loss is made good by the next change or restate.
 8. **Burns stay on the device.** A burn deletes the sentinel, and that
    delete syncs, so a peer's record detaches and ends with its page. A
-   device whose ledger records an identity's burn takes a later standing
-   of that identity out at settle, outside the undo stack.
+   device whose ledger records an identity's end, its burn or the end
+   of the page its value stood on, takes a later standing of that
+   identity out at settle, outside the undo stack, since no device can
+   hold that value again.
 9. **At rest.** A new content snapshot version writes each record's
    availability as a tag ahead of any payload bytes, the name's version
    and the note's operation log. This build reads the previous version.
