@@ -10,6 +10,11 @@ struct SyncSettingsSection: View {
 
     @State private var confirmingSignout = false
 
+    /// What signing out leaves alone. The token is the API token in the
+    /// reader's words (ADR-0055 rule 3, issue #295).
+    nonisolated static let signOutMessage =
+        "Sync stops until you sign in again. Pages, sealed chips and the API token are untouched."
+
     var body: some View {
         Section {
             Toggle("Sync between your devices", isOn: $sync.enabled)
@@ -30,9 +35,7 @@ struct SyncSettingsSection: View {
                             Button("Sign Out", role: .destructive) { sync.signOut() }
                             Button("Cancel", role: .cancel) {}
                         } message: {
-                            Text(
-                                "Sync stops until you sign in again. Pages, sealed chips and the conceal token are untouched."
-                            )
+                            Text(Self.signOutMessage)
                         }
                 } else if SyncController.showsGiveUpSignin(
                     gate: sync.status?.gate, signinPending: sync.status?.signinPending == true)
@@ -128,7 +131,7 @@ private struct SyncDeviceRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(String(device.fingerprint.prefix(8)))
+            Text(SyncPairingStatus.spelledDigits(fingerprintHead))
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(Color.secondaryInk)
             Text(title)
@@ -159,9 +162,15 @@ private struct SyncDeviceRow: View {
                     }
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("\(title), \(seen), \(badge)"))
+        // `.contain`, not `.ignore`: the words are read in their order,
+        // the fingerprint first, and Revoke stays a focusable button for
+        // the keyboard as well as an action VoiceOver can reach.
+        .accessibilityElement(children: .contain)
     }
+
+    /// The head of the fingerprint, drawn and spoken alike, which is
+    /// what tells two unlabelled peers apart.
+    private var fingerprintHead: String { String(device.fingerprint.prefix(8)) }
 
     private var title: String {
         if device.thisDevice { return "this Mac" }
@@ -203,6 +212,13 @@ private struct SyncPairingStatus: View {
     let stage: SyncPairingStage
     @ObservedObject var sync: SyncController
 
+    /// A code or a fingerprint head read character by character.
+    static func spelledDigits(_ digits: String) -> AttributedString {
+        var spelled = AttributedString(digits)
+        spelled.accessibilitySpeechSpellsOutCharacters = true
+        return spelled
+    }
+
     var body: some View {
         switch stage.stage {
         case "sas":
@@ -210,12 +226,15 @@ private struct SyncPairingStatus: View {
                 Text("Compare with the other device's screen. Continue only on a match.")
                     .font(.caption)
                     .foregroundStyle(Color.secondaryInk)
-                Text(stage.sas ?? "")
+                // Digit by digit: a code compared by ear against another
+                // screen is not a number; the name stays a name.
+                Text(Self.spelledDigits(stage.sas ?? ""))
                     .font(.system(.title2, design: .monospaced))
-                    .accessibilityLabel(Text("Verification digits \(stage.sas ?? "")"))
+                    .accessibilityLabel(Text("Verification digits"))
+                    .accessibilityValue(Text(Self.spelledDigits(stage.sas ?? "")))
                 HStack {
                     Button("They Match") { sync.confirmPairing(matched: true) }
-                    Button("They Don't Match", role: .destructive) {
+                    Button("They Don’t Match", role: .destructive) {
                         sync.confirmPairing(matched: false)
                     }
                 }

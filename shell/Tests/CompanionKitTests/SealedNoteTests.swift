@@ -19,10 +19,12 @@ final class SealedNoteTests: XCTestCase {
         let chip: UInt64
     }
 
-    /// A client that records each sheet the page's block route is asked for,
-    /// its copies and seals kept on a pasteboard in process memory.
+    /// A client that records each sheet the page's block route is asked for
+    /// and counts the reads of a note's text, its copies and seals kept on a
+    /// pasteboard in process memory.
     final class BlockAskingClient: CompanionClient, @unchecked Sendable {
         private(set) var blocksAsked: [UInt64] = []
+        private(set) var noteReads = 0
 
         init(tag: String) {
             super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
@@ -31,6 +33,11 @@ final class SealedNoteTests: XCTestCase {
         override func blocks(sheet: UInt64) -> [BlockInfo] {
             blocksAsked.append(sheet)
             return super.blocks(sheet: sheet)
+        }
+
+        override func noteRuns(chip: UInt64) -> [RestoredRun]? {
+            noteReads += 1
+            return super.noteRuns(chip: chip)
         }
     }
 
@@ -691,5 +698,101 @@ final class SealedNoteTests: XCTestCase {
         editor.escape()
         XCTAssertFalse(ModalSession.isRunning)
         XCTAssertEqual(ends, 0)
+    }
+
+    // MARK: A page past its deadline (Law 0001, expiry row)
+
+    /// Puts the page past its deadline with no sweep: a one hour rung, two hours on.
+    private func age(_ page: Page) throws {
+        let tab = try XCTUnwrap(page.model.tabs.first { $0.pageID == page.sheet }?.id)
+        XCTAssertTrue(page.client.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(page.client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        // The re-mint is dense, so the page's and the object's ids still name what the core keeps.
+        XCTAssertTrue(page.client.tabs().contains { $0.pageID == page.sheet }, "the page was swept")
+        XCTAssertTrue(page.client.chipStands(page.chip), "the object was renumbered")
+    }
+
+    /// From its deadline, before any sweep, a note's batch, its undo and redo and a
+    /// rename each refuse and settle at once with the expired line.
+    func testANoteEditStepOrNamePastItsPagesDeadlineSettlesWithTheExpiredLine() throws {
+        let routes: [(name: String, run: (Page, SealedNoteEditor) throws -> Void)] = [
+            ("a batch", { _, editor in self.type(" monthly", into: editor) }),
+            ("⌘Z", { page, editor in
+                let chord = try self.keyEvent("z", keyCode: 6, flags: .command, in: page.window)
+                XCTAssertTrue(editor.textView.performKeyEquivalent(with: chord), "the note declined ⌘Z")
+            }),
+            ("⇧⌘Z", { page, editor in
+                let chord = try self.keyEvent(
+                    "z", keyCode: 6, flags: [.command, .shift], in: page.window)
+                XCTAssertTrue(editor.textView.performKeyEquivalent(with: chord), "the note declined ⇧⌘Z")
+            }),
+            ("a name by the field's Return", { page, _ in
+                page.coordinator.beginNaming(at: 3)
+                guard let field = page.coordinator.nameEditor, field.isOpen else {
+                    return XCTFail("the name field did not open")
+                }
+                field.draft = "API_KEY"
+                field.commit()
+                XCTAssertFalse(field.isOpen, "the refused Return kept the field")
+            }),
+        ]
+        for route in routes {
+            let page = try makePage()
+            page.coordinator.beginNote(at: 3)
+            let editor = try note(page)
+            type("rotate", into: editor)
+            try age(page)
+
+            try route.run(page, editor)
+            drainMainQueue()
+
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, route.name)
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == page.sheet },
+                "\(route.name): the page outlived its refusal")
+            XCTAssertFalse(editor.isOpen, "\(route.name): the note stayed open")
+            XCTAssertEqual(editor.textView.string, "", "\(route.name): the note's ink outlived it")
+        }
+    }
+
+    /// The model's own note step past the deadline answers a refusal and settles with
+    /// the expired line, whichever surface asked for it.
+    func testANoteStepPastItsPagesDeadlineAnswersARefusalAndSettles() throws {
+        for (name, back) in [("undo", true), ("redo", false)] {
+            let page = try makePage()
+            page.coordinator.beginNote(at: 3)
+            type("rotate", into: try note(page))
+            try age(page)
+
+            let outcome = page.model.stepNote(chip: page.chip, back: back)
+
+            XCTAssertFalse(outcome.applied, name)
+            XCTAssertTrue(outcome.refused, name)
+            XCTAssertEqual(page.model.notice, PageModel.pageExpiredLine, name)
+            XCTAssertFalse(
+                page.model.tabs.contains { $0.pageID == page.sheet },
+                "\(name): the page outlived its refusal")
+        }
+    }
+
+    /// A ⌘Z or ⇧⌘Z that finds no step on a live note reads none of the note's
+    /// text and leaves the note open; only a refusal closes it.
+    func testANoteStepWithNoneToTakeReadsNoNoteTextAndLeavesTheNoteOpen() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        XCTAssertFalse(page.model.canStepNote(chip: page.chip, back: true), "the control: no undo waits")
+        XCTAssertFalse(page.model.canStepNote(chip: page.chip, back: false), "the control: no redo waits")
+        let reads = page.client.noteReads
+
+        for flags: NSEvent.ModifierFlags in [.command, [.command, .shift]] {
+            let chord = try keyEvent("z", keyCode: 6, flags: flags, in: page.window)
+            XCTAssertTrue(editor.textView.performKeyEquivalent(with: chord), "the note declined the chord")
+        }
+        drainMainQueue()
+
+        XCTAssertEqual(page.client.noteReads, reads, "a step with none to take read the note's text")
+        XCTAssertTrue(editor.isOpen, "a step with none to take closed the note")
+        XCTAssertTrue(page.model.tabs.contains { $0.pageID == page.sheet })
     }
 }

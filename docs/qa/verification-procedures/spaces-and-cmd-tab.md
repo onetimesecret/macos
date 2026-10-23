@@ -45,9 +45,10 @@ finds the editor window closed opens it on the desktop the person is on,
 and a raised panel rests as the window takes the keyboard; one that finds
 it open on another desktop switches there, as it does for any document
 application. A pinned panel floats above every ordinary window, editor
-included; the editor never floats. *Companion* marks Settings and
-About, the ordinary windows ADR-0033 leaves under ADR-0032's companion
-window rule.
+included, and lowers under a key Settings, About or Send Feedback window
+(ADR-0032 Amendment 1); the editor never floats. *Companion* marks
+Settings and About, the ordinary windows ADR-0033 leaves under
+ADR-0032's companion window rule.
 
 ## What was seen, and what the code did about it
 
@@ -494,7 +495,8 @@ when switching away** is off before the first run; the checks that need
 it on say so and turn it off again.
 
 Issue #190 lists twelve checks. Eleven are below; the twelfth, About
-with Pin on, is the About check under companion windows further down.
+with Pin on, is the first check under "Companion windows stay at normal
+level" further down, rewritten for ADR-0032 Amendment 1.
 Its first check predates ADR-0033 and ended with a ⌘Tab back to a keyed
 card; that return now selects the editor window, so the check below
 re-keys the card with the hotkey instead.
@@ -555,22 +557,24 @@ re-keys the card with the hotkey instead.
       its right click menu's Settings… item. Run all three with the pin
       off, then with the pin on (raise the card, use the header toggle,
       rest it with Esc). **Pass:** every time, Settings opens in front
-      of the card, keyed, and what is typed lands in Settings. ADR-0032:
-      "When Settings or another ordinary window of OnetimePad takes the
-      keyboard, its level must be compatible with the surface's
-      resulting inactive altitude." `CompanionLevelFollower` holds
-      Settings at the card's keyless altitude for as long as it is open.
-      **Fail:** Settings opens beneath the card, or opens without the
-      keyboard.
+      of the card, keyed, and what is typed goes into Settings; with the
+      pin on, the card is at normal level while Settings is key and
+      floats again when Settings closes. ADR-0032 Amendment 1
+      (2026-10-21, issue #293): Settings stays at normal level and
+      `BackdropAltitudeKeeper` lowers the card under it for as long as
+      it is key. **Fail:** Settings opens beneath the card, opens
+      without the keyboard, or floats over another app's windows.
 - [ ] **The preference toggled inside Settings over a raised keyless
       card.** *Companion.* With the pin off, raise the card (⌃⌥Space),
       then open Settings with `⌘,`; Settings takes the keyboard, so the
       card is raised and keyless. Turn **Keep OnetimePad above other
       apps when switching away** on, then off, then on, and finish with
       it off. **Pass:** Settings stays in front of the card at every
-      toggle. Each toggle moves the card between normal and floating,
-      and `CompanionLevelFollower` moves Settings with it. **Fail:**
-      Settings is left beneath the card after a toggle.
+      toggle, and the card stays at normal level throughout, since a
+      key Settings window lowers it whatever the preference says
+      (ADR-0032 Amendment 1, 2026-10-21, issue #293). Then turn it on
+      and close Settings: the card floats. **Fail:** Settings is left
+      beneath the card after a toggle, or Settings changes level.
 - [ ] **Open panel round trip on a desktop.** *Panel.* On an ordinary
       desktop, with the pin and the preference off, raise the card
       (⌃⌥Space), press ⌘O, then Cancel. **Pass:** while the open panel
@@ -867,20 +871,39 @@ first full-screen check above, and its row records it.
       **Fail:** OnetimePad stays active with no window that can take
       the keyboard, so typing goes nowhere, or any `VERDICT FAIL`.
 
-### Companion windows follow the surface (ADR-0032, issue #188)
+### Companion windows stay at normal level (ADR-0032 Amendment 1, issue #293)
 
-- [ ] **About stays in front while Pin and the preference move.**
-      *Companion.* With the card resting and unpinned, open About and
-      leave it open. Raise the card (⌃⌥Space), turn the pin on from the
-      header toggle and rest it (Esc). **Pass:** the card floats and
-      About is still in front of it. Raise the card and turn the pin
-      off, open Settings and turn **Keep OnetimePad above other apps
-      when switching away** on, then off, with About still open.
-      **Pass:** About is never left underneath the card at any step.
-      **Fail:** About is stranded beneath the card after a toggle, which
-      is what a level read only once at open produces. Its first pass,
-      About in front of the card with the pin on, is also issue #190's
-      check About with Pin on.
+Rewritten 2026-10-21 for issue #293. The checks here before asked About
+to follow the card's altitude (issue #188), which Amendment 1 replaces.
+
+- [ ] **About and the card trade places with the keyboard.**
+      *Companion.* With the pin on and the card resting, open About
+      from the OnetimePad menu. **Pass:** with About key, the card sits
+      below it. Press ⌃⌥Space: the card is key and floats over About.
+      Click About: the card lowers under it again. Repeat with the pin
+      off and **Keep OnetimePad above other apps when switching away**
+      on, then turn the preference off. **Fail:** the card covers About
+      while About is key, or stays under About once the card has the
+      keyboard. This is issue #190's check About with Pin on.
+- [ ] **A keyless About is covered by a pinned card.** *Companion.*
+      With the pin off and the card resting, open About and leave it.
+      Raise the card (⌃⌥Space), turn the pin on from the header toggle,
+      rest it (Esc), and click another app's window so that About is
+      open but not key. **Pass:** the card floats over About, as it
+      does over any window while pinned (ADR-0032 Amendment 1,
+      Consequences); clicking About gives it the keyboard and the card
+      lowers under it. **Fail:** the card stays under a keyless About,
+      or covers About once About is key.
+- [ ] **A hand off between companion windows keeps the card still.**
+      *Companion.* With the pin on and the card resting, open Settings
+      with `⌘,`, then choose About from the OnetimePad menu while
+      Settings is key. Then open Send Feedback, choose Export, and
+      cancel the save sheet. **Pass:** the card stays at normal level
+      under Settings, About, Send Feedback and the save sheet, with no
+      frame of it drawn over any of them, and floats again only once
+      the last of them closes or the app deactivates (ADR-0032
+      Amendment 1, 2026-10-21, issue #293). **Fail:** the card flashes
+      over a window during a hand off, or floats over the save sheet.
 
 ### The drag, which is a decision rather than a fix
 

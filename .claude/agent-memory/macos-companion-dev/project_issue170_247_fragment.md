@@ -97,8 +97,8 @@ Seams for the editor half (all page ids, all refuse a file id):
   accessor for any route that gives a page out; it asks `Sheet::is_due`,
   the sweep's own predicate. `chip_home` goes through it, so every
   `chip_home` caller (note undo names, `finish_note_editing_group`)
-  refuses a due page too; `chip_mut` and `record_sent` do not, on
-  purpose. Reads never sweep. Shell half (phase 4 unit 4): a wake
+  refuses a due page too; since #310 `chip_mut` does as well (through
+  `readable_sheets_mut`), while `record_sent` still does not, on purpose. Reads never sweep. Shell half (phase 4 unit 4): a wake
   (`Seams.wakeNotifications`) runs `settleCoreEvent`; a refused read
   calls `settleIfDue`, which settles only when `nextEventMs() == 0`, so
   a refusal with nothing due arms no write (`LedgerAppendArmingTests`)

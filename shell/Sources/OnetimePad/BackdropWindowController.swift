@@ -6,8 +6,8 @@ import os
 
 /// The background surface's window: a borderless pane covering the
 /// primary screen. Where it sits in the stacking order is
-/// `BackdropAltitude.resolve`'s to decide from four inputs together
-/// (stance, key status, the pin and the keep-above preference,
+/// `BackdropAltitude.resolve`'s to decide from five inputs together
+/// (stance, key status, pin, preference and a key companion window,
 /// ADR-0032), so an unpinned rest sits at desktop level (above the
 /// wallpaper, below the icons and every normal window), a pinned rest
 /// floats above other windows and shrinks to the card's own rect so
@@ -62,7 +62,24 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// Actual window visibility, including the resting desktop presentation.
     var isVisible: Bool { panel.isVisible }
 
-    init(model: BackdropModel, onCardClick: @escaping () -> Void) {
+    /// Whether a companion window has the keyboard, as the keeper reads
+    /// it; the diagnostics report prints the altitude it expects from it.
+    var companionWindowKeyed: Bool { altitude.companionKeyed }
+
+    /// A companion window that took the keyboard before the delegate
+    /// could name it (the About panel, keyed inside its own order front).
+    func noticeCompanionWindow(_ window: NSWindow) {
+        altitude.noticeKeyWindow(window)
+    }
+
+    /// `isCompanionWindow` names the app's own ordinary windows
+    /// (Settings, About, Send Feedback), which the delegate owns; the
+    /// card lowers while one of them has the keyboard (#293).
+    init(
+        model: BackdropModel,
+        onCardClick: @escaping () -> Void,
+        isCompanionWindow: @escaping @MainActor (NSWindow) -> Bool
+    ) {
         self.model = model
         panel = BackdropPanel()
         altitude = BackdropAltitudeKeeper(window: panel)
@@ -90,13 +107,16 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // Space membership, mouse transparency and window extent
         // follow, but none of the stance choreography (key relay,
         // activation hand-back, ordering) runs for a mere altitude
-        // change. The keeper owns both altitude sinks, the pin's and
+        // change. The keeper owns the altitude sinks, the pin's and
         // the keep above preference's (ADR-0032, #187), so that which
         // value each reads on willSet is tested there; the hooks are
         // handed the emitted pin, not the model's, for the same reason.
+        // It also watches the key companion window (#293), which lowers
+        // the card the same way: altitude only, no choreography.
         altitude.observe(
             model,
             keyed: { [weak self] in self?.panel.isKeyWindow ?? false },
+            companion: isCompanionWindow,
             willRepin: { [weak self] pinned in
                 guard let self else { return }
                 // In the order `apply(_:)` uses, and for the same
@@ -651,8 +671,10 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// file. Those are excluded by the AppKit fact `ModalSession`
     /// reads, and the two exclusions meet in `OutsidePress`, which is
     /// where the rule is stated once. Our ordinary windows, Settings
-    /// and About, are outside by this rule and rest the card, which is
-    /// the older behaviour left standing.
+    /// and About, never reach a global monitor at all (it sees only
+    /// events dispatched to other applications), so a click into them
+    /// leaves the card raised beside them, which is what
+    /// `returningFromAuxiliary` counts on.
     ///
     /// A *global* monitor deliberately: it observes the press and
     /// consumes nothing, so the click goes on to the window it was
@@ -743,7 +765,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// decision distinguishes raised-and-keyed (summon rests it) from
     /// raised-but-keyboard-less (summon re-keys it). The altitude the
     /// panel sits at is `BackdropAltitude.resolve`'s to decide from
-    /// the four inputs together, and this passes the key answer that
+    /// its five inputs together, and this passes the key answer that
     /// has just arrived so the resolver reads honest facts.
     func windowDidBecomeKey(_ notification: Notification) {
         altitude.reapply(
@@ -775,6 +797,12 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             keepsAbove: model.keepsAboveWhenInactive
         )
         model.keyStatusChanged(of: .panel, keyed: false)
+    }
+
+    /// Whether a window is the panel or its key relay, for ⌘W (#201). The
+    /// relay by class, so that asking does not build it.
+    func owns(_ candidate: NSWindow) -> Bool {
+        candidate === panel || candidate is BackdropKeyRelayPanel
     }
 
     /// The keyboard's waypoint on its way back to the active app: a
@@ -817,8 +845,8 @@ private final class BackdropKeyRelayPanel: NSPanel {
 /// ordinary window would. Key status is stance-gated the way Plash gates
 /// interactivity. Where the panel sits in the stacking order is not
 /// the panel's own concern: `BackdropAltitude.resolve` picks a level
-/// from stance, key status, the pin and the keep-above preference
-/// together (ADR-0032), and the controller writes it.
+/// from stance, key status, the pin, the preference and a key companion
+/// window (ADR-0032), and the controller writes it.
 final class BackdropPanel: NSPanel {
     /// Set by the controller from the stance, before ordering changes.
     var isInteractive = false
@@ -842,6 +870,9 @@ final class BackdropPanel: NSPanel {
         isReleasedWhenClosed = false
         isMovableByWindowBackground = false
         isExcludedFromWindowsMenu = true
+        // Borderless, so never drawn; the name VoiceOver gives the
+        // window, the app's and nothing else (ADR-0033).
+        title = BackdropAppDelegate.productName
         animationBehavior = .none
         // Collection behavior is `BackdropStance`'s to state, from the
         // stance and the resolved altitude together, and the controller

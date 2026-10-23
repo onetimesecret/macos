@@ -163,7 +163,7 @@ now pass the account gate and neither can read the other's pages.
       open.
 - [ ] **On A press Invite a Device, on B press Join from Here.**
       Expected: both show a spinner, then the same six digits.
-- [ ] **Compare them, then press "They Don't Match" on B.** Expected:
+- [ ] **Compare them, then press "They Don’t Match" on B.** Expected:
       both ceremonies end, both say the strings did not match and
       nothing was stored, and neither device list gains a paired row.
       This is the check that the comparison can fail.

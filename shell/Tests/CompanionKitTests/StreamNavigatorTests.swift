@@ -312,6 +312,340 @@ final class StreamNavigatorTests: XCTestCase {
             nodes: [], geometry: .unmeasured, height: 300, width: 102), .empty)
     }
 
+    /// A day's first row is drawn a point higher than a later row, so a rail packed tight from
+    /// the top, in a column that fits it or one it outruns, still draws no row into the one above.
+    func testPackedRowsAreDrawnClearOfTheRowAbove() throws {
+        let nodes = threeDays(pagesPerDay: 4)
+        XCTAssertTrue(
+            zip(nodes, nodes.dropFirst()).contains { !$0.firstOfDay && $1.firstOfDay },
+            "the control: no later row meets the next day's first")
+        for (height, dense) in [(CGFloat(400), false), (120, true)] {
+            let layout = StreamNavigator.layout(
+                nodes: nodes, geometry: .unmeasured, height: height, width: 102)
+            let first = try XCTUnwrap(layout.placed.first)
+            XCTAssertEqual(first.y, StreamNavigator.Metrics.top, "the first row moved at height \(height)")
+            if dense {
+                XCTAssertGreaterThan(layout.contentHeight, height, "the control: the column fits its rows")
+            } else {
+                XCTAssertEqual(layout.contentHeight, height, "the control: the rows outran the column")
+            }
+            let frames = layout.placed.map { placed in
+                CGRect(x: 0, y: placed.drawnTop, width: 102, height: placed.rowHeight)
+            }
+            for (index, upper) in frames.enumerated() {
+                for lower in frames.dropFirst(index + 1) {
+                    XCTAssertFalse(upper.intersects(lower), "rows at \(upper) and \(lower) meet at height \(height)")
+                }
+            }
+            for (upper, lower) in zip(frames, frames.dropFirst()) {
+                XCTAssertLessThanOrEqual(upper.maxY, lower.minY, "a row rose into the one above at height \(height)")
+            }
+            XCTAssertLessThanOrEqual(
+                try XCTUnwrap(frames.last).maxY, layout.contentHeight - StreamNavigator.Metrics.bottom,
+                "the last row passed the foot at height \(height)")
+        }
+    }
+
+    /// A rail with more rows than its column fits (issue #277: 36 pages over three days in a
+    /// 480 point column) places no row above the column; the rows beyond it lengthen the
+    /// drawing instead, and the track and the map run to its foot, for the column to scroll to.
+    func testADenseRailGrowsPastTheColumnRatherThanAboveIt() throws {
+        let height: CGFloat = 480
+        let layout = StreamNavigator.layout(
+            nodes: threeDays(pagesPerDay: 12), geometry: .unmeasured, height: height, width: 102)
+        XCTAssertEqual(layout.placed.count, 36)
+        let last = try XCTUnwrap(layout.placed.last)
+        XCTAssertGreaterThan(last.drawnTop + last.rowHeight, height, "the control: the column fits its rows")
+        XCTAssertEqual(
+            try XCTUnwrap(layout.placed.first).drawnTop,
+            StreamNavigator.Metrics.top - StreamNavigator.Metrics.rowLift(firstOfDay: true))
+        for placed in layout.placed {
+            XCTAssertGreaterThanOrEqual(placed.drawnTop, 0, "a row was placed above the column at \(placed.drawnTop)")
+        }
+        XCTAssertEqual(
+            layout.contentHeight, last.y + last.rowHeight + StreamNavigator.Metrics.bottom,
+            "the drawing ends somewhere other than the foot's margin under the last row")
+        XCTAssertEqual(layout.trackBottom, layout.contentHeight - StreamNavigator.Metrics.bottom)
+        XCTAssertEqual(layout.anchors.last?.y, layout.trackBottom, "the map stops short of the drawing's foot")
+        assertLaidOutInOrder(layout, height: height)
+
+        // A column shorter than its two margins, as a collapsing column publishes.
+        let tall = RollGeometry(extents: [], documentHeight: 1000, viewportTop: 0, viewportHeight: 300)
+        let short = StreamNavigator.layout(nodes: threeDays(pagesPerDay: 12), geometry: tall, height: 8, width: 102)
+        XCTAssertEqual(short.placed.first?.y, StreamNavigator.Metrics.top)
+        for placed in short.placed {
+            XCTAssertGreaterThanOrEqual(
+                placed.drawnTop, 0, "a row was placed above a short column at \(placed.drawnTop)")
+        }
+        assertLaidOutInOrder(short, height: 8)
+    }
+
+    /// A selection moving to a row outside the clip asks for the least scroll that shows it,
+    /// to the clip's top from above and to its bottom from below, never past the drawing's
+    /// ends, and a row in view asks for nothing.
+    func testASelectionChangeAsksForTheLeastScrollThatShowsItsRow() {
+        func reveal(rowTop: CGFloat, rowHeight: CGFloat = 16, visibleTop: CGFloat = 200) -> CGFloat? {
+            StreamNavigator.revealOffset(
+                rowTop: rowTop, rowHeight: rowHeight, visibleTop: visibleTop, visibleHeight: 400, contentHeight: 1000)
+        }
+        XCTAssertNil(reveal(rowTop: 200), "the row at the clip's top asked for a scroll")
+        XCTAssertNil(reveal(rowTop: 584), "the row at the clip's bottom asked for a scroll")
+        XCTAssertEqual(reveal(rowTop: 150), 150, "a row above the clip did not come to its top")
+        XCTAssertEqual(reveal(rowTop: 590), 206, "a row below the clip did not come to its bottom")
+        XCTAssertEqual(reveal(rowTop: 990, rowHeight: 30), 600, "the scroll ran past the drawing's foot")
+        XCTAssertEqual(reveal(rowTop: -5, visibleTop: 0), 0, "the scroll ran above the drawing's top")
+        XCTAssertNil(
+            StreamNavigator.revealOffset(
+                rowTop: 100, rowHeight: 16, visibleTop: 0, visibleHeight: 400, contentHeight: 400),
+            "a column that fits its rows asked for a scroll")
+    }
+
+    /// The column reveals the active node once, and again only after the selection moved
+    /// on and back, or after the roll left and came back; a reveal that could not be made,
+    /// and so was never recorded, stays due.
+    func testTheColumnRevealsANodeOnceUntilTheSelectionMovesOrTheRollLeaves() {
+        var memory = StreamNavigator.RevealMemory()
+        XCTAssertTrue(memory.isDue(11), "the first node was not revealed")
+        XCTAssertTrue(memory.isDue(11), "a reveal that was never made stopped being due")
+        memory.record(11)
+        XCTAssertFalse(memory.isDue(11), "a layout moving the row revealed it again")
+        XCTAssertTrue(memory.isDue(22), "the selection moved and nothing scrolled")
+        memory.record(22)
+        XCTAssertTrue(memory.isDue(11), "a node selected again was not revealed")
+        memory.record(11)
+        memory.forget()
+        XCTAssertNil(memory.revealed, "the roll left and the column still remembers its node")
+        XCTAssertTrue(memory.isDue(11), "the roll came back and its node stayed out of view")
+    }
+
+    /// A hop that finds the clip with no height, or the drawing not yet as tall as the clip,
+    /// moves nothing and leaves the reveal due, and the clip or the drawing taking its size
+    /// makes it with no second update. Out of its window the view answers no size; back in
+    /// it, the reveal is made.
+    func testARevealThatMeasuredNothingIsMadeWhenTheClipTakesItsSize() {
+        let cases: [(clip: CGFloat, drawing: CGFloat, leaves: Bool)] = [
+            (0, 1000, false), (400, 100, false), (0, 1000, true),
+        ]
+        let request = RailReveal.Request(id: 11, top: 900, bottom: 930)
+        for (clipHeight, drawingHeight, leaves) in cases {
+            let label = "a \(clipHeight) point clip over a \(drawingHeight) point drawing"
+            let column = RevealColumn(clipHeight: clipHeight, drawingHeight: drawingHeight)
+            addTeardownBlock { column.window.close() }
+
+            column.reveal.reveal(request)
+            drainMainQueue()
+            XCTAssertTrue(column.reveal.memory.isDue(11), "\(label) used up the reveal")
+            XCTAssertEqual(column.offset, 0, "\(label) moved the clip")
+
+            if leaves { column.scroll.removeFromSuperview() }
+            column.scroll.setFrameSize(NSSize(width: 100, height: 400))
+            column.document.setFrameSize(NSSize(width: 100, height: 1000))
+            drainMainQueue()
+            if leaves {
+                XCTAssertTrue(column.reveal.memory.isDue(11), "a view out of its window answered the clip's size")
+                XCTAssertEqual(column.offset, 0, "a view out of its window moved the clip")
+                column.window.contentView?.addSubview(column.scroll)
+                drainMainQueue()
+            }
+            XCTAssertFalse(column.reveal.memory.isDue(11), "\(label) left the reveal due once the clip took its size")
+            XCTAssertEqual(column.offset, 530, "\(label) did not bring the row to the clip's bottom")
+        }
+    }
+
+    /// Two updates in one hop make one move, the last, and a last one already revealed makes none.
+    func testTheLastUpdateInAHopDecidesTheReveal() {
+        let column = RevealColumn(clipHeight: 400, drawingHeight: 1000)
+        addTeardownBlock { column.window.close() }
+        let far = RailReveal.Request(id: 11, top: 900, bottom: 930)
+        let near = RailReveal.Request(id: 22, top: 500, bottom: 530)
+        column.reveal.reveal(near)
+        drainMainQueue()
+        XCTAssertEqual(column.offset, 130, "the control: the first reveal brought its row to the clip's bottom")
+
+        column.reveal.reveal(far)
+        column.reveal.reveal(near)
+        drainMainQueue()
+        XCTAssertEqual(column.offset, 130, "a request replaced in its hop moved the clip")
+        XCTAssertTrue(column.reveal.memory.isDue(11), "a request replaced in its hop was recorded")
+    }
+
+    /// A `RailRevealView` behind a flipped drawing inside a scroll view, in a window never ordered.
+    private struct RevealColumn {
+        final class Document: NSView {
+            override var isFlipped: Bool { true }
+        }
+
+        let window: NSWindow
+        let scroll: NSScrollView
+        let document: Document
+        let reveal: RailRevealView
+
+        init(clipHeight: CGFloat, drawingHeight: CGFloat) {
+            window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 100, height: 400),
+                styleMask: [], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 400))
+            scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 100, height: clipHeight))
+            document = Document(frame: NSRect(x: 0, y: 0, width: 100, height: drawingHeight))
+            scroll.documentView = document
+            reveal = RailRevealView(frame: NSRect(x: 0, y: 0, width: 100, height: 1000))
+            document.addSubview(reveal)
+            window.contentView?.addSubview(scroll)
+        }
+
+        /// How far down the drawing the clip stands.
+        var offset: CGFloat { scroll.contentView.bounds.minY }
+    }
+
+    /// A row's ground begins at the note or the mark it keeps above itself, and at its own
+    /// sliver box when it keeps none, so a reveal brings the note in with the row.
+    func testARowsGroundBeginsAtItsNoteWhenItKeepsOne() throws {
+        let layout = StreamNavigator.layout(
+            nodes: nodes([
+                slot(tab: 1, page: 11, day: 0),
+                slot(tab: 2, page: 22, day: -3),
+                slot(tab: 3, page: 33, day: -9),
+            ]),
+            geometry: .unmeasured, height: 400, width: 102)
+        let plain = try XCTUnwrap(layout.placed.first)
+        XCTAssertEqual(plain.node.emptyDays, 0, "the control")
+        XCTAssertEqual(plain.groundTop, plain.rowTop)
+        let noted = layout.placed[1]
+        XCTAssertEqual(noted.node.emptyDays, 2, "the control")
+        XCTAssertEqual(noted.groundTop, noted.y - StreamNavigator.Metrics.gapBand)
+        XCTAssertEqual(noted.noteY, noted.groundTop + 1, "the note is drawn off its row's ground")
+        let marked = layout.placed[2]
+        XCTAssertTrue(marked.node.trailing, "the control")
+        XCTAssertEqual(
+            marked.groundTop,
+            marked.y - StreamNavigator.Metrics.gapBandAtWindow - StreamNavigator.Metrics.windowReserve)
+        XCTAssertLessThan(try XCTUnwrap(layout.windowY), marked.rowTop, "the window mark is drawn below its row's box")
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(layout.windowY), marked.groundTop, "the window mark is drawn off its row's ground")
+    }
+
+    /// On a dense rail the band lives in the drawing's coordinates and stays inside it, on
+    /// the first layout and on the viewport only path alike, at either end of the roll.
+    func testADenseRailsBandStaysInsideTheDrawingOnTheViewportOnlyPath() throws {
+        let nodes = threeDays(pagesPerDay: 12)
+        let top = RollGeometry(extents: [], documentHeight: 10_000, viewportTop: 0, viewportHeight: 300)
+        let layout = StreamNavigator.layout(nodes: nodes, geometry: top, height: 480, width: 102)
+        XCTAssertGreaterThan(layout.contentHeight, 480, "the control: the column fits its rows")
+        for viewportTop: CGFloat in [0, 4_850, 9_700] {
+            let geometry = RollGeometry(
+                extents: [], documentHeight: 10_000, viewportTop: viewportTop, viewportHeight: 300)
+            let fresh = try XCTUnwrap(
+                StreamNavigator.layout(nodes: nodes, geometry: geometry, height: 480, width: 102).band)
+            let updated = try XCTUnwrap(StreamNavigator.updatingViewport(in: layout, geometry: geometry).band)
+            XCTAssertEqual(updated, fresh, "the viewport only path drew the band elsewhere at \(viewportTop)")
+            XCTAssertGreaterThanOrEqual(updated.y, 0, "the band rose above the drawing at \(viewportTop)")
+            XCTAssertLessThanOrEqual(
+                updated.y + updated.height, layout.contentHeight,
+                "the band passed the drawing's foot at \(viewportTop)")
+        }
+        let foot = try XCTUnwrap(
+            StreamNavigator.updatingViewport(
+                in: layout,
+                geometry: RollGeometry(
+                    extents: [], documentHeight: 10_000, viewportTop: 9_700, viewportHeight: 300)
+            ).band)
+        XCTAssertGreaterThan(foot.y + foot.height, 480, "the control: the band at the roll's end sits inside the column")
+    }
+
+    /// A wheel over the column turns the roll while the drawing fits the column, the foot's
+    /// margin included, and turns the column once the rows outrun it by more than that.
+    func testTheWheelTurnsTheRollWhileTheDrawingFitsTheColumn() {
+        let margin = StreamNavigator.Metrics.bottom
+        XCTAssertTrue(StreamNavigator.relaysWheel(contentHeight: 400, columnHeight: 400))
+        XCTAssertTrue(
+            StreamNavigator.relaysWheel(contentHeight: 400 + margin, columnHeight: 400),
+            "overflow within the foot's margin changed what the wheel means")
+        XCTAssertFalse(
+            StreamNavigator.relaysWheel(contentHeight: 400 + margin + 1, columnHeight: 400),
+            "a column the rows outrun kept the wheel for the roll")
+        let fits = StreamNavigator.layout(
+            nodes: threeDays(pagesPerDay: 4), geometry: .unmeasured, height: 400, width: 102)
+        XCTAssertTrue(StreamNavigator.relaysWheel(contentHeight: fits.contentHeight, columnHeight: 400))
+        let dense = StreamNavigator.layout(
+            nodes: threeDays(pagesPerDay: 12), geometry: .unmeasured, height: 480, width: 102)
+        XCTAssertFalse(StreamNavigator.relaysWheel(contentHeight: dense.contentHeight, columnHeight: 480))
+    }
+
+    /// A line landing on a row's last drawn point yields no sliver, and one landing two
+    /// points above the row yields one, for a day's first row and a later one alike: the
+    /// box the slivers keep clear of is the drawn row one point higher and as tall.
+    func testASliverNeverCrossesARowsLastPointAndMayStandJustAboveIt() throws {
+        let nodes = nodes([
+            slot(tab: 1, page: 11, day: 0),
+            slot(tab: 2, page: 22, day: 0, createdMs: born + 60_000),
+        ])
+        XCTAssertEqual(nodes.map(\.firstOfDay), [true, false])
+        // A 200 point document over a 200 point span: a document offset is a rail point.
+        let height: CGFloat = StreamNavigator.Metrics.top + 200 + StreamNavigator.Metrics.bottom
+        func geometry(lines: [RollGeometry.LineMark]) -> RollGeometry {
+            RollGeometry(
+                extents: [
+                    extent(nodes[0], top: 50, height: 50, lines: lines),
+                    extent(nodes[1], top: 150, height: 50),
+                ],
+                documentHeight: 200, viewportTop: 0, viewportHeight: 200)
+        }
+        let bare = StreamNavigator.layout(nodes: nodes, geometry: geometry(lines: []), height: height, width: 102)
+        XCTAssertEqual(bare.placed.map(\.y), [66, 166], "the control: the packing moved a node off its place")
+        let lastPoints = bare.placed.map { $0.drawnTop + $0.rowHeight - 1 }
+        let justAbove = bare.placed.map { $0.drawnTop - 2 }
+        let lines = (lastPoints + justAbove).map {
+            RollGeometry.LineMark(y: bare.documentOffset(atY: $0), width: 1)
+        }
+        let layout = StreamNavigator.layout(
+            nodes: nodes, geometry: geometry(lines: lines), height: height, width: 102)
+        XCTAssertEqual(layout.placed.map(\.y), bare.placed.map(\.y), "the lines moved a node")
+        XCTAssertEqual(layout.slivers.map(\.y), justAbove, "a sliver crossed a row's last point, or one just above a row was dropped")
+    }
+
+    /// At a fractional top the slivers keep clear of every whole point a row paints and the
+    /// one above it, as at a whole point top: a line on the point above or on the last
+    /// painted point yields no sliver, and one a point further out on either side yields one.
+    func testAtAFractionalTopNoSliverCrossesAPointTheRowPaints() throws {
+        let nodes = nodes([
+            slot(tab: 1, page: 11, day: 0),
+            slot(tab: 2, page: 22, day: 0, createdMs: born + 60_000),
+        ])
+        // A 200 point document over a 200 point span: a document offset is a rail point.
+        let height: CGFloat = StreamNavigator.Metrics.top + 200 + StreamNavigator.Metrics.bottom
+        func geometry(lines: [RollGeometry.LineMark]) -> RollGeometry {
+            RollGeometry(
+                extents: [
+                    extent(nodes[0], top: 50.4, height: 50, lines: lines),
+                    extent(nodes[1], top: 150.4, height: 49.6),
+                ],
+                documentHeight: 200, viewportTop: 0, viewportHeight: 200)
+        }
+        let bare = StreamNavigator.layout(nodes: nodes, geometry: geometry(lines: []), height: height, width: 102)
+        for placed in bare.placed {
+            XCTAssertNotEqual(
+                placed.drawnTop, placed.drawnTop.rounded(), "the control: a row was drawn at a whole point")
+            XCTAssertNotEqual(
+                placed.drawnTop + placed.rowHeight, (placed.drawnTop + placed.rowHeight).rounded(),
+                "the control: a row ended at a whole point")
+        }
+        // A whole point p is painted when [p, p + 1) meets [drawnTop, drawnTop + rowHeight).
+        let painted = bare.placed.map {
+            (first: $0.drawnTop.rounded(.down), last: ($0.drawnTop + $0.rowHeight).rounded(.up) - 1)
+        }
+        let dropped = painted.flatMap { [$0.first - 1, $0.last] }
+        let kept = painted.flatMap { [$0.first - 2, $0.last + 1] }
+        let lines = (dropped + kept).map {
+            RollGeometry.LineMark(y: bare.documentOffset(atY: $0), width: 1)
+        }
+        let layout = StreamNavigator.layout(
+            nodes: nodes, geometry: geometry(lines: lines), height: height, width: 102)
+        XCTAssertEqual(layout.placed.map(\.y), bare.placed.map(\.y), "the lines moved a node")
+        XCTAssertEqual(
+            layout.slivers.map(\.y), kept.sorted(),
+            "a sliver crossed a point a row paints or the one above it, or one a point clear of a row was dropped")
+    }
+
     /// A measured roll puts each node where its page's share of the
     /// roll falls, and the map from document to rail runs through the
     /// nodes as placed: a node's own y answers back its page's top, and
@@ -451,7 +785,7 @@ final class StreamNavigatorTests: XCTestCase {
             XCTAssertLessThanOrEqual(sliver.width, available)
             for placed in layout.placed {
                 XCTAssertFalse(
-                    sliver.y >= placed.rowTop && sliver.y <= placed.rowTop + placed.rowHeight,
+                    sliver.y >= placed.rowTop && sliver.y <= placed.rowBottom,
                     "a sliver crossed a node's words at \(sliver.y)")
             }
         }
@@ -554,7 +888,7 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertEqual(stacked.placed.map(\.documentTop), [0, 0, 0, 0])
         XCTAssertEqual(stacked.placed[0].y, StreamNavigator.Metrics.top)
         XCTAssertEqual(
-            stacked.placed[1].rowTop, stacked.placed[0].rowTop + stacked.placed[0].rowHeight,
+            stacked.placed[1].drawnTop, stacked.placed[0].drawnTop + stacked.placed[0].rowHeight,
             "an unmeasured roll's second node did not pack against the first")
 
         let tall = RollGeometry(
@@ -726,22 +1060,38 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertEqual(StreamNavigator.jumpDuration(reduceMotion: false), 0.16)
     }
 
+    /// Three consecutive days of `pagesPerDay` pages each, newest first, the fourth page
+    /// selected, so a later row meets the next day's first row at each day boundary.
+    private func threeDays(pagesPerDay: Int) -> [StreamNavigator.Node] {
+        var tabs: [TabSummary] = []
+        for day in 0..<3 {
+            for index in 0..<pagesPerDay {
+                let number = UInt64(day * pagesPerDay + index + 1)
+                let created: UInt64 = born - UInt64(day) * 86_400_000 + UInt64(index) * 60_000
+                tabs.append(slot(tab: number, page: 100 + number, day: -day, createdMs: created))
+            }
+        }
+        return nodes(tabs, selecting: 4)
+    }
+
     /// No node's words may begin above where the one before them ended,
-    /// and none may hang off the column.
+    /// and none may hang off the drawing, which is never shorter than the column.
     private func assertLaidOutInOrder(
         _ layout: StreamNavigator.Layout, height: CGFloat,
         file: StaticString = #filePath, line: UInt = #line
     ) {
+        XCTAssertGreaterThanOrEqual(
+            layout.contentHeight, height, "the drawing is shorter than its column", file: file, line: line)
         var settled: CGFloat = 0
         for placed in layout.placed {
             XCTAssertGreaterThanOrEqual(
-                placed.rowTop, settled, "a node began above where the one before it ended",
+                placed.drawnTop, settled, "a node began above where the one before it ended",
                 file: file, line: line)
             XCTAssertGreaterThan(placed.rowHeight, 0, file: file, line: line)
             XCTAssertLessThanOrEqual(
-                placed.rowTop + placed.rowHeight, height,
-                "a node was drawn past the foot of the rail", file: file, line: line)
-            settled = placed.rowTop + placed.rowHeight
+                placed.drawnTop + placed.rowHeight, layout.contentHeight,
+                "a node was drawn past the foot of the drawing", file: file, line: line)
+            settled = placed.drawnTop + placed.rowHeight
         }
     }
 }

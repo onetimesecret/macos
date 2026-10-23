@@ -3,6 +3,8 @@
 //! newline merges into the earlier block. A paste with newlines inside it
 //! stays one block. Offsets are UTF-16 code units throughout.
 
+use zeroize::Zeroizing;
+
 use crate::document::{DocRun, SheetDocument};
 use crate::sheet::ItemId;
 
@@ -11,8 +13,9 @@ use crate::sheet::ItemId;
 pub(crate) struct MaterializedMeta {
     pub(crate) created_s: i64,
     pub(crate) modified_s: i64,
-    /// Paste origin. Content: sealed snapshot only, never JSON or the ledger.
-    pub(crate) origin: Option<String>,
+    /// Paste origin, a wiping owner. Content: sealed snapshot only, never JSON or the
+    /// ledger (Law 0004, C17).
+    pub(crate) origin: Option<Zeroizing<String>>,
 }
 
 pub(crate) struct BlockRecord {
@@ -649,7 +652,7 @@ mod tests {
 
         index.graduate(&doc);
         let frozen = index.materialized(0).unwrap();
-        assert_eq!(frozen.origin.as_deref(), Some(origin));
+        assert_eq!(frozen.origin.as_deref().map(String::as_str), Some(origin));
         assert!(
             index.materialized(1).is_none(),
             "an empty paragraph has nothing to freeze"
@@ -659,8 +662,44 @@ mod tests {
         doc.compact();
         index.retake_anchors(&doc);
         assert_eq!(
-            index.materialized(0).unwrap().origin.as_deref(),
+            index
+                .materialized(0)
+                .unwrap()
+                .origin
+                .as_deref()
+                .map(String::as_str),
             Some(origin)
+        );
+    }
+
+    /// An origin read out of a change, and the frozen record's, are wiping owners whose
+    /// capacity is their length (Law 0004, C17).
+    #[test]
+    fn a_blocks_origin_is_a_wiping_owner_the_size_of_its_changes_message() {
+        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
+
+        let (doc, mut index) = empty();
+        let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
+        insert(&doc, &mut index, 0, "pasted text\n");
+        doc.commit(Some(origin));
+
+        let derived = doc.span_provenance(0, 4).unwrap().origin.unwrap();
+        wiping_owner(&derived);
+        assert_eq!(derived.as_str(), origin);
+        assert_eq!(
+            derived.capacity(),
+            derived.len(),
+            "the copy grew past its size"
+        );
+
+        index.graduate(&doc);
+        let frozen = index.materialized(0).unwrap().origin.as_ref().unwrap();
+        wiping_owner(frozen);
+        assert_eq!(frozen.as_str(), origin);
+        assert_eq!(
+            frozen.capacity(),
+            frozen.len(),
+            "the frozen copy grew past its size"
         );
     }
 
@@ -739,7 +778,7 @@ mod tests {
         MaterializedMeta {
             created_s,
             modified_s,
-            origin: Some(origin.to_owned()),
+            origin: Some(Zeroizing::new(origin.to_owned())),
         }
     }
 
@@ -749,12 +788,18 @@ mod tests {
         survivor.absorb(frozen(100, 250, "earlier"));
         assert_eq!(survivor.created_s, 100);
         assert_eq!(survivor.modified_s, 300);
-        assert_eq!(survivor.origin.as_deref(), Some("earlier"));
+        assert_eq!(
+            survivor.origin.as_deref().map(String::as_str),
+            Some("earlier")
+        );
 
         let mut survivor = frozen(100, 100, "survivor");
         survivor.absorb(frozen(100, 400, "tied"));
         assert_eq!(survivor.modified_s, 400);
-        assert_eq!(survivor.origin.as_deref(), Some("survivor"));
+        assert_eq!(
+            survivor.origin.as_deref().map(String::as_str),
+            Some("survivor")
+        );
     }
 
     #[test]

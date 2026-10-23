@@ -44,6 +44,12 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(copy.title, "Copy Decrypted Contents")
         XCTAssertEqual(link.title, "Create One-Time Link…")
         XCTAssertEqual(remove.title, "Remove Sealed Content")
+        // The auto-enable pass a shown menu runs asks the coordinator,
+        // which validates; the object's verbs must survive it.
+        menu.update()
+        for item in menu.items where item.action != nil {
+            XCTAssertTrue(item.isEnabled, "\(item.title) is offered, so it is enabled")
+        }
         XCTAssertNotNil(copy.action)
         XCTAssertNotNil(link.action)
         XCTAssertNotNil(remove.action)
@@ -768,6 +774,46 @@ final class SealedCapsuleTests: XCTestCase {
             PageModel.linkCopiedLine,
             "the link is on the clipboard — paste it where it needs to go.")
         XCTAssertEqual(PageModel.removedLine, "sealed content removed.")
+    }
+
+    /// The sheet's tooltip and its error lines say one-time link, in the
+    /// menu's verb; conceal stays the code's word (ADR-0055 rule 3, issue #295).
+    func testTheSheetNamesTheLinkAndNotTheServersVerb() {
+        XCTAssertEqual(ConcealView.destinationHelp, "the server this one-time link is created on")
+        XCTAssertEqual(
+            ConcealView.failureLabel("refused"), "Could not create the link: refused")
+        XCTAssertEqual(PageModel.linkFailedLine, "the link was not created")
+    }
+
+    /// The fallback already says the link failed, so VoiceOver reads it without
+    /// the prefix; a named reason keeps it (issue #295).
+    func testTheSpokenFallbackSaysTheOutcomeOnce() {
+        XCTAssertEqual(
+            ConcealView.failureLabel(PageModel.linkFailedLine), "the link was not created")
+        XCTAssertEqual(
+            ConcealView.failureLabel("there is nothing to send"),
+            "Could not create the link: there is nothing to send")
+    }
+
+    /// Options the client could not encode reach the sheet as the fallback, and
+    /// the client's diagnostic never does (issue #295).
+    func testTheSheetNeverShowsTheClientsEncodingDiagnostic() throws {
+        let outcome = CompanionClient.unencodableOptionsOutcome()
+        XCTAssertFalse(outcome.ok)
+        XCTAssertNil(outcome.error)
+
+        let model = try makeModel()
+        model.newPage()
+        let target = ConcealDraft.Target.page(try XCTUnwrap(model.selectedPageID))
+        model.beginConceal(target)
+        let draftID = try XCTUnwrap(model.concealDraft?.id)
+        model.finishConceal(outcome, for: target, draftID: draftID)
+
+        let shown = try XCTUnwrap(model.concealDraft?.error)
+        XCTAssertEqual(shown, PageModel.linkFailedLine)
+        XCTAssertFalse(
+            ConcealView.failureLabel(shown).localizedCaseInsensitiveContains("conceal"),
+            "\(shown) says conceal, which rule 3 keeps for the code and the server")
     }
 
     /// A removal flashes its line with Undo beside it (D-30), since the core

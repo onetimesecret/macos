@@ -40,7 +40,7 @@ final class TabRenameTests: XCTestCase {
             "and spaces around the current title change nothing")
     }
 
-    // MARK: The strip's and the slot rail's field (issue #250)
+    // MARK: The strip's field (issue #250)
 
     func testTheFieldOpensOnTheCurrentTitle() {
         var field = TabRename.Field()

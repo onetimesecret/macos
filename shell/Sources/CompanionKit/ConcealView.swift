@@ -63,7 +63,7 @@ public struct ConcealView: View {
             Text(destination)
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(Color.secondaryInk)
-                .help("The server this conceal goes to")
+                .help(Self.destinationHelp)
         }
     }
 
@@ -151,7 +151,7 @@ public struct ConcealView: View {
                 Text(error)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.emberText)
-                    .accessibilityLabel(Text("Conceal failed: \(error)"))
+                    .accessibilityLabel(Text(Self.failureLabel(error)))
             }
             HStack(spacing: 8) {
                 if !isConfigured {
@@ -192,6 +192,13 @@ public struct ConcealView: View {
     /// What the footer says when no account is configured, beside the
     /// button that opens the Connection settings.
     nonisolated static let guestLine = "sending as a guest"
+
+    /// The destination's tooltip and the error line's spoken label, in
+    /// one-time link vocabulary (ADR-0055 rule 3, issue #295).
+    nonisolated static let destinationHelp = "the server this one-time link is created on"
+    nonisolated static func failureLabel(_ error: String) -> String {
+        error == PageModel.linkFailedLine ? error : "Could not create the link: \(error)"
+    }
 
     private var isConfigured: Bool {
         (model.connection?.hasToken ?? false) && !(model.connection?.extid.isEmpty ?? true)

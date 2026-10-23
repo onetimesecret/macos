@@ -32,7 +32,7 @@ public struct TabStripView: View {
     /// The stance the page content takes; a read only strip's tabs take no drop (issue 254).
     let readOnly: Bool
 
-    public init(model: PageModel, readOnly: Bool = false) {
+    public init(model: PageModel, readOnly: Bool) {
         self.model = model
         self.readOnly = readOnly
     }
@@ -158,8 +158,7 @@ public struct TabStripView: View {
     /// that unbound it leaves the tooltip saying only what the button
     /// does, which is still true.
     static func newPageHelp(chord: Keystroke?) -> String {
-        guard let chord else { return "New page" }
-        return "New page (\(chord.displaySymbol))"
+        Keystroke.chorded(CompanionL10n.string("pad.page.new"), chord: chord)
     }
 
     /// The ledger tab's tooltip, on the same terms. It named ⌘0 until
@@ -168,9 +167,7 @@ public struct TabStripView: View {
     /// chord appears only when something bound it, which for the tab's
     /// own build is a keymap the user wrote.
     static func ledgerHelp(chord: Keystroke?) -> String {
-        let what = "The ledger: what the app did with each page and chip"
-        guard let chord else { return what }
-        return "\(what) (\(chord.displaySymbol))"
+        Keystroke.chorded("The ledger: what the app did with each page and chip", chord: chord)
     }
 
     /// ↗ page (docs/spec/04, conceal flow): conceal the visible page
@@ -182,7 +179,7 @@ public struct TabStripView: View {
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: NSFont.miniSystemFontSize, weight: .medium))
                 Text("page")
                     .font(.system(.caption2, design: .monospaced))
             }
@@ -192,9 +189,14 @@ public struct TabStripView: View {
         .buttonStyle(.plain)
         .foregroundStyle(Color.secondaryInk)
         .disabled(model.selectedPageID == nil || model.showingLedger)
-        .help("Conceal this page into a one-time link")
-        .accessibilityLabel(Text("Conceal page into one-time link"))
+        .help(Self.concealPageHelp)
+        .accessibilityLabel(Text(Self.concealPageLabel))
     }
+
+    /// The ↗ page tab's tooltip and spoken label, in one-time link
+    /// vocabulary (ADR-0055 rule 3, issue #295).
+    nonisolated static let concealPageHelp = "create a one-time link from this page"
+    nonisolated static let concealPageLabel = "Create one-time link from page"
 
     /// The dashed residue tab: the audit trail, one line per event. A
     /// toggle, so a second click returns to the page. Built and not
@@ -221,129 +223,6 @@ public struct TabStripView: View {
         .foregroundStyle(Color.secondaryInk)
         .help(Self.ledgerHelp(chord: model.keymap.hintKeystroke(for: .ledgerShow)))
         .accessibilityLabel(Text("Ledger, \(model.ledgerEntries.count) records"))
-    }
-}
-
-/// Days placed along the bottom. This is the horizontal presentation
-/// of the same `TimeUnitProjection` the side column uses; it changes
-/// neither grouping nor selection semantics (D-26). No layout draws
-/// this since ADR-0037 reduced the four combinations to Tabs and Timeline.
-public struct TimeStripView: View {
-    @ObservedObject var model: PageModel
-
-    public init(model: PageModel) {
-        self.model = model
-    }
-
-    public var body: some View {
-        let projection = model.timeUnits
-        let selected = TimeRailView.selectedBucket(
-            projection: projection, selection: model.selection)
-        HStack(spacing: 2) {
-            if !model.navigationFiles.isEmpty {
-                GroupLabel(text: "Files")
-                ForEach(model.navigationFiles) { file in
-                    FileTab(
-                        file: file,
-                        selected: model.selectedFile == file.id && !model.showingLedger,
-                        model: model
-                    )
-                }
-                GroupLabel(text: "Pad")
-            }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(projection.units.indices, id: \.self) { index in
-                        let unit = projection.units[index]
-                        TimeUnitBottomTab(
-                            unit: unit,
-                            selected: !model.showingLedger && model.selectedFile == nil
-                                && unit.bucket == selected,
-                            chord: model.pads.isEnabled ? nil : TimeRailView.chord(
-                                forRowAt: TimeRailView.targetIndex(
-                                    forDay: index, openFileCount: model.navigationFiles.count),
-                                keymap: model.keymap),
-                            model: model
-                        )
-                    }
-                }
-            }
-
-            Spacer(minLength: 8)
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .frame(height: 32)
-        .background(Color.panelBackground)
-    }
-}
-
-/// A day in the bottom run. Its content and actions mirror
-/// `TimeUnitTab`; only its measure changes to the bottom-tab metrics.
-private struct TimeUnitBottomTab: View {
-    let unit: TimeUnitProjection.Unit
-    let selected: Bool
-    let chord: Keystroke?
-    @ObservedObject var model: PageModel
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 4) {
-                Text(unit.railLabel)
-                    .font(.system(.caption, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if TimeUnitTab.offersNewPage(unit) {
-                    Button(action: model.newPage) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 8, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.secondaryInk)
-                    .help(TimeUnitTab.newPageHelp(
-                        chord: model.keymap.hintKeystroke(for: .pageNew)))
-                    .accessibilityLabel(Text("New page"))
-                }
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 18)
-            Group {
-                if unit.pageIDs.isEmpty {
-                    EmptyRule()
-                } else {
-                    GaugeBar(
-                        fraction: unit.fractionRemaining,
-                        paused: unit.paused,
-                        toppedUp: unit.toppedUp,
-                        lastHour: unit.lastHour
-                    )
-                }
-            }
-            .frame(height: 3)
-            .padding(.horizontal, 3)
-        }
-        .frame(maxWidth: 140)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(selected ? Color.cellBackground : .clear)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture { model.select(target: TimeUnitTab.target(for: unit)) }
-        .help(helpText)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(unit.spokenLabel))
-        .accessibilityValue(Text(unit.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
-        .accessibilityNewPageAction(when: TimeUnitTab.offersNewPage(unit)) {
-            model.newPage()
-        }
-    }
-
-    private var helpText: String {
-        if unit.pageIDs.isEmpty {
-            return TimeUnitTab.todayHelp(hasPage: false, chord: chord)
-        }
-        return TimeUnitTab.dayHelp(spokenLabel: unit.spokenLabel, chord: chord)
     }
 }
 
@@ -421,12 +300,17 @@ struct SheetTab: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
+                        .frame(width: 12, height: 16)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
-                .accessibilityLabel(Text("Close tab"))
+                .help("Close tab")
+                // The row offers Close Tab as an action; the mark is
+                // pointer-only.
+                .accessibilityHidden(true)
             }
             .padding(.horizontal, 8)
             .frame(height: 18)
@@ -474,10 +358,21 @@ struct SheetTab: View {
         .help(holdDescription)
         // The tab speaks as one element until it holds the field, which
         // has to be reachable on its own for the draft to be read back.
+        // Mid-rename the label stays on the container: the field speaks
+        // its own "Tab name", not the tab's description, so nothing doubles.
         .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected, renaming: renaming))
+        // The hover-only close mark and the menu verbs, reachable
+        // without a pointer, as on the rail's rows.
+        .accessibilityActivation(when: !renaming) { model.select(sheet.id) }
+        .accessibilityActions {
+            if !renaming {
+                Button("Rename Tab") { beginRename() }
+                Button("Close Tab") { model.close(sheet.id) }
+            }
+        }
         .contextMenu {
             Button("Rename Tab") { beginRename() }
             // Disabled rather than hidden on an empty slot: the item
@@ -496,6 +391,7 @@ struct SheetTab: View {
                     model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
                 }
             }
+            Divider()
             Button("Close Tab", role: .destructive) { model.close(sheet.id) }
         }
     }
@@ -667,7 +563,7 @@ struct FileTab: View {
         VStack(spacing: 0) {
             HStack(spacing: 4) {
                 Image(systemName: "doc")
-                    .font(.system(size: 9))
+                    .font(.system(size: NSFont.miniSystemFontSize))
                     .foregroundStyle(Color.secondaryInk)
                     .accessibilityHidden(true) // the tab says "file" in words
                 Text(file.name)
@@ -679,12 +575,17 @@ struct FileTab: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
+                        .frame(width: 12, height: 16)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
-                .accessibilityLabel(Text("Close file"))
+                .help("Close file")
+                // The row offers Close File as an action; the mark is
+                // pointer-only.
+                .accessibilityHidden(true)
             }
             .padding(.horizontal, 8)
             .frame(height: 18)
@@ -710,10 +611,13 @@ struct FileTab: View {
         .help(FileRowLabel.help(for: file))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected))
+        .accessibilityActivation(when: true) { model.select(target: .file(file.id)) }
+        .accessibilityAction(named: Text("Close File")) { model.closeFile(file.id) }
         .contextMenu {
             Button("Save") { model.select(target: .file(file.id)); model.saveActiveFile() }
             Button("Save As…") { model.select(target: .file(file.id)); model.saveActiveFileAs() }
+            Divider()
             Button("Close File", role: .destructive) { model.closeFile(file.id) }
         }
     }

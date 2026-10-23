@@ -6,7 +6,7 @@ documentation_status: needs-review
 
 - **Status:** proposed
 - **Date:** 2026-10-16
-- **Depends on:** [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md), [ADR-0043](0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md), [ADR-0046](0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md).
+- **Depends on:** [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md), [ADR-0043](0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md) (accepted 2026-10-16), [ADR-0046](0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md) (accepted 2026-10-16).
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
 

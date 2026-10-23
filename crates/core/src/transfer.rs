@@ -451,9 +451,9 @@ impl<C: Clock> SheetStore<C> {
                 // The envelope's name and note, the name judged as a typed one is.
                 clone.name = reference
                     .name
-                    .as_deref()
-                    .and_then(|name| judge_name(name).ok().flatten())
-                    .map(str::to_owned);
+                    .as_ref()
+                    .and_then(|name| judge_name(name.as_str()).ok().flatten())
+                    .map(|name| Zeroizing::new(name.to_owned()));
                 clone.note = reference.note.as_deref().map(|text| Note::holding(text));
                 placed.cloned += 1;
                 plan.push(Planned::Clone(Box::new(clone)));
@@ -644,7 +644,7 @@ mod tests {
     use crate::clock::ManualClock;
     use crate::fragment::{EnvelopeCap, REFERENCE_CAP};
     use crate::ledger::LEDGER_RETENTION_MS;
-    use crate::sheet::Segment;
+    use crate::sheet::{NameRefusal, Segment};
     use crate::store::EditOp;
     use crate::ttl::Ttl;
 
@@ -1097,6 +1097,10 @@ mod tests {
         let face = store.sheet(id).unwrap().chip(clone).unwrap();
         assert_eq!(face.name(), Some("API_KEY"));
         assert!(face.has_note());
+        assert!(
+            face.note.as_ref().and_then(Note::resting).is_some(),
+            "the pasted note was made a document"
+        );
         assert_eq!(&**store.note_text(clone).unwrap(), "rotate monthly");
         assert!(
             !store.note_can_undo(clone),
@@ -1457,7 +1461,7 @@ mod tests {
         nodes.push(Node::Ink(Zeroizing::new(" 3 ".into())));
         nodes.push(Node::Ref(crate::fragment::Reference {
             uuid: ItemId::random(),
-            name: Some("FOREIGN".into()),
+            name: Some(Zeroizing::new("FOREIGN".into())),
             note: None,
         }));
         let mixed = Fragment { cut: None, nodes }.envelope().unwrap();
@@ -1650,6 +1654,119 @@ mod tests {
         assert_eq!(store.ledger().count(), records);
         assert!(store.active_cut().is_some());
         assert_eq!(store.expire_due(), vec![id], "the timer still reaps it");
+    }
+
+    /// An object's note and name as they stand.
+    #[derive(Debug, PartialEq)]
+    struct NoteAndName {
+        text: String,
+        can_undo: bool,
+        can_redo: bool,
+        name: Option<String>,
+    }
+
+    /// The note and name of the object at `chip`, read past the deadline gate.
+    fn note_and_name(store: &SheetStore<ManualClock>, chip: ChipId) -> NoteAndName {
+        let face = store.sheets().find_map(|s| s.chip(chip)).unwrap();
+        let note = face.note.as_ref().unwrap();
+        NoteAndName {
+            text: note.text().to_string(),
+            can_undo: note.can_undo(),
+            can_redo: note.can_redo(),
+            name: face.name().map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_page_past_its_deadline_takes_no_note_edit_step_or_rename_and_waits_for_its_sweep() {
+        let (mut store, clock) = store();
+        let (id, a, b) = mixed(&mut store);
+        name_and_note(&mut store, a, "API_KEY", "rotate monthly");
+        name_and_note(&mut store, b, "OLD_KEY", "retired");
+        assert!(
+            store.undo_note(b).unwrap().applied,
+            "the control: a step to put back"
+        );
+        let caret = TextSelection {
+            location_u16: 2,
+            length_u16: 0,
+        };
+        clock.advance(HOUR);
+        let notes = (note_and_name(&store, a), note_and_name(&store, b));
+        let before = body(&store, id);
+        let records = store.ledger().count();
+
+        let typed = [EditOp::Insert {
+            pos_u16: 0,
+            text: "x".into(),
+        }];
+        assert!(!store.apply_note_ops(a, &typed, EditIntent::Typing, None));
+        assert!(!store.apply_note_ops(a, &[], EditIntent::Typing, None));
+        assert!(store.undo_note(a).is_none());
+        assert!(store.redo_note(b).is_none());
+        assert!(!store.finish_note_editing_group(a, Some(caret)));
+        for draft in ["NEW_KEY", ""] {
+            assert_eq!(
+                store.set_chip_name(a, draft),
+                Err(NameRefusal::UnknownChip),
+                "{draft:?}"
+            );
+        }
+        assert_eq!(
+            (note_and_name(&store, a), note_and_name(&store, b)),
+            notes,
+            "nothing changed"
+        );
+        assert_eq!(body(&store, id), before);
+        assert_eq!(store.ledger().count(), records);
+        assert_eq!(store.expire_due(), vec![id], "the timer still reaps it");
+    }
+
+    #[test]
+    fn a_restored_note_on_a_page_past_its_deadline_rests_after_a_refused_batch() {
+        let (mut store, clock) = store();
+        let (_, a, _) = mixed(&mut store);
+        name_and_note(&mut store, a, "API_KEY", "rotate monthly");
+        let uuid = uuid_of(&store, a);
+        let mut revived = SheetStore::new(clock.clone())
+            .with_grace_snap(false)
+            .with_default_rung(Ttl::MIN);
+        let snapshot = store.snapshot(1_000_000);
+        assert_eq!(revived.restore(&snapshot, 1_000_000).unwrap(), 1);
+        let chip = revived
+            .sheets()
+            .flat_map(Sheet::chips)
+            .find(|face| face.uuid == uuid)
+            .unwrap()
+            .id;
+        let resting = |store: &SheetStore<ManualClock>| {
+            let face = store.sheets().find_map(|s| s.chip(chip)).unwrap();
+            face.note
+                .as_ref()
+                .and_then(Note::resting)
+                .map(|text| text.to_string())
+        };
+        assert_eq!(
+            resting(&revived).as_deref(),
+            Some("rotate monthly"),
+            "the control: a restored note rests"
+        );
+        clock.advance(HOUR);
+        assert!(revived.chip_stands(chip), "the object is due, not gone");
+
+        let typed = [EditOp::Insert {
+            pos_u16: 0,
+            text: "x".into(),
+        }];
+        assert!(!revived.apply_note_ops(chip, &typed, EditIntent::Typing, None));
+        assert!(revived.undo_note(chip).is_none());
+        assert!(!revived.finish_note_editing_group(chip, None));
+        assert_eq!(
+            resting(&revived).as_deref(),
+            Some("rotate monthly"),
+            "a refused batch made the note's document"
+        );
+        assert_eq!(revived.expire_due().len(), 1, "the timer still reaps it");
     }
 
     #[test]

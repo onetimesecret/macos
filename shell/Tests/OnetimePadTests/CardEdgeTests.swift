@@ -109,4 +109,30 @@ final class CardEdgeTests: XCTestCase {
             }
         }
     }
+
+    // MARK: The pointer over each grip
+
+    func testEveryGripNamesItsCursor() {
+        if #available(macOS 15, *) {
+            XCTAssertEqual(CardEdge.top.frameResizePosition, .top)
+            XCTAssertEqual(CardEdge.bottom.frameResizePosition, .bottom)
+            XCTAssertEqual(CardEdge.leading.frameResizePosition, .left)
+            XCTAssertEqual(CardEdge.trailing.frameResizePosition, .right)
+            XCTAssertEqual(CardEdge.topLeading.frameResizePosition, .topLeft)
+            XCTAssertEqual(CardEdge.topTrailing.frameResizePosition, .topRight)
+            XCTAssertEqual(CardEdge.bottomLeading.frameResizePosition, .bottomLeft)
+            XCTAssertEqual(CardEdge.bottomTrailing.frameResizePosition, .bottomRight)
+            for edge in CardEdge.allCases {
+                XCTAssertNotNil(edge.resizeCursor, "\(edge) shows a frame cursor on macOS 15")
+            }
+        } else {
+            XCTAssertEqual(CardEdge.leading.resizeCursor, .resizeLeftRight)
+            XCTAssertEqual(CardEdge.trailing.resizeCursor, .resizeLeftRight)
+            XCTAssertEqual(CardEdge.top.resizeCursor, .resizeUpDown)
+            XCTAssertEqual(CardEdge.bottom.resizeCursor, .resizeUpDown)
+            for corner in [CardEdge.topLeading, .topTrailing, .bottomLeading, .bottomTrailing] {
+                XCTAssertNil(corner.resizeCursor, "\(corner) keeps the arrow before macOS 15")
+            }
+        }
+    }
 }

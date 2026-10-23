@@ -27,11 +27,9 @@ extension PageModel {
         case .pageNew:
             newPage()
         case .pageClose:
-            // ⌘W closes what is on screen. A dirty file publishes its
-            // Save file, Discard changes, and Keep editing decision
-            // inline; on a page it is the page, as it always
-            // was. The second reading rather than a third id, for
-            // `.pageNew`'s reason above (ADR-0028).
+            // ⌘W closes what is on the surface: the file, with its dirty
+            // decision inline, or the page (ADR-0028). The File menu's item
+            // routes the chord by key window first (`closeWhatIsShowing`, #201).
             if case .file = activeTarget { closeActiveFile() } else { closeCurrent() }
         case .fileOpen:
             openFile()
@@ -56,16 +54,7 @@ extension PageModel {
         case .appSettings:
             onOpenSettings?()
         case .editorToggleWrap:
-            // ⌥Z asks the page to stop wrapping, and with the days down
-            // the side the page cannot: the roll wraps every day
-            // whatever the preference says (issue #79). One command with
-            // two readings of the same intent, the way `.pageNew` above
-            // has two, except that here the second reading is a
-            // refusal, said out loud rather than written silently into a
-            // preference the surface on screen is not honouring. The
-            // gate is here, at the dispatch, so that the stored value
-            // and the flash cannot disagree about what just happened.
-            if showsTimeUnits { flash(Self.wrapIsFixedNotice) } else { toggleWrap() }
+            toggleWrap()
         case .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted,
             .editorDetectCodeLanguage, .editorUndo, .editorRedo, .noteToggleExpanded:
             // The page's own text view answers these: the seal, copy
@@ -74,12 +63,11 @@ extension PageModel {
             // document underneath it.
             return false
         case .windowClose:
-            // The Window menu's item carries this chord app-wide and
-            // sends `performClose:` to the key window (issue #201). The
-            // model has no window of its own to close, and the surface
-            // installer never installs it, so this arm is only reached
-            // if a future call site asked the model directly; refuse it
-            // the same way the text-view commands do.
+            // ⇧⌘W is the Window menu's and sends `performClose:` to the
+            // key window (issue #201). The model has no window to close.
+            return false
+        case .appHelp:
+            // ⌘? is the Help menu's item, which opens the docs (issue #294).
             return false
         case .pageSelect1, .pageSelect2, .pageSelect3, .pageSelect4, .pageSelect5,
             .pageSelect6, .pageSelect7, .pageSelect8, .pageSelect9:
@@ -88,5 +76,42 @@ extension PageModel {
             return true
         }
         return true
+    }
+}
+
+/// What ⌘W closes (issue #201), from what the key window is.
+public enum CloseChordTarget: Equatable, Sendable {
+    /// The page or file on the surface: the panel, its key relay or the
+    /// primary editor window is key.
+    case surface
+    /// The key window itself: Settings, Send Feedback or About.
+    case companionWindow
+    /// Nothing: a sheet, a save panel or an alert is key, or no window is.
+    case nothing
+
+    /// From the shell's two identity facts about the key window.
+    public init(ownerWindowIsKey: Bool, companionWindowIsKey: Bool) {
+        if ownerWindowIsKey {
+            self = .surface
+        } else if companionWindowIsKey {
+            self = .companionWindow
+        } else {
+            self = .nothing
+        }
+    }
+}
+
+extension PageModel {
+    /// Runs ⌘W: `page::Close` on the surface, `closeKeyWindow` in a
+    /// companion window, and nothing otherwise.
+    public func closeWhatIsShowing(_ target: CloseChordTarget, closeKeyWindow: () -> Void) {
+        switch target {
+        case .surface:
+            perform(.pageClose)
+        case .companionWindow:
+            closeKeyWindow()
+        case .nothing:
+            break
+        }
     }
 }

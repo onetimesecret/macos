@@ -505,6 +505,23 @@ final class DocumentOpsWiringTests: XCTestCase {
         assertParity()
     }
 
+    /// Every reader facing sentence around the link uses the menu item's
+    /// verb; conceal is the code's and the server's (ADR-0055 rule 3, issue #295).
+    func testTheLinksWordsOutsideTheMenuNeverSayConceal() {
+        let sentences = [
+            ConcealView.destinationHelp, ConcealView.failureLabel("x"),
+            PageModel.linkFailedLine, TabStripView.concealPageHelp,
+            TabStripView.concealPageLabel, ConnectionSettingsView.serverCaption,
+            ConnectionSettingsView.guestPrompt, ConnectionSettingsView.clearTokenMessage,
+            SyncSettingsSection.signOutMessage,
+        ]
+        for sentence in sentences {
+            XCTAssertFalse(
+                sentence.localizedCaseInsensitiveContains("conceal"),
+                "\(sentence) names the server's verb")
+        }
+    }
+
     func testTheChipMenuOffersPlaintextByName() throws {
         // D-41's order as Law 0001's presentation invariants extend it; nil is a separator.
         XCTAssertEqual(

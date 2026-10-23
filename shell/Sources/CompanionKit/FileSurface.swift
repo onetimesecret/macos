@@ -12,7 +12,7 @@ public enum FileRenderMode: Equatable, Hashable, Sendable {
         switch self {
         case .plainText: return "Plain Text"
         case .markdown: return "Markdown"
-        case .source(let language): return "Source (\(language.capitalized))"
+        case .source(let language): return "Source (\(CodeLanguageName.display(language)))"
         }
     }
 }
@@ -168,19 +168,19 @@ public struct FileRenderSuggestionBanner: View {
 
     public var body: some View {
         HStack(spacing: 8) {
-            Text("render as \(suggestion.language)?")
+            Text("render as \(suggestion.languageName)?")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(Color.secondaryInk)
-            Button("Use \(suggestion.language)") {
+            Button("Use \(suggestion.languageName)") {
                 model.selectFileRenderMode(suggestion.mode, for: suggestion.fileID)
             }
             .font(.system(.caption, design: .monospaced))
             .controlSize(.small)
-            .accessibilityLabel(Text("Use \(suggestion.language) rendering"))
+            .accessibilityLabel(Text("Use \(suggestion.languageName) rendering"))
             Button("Keep Plain Text") { model.keepFilePlainText(suggestion.fileID) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
-            Menu("Choose Language…") {
+            Menu("Choose Language") {
                 Button("Plain Text") { model.selectFileRenderMode(.plainText, for: suggestion.fileID) }
                 Button("Markdown") { model.selectFileRenderMode(.markdown, for: suggestion.fileID) }
                 if let contentHint = model.fileContentRenderHint(for: suggestion.fileID),
@@ -193,7 +193,7 @@ public struct FileRenderSuggestionBanner: View {
                 }
                 Divider()
                 ForEach(InkEditorView.Coordinator.manualLanguages, id: \.self) { language in
-                    Button(language.capitalized) {
+                    Button(CodeLanguageName.display(language)) {
                         model.selectFileRenderMode(.source(language), for: suggestion.fileID)
                     }
                 }
@@ -208,8 +208,9 @@ public struct FileRenderSuggestionBanner: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Contained, with no label of its own: the question and the
+        // buttons read in order, as the sync device row does.
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("Rendering suggestion: \(suggestion.language)"))
     }
 }
 

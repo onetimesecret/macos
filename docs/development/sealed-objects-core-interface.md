@@ -67,7 +67,7 @@ is refused whole and the name stands.
 | Entry point | Answer |
 | --- | --- |
 | `companion_chip_name_refusal(draft) -> u32` | judges a draft without a handle: 0 takes it, an empty draft clearing; 1 is longer than 64 characters; 2 is outside the charset; null and non-UTF-8 answer 2 |
-| `companion_chip_set_name(handle, chip, name) -> bool` | false for an unknown chip or a refused draft, the name then unchanged |
+| `companion_chip_set_name(handle, chip, name) -> bool` | false for an unknown chip, a page past its deadline or a refused draft, the name then unchanged |
 
 The shell owns the words for each code, so a field can say why a draft
 will not take while it is typed. It marks the page dirty after a name is
@@ -77,7 +77,10 @@ set or a note edited, as after any mutation
 ## The note's routes
 
 The note is the document type a page's body and an open file use, holding
-ink alone. Its routes are keyed by chip id, as a file has its own:
+ink alone. Since 2026-10-21 (issue #256) a note made by a restore, a paste
+or a clone is its text alone until it accepts a batch that changes that
+text, which makes that document (At rest, below). Its routes are keyed by
+chip id, as a file has its own:
 
 - `companion_chip_note_runs_json`: `[]` without a note, else
   `[{"ink": text}]`; null for an unknown chip or a page past its deadline.
@@ -95,8 +98,10 @@ would write some page's ink. The shell's `InkDocument` is `.sheet(id)` for
 a page or a file and `.note(chip:)` for a note, and `PageModel` answers a
 note on the note's routes and never on a page's.
 
-A note exists from its first accepted edit. `has_note` is true while it
-holds a character that is not whitespace
+A note exists from its first accepted edit, or from a restore, a paste or
+a clone that brings its text (issue #256 since 2026-10-21: such a note
+rests as its text until an edit). `has_note` is true while it has a
+character that is not whitespace
 (`store.rs` `a_note_of_only_whitespace_opens_no_doorway`).
 
 ## What the shell receives
@@ -198,7 +203,10 @@ it as fields it does not know, not damage, and drops it at its next save.
   damage, as the page floor's is. The note persists as text, not as its
   operation log, and restore rebuilds it with an empty undo stack. Each
   note's text is taken once, at its exact size, before the snapshot's two
-  passes (draft Law 0004).
+  passes (draft Law 0004). Since 2026-10-21 (issue #256) the restore, a
+  paste and a clone keep the note's text as one zeroizing copy, and the
+  note's document is made from it at its first edit
+  ([content buffer register](content-buffer-handling.md) C31).
 - **The page record**, after the floor: its detached chips, framed as its
   attached chips are, then a cut flag (0, or 1 and the active cut's
   envelope) on the page the cut came from. A cut whose objects are not
@@ -214,7 +222,11 @@ it as fields it does not know, not damage, and drops it at its next save.
 runs. It asks `Sheet::is_due`, the question the sweep asks, so a page
 leaves it at the instant it becomes due. Copy decrypted, `NAME=value`,
 the decrypted drag, both conceals, the note's text and a fragment's copy
-and cut find their page or object through it. To word its refusal a
+and cut find their page or object through it. Since 2026-10-21
+(issue #310) the note's batch, undo, redo and end of its typing run
+and a rename find their object through `SheetStore::chip_mut`, which
+asks `Sheet::is_due` the same way, so each refuses a page past its
+deadline and changes nothing. To word its refusal a
 page's conceal asks whether the page still stands, and a chip's conceal
 whether any page still holds the chip (`SheetStore::chip_stands`, over
 the seam `companion_chip_stands`); neither reads either.
@@ -232,9 +244,9 @@ actions are its own to answer.
 
 - The page answers unless another text view holds the keys: a field
   editor of any field in its window or in the key window over it (the
-  gutter's, the strip's, the slot rail's, the pad cell's, the sealed
-  name's, the find bar's, a Settings field), or a note's surface. A note
-  answers only while it holds the keys itself.
+  gutter's, the strip's, the pad cell's, the sealed name's, the find
+  bar's, a Settings field), or a note's surface. A note answers only
+  while it holds the keys itself.
 - `performKeyEquivalent` and the page's Edit menu actions (Undo, Redo,
   Seal Selected Content, Detect Code Language, Choose Language, Paste
   Without Detection) consult it, and their validation says no when it

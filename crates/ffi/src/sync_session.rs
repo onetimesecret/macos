@@ -259,6 +259,14 @@ fn page_from_wire(wire: &str) -> Option<ItemId> {
     Some(ItemId::from_bytes(bytes))
 }
 
+/// The envelopes queued again rather than exported again: a page's state, not its history.
+fn restated(envelope: &DeltaEnvelope) -> bool {
+    matches!(
+        envelope,
+        DeltaEnvelope::Expiry { .. } | DeltaEnvelope::Hold { .. } | DeltaEnvelope::Terminal { .. }
+    )
+}
+
 /// What a fetch or publish round tells the shell, beyond the store
 /// mutations it already performed. Everything user-visible is a
 /// sentence issue #102 owns; the engine hands up states, not strings.
@@ -312,6 +320,9 @@ pub struct SyncSession {
     /// Which batch that is: bumped once per seal, so a caller tells a
     /// fresh batch from a resend (`sync_driver::stage_publish`).
     in_flight_id: u64,
+    /// Pages whose ops failed to encode at a seal, until the driver takes
+    /// them to export again ([`SyncSession::take_unencoded_ops`]).
+    unencoded_ops: Vec<ItemId>,
     last_publish_ms: Option<u64>,
     /// The proposer's minted entropy while its ballot is in flight.
     proposed_entropy: Option<(String, Zeroizing<Vec<u8>>)>,
@@ -369,6 +380,7 @@ impl SyncSession {
             outbox: Vec::new(),
             in_flight: None,
             in_flight_id: 0,
+            unencoded_ops: Vec::new(),
             last_publish_ms: None,
             proposed_entropy: None,
             received_entropy: None,
@@ -552,7 +564,7 @@ impl SyncSession {
     pub fn queue_ops(&mut self, page: ItemId, ops: &[u8]) {
         self.outbox.push(DeltaEnvelope::Ops {
             page: page_wire_id(page),
-            ops: ByteBlob(ops.to_vec()),
+            ops: ByteBlob::from(ops),
         });
     }
 
@@ -608,7 +620,7 @@ impl SyncSession {
         channel.note_terminal();
         self.outbox.push(DeltaEnvelope::Terminal {
             page: page_wire_id(page),
-            marker: ByteBlob(marker.to_vec()),
+            marker: ByteBlob::from(marker),
         });
         true
     }
@@ -626,7 +638,10 @@ impl SyncSession {
     /// `POST /channel/deltas`: pad and seal everything queued under the
     /// current GOP key, one request, or resend the batch in flight at the
     /// epoch that sealed it. `None` when the clock says wait, nothing is
-    /// queued, a seal refuses, or no access token is held.
+    /// queued, a seal refuses, or no access token is held. An envelope that
+    /// fails to encode raises a fault and goes unsent: its page's ops wait
+    /// in [`SyncSession::take_unencoded_ops`] to export again, and an
+    /// expiry, hold or terminal envelope stays queued.
     #[must_use]
     pub fn publish_request(
         &mut self,
@@ -644,6 +659,18 @@ impl SyncSession {
         epoch: u64,
         seal: impl Fn(&[u8]) -> Option<Vec<u8>>,
     ) -> Option<HttpRequest> {
+        self.publish_request_with(now_ms, epoch, |envelope| envelope.encode().ok(), seal)
+    }
+
+    /// [`SyncSession::publish_request_sealed_with`] with the encoder handed
+    /// in too, so the tests can make one envelope fail to encode.
+    pub(crate) fn publish_request_with(
+        &mut self,
+        now_ms: u64,
+        epoch: u64,
+        encode: impl Fn(&DeltaEnvelope) -> Option<Zeroizing<Vec<u8>>>,
+        seal: impl Fn(&[u8]) -> Option<Vec<u8>>,
+    ) -> Option<HttpRequest> {
         if !self.publish_due(now_ms) {
             return None;
         }
@@ -651,26 +678,44 @@ impl SyncSession {
         if self.in_flight.is_none() {
             // Borrowed, never drained: a dropped `Drain` would take the
             // whole queue with one declined nonce.
-            let blobs = self
-                .outbox
-                .iter()
-                .map(|envelope| seal(&pad::pad(&envelope.encode())))
-                .collect::<Option<Vec<_>>>()?;
+            let mut blobs = Vec::with_capacity(self.outbox.len());
+            let mut encoded = Vec::with_capacity(self.outbox.len());
+            for envelope in &self.outbox {
+                let plaintext = encode(envelope);
+                if let Some(plaintext) = &plaintext {
+                    blobs.push(seal(&pad::pad(plaintext))?);
+                }
+                encoded.push(plaintext.is_some());
+            }
             let restate = self
                 .outbox
                 .iter()
-                .filter(|envelope| {
-                    matches!(
-                        envelope,
-                        DeltaEnvelope::Expiry { .. }
-                            | DeltaEnvelope::Hold { .. }
-                            | DeltaEnvelope::Terminal { .. }
-                    )
-                })
-                .cloned()
+                .zip(&encoded)
+                .filter(|(envelope, encoded)| **encoded && restated(envelope))
+                .map(|(envelope, _)| envelope.clone())
                 .collect();
-            // Every seal succeeded; only now does the queue let go.
-            self.outbox.clear();
+            // Every seal succeeded; only now does the queue let go. A fact that
+            // failed to encode stays queued, and failed ops go back to the driver.
+            let unencoded = encoded.iter().filter(|encoded| !**encoded).count();
+            if unencoded > 0 {
+                crate::diagnostics::diag_fault!(
+                    "companion-ffi: {unencoded} queued sync envelope(s) failed to encode; ops export again, expiry, hold and terminal envelopes stay queued, ceremony messages are dropped."
+                );
+            }
+            let failed = self.outbox.iter().zip(&encoded).filter(|(_, ok)| !**ok);
+            for (envelope, _) in failed {
+                if let DeltaEnvelope::Ops { page, .. } = envelope
+                    && let Some(page) = page_from_wire(page)
+                {
+                    self.unencoded_ops.push(page);
+                }
+            }
+            let mut flags = encoded.into_iter();
+            self.outbox
+                .retain(|envelope| !flags.next().unwrap_or(true) && restated(envelope));
+            if blobs.is_empty() {
+                return None;
+            }
             self.in_flight = Some(InFlightBatch {
                 epoch,
                 blobs,
@@ -684,6 +729,13 @@ impl SyncSession {
             self.api
                 .publish_deltas_request(batch.epoch, &batch.blobs, &auth),
         )
+    }
+
+    /// The pages whose ops a seal could not encode, once, so the driver
+    /// rewinds their export cursors (`sync_driver::stage_publish`).
+    #[must_use]
+    pub(crate) fn take_unencoded_ops(&mut self) -> Vec<ItemId> {
+        std::mem::take(&mut self.unencoded_ops)
     }
 
     /// Drop a batch in flight the chain has moved past, unsent, and queue
@@ -831,7 +883,7 @@ impl SyncSession {
                         // this device's own echo, not an arrival
                         // (surface.md §6; client protocol §6).
                         let before = store.document_version(sheet_id);
-                        if store.apply_remote_update(sheet_id, &ops.0).is_ok()
+                        if store.apply_remote_update(sheet_id, ops.as_slice()).is_ok()
                             && store.document_version(sheet_id) != before
                         {
                             events.push(SyncEvent::Applied(page));
@@ -882,7 +934,7 @@ impl SyncSession {
                 };
                 // Client protocol §6: a marker counts only if it names
                 // this page and verifies under a trusted identity.
-                if !marker_trusted(&marker.0, page, trusted) {
+                if !marker_trusted(marker.as_slice(), page, trusted) {
                     return;
                 }
                 self.channels.entry(page).or_default().note_terminal();
@@ -945,7 +997,8 @@ impl SyncSession {
                 let Some(sealed) = entropy_sealed.get(&self.device_fingerprint) else {
                     return;
                 };
-                let Some(entropy) = open_proposal_entropy(packages, pending, &sealed.0) else {
+                let Some(entropy) = open_proposal_entropy(packages, pending, sealed.as_slice())
+                else {
                     crate::diagnostics::diag_fault!(
                         "companion-ffi: a ceremony proposal named this device and neither key package opened its entry; the device stays out of that ballot."
                     );
@@ -1042,12 +1095,12 @@ impl SyncSession {
         let Some(own_sealed) = own_package.seal_entropy(&entropy) else {
             return false;
         };
-        entropy_sealed.insert(self.device_fingerprint.clone(), ByteBlob(own_sealed));
+        entropy_sealed.insert(self.device_fingerprint.clone(), ByteBlob::from(own_sealed));
         for peer in peers {
             let Some(sealed) = peer.package.seal_entropy(&entropy) else {
                 return false;
             };
-            entropy_sealed.insert(peer.fingerprint.clone(), ByteBlob(sealed));
+            entropy_sealed.insert(peer.fingerprint.clone(), ByteBlob::from(sealed));
             attached.push(ballot_token(&peer.fingerprint));
         }
         let channel = self.channels.entry(page).or_default();
@@ -1508,6 +1561,127 @@ mod tests {
         let body: Value = serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
         assert_eq!(body["blobs"].as_array().unwrap().len(), 2);
         assert!(session.outbox.is_empty(), "a sealed batch leaves the queue");
+    }
+
+    #[test]
+    fn an_envelope_that_cannot_encode_hands_back_its_ops_and_keeps_its_facts_queued() {
+        let chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut session = session("fp-a");
+        let (broken, kept) = (ItemId::random(), ItemId::random());
+        session.queue_ops(broken, b"never encodes");
+        session.queue_ops(kept, b"encodes");
+        session.queue_hold(broken, HoldRegister::Released);
+        let held = DeltaEnvelope::Hold {
+            page: page_wire_id(broken),
+            hold: None,
+        };
+        let refuse_broken = |envelope: &DeltaEnvelope| match envelope {
+            DeltaEnvelope::Ops { page, .. } | DeltaEnvelope::Hold { page, .. }
+                if *page == page_wire_id(broken) =>
+            {
+                None
+            }
+            _ => envelope.encode().ok(),
+        };
+        let request = session
+            .publish_request_with(0, chain.epoch(), refuse_broken, |plaintext| {
+                chain.seal(plaintext)
+            })
+            .unwrap();
+        assert_eq!(
+            session.outbox,
+            std::slice::from_ref(&held),
+            "the hold stays queued"
+        );
+        assert_eq!(session.take_unencoded_ops(), [broken]);
+        assert!(session.take_unencoded_ops().is_empty());
+        assert!(session.in_flight.as_ref().unwrap().restate.is_empty());
+        let mut relay = FakeRelay::default();
+        relay.accept_publish(&request);
+        let batch = RelayApi::parse_deltas(&relay.serve_fetch(0)).unwrap();
+        assert_eq!(batch.blobs.len(), 1);
+        let opened = chain.open(&batch.blobs[0]).unwrap();
+        assert_eq!(
+            DeltaEnvelope::decode(pad::unpad(&opened).unwrap()),
+            Some(DeltaEnvelope::Ops {
+                page: page_wire_id(kept),
+                ops: ByteBlob::from(b"encodes".as_slice()),
+            })
+        );
+
+        // A queue of nothing but broken envelopes sends nothing and loses nothing.
+        session.in_flight = None;
+        session.last_publish_ms = None;
+        session.queue_ops(broken, b"never encodes");
+        assert!(
+            session
+                .publish_request_with(0, chain.epoch(), refuse_broken, |plaintext| {
+                    chain.seal(plaintext)
+                })
+                .is_none()
+        );
+        assert_eq!(session.outbox, std::slice::from_ref(&held));
+        assert_eq!(session.take_unencoded_ops(), [broken]);
+        assert!(session.in_flight.is_none());
+
+        // An encoder that takes the hold sends it, and the queue empties.
+        let request = session.publish_request(0, &chain).unwrap();
+        assert!(session.outbox.is_empty());
+        assert!(session.take_unencoded_ops().is_empty());
+        let mut relay = FakeRelay::default();
+        relay.accept_publish(&request);
+        let batch = RelayApi::parse_deltas(&relay.serve_fetch(0)).unwrap();
+        let opened = chain.open(&batch.blobs[0]).unwrap();
+        assert_eq!(
+            DeltaEnvelope::decode(pad::unpad(&opened).unwrap()),
+            Some(held)
+        );
+    }
+
+    #[test]
+    fn withdrawal_after_a_partial_seal_failure_publishes_only_the_surviving_ops() {
+        let chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut session = session("fp-a");
+        let (gone, kept) = (ItemId::random(), ItemId::random());
+        session.queue_ops(gone, b"withdraw after the refusal");
+        session.queue_ops(kept, b"still queued");
+        let before = session.outbox.clone();
+        let calls = std::cell::Cell::new(0);
+        assert!(
+            session
+                .publish_request_sealed_with(0, chain.epoch(), |plaintext| {
+                    let call = calls.get();
+                    calls.set(call + 1);
+                    let envelope = DeltaEnvelope::decode(pad::unpad(plaintext).unwrap()).unwrap();
+                    assert_eq!(envelope, before[call]);
+                    if call == 0 {
+                        chain.seal(plaintext)
+                    } else {
+                        None
+                    }
+                })
+                .is_none()
+        );
+        assert_eq!(calls.get(), 2);
+        assert_eq!(session.outbox, before);
+        assert!(session.in_flight.is_none());
+        assert!(session.last_publish_ms.is_none());
+        session.withdraw_ops(gone);
+        let request = session.publish_request(0, &chain).unwrap();
+        assert!(session.outbox.is_empty());
+        assert!(session.in_flight.as_ref().unwrap().restate.is_empty());
+        let mut relay = FakeRelay::default();
+        relay.accept_publish(&request);
+        let batch = RelayApi::parse_deltas(&relay.serve_fetch(0)).unwrap();
+        assert_eq!(batch.blobs.len(), 1);
+        let opened = chain.open(&batch.blobs[0]).unwrap();
+        assert_eq!(
+            DeltaEnvelope::decode(pad::unpad(&opened).unwrap()),
+            Some(DeltaEnvelope::Ops {
+                page: page_wire_id(kept),
+                ops: ByteBlob::from(b"still queued".as_slice()),
+            })
+        );
     }
 
     #[test]
@@ -2294,7 +2468,8 @@ mod tests {
         let (pkcs8_b, identity_b) = identity();
         let (_, wrong_identity) = identity();
         let keeper_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
-        let package_value = serde_json::to_value(ByteBlob(keeper_b.package().encode())).unwrap();
+        let package_value =
+            serde_json::to_value(ByteBlob::from(keeper_b.package().encode())).unwrap();
         let body = serde_json::json!({
             "epoch": 2,
             "frame_present": false,
@@ -2473,7 +2648,7 @@ mod tests {
             vec![
                 DeltaEnvelope::Ops {
                     page: page_wire_id(kept),
-                    ops: ByteBlob(b"ops still readable".to_vec()),
+                    ops: ByteBlob::from(b"ops still readable".as_slice()),
                 },
                 DeltaEnvelope::Expiry {
                     page: page_wire_id(gone),

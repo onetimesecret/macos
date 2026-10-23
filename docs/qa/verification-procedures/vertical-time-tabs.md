@@ -5,13 +5,18 @@ toggle **A page a day, with time tabs down the side**. Off by default;
 horizontal tabs are what an untouched install shows.
 **Raised by:** issue #79, and
 [the feature spec](../../spec/feature/vertical-time-tabs/README.md).
-**Required by:**
-[ADR-0020](../../adr/0020-a-day-is-a-projection-of-live-pages.md)
-required work item 14, and its acceptance gate: the decision stays
-**proposed** until this procedure has been run and the dogfood window
-has closed.
+**Architectural context:**
+[ADR-0020](../../adr/0020-a-day-is-a-projection-of-live-pages.md) remains
+**proposed**. Running this procedure does not itself record architectural
+acceptance.
+**Correction contract:** case 12 checks the user's recommendation/proposal being
+implemented in
+the [2026-10-16 feature-spec amendment](../../spec/feature/vertical-time-tabs/README.md#amendment-user-directed-wrapping-and-horizontal-scrolling-2026-10-16).
+Formal approval status is not independently recorded; tests and agent prose
+are not approval.
 **Owner:** delano.
-**Status:** open. Not yet run on hardware.
+**Status:** pending. Not yet run on hardware, including case 12. No hardware
+pass is recorded by this documentation correction.
 
 ## Why this needs hardware at all
 
@@ -205,11 +210,14 @@ here is the thing to write down.
 **Fail:** a jump on any keystroke; a caret that leaves the viewport; a
 visible re-layout of the days below; typing that lags.
 
-2. Resize the card by an edge while a long day is on screen.
+2. With `wrapsLines` on, resize the card by an edge while a long day is on
+   screen.
 
-**Pass:** every day re-wraps to the new width and the roll stays
-readable. **Fail:** a day that keeps its old width, doubles it, or
-overlaps the day under it.
+**Pass:** active and inactive source pages re-wrap to the new viewport width
+and the roll stays readable. **Fail:** stale source width or overlapping days.
+With `wrapsLines` off, source lines remain unwrapped instead; run case 12 for
+horizontal reachability and viewport-aligned headings. Preview layout is not
+redefined by this source-wrap check.
 
 ## Case 5: ⌘Z after clicking into an older day
 
@@ -352,10 +360,14 @@ holding more writing is a taller stretch than a day holding a line, and
 two pages born on one day are one stretch rather than two. The bars are
 a scaled impression of the roll and not a diagram of the rail, so a
 stretch sitting well away from the row for the same day is the design
-rather than a bug: the whole document is mapped onto the whole column
-while the rows are packed from the top. What the two share is a count
-and an order. The band tracks the viewport as the roll moves and stays
-inside the column at both ends of an overscroll. Every day with a row
+rather than a bug: the whole document is mapped onto the whole drawing,
+which is the column unless the rail is too dense for it, while the rows
+are packed from the top. What the two share is a count and an order. The
+band tracks the viewport as the roll moves and stays inside the drawing
+at both ends of an overscroll. On a rail too dense for its column the
+drawing runs past the column's foot and scrolls, so the band can be out
+of view until the column is scrolled to it (D-34's 2026-10-21 note,
+issue #277); that is the design and not a fail. Every day with a row
 has a stretch you can see: the mapping keeps no bar it cannot draw, and
 it only runs out of room on a column with no two points left for a day,
 which takes far more days than the rail can draw rows for. A row with no
@@ -419,10 +431,115 @@ keymap does not bind; a click that only selects.
 5. Turn the mode off. Every page made above is a tab on the strip; turn
    it back on and today lists them all.
 
+## Case 12: user-controlled wrapping and shared horizontal scrolling
+
+**Status: pending hardware verification; not passed.** Expected outcomes below
+come from the [implementation contract](../../spec/feature/vertical-time-tabs/README.md#implementation-contract)
+for the user's recommendation/proposal being implemented, not formal approval,
+an external UI convention, or an accepted architectural decision. Record
+observations separately from formal approval, whose status is not independently
+recorded. Automated results and agent prose do not close this hardware check.
+
+**Setup:** use a disposable test profile with source pages containing long prose
+lines, long unbroken tokens, and fenced source lines wider than the viewport.
+Use the multi-day staging above so at least two days contain wide source lines,
+one active and one inactive. Include a Markdown preview and a sealed note to
+compare their existing presentation and actions before and after the checks.
+Do not remove a daily-use profile's saved preference to test the unset default.
+
+1. In a test profile where `wrapsLines` has never been set, open source in tabs
+   mode, then days mode. The expected existing default is wrapping on. Record
+   the actual setting and layout rather than assuming the default was used.
+2. In tabs mode, turn wrapping off in Settings, then toggle it on and off with
+   the wrap command (⌥Z in the bundled keymap). Repeat in days mode. Each action
+   changes the same preference and source layout; no fixed-wrap refusal occurs.
+3. Repeat with wrapping on and off while switching tabs/days modes and selecting
+   another day. Active and inactive source pages use the same value. Promotion
+   of an inactive page does not change its wrap policy.
+4. With wrapping off in days mode, scroll horizontally to a nonzero offset.
+   Check that all source regions move together through one document offset,
+   including the inactive region. Scroll vertically to another wide day and
+   select it: it does not introduce an independent horizontal offset. A day
+   shown as a Markdown preview keeps the viewport's width and stays where it
+   is while the unwrapped source days beside it slide sideways; this is the
+   expected presentation, not a failure.
+5. At that nonzero horizontal offset, check day/page headings and their controls.
+   They remain viewport-aligned, readable, and operable while source text moves.
+   Repeat after resize and after changing the active day. This does not require
+   vertically sticky headings.
+6. Reach the end of each wide source line by horizontal scrolling. Resize the
+   viewport narrower and wider: source stays unwrapped and reachable, without
+   clipping its far end or overlapping the next day.
+7. Turn wrapping on while horizontally displaced. Active and inactive source
+   pages reflow to the viewport width without stale horizontal displacement.
+   Resize again, then turn wrapping off and repeat the reachability check.
+8. For each wrap value, quit and relaunch in tabs mode and in days mode. The
+   selected value is restored through the existing `wrapsLines` preference.
+   Record the mode and value on each run; mode changes do not overwrite it.
+9. Compare the Markdown preview and sealed note with the setup observations in
+   both modes and with both wrap values. Their presentation and actions remain
+   unchanged; do not reinterpret source wrapping as a preview or sealed-note
+   redesign.
+10. In both modes, make one known edit, then record source text and the logical
+    selection/caret position. Toggle wrapping, scroll horizontally, and resize.
+    The presentation changes leave that text and selection/caret unchanged. Undo
+    reverses the known edit directly and redo restores it: presentation actions
+    add no undo step and do not discard or reorder the existing history. Repeat
+    on another page and confirm undo remains per page.
+11. With wrapping off and a nonzero horizontal offset, exercise each reveal
+    target separately: move the caret to the opposite end of a wide line, find
+    a match outside the viewport, extend a selection beyond the viewport,
+    replace a match, and undo an edit outside the viewport. Each target becomes
+    visible in both axes as needed, without a heading obscuring it. In days
+    mode the shared scroll view reveals the target; no per-day scroller appears.
+    Normal selection changes and text edits from these actions retain their
+    existing semantics rather than being treated as geometry-only updates.
+12. Grow the widest source line by typing or replacement, then shorten it by
+    deletion or undo. After each change, make that page inactive and repeat the
+    reachability and clamp checks. Scroll to the far right before each shrink;
+    also remove the widest page while inactive and resize wider and narrower.
+    Width and offsets update so surviving text remains reachable and
+    the offset stays within valid bounds, without stale blank space beyond the
+    document edge. Repeat the wrap-on clamp after each scenario.
+13. Scroll to a recognizable source position away from the caret and record the
+    logical text being read, not just a pixel offset. Toggle wrapping, resize,
+    and trigger relayout by changing content above that position. The same
+    surviving logical text remains the reading anchor within valid bounds.
+    Explicit reveal actions from step 11 and the existing summon anchor take
+    precedence; clamping at an edge may adjust the anchor's viewport position.
+14. Profile repeated horizontal-only gestures over multiple source days with
+    unchanged content, font, wrap value, and viewport size. Record the profiler
+    or measurement trace used to distinguish scroll updates from text
+    measurement. Horizontal bounds changes alone do not repeatedly measure
+    source text or every day, rebuild renderings, or run document-wide layout.
+    Then edit content or change a layout input and confirm geometry updates.
+    Without measurement evidence, this performance check remains pending even
+    if scrolling appears smooth; this procedure adds no source instrumentation.
+15. Set System Settings, Appearance, Show scroll bars to Always, so the days
+    roll's horizontal scroller takes height from the viewport when it appears.
+    In days mode, scroll to a recognizable source position below the top and
+    record the logical text at the top edge. Turn wrapping off, then on, then
+    off again. Each time the scroller appears or goes, that text stays at the
+    top edge and the last line of the roll stays reachable above the scroller.
+    Repeat from the top of the roll scrolled only sideways. Record the scroll
+    bar setting with the result, and restore it afterwards.
+
+**Pass criteria:** every applicable outcome above is observed and recorded with
+the build, profile, machine, macOS version, mode, and wrap value. Any forced
+wrapping, inactive-source mismatch, independent per-page horizontal offset,
+heading displaced horizontally, unreachable reveal target or line end,
+overwritten preference, geometry-only text/selection/undo change, invalid
+post-shrink offset, lost logical reading anchor, repeated text measurement on
+horizontal-only scrolling, or preview/sealed-note regression is a failure.
+An unrun step remains pending;
+a documentation edit or automated test result is not a hardware pass.
+
 ## Results
 
-Not yet run. One row per check when a session runs it, and the rows
-stay: a re-run adds a row rather than replacing one.
+Not yet run; hardware verification remains **pending**, including case 12.
+One row per check when a session runs it, and the rows stay: a re-run adds a row
+rather than replacing one. `Pass` in a case describes an expected outcome, not
+an executed result.
 
 | Date | Machine and macOS | Case | Pass or fail | Notes |
 |---|---|---|---|---|
@@ -434,7 +551,7 @@ stay: a re-run adds a row rather than replacing one.
 | | | 3 ⌘Tab return selects the editor window and leaves the scroll alone | | ADR-0033. |
 | | | 3 Dock icon selects the editor window and leaves the scroll alone | | ADR-0033. |
 | | | 4 typing at the bottom of a long Day 0 | | Note any stall with three days mounted. |
-| | | 4 resize re-wraps every day | | |
+| | | 4 resize re-wraps active and inactive source with wrapping on | Pending | |
 | | | 5 undo cannot cross a perforation | | |
 | | | 6 toggle both ways with content | | Record `state.sealed` mtime before and after. |
 | | | 7 VoiceOver down the rail | | |
@@ -451,3 +568,18 @@ stay: a re-run adds a row rather than replacing one.
 | | | 11 ⌘1 and the Today row make one page, not two | | |
 | | | 11 ⌘N from elsewhere jumps, no third page | | |
 | | | 11 the Today row's + mints and names the chord | | |
+| | | 12 unset default in tabs and days | Pending | Disposable profile only. |
+| | | 12 Settings and wrap command in both modes | Pending | Record both wrap values. |
+| | | 12 active/inactive source parity and selection changes | Pending | |
+| | | 12 shared horizontal document offset across days | Pending | |
+| | | 12 viewport-aligned headings and controls | Pending | Include resize and selection at nonzero offset. |
+| | | 12 unwrapped line ends reachable after resize | Pending | |
+| | | 12 wrap-on reflow clears stale horizontal displacement | Pending | |
+| | | 12 preference restored after relaunch in both modes | Pending | Record each mode/value combination. |
+| | | 12 preview and sealed note unchanged | Pending | Compare presentation and actions with setup. |
+| | | 12 text, logical selection/caret, and undo unchanged by presentation | Pending | Both modes; verify undo and redo order. |
+| | | 12 caret/find/selection/replacement/undo reveal targets | Pending | Both axes; shared scroll view in days mode. |
+| | | 12 growth/shrink and widest-page removal clamps | Pending | Active/inactive source, resize, and wrapping. |
+| | | 12 logical reading anchors through reflow | Pending | Record source position and explicit-reveal exceptions. |
+| | | 12 no repeated measurement during horizontal-only scrolling | Pending | Measurement trace required, not visual smoothness alone. |
+| | | 12 reading anchor with scroll bars always shown | Pending | Record the Show scroll bars setting. |

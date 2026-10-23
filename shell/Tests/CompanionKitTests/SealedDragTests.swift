@@ -444,12 +444,14 @@ final class SealedDragTests: XCTestCase {
     func testAMoveFromAPagePastItsDeadlineSettlesAndChangesNothing() throws {
         let (model, _) = try makeModel()
         let source = try mountPage(on: model)
+        // Before the aging: a mount after it would arm the 50 ms event timer and drain the loop.
+        let target = try mountPage(on: model, text: "xy", seals: [])
         let client = model.coreClient
         let tab = try XCTUnwrap(model.tabs.first { $0.pageID == source.sheet }?.id)
         XCTAssertTrue(client.setRung(tab: tab, rung: .oneHour))
         _ = try beginDrag(source, NSRange(location: 0, length: 4))
         XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000))
-        let target = try mountPage(on: model, text: "xy", seals: [])
+        XCTAssertEqual(client.nextEventMs(), 0, "the control: the page is due")
         XCTAssertTrue(
             model.tabs.contains { $0.pageID == source.sheet }, "the control: the page still shows")
         let records = client.ledger().count
@@ -633,7 +635,7 @@ final class SealedDragTests: XCTestCase {
     }
 
     /// Every other drag from inside this app never meets drop to seal: the shared field
-    /// editor (the gutter's, strip's, slot rail's and settings' fields), the name field's
+    /// editor (the gutter's, strip's and settings' fields), the name field's
     /// own, a field editor in another window (the pad list's) and any other view. An
     /// editable page takes its text as ink; a read only page and the note refuse it.
     func testEveryOtherDragFromThisAppLandsAsInkAndNeverSeals() throws {

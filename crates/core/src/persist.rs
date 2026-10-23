@@ -17,7 +17,7 @@ use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evic
 use crate::note::Note;
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock,
-    SheetId, TITLE_CAP, Tab, TabId, derive_title, judge_name,
+    SheetId, Tab, TabId, capped_title, derive_title, judge_name,
 };
 use crate::store::{HOLD_FIRST, HOLD_TOPUP, SheetStore};
 use crate::transfer::ActiveCut;
@@ -665,14 +665,7 @@ fn read_tab(
     let name = match reader.u8().ok_or(Malformed)? {
         0 => None,
         // Re-capped: the name is durable and reaches the ledger.
-        1 => Some(
-            reader
-                .str()
-                .ok_or(Malformed)?
-                .chars()
-                .take(TITLE_CAP)
-                .collect(),
-        ),
+        1 => Some(capped_title(reader.str().ok_or(Malformed)?)),
         _ => return Err(Malformed),
     };
     let rung = Ttl::from_secs(reader.u64().ok_or(Malformed)?).ok_or(Malformed)?;
@@ -811,7 +804,9 @@ fn read_page(
     let mut referenced: Vec<ChipId> = Vec::new();
     for run in document.runs() {
         match run {
-            DocRun::Ink(text) => segments.push(Segment::Ink(text)),
+            DocRun::Ink(mut text) => {
+                segments.push(Segment::Ink(std::mem::take(&mut *text)));
+            }
             DocRun::Chip(wanted) => {
                 let chip = chips.iter().find(|c| c.uuid() == wanted).ok_or(Malformed)?;
                 if referenced.contains(&chip.id) {
@@ -897,7 +892,7 @@ fn read_chip(record: &mut Reader<'_>, next_chip_id: &mut u64) -> Result<SealedCh
             1 => judge_name(record.str().ok_or(Malformed)?)
                 .ok()
                 .flatten()
-                .map(str::to_owned),
+                .map(|name| Zeroizing::new(name.to_owned())),
             _ => return Err(Malformed),
         }
     };
@@ -953,7 +948,7 @@ fn read_materialized(
         let modified_s = clamp(record.u64().ok_or(Malformed)?).max(created_s);
         let origin = match record.u8().ok_or(Malformed)? {
             0 => None,
-            1 => Some(record.str().ok_or(Malformed)?.to_string()),
+            1 => Some(Zeroizing::new(record.str().ok_or(Malformed)?.to_owned())),
             _ => return Err(Malformed),
         };
         records.push(PersistedBlock {
@@ -991,12 +986,7 @@ fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
         _ => return Err(Malformed),
     };
     let item = reader.uuid().ok_or(Malformed)?;
-    let title: String = reader
-        .str()
-        .ok_or(Malformed)?
-        .chars()
-        .take(TITLE_CAP)
-        .collect();
+    let title = capped_title(reader.str().ok_or(Malformed)?);
     let at_wall_ms = reader.u64().ok_or(Malformed)?;
     let item_created_wall_ms = reader.u64().ok_or(Malformed)?;
     let size = match reader.u8().ok_or(Malformed)? {
@@ -1029,6 +1019,7 @@ fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
 mod tests {
     use super::*;
     use crate::clock::ManualClock;
+    use crate::sheet::TITLE_CAP;
 
     const HOUR: Duration = Duration::from_secs(60 * 60);
 
@@ -1122,7 +1113,7 @@ mod tests {
         let sheet = revived.sheet(first).unwrap();
         assert_eq!(sheet.derived_title(), Some("deploy notes"));
         assert_eq!(
-            revived.tabs().next().unwrap().label(0),
+            revived.tabs().next().unwrap().label(0).as_str(),
             "deploy notes",
             "the label falls through to it, this tab having no name"
         );
@@ -1388,6 +1379,7 @@ mod tests {
     #[test]
     fn a_compacted_store_round_trips_materialized_metadata_and_origin() {
         use crate::store::EditOp;
+        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
         let (mut store, clock) = store();
         let id = store.new_tab().1;
         let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
@@ -1436,15 +1428,24 @@ mod tests {
             "block identities and stamps are adopted from the slot, not re-minted"
         );
         assert_eq!(sheet.modified_s(), modified);
+        let restored = sheet.blocks.records()[0]
+            .materialized
+            .as_ref()
+            .unwrap()
+            .origin
+            .as_ref()
+            .unwrap();
         assert_eq!(
-            sheet.blocks.records()[0]
-                .materialized
-                .as_ref()
-                .unwrap()
-                .origin
-                .as_deref(),
-            Some(origin),
+            restored.as_str(),
+            origin,
             "the origin rides the materialized record through the round trip"
+        );
+        // A wiping owner whose capacity is its length (C17).
+        wiping_owner(restored);
+        assert_eq!(
+            restored.capacity(),
+            restored.len(),
+            "the restored origin grew"
         );
     }
 
@@ -1543,7 +1544,7 @@ mod tests {
         revived.restore(&snapshot, 0).unwrap();
         let tab = revived.tabs().next().unwrap();
         assert_eq!(tab.name(), Some("quarterly numbers"));
-        assert_eq!(tab.label(0), "quarterly numbers");
+        assert_eq!(tab.label(0).as_str(), "quarterly numbers");
         assert_eq!(
             tab.page().unwrap().derived_title(),
             Some("something else"),
@@ -1588,10 +1589,14 @@ mod tests {
         assert_eq!(tabs.len(), 2);
         assert_eq!(tabs[0].name(), Some("quarterly numbers"));
         assert_eq!(tabs[0].rung(), Ttl::MIN);
-        assert_eq!(tabs[0].label(0), "quarterly numbers");
+        assert_eq!(tabs[0].label(0).as_str(), "quarterly numbers");
         assert_eq!(tabs[1].name(), None, "an unnamed tab stays unnamed");
         assert_eq!(tabs[1].rung(), Ttl::from_secs(8 * 60 * 60).unwrap());
-        assert_eq!(tabs[1].label(0), "errands", "its page supplies the label");
+        assert_eq!(
+            tabs[1].label(0).as_str(),
+            "errands",
+            "its page supplies the label"
+        );
         let before: Vec<ItemId> = store.tabs().map(Tab::uuid).collect();
         assert_eq!(revived.tabs().map(Tab::uuid).collect::<Vec<_>>(), before);
     }
@@ -1644,7 +1649,7 @@ mod tests {
         assert_eq!(tabs.len(), 1, "the slot itself came back");
         assert!(tabs[0].page().is_none());
         assert_eq!(tabs[0].name(), Some("payroll"));
-        assert_eq!(tabs[0].label(0), "payroll");
+        assert_eq!(tabs[0].label(0).as_str(), "payroll");
         assert_eq!(tabs[0].rung(), Ttl::from_secs(8 * 60 * 60).unwrap());
         assert!(
             store.sheet(survivor).is_none(),
@@ -1805,7 +1810,7 @@ mod tests {
         LedgerRecord {
             event: LedgerEvent::Sent,
             item,
-            title: String::from("a page"),
+            title: Zeroizing::new(String::from("a page")),
             at_wall_ms,
             item_created_wall_ms: at_wall_ms,
             size: SizeClass::Tiny,
@@ -2199,7 +2204,10 @@ mod tests {
             vec![first, second],
             "the tab after the unknown field was not found"
         );
-        assert_eq!(revived.tabs().next().unwrap().label(0), "deploy notes");
+        assert_eq!(
+            revived.tabs().next().unwrap().label(0).as_str(),
+            "deploy notes"
+        );
     }
 
     #[test]
@@ -2328,6 +2336,83 @@ mod tests {
         assert_eq!(
             &**store.note_text(chip.id()).unwrap(),
             "kept \u{1F600} beside it"
+        );
+    }
+
+    /// A chip record's name and note each come back as one wiping copy at its exact size,
+    /// and the note makes no document until it is edited (Law 0004, C31).
+    #[test]
+    fn a_restored_name_and_note_rest_as_wiping_copies_until_the_note_is_edited() {
+        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
+
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let mut tail = text_field("API_KEY");
+        tail.extend_from_slice(&text_field("kept \u{1F600} beside it"));
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        let name = chip.name.as_ref().expect("the name came back");
+        wiping_owner(name);
+        assert_eq!(name.capacity(), name.len(), "the name grew past its size");
+        let note = chip
+            .note
+            .as_ref()
+            .and_then(Note::resting)
+            .expect("the restore made the note a document");
+        wiping_owner(note);
+        assert_eq!(note.capacity(), note.len(), "the note grew past its size");
+        assert_eq!(note.as_str(), "kept \u{1F600} beside it");
+
+        let id = chip.id();
+        let quoted = [crate::store::EditOp::Insert {
+            pos_u16: 0,
+            text: "> ".into(),
+        }];
+        assert!(store.apply_note_ops(id, &quoted, crate::document::EditIntent::Typing, None));
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert!(
+            chip.note.as_ref().and_then(Note::resting).is_none(),
+            "the edit never reached a document"
+        );
+        assert_eq!(
+            &**store.note_text(id).unwrap(),
+            "> kept \u{1F600} beside it"
+        );
+    }
+
+    /// A note that rests is written back as the field it came from, and rests again after
+    /// the next restore (Law 0004, C31).
+    #[test]
+    fn a_resting_note_is_written_back_as_it_came_and_rests_after_the_next_restore() {
+        let (mut store, clock) = store();
+        let uuid = ItemId::random();
+        let note = "kept \u{1F600} beside it";
+        let mut tail = vec![0u8]; // no name
+        tail.extend_from_slice(&text_field(note));
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
+        assert_eq!(store.restore(&snapshot, 1_000_000).unwrap(), 1);
+        let written = store.snapshot(1_000_000);
+        assert!(
+            contains(&written, &tail),
+            "the note's field changed on the way back"
+        );
+
+        let mut revived = store_on(clock.clone());
+        assert_eq!(revived.restore(&written, 1_000_000).unwrap(), 1);
+        let chip = revived.sheets().next().unwrap().chips().next().unwrap();
+        let rests = chip.note.as_ref().and_then(Note::resting);
+        assert_eq!(
+            rests.map(|text| text.as_str()),
+            Some(note),
+            "it no longer rests"
+        );
+        assert_eq!(
+            *revived.snapshot(1_000_000),
+            *written,
+            "a second round trip moved the bytes"
         );
     }
 
