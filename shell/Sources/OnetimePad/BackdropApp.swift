@@ -226,12 +226,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             if case nil = pendingApplicationOpen { pendingApplicationOpen = .untitled }
             return true
         }
-        guard defaultLaunch, finderDocuments.isEmpty else { return true }
+        guard finderDocuments.isEmpty else { return true }
         if initialOpenHandled {
             _ = applicationShouldHandleReopen(sender, hasVisibleWindows: false)
             return true
         }
         initialOpenHandled = true
+        guard defaultLaunch else { return true }
         selectInitialEditor()
         return true
     }
@@ -607,9 +608,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         if ModalSession.isRunning || ModalSession.isBracketed { return false }
         var frontmost: NSWindow?
         sender.enumerateWindows(options: [.orderedFrontToBack]) { window, stop in
-            if Self.isVisibleOrdinaryWindow(window, isAmbientWindow: self.controller?.owns(window) == true,
-                                            isCompanion: self.isCompanionWindow(window)) {
-                frontmost = window.sheetParent ?? window
+            if let target = Self.reopenWindow(window,
+                isAmbientWindow: { self.controller?.owns($0) == true },
+                isCompanion: { self.isCompanionWindow($0) }) {
+                frontmost = target
                 stop.pointee = true
             }
         }
@@ -620,6 +622,16 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         }
         applySummon(.reopen)
         return false
+    }
+
+    static func reopenWindow(
+        _ window: NSWindow, isAmbientWindow: (NSWindow) -> Bool, isCompanion: (NSWindow) -> Bool
+    ) -> NSWindow? {
+        let target = window.sheetParent ?? window
+        guard !isAmbientWindow(target),
+              isVisibleOrdinaryWindow(window, isAmbientWindow: isAmbientWindow(window),
+                                      isCompanion: isCompanion(window)) else { return nil }
+        return target
     }
 
     static func isVisibleOrdinaryWindow(

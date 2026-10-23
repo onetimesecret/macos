@@ -161,23 +161,59 @@ final class ApplicationLifecycleTests: XCTestCase {
         }
     }
 
-    func testNonDefaultLaunchSuppressesQueuedAndLaterUntitledOpen() throws {
+    func testNonDefaultLaunchSuppressesInitialUntitledButLaterOpensUseReopen() throws {
         for queued in [true, false] {
             try withApplication { app, model in
-                var initialOpens = 0
-                app.selectInitialEditor = { initialOpens += 1 }
+                let pages = model.pages
+                pages.loadStateIfNeeded()
+                pages.showsTimeUnits = true
+                pages.perform(.pageNew)
+                var initialOpens = 0, anchors = 0
+                pages.installTodayAnchor({ anchors += 1 }, from: pages.owner)
+                app.selectInitialEditor = { initialOpens += 1; pages.anchorOnToday() }
                 if queued { XCTAssertTrue(app.applicationOpenUntitledFile(NSApp)) }
                 app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification,
                     userInfo: [NSApplication.launchIsDefaultUserInfoKey: false]))
                 if !queued { XCTAssertTrue(app.applicationOpenUntitledFile(NSApp)) }
-                model.pages.perform(.pageNew)
-                let selection = model.pages.selection
+                XCTAssertFalse(model.editorWindowOpen)
+                let selection = pages.selection
                 XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+                app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
 
                 XCTAssertEqual(initialOpens, 0)
-                XCTAssertEqual(model.pages.selection, selection)
-                XCTAssertFalse(model.editorWindowOpen)
+                XCTAssertEqual(anchors, 0)
+                XCTAssertEqual(pages.selection, selection)
+                XCTAssertTrue(model.editorWindowOpen)
             }
+        }
+    }
+
+    func testNonDefaultStartupReopenThenUntitledReopensClosedEditorWithoutAnchoring() throws {
+        try withApplication { app, model in
+            let pages = model.pages
+            pages.loadStateIfNeeded()
+            pages.showsTimeUnits = true
+            pages.perform(.pageNew)
+            var anchors = 0
+            pages.installTodayAnchor({ anchors += 1 }, from: pages.owner)
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification,
+                userInfo: [NSApplication.launchIsDefaultUserInfoKey: false]))
+            let existing = Set(NSApp.windows.map(ObjectIdentifier.init))
+            XCTAssertFalse(app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false))
+            app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+            XCTAssertTrue(model.editorWindowOpen)
+            for window in NSApp.windows where !existing.contains(ObjectIdentifier(window)) {
+                window.close()
+            }
+            XCTAssertFalse(model.editorWindowOpen)
+            let selection = pages.selection
+
+            XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+            app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+
+            XCTAssertTrue(model.editorWindowOpen)
+            XCTAssertEqual(pages.selection, selection)
+            XCTAssertEqual(anchors, 0)
         }
     }
 
@@ -341,6 +377,29 @@ final class ApplicationLifecycleTests: XCTestCase {
 
             XCTAssertEqual(parent.reopenCount, 1)
             XCTAssertEqual(sheet.reopenCount, 0)
+        }
+    }
+
+    func testAmbientSheetIsExcludedFromOrdinaryReopenTargets() throws {
+        try withApplication { app, model in
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+            let parent = ReopenPanel(contentRect: NSRect(x: 10, y: 10, width: 180, height: 180),
+                                     styleMask: [.titled], backing: .buffered, defer: false)
+            let sheet = ReopenPanel(contentRect: NSRect(x: 10, y: 10, width: 100, height: 100),
+                                    styleMask: [.titled], backing: .buffered, defer: false)
+            parent.isReleasedWhenClosed = false
+            sheet.isReleasedWhenClosed = false
+            parent.orderFront(nil)
+            parent.beginSheet(sheet)
+            defer { parent.endSheet(sheet); sheet.close(); parent.close() }
+            XCTAssertTrue(sheet.sheetParent === parent)
+            XCTAssertTrue(BackdropAppDelegate.isVisibleOrdinaryWindow(sheet, isAmbientWindow: false))
+
+            let target = BackdropAppDelegate.reopenWindow(sheet,
+                isAmbientWindow: { $0 === parent }, isCompanion: { _ in false })
+
+            XCTAssertNil(target)
+            XCTAssertFalse(model.editorWindowOpen)
         }
     }
 
