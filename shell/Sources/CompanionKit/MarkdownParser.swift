@@ -207,19 +207,19 @@ private struct PlaceholderSource {
 }
 
 /// One parser's shim (ots_commonmark.h or ots_gfm.h), so one walker reads either tree.
-private struct CMarkLibrary {
-    typealias Bytes = (UnsafeRawPointer?, UnsafeMutablePointer<Int>?) -> UnsafePointer<CChar>?
-    typealias Number = (UnsafeRawPointer?) -> Int32
+private struct CMarkLibrary: Sendable {
+    typealias Bytes = @Sendable (UnsafeRawPointer?, UnsafeMutablePointer<Int>?) -> UnsafePointer<CChar>?
+    typealias Number = @Sendable (UnsafeRawPointer?) -> Int32
 
     /// Text, its length and the table cell budget, which only cmark-gfm has tables to spend.
-    let parse: (UnsafePointer<CChar>?, Int, Int64) -> OpaquePointer?
-    let free: (OpaquePointer?) -> Void
-    let tableCellsExhausted: (OpaquePointer?) -> Bool
-    let root: (OpaquePointer?) -> UnsafeRawPointer?
-    let referenceCount: (OpaquePointer?) -> Int
-    let referencePart: (OpaquePointer?, Int, Int32, UnsafeMutablePointer<Int>?) -> UnsafePointer<CChar>?
-    let firstChild: (UnsafeRawPointer?) -> UnsafeRawPointer?
-    let next: (UnsafeRawPointer?) -> UnsafeRawPointer?
+    let parse: @Sendable (UnsafePointer<CChar>?, Int, Int64) -> OpaquePointer?
+    let free: @Sendable (OpaquePointer?) -> Void
+    let tableCellsExhausted: @Sendable (OpaquePointer?) -> Bool
+    let root: @Sendable (OpaquePointer?) -> UnsafeRawPointer?
+    let referenceCount: @Sendable (OpaquePointer?) -> Int
+    let referencePart: @Sendable (OpaquePointer?, Int, Int32, UnsafeMutablePointer<Int>?) -> UnsafePointer<CChar>?
+    let firstChild: @Sendable (UnsafeRawPointer?) -> UnsafeRawPointer?
+    let next: @Sendable (UnsafeRawPointer?) -> UnsafeRawPointer?
     let kind: Number
     let literal: Bytes
     let url: Bytes
@@ -235,42 +235,38 @@ private struct CMarkLibrary {
     let endColumn: Number
     let taskState: Number
     let tableColumnCount: Number
-    let tableAlignment: (UnsafeRawPointer?, Int32) -> Int32
+    let tableAlignment: @Sendable (UnsafeRawPointer?, Int32) -> Int32
     let tableRowIsHeader: Number
 
-    static var commonMark: CMarkLibrary {
-        CMarkLibrary(
-            parse: { text, length, _ in otscm_parse(text, length) }, free: otscm_document_free,
-            tableCellsExhausted: { _ in false }, root: otscm_document_root,
-            referenceCount: otscm_reference_count, referencePart: otscm_reference_part,
-            firstChild: otscm_node_first_child, next: otscm_node_next, kind: otscm_node_kind,
-            literal: otscm_node_literal, url: otscm_node_url, title: otscm_node_title,
-            fenceInfo: otscm_node_fence_info, headingLevel: otscm_node_heading_level,
-            listOrdered: otscm_node_list_ordered, listStart: otscm_node_list_start,
-            listTight: otscm_node_list_tight, startLine: otscm_node_start_line,
-            startColumn: otscm_node_start_column, endLine: otscm_node_end_line,
-            endColumn: otscm_node_end_column,
-            taskState: { _ in -1 }, tableColumnCount: { _ in 0 }, tableAlignment: { _, _ in -1 },
-            tableRowIsHeader: { _ in -1 }
-        )
-    }
+    static let commonMark = CMarkLibrary(
+        parse: { text, length, _ in otscm_parse(text, length) }, free: otscm_document_free,
+        tableCellsExhausted: { _ in false }, root: otscm_document_root,
+        referenceCount: otscm_reference_count, referencePart: otscm_reference_part,
+        firstChild: otscm_node_first_child, next: otscm_node_next, kind: otscm_node_kind,
+        literal: otscm_node_literal, url: otscm_node_url, title: otscm_node_title,
+        fenceInfo: otscm_node_fence_info, headingLevel: otscm_node_heading_level,
+        listOrdered: otscm_node_list_ordered, listStart: otscm_node_list_start,
+        listTight: otscm_node_list_tight, startLine: otscm_node_start_line,
+        startColumn: otscm_node_start_column, endLine: otscm_node_end_line,
+        endColumn: otscm_node_end_column,
+        taskState: { _ in -1 }, tableColumnCount: { _ in 0 }, tableAlignment: { _, _ in -1 },
+        tableRowIsHeader: { _ in -1 }
+    )
 
-    static var gfm: CMarkLibrary {
-        CMarkLibrary(
-            parse: otsgfm_parse, free: otsgfm_document_free,
-            tableCellsExhausted: { otsgfm_document_table_cells_exhausted($0) != 0 }, root: otsgfm_document_root,
-            referenceCount: otsgfm_reference_count, referencePart: otsgfm_reference_part,
-            firstChild: otsgfm_node_first_child, next: otsgfm_node_next, kind: otsgfm_node_kind,
-            literal: otsgfm_node_literal, url: otsgfm_node_url, title: otsgfm_node_title,
-            fenceInfo: otsgfm_node_fence_info, headingLevel: otsgfm_node_heading_level,
-            listOrdered: otsgfm_node_list_ordered, listStart: otsgfm_node_list_start,
-            listTight: otsgfm_node_list_tight, startLine: otsgfm_node_start_line,
-            startColumn: otsgfm_node_start_column, endLine: otsgfm_node_end_line,
-            endColumn: otsgfm_node_end_column,
-            taskState: otsgfm_node_task_state, tableColumnCount: otsgfm_table_column_count,
-            tableAlignment: otsgfm_table_alignment, tableRowIsHeader: otsgfm_table_row_is_header
-        )
-    }
+    static let gfm = CMarkLibrary(
+        parse: otsgfm_parse, free: otsgfm_document_free,
+        tableCellsExhausted: { otsgfm_document_table_cells_exhausted($0) != 0 }, root: otsgfm_document_root,
+        referenceCount: otsgfm_reference_count, referencePart: otsgfm_reference_part,
+        firstChild: otsgfm_node_first_child, next: otsgfm_node_next, kind: otsgfm_node_kind,
+        literal: otsgfm_node_literal, url: otsgfm_node_url, title: otsgfm_node_title,
+        fenceInfo: otsgfm_node_fence_info, headingLevel: otsgfm_node_heading_level,
+        listOrdered: otsgfm_node_list_ordered, listStart: otsgfm_node_list_start,
+        listTight: otsgfm_node_list_tight, startLine: otsgfm_node_start_line,
+        startColumn: otsgfm_node_start_column, endLine: otsgfm_node_end_line,
+        endColumn: otsgfm_node_end_column,
+        taskState: otsgfm_node_task_state, tableColumnCount: otsgfm_table_column_count,
+        tableAlignment: otsgfm_table_alignment, tableRowIsHeader: otsgfm_table_row_is_header
+    )
 }
 
 /// The shims' node kinds; ots_commonmark.h and ots_gfm.h give both libraries the same numbers.
