@@ -93,7 +93,7 @@ def main(arguments):
     if active:
         print(f"Refusing to rebuild {directory} while an executable from it is running.",
               file=sys.stderr)
-        print("Close that development instance normally, then rerun the tests.", file=sys.stderr)
+        print("Close that instance normally, then rerun the command.", file=sys.stderr)
         return 1
     return 0
 
