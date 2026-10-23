@@ -15,22 +15,25 @@ through the C-ABI seam (`crates/ffi`, mechanism: ADR-0003).
 
 ## Build (macOS only)
 
-```sh
-./scripts/build-core.sh   # cargo → universal libcompanion_ffi.a → bindings/CompanionCore.xcframework
-cd shell
-swift build && swift test
-swift run OnetimePad
-```
-
-`swift run` is the edit-compile loop, but the bare binary has no
-`CFBundleIdentifier`, so macOS can't address it: TCC grants don't
-stick, and per-app screen-capture pickers can't list it. When the app
-needs to be a citizen of the permission system, use the entry points:
+Run these commands from the repository root:
 
 ```sh
-../scripts/dev.sh       # debug bundle as dev.onetimesecret.pad.debug, launched from dist/
-../scripts/install.sh   # release bundle, signed, installed to /Applications
+scripts/dev.sh          # debug bundle launched from dist/
+scripts/test-shell.sh   # test-util core and isolated Swift tests
+scripts/install.sh      # signed release bundle installed to /Applications
 ```
+
+The executable rejects missing or unrecognized bundle identifiers, so bare
+`swift run OnetimePad` is unsupported. Use the packaged development app for
+UI work. Automated probes require a temporary state directory and an in-memory
+credential client; see [the runtime-testing rules](../AGENTS.md#runtime-testing).
+
+The recognized identifiers are defined in `FormFactor`: shipping
+`com.onetimesecret.pad`, Local `dev.onetimesecret.pad`, and development
+`dev.onetimesecret.pad.debug`. This check compares identifier strings, not
+signatures or store ownership. A fork using a different identifier must update
+both its packaging configuration and those constants. It is a development
+mistake check, not an authentication boundary.
 
 The bundle id is `com.onetimesecret.pad` for App Store builds and
 `dev.onetimesecret.pad` for the `install.sh` copy; the version

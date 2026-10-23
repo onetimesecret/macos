@@ -43,15 +43,11 @@ and participation in ⌘Tab, the Window menu, Mission Control and
 Stage Manager; its own feature spec is
 [primary-editor](../primary-editor/README.md).
 
-Under ADR-0033 the routes leaving the panel for the editor window are:
+Under [ADR-0059](../../../adr/0059-appkit-owns-window-presentation.md), the routes are:
 
-- **A person's launch, the Dock icon click, a reopen and ⌘Tab.** These
-  select the editor window (opening it when closed). The ⌘Tab
-  amendment and the launch amendment below documented these as panel
-  summons; they are now the editor window's, and both amendments stand
-  as history rather than as the current rule. The launch amendment's
-  other half stands: a launch the system performs shows the resting
-  panel only and opens no editor window.
+- **A person's initial foreground open.** Selects the editor window. Background launch starts the configured ambient presentation without opening the editor.
+- **Cmd-Tab.** Preserves AppKit focus and window ordering. It does not select an editor, rest a raised panel, or open Settings.
+- **Dock reopen.** Uses an existing visible ordinary window. If none is visible, opens or deminiaturizes the editor. A visible ambient panel does not prevent this reopen.
 - **The Window menu and window cycling.** The editor window
   participates; the panel does not.
 - **Full screen.** The editor window enters and leaves full screen by
@@ -111,7 +107,7 @@ surface carries `.fullScreenAuxiliary` exactly when its altitude is floating
 and `.fullScreenNone` otherwise, which is what an ordinary window at the normal
 level does. A raised card that has dropped to `.normal` therefore stays out of
 another app's full screen Space: ⌘Tab into that app is meant to show the app
-alone. ⌘Tab back selects the editor window and rests the card (ADR-0033), and
+alone. ⌘Tab back leaves window ordering to AppKit (ADR-0059), and
 the [hardware procedure](../../../qa/verification-procedures/spaces-and-cmd-tab.md)
 records what the return does. A card that floats, because it holds the
 keyboard, is pinned or keeps above, follows the person into those Spaces.
@@ -121,7 +117,7 @@ The summon gestures are ⌃⌥Space (two modifiers, deliberately: ⌥Space
 belongs to the panel app, and option-only global shortcuts broke
 outright on macOS 15.0 to 15.1), the menu-bar item and a click on the
 resting card. ⌘Tab and the Dock icon were summons under the ⌘Tab
-amendment below and select the editor window since ADR-0033. A summon
+amendment below. ADR-0059 now leaves Cmd-Tab ordering to AppKit and treats Dock reopen separately. A summon
 is a summon first and a dismissal last: a resting surface raises; a
 raised surface that lost the keyboard (the user clicked or ⌘Tabbed away
 to work beside the card) gets the keys back and is pulled to the active
@@ -134,9 +130,7 @@ Raising is the deliberate act that entitles the window to the keyboard
 toggled later), so the hotkey summon never activates the app or
 deactivates the user's frontmost one. An activation the person
 performs (⌘Tab, the Dock icon, a reopen) no longer reaches the panel:
-ADR-0033 routes it to the editor window, and the panel is raised as an
-activation only when a modal return or a cancelled quit finds it the
-owner.
+ADR-0059 leaves ordinary activation to AppKit and selects an editor on reopen only when no ordinary window is visible. The panel is raised on a modal return or cancelled quit when it is the owner.
 
 A resting surface is exactly as visible as the desktop is: behind every
 window, it shows only when the desktop shows (a bare corner of screen,
@@ -159,6 +153,8 @@ pressed from a full-screen app or another desktop would otherwise key
 an off-screen window and silently swallow whatever was typed.
 
 ## The ⌘Tab amendment
+
+ADR-0059 supplies the current activation policy. The discussion below records the earlier decisions.
 
 Superseded for ⌘Tab and the Dock icon by ADR-0033, which gives both to
 the editor window. Kept as written, as the record of why the app is a
@@ -184,6 +180,8 @@ presence that cannot be switched to is friction. Whether the fee is
 too high is open question №7.
 
 ## The launch amendment
+
+ADR-0059 replaces the two-second classification below with AppKit initial-open events.
 
 Superseded for a person's launch by ADR-0033, which opens the editor
 window for it; the login half stands. Kept as written.
@@ -400,8 +398,8 @@ and needs the project's hand-verification pass on real hardware:
    preference off, is absent from another app's full-screen Space
    (ADR-0034); Stage Manager neither relays out nor hides it
    surprisingly.
-5. ⌘Tab, both directions. Superseded by ADR-0033: ⌘Tab selects the
-   editor window and rests the card, and the current checks are in
+5. ⌘Tab, both directions. ADR-0059 replaces the older automatic
+   editor selection with AppKit focus restoration. Current checks are in
    [spaces-and-cmd-tab.md](../../../qa/verification-procedures/spaces-and-cmd-tab.md).
    As written: switching to the backdrop raises and keys it
    wherever the user is (including from a full-screen app); resting

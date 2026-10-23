@@ -168,22 +168,28 @@ shape, `scripts/install.sh` rebuilds the release shape, and each lane
 rebuilds the other's leftovers automatically; the release packaging
 path additionally refuses to ship a binary that exports a test seam.
 
-Prefer a bundle over `swift run` whenever
-Keychain behavior or permission prompts matter:
+Launch a packaged app with `scripts/dev.sh`. The executable refuses startup
+without a recognized shipping, local or development bundle identifier; a bare
+`swift run OnetimePad` is no longer a supported UI-development route.
 
-- Keychain ACLs key off the app's identity. The bundle carries a bundle
-  id and a signature; a bare `swift run` binary has no
-  CFBundleIdentifier, so prompts and grants behave differently (and
-  less representatively) than what a real user would see.
-- TCC grants and per-app pickers can't address a bundle-less binary.
-- The rebuild hazard: `swift build` SIGKILLs a live instance running
-  from `.build/` (in-place re-sign), and a SIGKILL skips
-  `applicationWillTerminate`, meaning no state save. Running from
-  `dist/` or `/Applications` keeps the live instance decoupled from
-  builds.
+Automated tests and probes inject both a temporary state directory and an
+in-memory credential client. A new bundle identifier alone still creates a
+persistent store and can use the login Keychain. Do not rebuild a probe over a
+previous run's persistent identity or authorize Keychain prompts to keep an
+automated test going. See the runtime-testing rules in [AGENTS.md](AGENTS.md).
 
-`swift run OnetimePad` remains fine for quick UI iteration where
-none of that matters (layout, tab drag, notices).
+Do not rebuild an executable while it is running from `shell/.build/`.
+The build scripts require Python 3.9 or later. The shared build-lane check
+inspects this user's resolved executable paths before test, development and
+packaging builds and stops if a live build executable is
+found; it does not terminate it. Unlinked executables are checked through `lsof`
+text mappings, including dylibs, so a mapped library from the output directory
+can also stop a build. The scripts check the fixed `shell/.build/` output; custom
+Swift `--scratch-path` and `--build-path` locations are outside this check. Use
+the default output with these scripts, or separately check a custom output with
+`python3 scripts/check-live-build.py DIRECTORY` before building. A packaged app in `dist/` or `/Applications` uses
+a separate executable, but its existing content still makes it unsuitable as
+an automated-test fixture.
 
 ### Force close
 

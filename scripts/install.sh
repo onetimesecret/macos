@@ -72,13 +72,6 @@ scripts/package-app.sh
 # we never escalate to signals here; if the app will not quit, we stop
 # rather than replace it live.
 
-# pgrep -f reads its pattern as an extended regex, so an APP_DEST with
-# metacharacters would silently match nothing (or error, which callers
-# would read as not running). Escape the path so the match is literal.
-running_from() { # <absolute path>
-  pgrep -f "$(printf '%s' "$1" | sed 's/[][\.|$(){}?+*^]/\\&/g')" >/dev/null
-}
-
 quit_installed() { # <app name>
   local name="$1"
   local macos_dir="$APP_DEST/$name.app/Contents/MacOS"

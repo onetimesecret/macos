@@ -58,6 +58,8 @@ jobs:
   platform:
     name: platform (macos)
     runs-on: macos-latest
+    env:
+      RUST_BACKTRACE: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned toolchain
@@ -66,7 +68,7 @@ jobs:
       - name: Clippy (full workspace)
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test (full workspace)
-        run: cargo test --workspace
+        run: cargo test --workspace -- --nocapture
       # The shape above enables no features (cargo issue 2911), so a
       # test gated on `feature = "test-util"` never runs in it. The
       # ubuntu lane covers the seams for the crates that build there,
@@ -77,7 +79,7 @@ jobs:
       # against the virtual manifest because companion-ffi is the one
       # member that declares it (crates/ffi/Cargo.toml).
       - name: Test (full workspace, test-util seams)
-        run: cargo test --workspace --features test-util
+        run: cargo test --workspace --features test-util -- --nocapture
 
   # The Swift/AppKit shell (ADR-0002): build the C-ABI seam as a
   # universal xcframework, then build and test the Swift package against
