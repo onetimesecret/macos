@@ -18,6 +18,7 @@ let package = Package(
         // The preview's Markdown parsers (plan R1), vendored by scripts/vendor-cmark.sh;
         // prefix.h renames every external symbol (otscm_, otsgfm_) so the two link into one binary;
         // `-include` finds it through the target's own search path, so the manifest names no absolute path.
+        // Release builds define NDEBUG as upstream's CMake release builds do; debug builds keep cmark's asserts.
         .target(
             name: "CMarkCommonMark",
             path: "Sources/CMarkCommonMark",
@@ -27,6 +28,7 @@ let package = Package(
                 .headerSearchPath("."),
                 .headerSearchPath("upstream"),
                 .headerSearchPath("generated"),
+                .define("NDEBUG", .when(configuration: .release)),
                 .unsafeFlags(["-include", "prefix.h"]),
             ]
         ),
@@ -43,6 +45,7 @@ let package = Package(
                 .headerSearchPath("upstream/src"),
                 .headerSearchPath("upstream/extensions"),
                 .headerSearchPath("generated"),
+                .define("NDEBUG", .when(configuration: .release)),
                 .unsafeFlags(["-include", "prefix.h"]),
             ]
         ),
