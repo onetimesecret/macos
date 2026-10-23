@@ -560,7 +560,8 @@ final class DayStackView: NSView {
     /// minimap says.
     @objc private func rollScrolled(_ notification: Notification) {
         positionViewportChrome()
-        if !isLayingOut { readingPlace = currentPlace }
+        // Out of a window the clip reads nothing; the last place stays for `departingPlace`.
+        if !isLayingOut, window != nil { readingPlace = currentPlace }
         publishGeometry()
     }
 
@@ -613,16 +614,17 @@ final class DayStackView: NSView {
         } == true
         if changingPad || rowsMoved {
             let projected = Set(signature.pages.joined())
+            if let place = pendingPlace, !projected.contains(place.page) {
+                pendingPlace = nil
+            }
+            if let page = pendingPage, !projected.contains(page) {
+                pendingPage = nil
+            }
+            let waiting = pendingPlace != nil || pendingPage != nil
             if changingPad, let pad = signature.padID {
                 // On a new mount an ownership handoff may already have supplied a
                 // more recent anchor. Otherwise use this pad's own last reading.
-                if let place = pendingPlace, !projected.contains(place.page) {
-                    pendingPlace = nil
-                }
-                if let page = pendingPage, !projected.contains(page) {
-                    pendingPage = nil
-                }
-                if pendingPlace == nil, pendingPage == nil {
+                if !waiting {
                     if !todayRequested, let place = model.readingPlace(for: pad),
                        projected.contains(place.page) {
                         open(at: place)
@@ -630,8 +632,7 @@ final class DayStackView: NSView {
                         pendingTodayAnchor = true
                     }
                 }
-            } else if rowsMoved, let place = readingPlace, !projected.contains(place.page) {
-                pendingPlace = nil
+            } else if !waiting, let place = readingPlace, !projected.contains(place.page) {
                 pendingTodayAnchor = true
             }
         }
@@ -1190,7 +1191,9 @@ final class DayStackView: NSView {
         setFrameSize(NSSize(width: documentWidth, height: max(y, clipHeight)))
         var restoredPlace: RollPlace?
         var summoned = false
-        if !expansionChanged, pendingPlace == nil, let place = readingPlace, restore(place: place) {
+        // A travelling jump owns the clip, so the pass leaves it to the jump.
+        if !expansionChanged, pendingPlace == nil, activeJump == nil, let place = readingPlace,
+           restore(place: place) {
             restoredPlace = place
         }
         constrainScrollOffset()
@@ -1201,7 +1204,8 @@ final class DayStackView: NSView {
             if summoned { restoredPlace = nil }
         }
         positionViewportChrome()
-        readingPlace = restoredPlace ?? currentPlace
+        // Out of a window a skipped restore reads no clip; a summon recorded its own place.
+        if window != nil { readingPlace = restoredPlace ?? currentPlace }
         scroll.reflectScrolledClipView(scroll.contentView)
         captureDocumentGeometry()
         publishGeometry()
@@ -1318,6 +1322,8 @@ final class DayStackView: NSView {
         )
         guard animated, duration > 0, window?.isVisible == true else {
             moveClip(of: scroll, to: target, supersedingJump: true)
+            // A deliberate move is the reader's place even out of a window, where `rollScrolled` ignores it.
+            readingPlace = clipPlace
             return
         }
         jumpSerial += 1
@@ -1419,8 +1425,11 @@ final class DayStackView: NSView {
     // MARK: The roll's place across a hand off (ADR-0033)
 
     /// The visible page and text anchor; multipad navigation records the origin too.
-    var currentPlace: RollPlace? {
-        guard window != nil, let scroll = enclosingScrollView else { return nil }
+    var currentPlace: RollPlace? { window == nil ? nil : clipPlace }
+
+    /// The place the clip shows, read whether or not the roll is in a window.
+    private var clipPlace: RollPlace? {
+        guard let scroll = enclosingScrollView else { return nil }
         let origin = scroll.contentView.bounds.origin
         guard origin.y > 0 || origin.x > 0 || model.pads.isEnabled,
               let row = rows.first(where: { $0.page != nil && !$0.body.isHidden && $0.body.frame.maxY > origin.y }),
@@ -1554,7 +1563,8 @@ final class DayStackView: NSView {
     /// by exactly as far as the roll's first page moved, so what the
     /// reader was looking at stays where it was.
     private func keepStill(anchoredOn anchor: (page: UInt64, top: CGFloat)?) {
-        guard !expandedLayout, let anchor, let scroll = enclosingScrollView,
+        // A travelling jump owns the clip until it ends, as in `relayout`'s restore.
+        guard activeJump == nil, !expandedLayout, let anchor, let scroll = enclosingScrollView,
               let row = rows.first(where: { $0.page == anchor.page }) else { return }
         let origin = Self.offsetAfterPrepending(
             insertedHeight: row.body.frame.minY - anchor.top,

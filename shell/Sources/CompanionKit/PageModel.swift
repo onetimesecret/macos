@@ -1207,7 +1207,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// Where the next owned roll opens for the latest gesture that found no roll to move,
-    /// ahead of the pad's saved place. Each such gesture overwrites it.
+    /// ahead of a pad's saved place or Day 0. Each such gesture overwrites it.
     enum RollRequest: Equatable {
         case today
         case page(UInt64)
@@ -1224,7 +1224,7 @@ public final class PageModel: ObservableObject {
     /// when a stand in gave way or no roll is mounted, and otherwise drops any older request.
     private func requestRoll(onPickedPageLeaving standIn: Bool) {
         let noRoll = standIn || onAnchorToday == nil
-        rollRequest = noRoll && pads.isEnabled && showsTimeUnits ? selectedPageID.map { .page($0) } : nil
+        rollRequest = noRoll && showsTimeUnits ? selectedPageID.map { .page($0) } : nil
     }
 
     /// Each visible day's page as the roll renders it while the editor
