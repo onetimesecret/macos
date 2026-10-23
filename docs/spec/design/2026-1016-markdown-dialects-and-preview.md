@@ -773,13 +773,15 @@ controls, lifecycle and accessibility, as after R3.
 | Dialect | Source | Revision | Local changes |
 | --- | --- | --- | --- |
 | CommonMark 0.31.2 | [commonmark/cmark](https://github.com/commonmark/cmark) tag `0.31.2` | `eec0eeba6d31189fd828314576494566d539b1e3` | None. |
-| GFM 0.29-gfm | [github/cmark-gfm](https://github.com/github/cmark-gfm) tag `0.29.0.gfm.13` | `587a12bb54d95ac37241377e6ddc93ea0e45439b` | Three patches. `0001`, to `extensions/autolink.c`, is upstream master commit `46829933c318b4c3108581e82469fe4474f744a9`, the fix for an unsigned pointer wrap in `validate_protocol`. `0002` and `0003` are the app's. `0002`, to `extensions/autolink.c`: a scalar in U+100000..U+10FFFD ends a `www` or `http` extended autolink as whitespace does, is not a host character, and is a left boundary for `www`. `0003`, to `extensions/table.c` and `table.h`: every table of a parse shares one cell budget, header rows and padding included, and a header or row past it is refused. |
+| GFM 0.29-gfm | [github/cmark-gfm](https://github.com/github/cmark-gfm) tag `0.29.0.gfm.13` | `587a12bb54d95ac37241377e6ddc93ea0e45439b` | Three patches. `0001`, to `extensions/autolink.c`, is upstream master commit `46829933c318b4c3108581e82469fe4474f744a9`, the fix for an unsigned pointer wrap in `validate_protocol`. `0002` and `0003` are the app's. `0002`, to `extensions/autolink.c`: every plane 16 scalar, U+100000..U+10FFFF, ends a `www` or `http` extended autolink as whitespace does, is not a host character, and is a left boundary for `www`, on every page, since the placeholders are drawn from that plane; the corpus has no plane 16 text, so it does not cover this. `0003`, to `extensions/table.c` and `table.h`: every table of a parse shares one cell budget, header rows and padding included, and a header or row past it is refused. |
 
 Each target keeps only the upstream files its shim needs, byte identical
 before patching. [`CMarkCommonMark/UPSTREAM.md`](../../../shell/Sources/CMarkCommonMark/UPSTREAM.md)
 and [`CMarkGFM/UPSTREAM.md`](../../../shell/Sources/CMarkGFM/UPSTREAM.md)
-list them with SHA-256 sums, and `scripts/vendor-cmark.sh --check` verifies
-the files, the patches and `prefix.h` offline. Without the prefix the two
+list them with SHA-256 sums, and `scripts/vendor-cmark.sh --check`, a step
+of CI's shell job, verifies the files, the patches and `prefix.h` offline.
+Each target finds its `prefix.h` through its own header search path, so the
+manifest names no absolute path. Without the prefix the two
 libraries share 131 external names, each a duplicate symbol at link.
 
 Not chosen: swift-cmark `08ddb528923cc1a6527e02b7a1aee9e516ca749a`, whose
@@ -813,7 +815,7 @@ and are not in the app.
 | Placement | An object no node emitted, a definition's or one in a table cell cmark-gfm dropped, is placed by block source position: in the deepest block quote or list item whose span covers it, before the first block after it; before a covering leaf when it is a definition's; between two list items, in the earlier one; in a table body row, at the end of the row's last kept cell. cmark-gfm gives the paragraph it keeps above a table line 0; that paragraph takes the table's start. Inline source positions are not used. |
 | Links | `enterLink` and `leaveLink` bracket a Markdown link's label. Inside it the innermost Markdown link's address applies, accepted or refused, and no HTML link does. A title object does not refuse the address. |
 | Tables | One cell per header column, as cmark-gfm keeps them; no cell spans. All of a page's tables together may have 100,000 cells (`CompositionLimits.maximumTableCells`), header rows and padded cells included, since cmark-gfm pads a short row to the header's width and its own cap is per table. |
-| Failure | Parsing throws past the input, depth or table cell limit, with no placeholder window, or for an object emitted twice, and rendering fails when its output shows any object other than once. Either way the page renders as its plain source text with LF line endings, each object as its attachment in source order. |
+| Failure | Parsing throws past the input, depth or table cell limit, with no placeholder window, or for an object emitted twice, and rendering fails when its output shows any object other than once. Either way the page renders as its plain source text with LF line endings, each object as its attachment in source order. The renderer logs the error's name under the `preview` category, at info level for a limit or a missing placeholder window and as a fault for anything else. |
 
 #### Ordinary text conformance
 
@@ -907,7 +909,7 @@ composes as text in both dialects.
 
 | File | Coverage |
 | --- | --- |
-| [`MarkdownParserTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownParserTests.swift) | The placeholder window, the input and depth limits, object offsets, line endings and atom offsets, definitions, inline destination and title objects, angle autolinks, fence info, excess table cells, a definition above the paragraph a table splits off, the table cell budget, every object once on pages that hide or copy one, flanking, and autolinks ending at an object. |
+| [`MarkdownParserTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownParserTests.swift) | The placeholder window, both parsers' named entity tables (none decodes into plane 16), the input and depth limits, object offsets, line endings and atom offsets, definitions, a tab before a definition's object, inline destination and title objects, angle autolinks, fence info, excess table cells, a definition above the paragraph a table splits off, the table cell budget, every object once on pages that hide or copy one, flanking, and autolinks ending at an object. |
 | [`MarkdownCorpusTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownCorpusTests.swift) | Download checksums, example numbering, the GFM extraction against the lab's, and both corpora against the mismatch table. |
 | [`MarkdownSealedAtomTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownSealedAtomTests.swift) | Ordinary text conformance, P01 to P07 and native restrictions, as above. |
 | [`PreviewComposerTests.swift`](../../../shell/Tests/CompanionKitTests/PreviewComposerTests.swift) | The new events: breaks, a Markdown link over HTML links, a refused link shadowing them, destination and title objects at the link's opening, title objects leaving the address, empty and stand-in addresses, an image's title objects in its fallback, unbalanced link events and link events in raw text, and depth. |
@@ -937,7 +939,7 @@ Those are the review's own runs; this record repeats none of them.
 
 Run from `shell/` on 2026-10-23, macOS 27.2 on arm64, Apple Swift 6.4:
 `swift test --filter "HTMLTokenizerTests|PreviewComposerTests|MarkdownPreviewCompositionTests|MarkdownPreviewRenderingTests|CheckpointMarkdownPreviewTests|CheckpointInsertionTests|DayScrollPreviewRenderingTests|PageModelPreviewRenderingTests|MarkdownParserTests|MarkdownCorpusTests|MarkdownSealedAtomTests|LinkDetectionTests|LinkRenderingTests|FenceScannerTests|FenceRenderingTests|FenceRegionFoldTests|CodeSlabTests"`,
-324 tests, 0 failures; `scripts/vendor-cmark.sh --check` passes. Not run:
+326 tests, 0 failures; `scripts/vendor-cmark.sh --check` passes. Not run:
 the full shell suite (left to CI), a macOS 13 runtime, a manual interaction
 pass and VoiceOver.
 
@@ -946,8 +948,14 @@ pass and VoiceOver.
 - R2 exposes CommonMark; until then the CommonMark adapter runs only in
   tests. R3's open item on inline raw text tags under CommonMark
   composition still applies.
-- Parse and render time on large pages is not recorded here; R6 benchmarks
-  it.
+- `MarkdownPreviewRenderer` runs on the main actor and `reseed(with:)`
+  parses and composes the whole page synchronously, so a page near the
+  limits blocks the main thread for as long as it takes. Parse and render
+  time on large pages is not recorded here; R6 benchmarks it and decides
+  whether rendering moves off the main thread.
+- A `PreviewImageDescriptor` address is `unreviewed`: no scheme check runs
+  on it, and nothing reads it. ADR-0059 gives its schemes to R4, whose gates
+  "must complete before production image wiring".
 
 #### Choices made in this slice
 
