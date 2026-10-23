@@ -44,6 +44,7 @@ final class PadModelTests: XCTestCase {
         model.close(tab.id)
         XCTAssertNil(model.readingPlace(for: PadCatalog.scratchID), "a closed page must not restore")
     }
+
     func testNewPageOwnershipKeepsInactiveInkStorageAndDisablingRevealsAll() throws {
         let model = isolatedModel(defaults: try defaults())
         model.loadStateIfNeeded()

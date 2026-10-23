@@ -34,13 +34,14 @@ DayScrollProjectionTests, and FocusLawTests.
 | Both ordering directions | Native long-page day/checkpoint reordering preserves the visible character; navigator gap and retained-boundary tests cover reversed chronology. |
 | Long pages and dense checkpoints | A 60-checkpoint, 300,000-point document maps into a 72-point minimap in both orders, including subpixel interpolation and the document endpoint. |
 | Minimum height | A dense navigator is hosted at 180 points; native reading fixtures use a 120-point viewport. These checks are not a visual-fit assertion. |
-| Pad switching | Two populated pads retain different page/character anchors across repeated switches; empty pads and rapid catalog changes have separate regressions. || Passed through AX scroll-position comparison; visible-character inspection pending |
+| Pad switching | Two populated pads retain different page/character anchors across repeated switches; empty pads and rapid catalog changes have separate regressions. |
 | Missing anchors | Closed, other-pad, and live-but-omitted page anchors are rejected; unavailable positions fall back to Today. Detached nil measurements preserve an existing position. |
-| File/Ledger | Native teardown/remount restores the Timeline position, file selection cannot overwrite another pad's position, and inactive geometry draws no band or slivers. || Passed through AX: control absent in each view and Timeline scroll position restored |
+| File/Ledger | Native teardown/remount restores the Timeline position, file selection cannot overwrite another pad's position, and inactive geometry draws no band or slivers. |
 
 Command: `swift test --package-path shell --disable-sandbox --filter 'DayScrollTests|PageViewStateTests|PadModelTests|PadPickerTests|StreamNavigatorTests|TimeRailTests|RollGeometryModelTests|FileSurfaceTests|EditorHandoffTests|PresentationGuardTests|DayScrollProjectionTests|FocusLawTests'`.
 The run used the test-util core framework and macOS desktop services.
 ADR structure validation also passed: `40 ADRs OK`.
+
 ## Manual run — 2026-10-03 (in progress)
 
 Build: worktree `dist/OnetimePad Debug.app`, About reports
