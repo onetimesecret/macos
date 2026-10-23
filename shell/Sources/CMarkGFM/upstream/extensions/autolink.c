@@ -10,8 +10,8 @@
 #include <strings.h>
 #endif
 
-// Onetime Pad: a scalar in U+100000..U+10FFFD (UTF-8 F4 80..8F) stands for a
-// sealed object; it bounds an extended autolink as whitespace does.
+// Onetime Pad: a plane 16 scalar (UTF-8 F4 80..8F) may stand for a sealed
+// object, so every one bounds an extended autolink as whitespace does.
 static int is_placeholder(const uint8_t *p, size_t len) {
   return len >= 2 && p[0] == 0xF4 && p[1] >= 0x80 && p[1] <= 0x8F;
 }

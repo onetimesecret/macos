@@ -322,10 +322,13 @@ $(for patch in "${PATCHES[@]}"; do printf '  - `%s` (SHA-256 %s)\n' "${patch#"$G
 \`0001\` is upstream master commit $GFM_FIX_COMMIT, exported with
 \`git format-patch\`: the fix for the unsigned pointer wrap in
 \`validate_protocol\` (\`extensions/autolink.c\`). The script compares its patch
-id with that commit's. \`0002\` and \`0003\` are Onetime Pad's own. \`0002\`: a
-scalar in U+100000..U+10FFFD, the preview's sealed-object placeholder, ends a
-www or http extended autolink. \`0003\`: every table of a parse shares one cell
-budget, which the shim sets (\`extensions/table.c\`, \`extensions/table.h\`).
+id with that commit's. \`0002\` and \`0003\` are Onetime Pad's own. \`0002\`: every
+plane 16 scalar, U+100000..U+10FFFF, ends a www or http extended autolink and
+is no host character, on every page, because the preview's sealed-object
+placeholders are drawn from that plane; extended autolinks over plane 16 text
+therefore differ from stock cmark-gfm, which the corpus comparison does not
+cover. \`0003\`: every table of a parse shares one cell budget, which the shim
+sets (\`extensions/table.c\`, \`extensions/table.h\`).
 
 ## Kept files
 

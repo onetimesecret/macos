@@ -8,16 +8,19 @@ this file, `upstream/`, `patches/` and `prefix.h` offline. Do not edit by hand.
 - Commit: 587a12bb54d95ac37241377e6ddc93ea0e45439b
 - Patches, applied in order with `git apply` to the files of that commit:
   - `patches/0001-autolink-fix-unsigned-pointer-overflow-in-validate_protocol.patch` (SHA-256 cd8c4af910e044ae17435c6ae83b3747424660c92d700e10daeb3bd6864a83cf)
-  - `patches/0002-autolink-end-extended-autolinks-at-object-placeholders.patch` (SHA-256 bfe2cf7636ea14b8bfeead8b9dc32bcaafe56e87b752eadb105c2b2f767f4bba)
-  - `patches/0003-table-share-one-cell-budget-across-a-parse.patch` (SHA-256 57ecaeacfa9b40eaf03917478a8185f2c9d2267daa694343923c20fec4b8de40)
+  - `patches/0002-autolink-end-extended-autolinks-at-object-placeholders.patch` (SHA-256 8cfd54307119758094199abdf1c73dae91966aa34fa11e45588b80a2b3446144)
+  - `patches/0003-table-share-one-cell-budget-across-a-parse.patch` (SHA-256 a1692ace5edcbc57e3b7f86404930b28f760ed8aea751f22b58673c5e21aac14)
 
 `0001` is upstream master commit 46829933c318b4c3108581e82469fe4474f744a9, exported with
 `git format-patch`: the fix for the unsigned pointer wrap in
 `validate_protocol` (`extensions/autolink.c`). The script compares its patch
-id with that commit's. `0002` and `0003` are Onetime Pad's own. `0002`: a
-scalar in U+100000..U+10FFFD, the preview's sealed-object placeholder, ends a
-www or http extended autolink. `0003`: every table of a parse shares one cell
-budget, which the shim sets (`extensions/table.c`, `extensions/table.h`).
+id with that commit's. `0002` and `0003` are Onetime Pad's own. `0002`: every
+plane 16 scalar, U+100000..U+10FFFF, ends a www or http extended autolink and
+is no host character, on every page, because the preview's sealed-object
+placeholders are drawn from that plane; extended autolinks over plane 16 text
+therefore differ from stock cmark-gfm, which the corpus comparison does not
+cover. `0003`: every table of a parse shares one cell budget, which the shim
+sets (`extensions/table.c`, `extensions/table.h`).
 
 ## Kept files
 
@@ -56,7 +59,7 @@ force-includes it into every C file.
 
 ```
 c22e885f33b821bddb24cf007145e5540655b6c0f403e49e6c76a93c28e6d9a9  upstream/COPYING
-b1a43cc31a5149438b12beed1f1e4940e8e63f9b1c883311235d885a2fbd2877  upstream/extensions/autolink.c
+b19ddf033da8d6560d7143b2e1c6a365e9615c81cbeddedbaf342f9c3ed7925c  upstream/extensions/autolink.c
 32b32d557c19d18c30b8fa01a5b8475f910a3fae48ef78fbde4e089c48f1e216  upstream/extensions/autolink.h
 0430e1348124d7f84576ec626ef8d49d38f5b41bd1ea7708dca5967b5e49cfae  upstream/extensions/cmark-gfm-core-extensions.h
 281a5514746d541eea3a26c6ce55d35c9594d62661396a458b4385be698436a2  upstream/extensions/core-extensions.c

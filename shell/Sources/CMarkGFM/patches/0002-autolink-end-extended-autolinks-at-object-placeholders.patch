@@ -1,10 +1,11 @@
 Subject: [PATCH] autolink: end extended autolinks at object placeholders
 
 Onetime Pad's preview replaces each sealed object with one scalar in
-U+100000..U+10FFFD (UTF-8 lead byte F4, second byte 80..8F) before parsing.
-That scalar is not a host character, ends a www or http extended autolink
-as whitespace does, and counts as a left boundary for www. Plane 15 stays
-ordinary text because the Nerd Fonts glyphs U+F0001..U+F1AF0 sit there.
+U+100000..U+10FFFD before parsing. Every plane 16 scalar, U+100000..U+10FFFF
+(UTF-8 lead byte F4, second byte 80..8F), is therefore not a host character,
+ends a www or http extended autolink as whitespace does, and counts as a
+left boundary for www, on any page, with or without sealed objects. Plane 15
+stays ordinary text because the Nerd Fonts glyphs U+F0001..U+F1AF0 sit there.
 
 Applies after 0001 (upstream 46829933). Local to Onetime Pad.
 
@@ -14,8 +15,8 @@ Applies after 0001 (upstream 46829933). Local to Onetime Pad.
  #include <strings.h>
  #endif
  
-+// Onetime Pad: a scalar in U+100000..U+10FFFD (UTF-8 F4 80..8F) stands for a
-+// sealed object; it bounds an extended autolink as whitespace does.
++// Onetime Pad: a plane 16 scalar (UTF-8 F4 80..8F) may stand for a sealed
++// object, so every one bounds an extended autolink as whitespace does.
 +static int is_placeholder(const uint8_t *p, size_t len) {
 +  return len >= 2 && p[0] == 0xF4 && p[1] >= 0x80 && p[1] <= 0x8F;
 +}

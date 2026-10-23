@@ -9,6 +9,12 @@ ots_table_cell_budget_exhausted() reports that one was. The caller sets
 the budget before each parse and reads it after, under its parse lock,
 since both values are process wide.
 
+A refused line reads as paragraph text and the parse goes on, so the tree
+is not the page's; Onetime Pad's shim reports the exhaustion and the
+preview then discards the whole parse. A header's cells are taken before
+its last checks, so a header those checks then refuse still spends them:
+the budget fails closed and counts an upper bound, not an exact count.
+
 Applies after 0001 and 0002. Local to Onetime Pad.
 
 diff --git a/extensions/table.c b/extensions/table.c

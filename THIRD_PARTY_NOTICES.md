@@ -538,8 +538,8 @@ shell/Sources/CMarkGFM/patches, applied in this order:
     Upstream master commit 46829933c318b4c3108581e82469fe4474f744a9, the
     fix for an unsigned pointer wrap in validate_protocol.
 0002-autolink-end-extended-autolinks-at-object-placeholders.patch
-    Onetime Pad's change: a scalar in U+100000..U+10FFFD ends a www or
-    http extended autolink.
+    Onetime Pad's change: every scalar in U+100000..U+10FFFF ends a www
+    or http extended autolink.
 0003-table-share-one-cell-budget-across-a-parse.patch
     Onetime Pad's change: every table of a parse shares one cell budget,
     and a header or row past it is refused.
