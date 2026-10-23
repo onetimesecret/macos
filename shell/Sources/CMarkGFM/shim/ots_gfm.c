@@ -129,9 +129,14 @@ otsgfm_document *otsgfm_parse(const char *text, size_t length, int64_t table_cel
   }
   cmark_syntax_extension_set_postprocess_func(document->capture, capture_references);
   cmark_syntax_extension_set_private(document->capture, document, NULL);
+  int attached = 1;
   for (int i = 0; i < EXTENSION_COUNT; i++)
-    cmark_parser_attach_syntax_extension(document->parser, extensions[i]);
-  cmark_parser_attach_syntax_extension(document->parser, document->capture);
+    attached &= cmark_parser_attach_syntax_extension(document->parser, extensions[i]) == 1;
+  attached &= cmark_parser_attach_syntax_extension(document->parser, document->capture) == 1;
+  if (!attached) {
+    otsgfm_document_free(document);
+    return NULL;
+  }
 
   pthread_mutex_lock(&parse_lock);
   ots_table_set_cell_budget(table_cells);
