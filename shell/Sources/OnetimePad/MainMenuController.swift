@@ -13,20 +13,39 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     func install() {
         let main = NSMenu()
+        let services = makeApplicationMenu(in: main)
+        makeFileMenu(in: main)
+        makeEditMenu(in: main)
+        makeViewMenu(in: main)
+        let window = makeWindowMenu(in: main)
+        makeHelpMenu(in: main)
+        NSApp.mainMenu = main
+        NSApp.servicesMenu = services
+        NSApp.windowsMenu = window
+    }
+
+    private func makeApplicationMenu(in main: NSMenu) -> NSMenu {
         let application = submenu(BackdropAppDelegate.productName, in: main)
-        application.addItem(action("About \(BackdropAppDelegate.productName)") { [app] in app.showAbout() })
+        application.addItem(action(CompanionL10n.format("About %@", BackdropAppDelegate.productName)) { [app] in app.showAbout() })
         application.addItem(.separator())
         application.addItem(action("Settings…", command: .appSettings) { [app] in app.openSettings() })
         application.addItem(action("Customize Keyboard Shortcuts…") { [app] in app.pages.openUserKeymapFile() })
         application.addItem(.separator())
-        NSApp.servicesMenu = submenu("Services", in: application)
+        let services = NSApp.servicesMenu ?? NSMenu(title: CompanionL10n.string("Services"))
+        services.supermenu?.items.first { $0.submenu === services }?.submenu = nil
+        let servicesItem = NSMenuItem(title: CompanionL10n.string("Services"), action: nil, keyEquivalent: "")
+        servicesItem.submenu = services
+        application.addItem(servicesItem)
         application.addItem(.separator())
-        application.addItem(responder("Hide \(BackdropAppDelegate.productName)", #selector(NSApplication.hide(_:)), key: "h"))
+        application.addItem(responder(CompanionL10n.format("Hide %@", BackdropAppDelegate.productName), #selector(NSApplication.hide(_:)), key: "h"))
         application.addItem(responder("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), key: "h", modifiers: [.command, .option]))
         application.addItem(responder("Show All", #selector(NSApplication.unhideAllApplications(_:))))
         application.addItem(.separator())
-        application.addItem(responder("Quit \(BackdropAppDelegate.productName)", #selector(NSApplication.terminate(_:)), key: "q"))
+        application.addItem(responder(CompanionL10n.format("Quit %@", BackdropAppDelegate.productName), #selector(NSApplication.terminate(_:)), key: "q"))
+        return services
+    }
 
+    private func makeFileMenu(in main: NSMenu) {
         let file = submenu("File", in: main)
         file.delegate = self
         file.addItem(action("New Page", command: .pageNew) { [app] in
@@ -38,14 +57,16 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         file.addItem(action("Save", command: .stateSaveNow, enabled: onFile) { [app] in app.pages.perform(.stateSaveNow) })
         file.addItem(action("Save As…", command: .fileSaveAs, enabled: onFile) { [app] in app.pages.perform(.fileSaveAs) })
         file.addItem(.separator())
-        let close = action("Close", command: .pageClose, enabled: { [unowned self] in self.closeChoice.isEnabled }) { [app] in
+        let close = action("Close", command: .pageClose, enabled: { [weak self] in self?.closeChoice.isEnabled ?? false }) { [app] in
             app.pages.closeWhatIsShowing(app.keyWindow.closeTarget) {
                 app.sendToResponder(#selector(NSWindow.performClose(_:)))
             }
         }
         closeItem = close
         file.addItem(close)
+    }
 
+    private func makeEditMenu(in main: NSMenu) {
         let edit = submenu("Edit", in: main)
         edit.addItem(responder("Undo", #selector(EditStepResponder.undo(_:)), command: .editorUndo))
         edit.addItem(responder("Redo", #selector(EditStepResponder.redo(_:)), command: .editorRedo))
@@ -66,6 +87,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         let find = submenu("Find", in: edit)
         for (title, key, modifiers, tag) in [
             ("Find…", "f", NSEvent.ModifierFlags.command, NSTextFinder.Action.showFindInterface),
+            ("Find and Replace…", "f", [.command, .option], .showReplaceInterface),
             ("Find Next", "g", .command, .nextMatch),
             ("Find Previous", "g", [.command, .shift], .previousMatch),
             ("Use Selection for Find", "e", .command, .setSearchString)
@@ -90,9 +112,16 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         let speech = submenu("Speech", in: edit)
         speech.addItem(responder("Start Speaking", #selector(NSTextView.startSpeaking(_:))))
         speech.addItem(responder("Stop Speaking", #selector(NSTextView.stopSpeaking(_:))))
+        edit.addItem(.separator())
+        edit.addItem(responder("Emoji & Symbols", #selector(NSApplication.orderFrontCharacterPalette(_:))))
+    }
 
+    private func makeViewMenu(in main: NSMenu) {
         let view = submenu("View", in: main)
         view.addItem(responder("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), key: "f", modifiers: [.command, .control]))
+    }
+
+    private func makeWindowMenu(in main: NSMenu) -> NSMenu {
         let window = submenu("Window", in: main)
         window.addItem(action("Open in Window") { [app] in app.openEditorPresentation() })
         window.addItem(action("Show Ambient Panel", enabled: { [app] in app.ambientPanelEnabled }) { [app] in app.showAmbientPresentation() })
@@ -103,13 +132,15 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         window.addItem(responder("Zoom", #selector(NSWindow.performZoom(_:))))
         window.addItem(.separator())
         window.addItem(responder("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))))
-        NSApp.windowsMenu = window
+        return window
+    }
+
+    private func makeHelpMenu(in main: NSMenu) {
         let help = submenu("Help", in: main)
         help.addItem(action("Export Diagnostics…") { [app] in app.exportDiagnostics() })
         help.addItem(action("Copy Diagnostic Summary") { [app] in app.copyDiagnosticSummary() })
         help.addItem(.separator())
         help.addItem(action("Send Feedback…") { [app] in app.sendFeedback() })
-        NSApp.mainMenu = main
     }
 
     private var onFile: () -> Bool {
@@ -122,7 +153,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        closeItem?.title = closeChoice.title
+        closeItem?.title = CompanionL10n.string(closeChoice.title)
         if menu === languageMenu { updateLanguages(in: menu) }
     }
 
@@ -137,8 +168,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         edit.addItem(action("Detect Code Language", enabled: { [app] in app.pages.languageActions.canDetect }) { [app] in
             app.sendToResponder(#selector(LanguageDetectionResponder.detectCodeLanguage(_:)))
         })
-        let choose = action("Choose Language", enabled: { [unowned self] in self.languageTarget != nil }) {}
-        let languages = NSMenu(title: "Choose Language")
+        let choose = action("Choose Language", enabled: { [weak self] in self?.languageTarget != nil }) {}
+        let languages = NSMenu(title: CompanionL10n.string("Choose Language"))
         languages.delegate = self
         choose.submenu = languages
         languageMenu = languages
@@ -157,7 +188,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
         for language in InkEditorView.Coordinator.manualLanguages {
-            menu.addItem(action(CodeLanguageName.display(language)) { [unowned self] in
+            menu.addItem(action(CodeLanguageName.display(language)) { [weak self] in
+                guard let self else { return }
                 self.languageTarget?.choose(language, send: self.app.sendToResponder(_:carrying:)) { [app] mode, id in
                     app.pages.selectFileRenderMode(mode, for: id)
                 }
@@ -166,8 +198,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     }
 
     private func submenu(_ title: String, in parent: NSMenu) -> NSMenu {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        let menu = NSMenu(title: title)
+        let item = NSMenuItem(title: CompanionL10n.string(title), action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: CompanionL10n.string(title))
         item.submenu = menu
         parent.addItem(item)
         return menu
@@ -175,30 +207,30 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     private func action(_ title: String, command: CommandID? = nil,
                         enabled: @escaping () -> Bool = { true }, _ run: @escaping () -> Void) -> NSMenuItem {
-        let item = MenuActionItem(title: title, enabled: enabled, run: run)
-        bind(command, to: item)
+        let item = MenuActionItem(title: CompanionL10n.string(title), enabled: enabled, run: run)
+        if let command { bind(command, to: item) }
         return item
     }
 
     private func responder(_ title: String, _ selector: Selector, key: String = "",
                            modifiers: NSEvent.ModifierFlags = .command, command: CommandID? = nil) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
+        let item = NSMenuItem(title: CompanionL10n.string(title), action: selector, keyEquivalent: key)
         item.keyEquivalentModifierMask = key.isEmpty ? [] : modifiers
         if let command { bind(command, to: item) }
         return item
     }
 
-    private func bind(_ command: CommandID?, to item: NSMenuItem) {
-        let chord = command.flatMap { app.pages.keymap.menuKeystroke(for: $0) }
+    private func bind(_ command: CommandID, to item: NSMenuItem) {
+        let chord = app.pages.keymap.menuKeystroke(for: command)
         item.keyEquivalent = chord?.menuKeyEquivalent ?? ""
         item.keyEquivalentModifierMask = chord?.menuModifierMask ?? []
     }
 }
 
 @MainActor
-private final class MenuActionItem: NSMenuItem, NSMenuItemValidation {
-    private let run: () -> Void
-    private let availability: () -> Bool
+final class MenuActionItem: NSMenuItem, NSMenuItemValidation {
+    private var run: (() -> Void)?
+    private var availability: (() -> Bool)?
 
     init(title: String, enabled: @escaping () -> Bool, run: @escaping () -> Void) {
         self.run = run
@@ -207,10 +239,14 @@ private final class MenuActionItem: NSMenuItem, NSMenuItemValidation {
         target = self
     }
 
-    @available(*, unavailable)
-    required init(coder: NSCoder) { fatalError("not archived") }
+    required init(coder: NSCoder) {
+        super.init(coder: coder)
+        target = self
+        action = #selector(invoke)
+        isEnabled = false
+    }
 
-    @objc private func invoke() { run() }
+    @objc private func invoke() { run?() }
 
-    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool { availability() }
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool { availability?() ?? false }
 }
