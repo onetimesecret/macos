@@ -5,14 +5,16 @@
 use std::ffi::c_void;
 use std::ptr::NonNull;
 
-use objc2::rc::Retained;
+use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::AnyObject;
 use objc2_app_kit::{
     NSPasteboard, NSPasteboardItem, NSPasteboardName, NSPasteboardNameDrag,
     NSPasteboardNameGeneral, NSPasteboardType, NSPasteboardTypePNG, NSPasteboardTypeString,
     NSPasteboardTypeURL,
 };
-use objc2_foundation::{NSArray, NSData, NSString};
+use objc2_foundation::{
+    NSArray, NSData, NSRange, NSString, NSStringEncodingConversionOptions, NSUTF8StringEncoding,
+};
 use zeroize::Zeroizing;
 
 use crate::{
@@ -58,36 +60,41 @@ impl SystemPasteboard {
         }
     }
 
-    fn types_present(&self) -> Vec<String> {
-        self.pasteboard
-            .types()
-            .map(|types| types.to_vec().iter().map(ToString::to_string).collect())
-            .unwrap_or_default()
+    /// Whether the board declares any of `names`, compared as `NSString`s, with no
+    /// conversion of the declared names.
+    fn declares(&self, names: &[&NSString]) -> bool {
+        self.pasteboard.types().is_some_and(|types| {
+            types
+                .to_vec()
+                .iter()
+                .any(|declared| names.iter().any(|name| declared.isEqualToString(name)))
+        })
     }
-}
 
-impl Pasteboard for SystemPasteboard {
-    fn read(&self) -> Option<PasteboardItem> {
+    /// [`Pasteboard::read`]'s body, run inside the read's own autorelease pool.
+    fn read_in_pool(&self) -> Option<PasteboardItem> {
         let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
         let png_type: &NSPasteboardType = unsafe { NSPasteboardTypePNG };
         let url_type: &NSPasteboardType = unsafe { NSPasteboardTypeURL };
 
-        let content = if let Some(s) = self.pasteboard.stringForType(string_type) {
-            PasteboardContent::Text(s.to_string())
-        } else if let Some(data) = self.pasteboard.dataForType(png_type) {
-            PasteboardContent::Image(data.to_vec())
-        } else {
-            return None;
-        };
+        let text = self
+            .pasteboard
+            .stringForType(string_type)
+            .and_then(|s| utf8_of(&s));
+        let content = chosen_content(text, || {
+            self.pasteboard
+                .dataForType(png_type)
+                .map(|data| data.to_vec())
+        })?;
 
-        let nspasteboard_concealed = self.types_present().iter().any(|t| t == CONCEALED_TYPE);
+        let nspasteboard_concealed = self.declares(&[&NSString::from_str(CONCEALED_TYPE)]);
 
         // Only `public.url`: HTML has no standard place for its source
         // (ADR-0013).
         let origin_url = self
             .pasteboard
             .stringForType(url_type)
-            .map(|url| url.to_string())
+            .and_then(|url| utf8_of(&url))
             .filter(|url| !url.is_empty());
 
         Some(PasteboardItem {
@@ -95,6 +102,13 @@ impl Pasteboard for SystemPasteboard {
             nspasteboard_concealed,
             origin_url,
         })
+    }
+}
+
+impl Pasteboard for SystemPasteboard {
+    fn read(&self) -> Option<PasteboardItem> {
+        // The board's autoreleased strings and data go when the read returns, unwiped.
+        autoreleasepool(|_| self.read_in_pool())
     }
 
     fn write(
@@ -143,13 +157,12 @@ impl Pasteboard for SystemPasteboard {
     }
 
     fn holds_external_content(&self) -> bool {
-        let types = self.types_present();
-        if types.iter().any(|t| t == TRANSIENT_TYPE) {
+        if self.declares(&[&NSString::from_str(TRANSIENT_TYPE)]) {
             return false;
         }
-        let string_type = unsafe { NSPasteboardTypeString }.to_string();
-        let png_type = unsafe { NSPasteboardTypePNG }.to_string();
-        types.iter().any(|t| *t == string_type || *t == png_type)
+        // SAFETY: reading static extern pasteboard-type constants.
+        let (string_type, png_type) = unsafe { (NSPasteboardTypeString, NSPasteboardTypePNG) };
+        self.declares(&[string_type, png_type])
     }
 }
 
@@ -229,6 +242,53 @@ fn content_type(kind: ContentKind) -> &'static NSPasteboardType {
     }
 }
 
+/// The content a read takes: the text when it converted, else the PNG, as when the board
+/// has no text at all. The variant takes the text's buffer as is (C45).
+fn chosen_content(
+    text: Option<Zeroizing<String>>,
+    png: impl FnOnce() -> Option<Vec<u8>>,
+) -> Option<PasteboardContent> {
+    match text {
+        Some(mut text) => Some(PasteboardContent::Text(std::mem::take(&mut *text))),
+        None => png().map(PasteboardContent::Image),
+    }
+}
+
+/// A string's UTF-8, converted by Foundation into a zeroed wiping buffer of the length it
+/// reports, with no `UTF8String` copy; `None` unless the whole string converts (C17).
+fn utf8_of(string: &NSString) -> Option<Zeroizing<String>> {
+    let len = string.lengthOfBytesUsingEncoding(NSUTF8StringEncoding);
+    let units = string.length();
+    if len == 0 {
+        // Zero bytes for a nonempty string is Foundation's refusal to convert it.
+        return (units == 0).then(|| Zeroizing::new(String::new()));
+    }
+    let mut bytes = Zeroizing::new(vec![0u8; len]);
+    let mut used: usize = 0;
+    let mut leftover = NSRange::new(0, 0);
+    // SAFETY: `bytes` has room for the `len` bytes allowed, and `used` and `leftover`
+    // are live locals for the call.
+    let converted = unsafe {
+        string.getBytes_maxLength_usedLength_encoding_options_range_remainingRange(
+            bytes.as_mut_ptr().cast::<c_void>(),
+            len,
+            &raw mut used,
+            NSUTF8StringEncoding,
+            NSStringEncodingConversionOptions::empty(),
+            NSRange::new(0, units),
+            &raw mut leftover,
+        )
+    };
+    if !converted || used != len || leftover.length != 0 {
+        return None;
+    }
+    // A refused conversion hands its bytes back into a wiping owner to drop.
+    String::from_utf8(std::mem::take(&mut *bytes))
+        .map_err(|refused| Zeroizing::new(refused.into_bytes()))
+        .ok()
+        .map(Zeroizing::new)
+}
+
 /// The one content write every decrypted egress shares: text as a string,
 /// an image as PNG data. Returns whether the target took it.
 fn write_content(target: &impl ContentTarget, content: &[u8], kind: ContentKind) -> bool {
@@ -266,12 +326,13 @@ mod tests {
         let item = pb.read().unwrap();
         assert!(item.nspasteboard_concealed);
         assert_eq!(item.content, PasteboardContent::Text("hunter2".into()));
-        assert!(pb.types_present().iter().any(|t| t == TRANSIENT_TYPE));
+        assert!(pb.declares(&[&NSString::from_str(TRANSIENT_TYPE)]));
     }
 
     #[test]
     fn read_captures_the_origin_url_when_present_and_none_otherwise() {
         use objc2_foundation::NSArray;
+        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
         let pb = SystemPasteboard::for_testing();
         let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
         let url_type: &NSPasteboardType = unsafe { NSPasteboardTypeURL };
@@ -285,14 +346,93 @@ mod tests {
             url_type,
         );
         let item = pb.read().unwrap();
-        assert_eq!(
-            item.origin_url.as_deref(),
-            Some("https://example.test/article?token=q")
-        );
+        let origin = item.origin_url.as_ref().unwrap();
+        assert_eq!(origin.as_str(), "https://example.test/article?token=q");
+        // A wiping owner whose capacity is its length (C17).
+        wiping_owner(origin);
+        assert_eq!(origin.capacity(), origin.len(), "the origin copy grew");
 
         let mut pb = SystemPasteboard::for_testing();
         write_text(&mut pb, "no origin here", false);
         assert!(pb.read().unwrap().origin_url.is_none());
+    }
+
+    /// A board holding `text` as a string and, when given, `url` as `public.url`.
+    fn board_with(text: &NSString, url: Option<&NSString>) -> SystemPasteboard {
+        let pb = SystemPasteboard::for_testing();
+        let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
+        let url_type: &NSPasteboardType = unsafe { NSPasteboardTypeURL };
+        let types = NSArray::from_slice(&[string_type, url_type]);
+        // SAFETY: no owner; concrete bytes are written up front.
+        unsafe { pb.pasteboard.declareTypes_owner(&types, None) };
+        pb.pasteboard.setString_forType(text, string_type);
+        if let Some(url) = url {
+            pb.pasteboard.setString_forType(url, url_type);
+        }
+        pb
+    }
+
+    /// `a`, an unpaired high surrogate, `b`: a string with no UTF-8 form.
+    fn unpaired_surrogate() -> Retained<NSString> {
+        let units: [u16; 3] = [0x61, 0xD800, 0x62];
+        // SAFETY: `units` is live for the call, which copies it.
+        unsafe { NSString::stringWithCharacters_length(NonNull::from(&units).cast(), units.len()) }
+    }
+
+    #[test]
+    fn utf8_of_converts_a_whole_string_and_refuses_an_unpaired_surrogate() {
+        for text in ["", "https://exämple.test/reset?tk=SECRET", "🦀 café"] {
+            let utf8 = utf8_of(&NSString::from_str(text)).unwrap();
+            assert_eq!(utf8.as_str(), text);
+            assert_eq!(utf8.capacity(), utf8.len(), "the buffer outgrew {text:?}");
+        }
+        assert!(utf8_of(&unpaired_surrogate()).is_none());
+    }
+
+    #[test]
+    fn a_non_ascii_origin_reads_whole_and_a_surrogate_written_as_one_yields_no_origin() {
+        let url = "https://exämple.test/reset?tk=SECRET";
+        let pb = board_with(
+            &NSString::from_str("quoted"),
+            Some(&NSString::from_str(url)),
+        );
+        let item = pb.read().unwrap();
+        assert_eq!(item.origin_url.as_deref().map(String::as_str), Some(url));
+
+        let pb = board_with(&NSString::from_str("quoted"), Some(&unpaired_surrogate()));
+        let item = pb.read().expect("the text still reads");
+        assert_eq!(item.content, PasteboardContent::Text("quoted".into()));
+        assert!(item.origin_url.is_none());
+    }
+
+    #[test]
+    fn a_non_ascii_text_reads_whole() {
+        let text = "exämple 🦀 token";
+        let item = board_with(&NSString::from_str(text), None).read().unwrap();
+        assert_eq!(item.content, PasteboardContent::Text(text.into()));
+    }
+
+    #[test]
+    fn a_text_without_utf8_falls_through_to_the_image_as_no_text_does() {
+        let png = || Some(vec![0x89, b'P', b'N', b'G']);
+        assert_eq!(
+            chosen_content(utf8_of(&unpaired_surrogate()), png),
+            Some(PasteboardContent::Image(vec![0x89, b'P', b'N', b'G']))
+        );
+        assert_eq!(
+            chosen_content(utf8_of(&unpaired_surrogate()), || None),
+            None
+        );
+        assert_eq!(
+            chosen_content(None, png),
+            png().map(PasteboardContent::Image)
+        );
+        assert_eq!(
+            chosen_content(utf8_of(&NSString::from_str("quoted")), || {
+                panic!("a text that converted never asks for the image")
+            }),
+            Some(PasteboardContent::Text("quoted".into()))
+        );
     }
 
     #[test]
@@ -301,7 +441,8 @@ mod tests {
         write_text(&mut pb, "not a secret", false);
         let item = pb.read().unwrap();
         assert!(!item.nspasteboard_concealed);
-        assert!(pb.types_present().iter().any(|t| t == TRANSIENT_TYPE));
+        assert!(pb.declares(&[&NSString::from_str(TRANSIENT_TYPE)]));
+        assert!(!pb.declares(&[&NSString::from_str(CONCEALED_TYPE)]));
     }
 
     #[test]
@@ -360,11 +501,13 @@ mod tests {
 
         assert!(drag.provide("hunter2".as_bytes(), ContentKind::Text));
         let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
-        assert_eq!(
-            item.stringForType(string_type).map(|s| s.to_string()),
-            Some("hunter2".to_string())
+        assert!(
+            item.stringForType(string_type)
+                .is_some_and(|s| s.isEqualToString(&NSString::from_str("hunter2")))
         );
-        assert_eq!(string_type.to_string(), ContentKind::Text.pasteboard_type());
+        assert!(
+            string_type.isEqualToString(&NSString::from_str(ContentKind::Text.pasteboard_type()))
+        );
 
         let image = NSPasteboardItem::new();
         // SAFETY: as above.
@@ -376,7 +519,9 @@ mod tests {
             image.dataForType(png_type).map(|d| d.to_vec()),
             Some(vec![0x89, b'P', b'N', b'G'])
         );
-        assert_eq!(png_type.to_string(), ContentKind::Image.pasteboard_type());
+        assert!(
+            png_type.isEqualToString(&NSString::from_str(ContentKind::Image.pasteboard_type()))
+        );
         assert!(
             board
                 .pasteboard

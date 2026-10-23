@@ -1,6 +1,6 @@
 [package]
 name = "companion-ffi"
-version = "0.42.0"
+version = "0.43.3"
 description = "The C-ABI seam for the Onetime Secret macOS companion: the only crate a non-Rust shell may call. Hands out opaque handles and non-secret JSON — never plaintext."
 publish = false
 edition.workspace = true
@@ -30,6 +30,7 @@ companion-transport = { path = "../transport" }
 ots-client = { path = "../ots-client" }
 # State-file encryption (src/persist.rs).
 ring = "0.17"
+serde = { workspace = true }
 serde_json = { workspace = true }
 zeroize = { workspace = true }
 

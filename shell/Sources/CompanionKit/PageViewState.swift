@@ -40,12 +40,9 @@ struct ScrollAnchor: Equatable {
         guard let layoutManager = textView.layoutManager,
               let container = textView.textContainer else { return nil }
         let top = clipOrigin.y - textView.textContainerOrigin.y
-        let line: NSRect
+        var line: NSRect
         if layoutManager.numberOfGlyphs > 0 {
-            // The nearest glyph to a point is always on the line the
-            // point's height falls in, so x is left at the margin. A
-            // top edge inside the inset is asked about as the first
-            // line and told apart from it by the fraction below.
+            // Use the leading margin to identify the line, independently of horizontal scroll.
             let glyph = layoutManager.glyphIndex(
                 for: NSPoint(x: 0, y: max(top, 0)), in: container
             )
@@ -53,10 +50,20 @@ struct ScrollAnchor: Equatable {
             line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &glyphs)
             characterIndex = layoutManager.characterIndexForGlyph(at: glyphs.location)
         } else {
-            // An empty page has one line all the same, the one the
-            // caret waits on.
+            // Empty text may need a geometry refresh after zero-length invalidation.
+            if layoutManager.extraLineFragmentRect.height == 0 {
+                layoutManager.textContainerChangedGeometry(container)
+                layoutManager.ensureLayout(for: container)
+            }
             line = layoutManager.extraLineFragmentRect
             characterIndex = 0
+        }
+        // Glyph lookup can refresh an extra line invalidated by an edit.
+        let extraLine = layoutManager.extraLineFragmentRect
+        if layoutManager.extraLineFragmentTextContainer === container,
+           extraLine.height > 0, top >= extraLine.minY {
+            line = extraLine
+            characterIndex = textView.textStorage?.length ?? 0
         }
         lineFraction = line.height > 0 ? (top - line.minY) / line.height : 0
         x = clipOrigin.x
@@ -70,19 +77,30 @@ struct ScrollAnchor: Equatable {
     /// layout manager that raises on an index it does not have.
     @MainActor
     func offset(in textView: NSTextView) -> NSPoint? {
-        guard let layoutManager = textView.layoutManager else { return nil }
+        guard let layoutManager = textView.layoutManager,
+              let container = textView.textContainer else { return nil }
         let origin = textView.textContainerOrigin
-        let line: NSRect
+        let length = textView.textStorage?.length ?? 0
+        let character = min(max(characterIndex, 0), length)
+        var line: NSRect
         if layoutManager.numberOfGlyphs > 0 {
-            let length = textView.textStorage?.length ?? 0
-            let character = min(max(characterIndex, 0), max(length - 1, 0))
+            let character = min(character, max(length - 1, 0))
             let glyph = min(
                 layoutManager.glyphIndexForCharacter(at: character),
                 layoutManager.numberOfGlyphs - 1
             )
             line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
         } else {
+            if layoutManager.extraLineFragmentRect.height == 0 {
+                layoutManager.textContainerChangedGeometry(container)
+                layoutManager.ensureLayout(for: container)
+            }
             line = layoutManager.extraLineFragmentRect
+        }
+        let extraLine = layoutManager.extraLineFragmentRect
+        if character == length, layoutManager.extraLineFragmentTextContainer === container,
+           extraLine.height > 0 {
+            line = extraLine
         }
         return NSPoint(x: x, y: origin.y + line.minY + lineFraction * line.height)
     }
@@ -100,12 +118,244 @@ struct ScrollAnchor: Equatable {
 /// above a page's ink is a negative fraction of that page's first line,
 /// the same way the top inset is.
 ///
-/// There is no value for the top of the roll. A roll at Day 0 leaves no
-/// place at all, and a roll handed no place opens at Day 0, which is
-/// where every roll opens (issue #79).
+/// The document origin needs no saved place. A horizontal offset at
+/// vertical offset zero is still represented by the first page's anchor.
 struct RollPlace: Equatable {
+    /// The text of the page the anchor counts characters in.
+    enum Reading: Equatable { case source, preview }
+
     var page: UInt64
     var anchor: ScrollAnchor
+    var reading: Reading = .source
+    /// The length of the text the anchor was read from.
+    var length: Int = 0
+    /// Taken at the roll's top edge, so a restore keeps the clip there and returns only `x`.
+    var atTop = false
+
+    /// The anchor for `reading`'s `text`, read only for the other reading: no position map
+    /// joins the source to its preview, so it is mapped by proportion, snapped to a scalar (#290).
+    func mappedAnchor(into reading: Reading, text: @autoclosure () -> String) -> ScrollAnchor {
+        guard reading != self.reading else { return anchor }
+        let target = text()
+        let targetLength = target.utf16.count
+        var mapped = anchor
+        let scaled = self.length > 0
+            ? (Double(anchor.characterIndex) * Double(targetLength) / Double(self.length)).rounded() : 0
+        mapped.characterIndex = Self.scalarBoundary(at: Int(scaled), in: target)
+        return mapped
+    }
+
+    /// The same place after the text it was read from changed from `old` to `new`.
+    func rebased(from old: String, to new: String) -> RollPlace {
+        var place = self
+        place.anchor.characterIndex = Self.rebased(anchor.characterIndex, from: old, to: new)
+        place.length = new.utf16.count
+        return place
+    }
+
+    /// The same place after one storage edit, said as the storage says it: the edited
+    /// range, the new text and its length, and the change in length. `byProjection`
+    /// says the model wrote the edit (`PageModel.isApplyingProjection`), not a person.
+    func rebased(
+        throughEdit edited: NSRange, changeInLength delta: Int, length: Int,
+        text: @autoclosure () -> String, byProjection: Bool
+    ) -> RollPlace {
+        var place = self
+        place.anchor.characterIndex = Self.rebased(
+            anchor.characterIndex, throughEdit: edited, changeInLength: delta, length: length,
+            text: text(), byProjection: byProjection)
+        place.length = length
+        return place
+    }
+
+    /// Before the edit an index stays, and past it the index moves by `delta`. Inside it an index
+    /// moves by `delta`, or stays for a projection's whole restate, snapped to a scalar of `text` (#311).
+    static func rebased(
+        _ index: Int, throughEdit edited: NSRange, changeInLength delta: Int, length: Int,
+        text: @autoclosure () -> String, byProjection: Bool
+    ) -> Int {
+        // Text typed or pasted at the anchor stays at the top, where the reader put it.
+        if index <= edited.location { return max(index, 0) }
+        if index >= NSMaxRange(edited) - delta { return index + delta }
+        // A styled insertion on a page of one paragraph is reported as the whole text too.
+        if byProjection, edited.location == 0, edited.length == length {
+            return scalarBoundary(at: min(index, length), in: text())
+        }
+        // AppKit reports an insertion through to its paragraph's end, so the text after it moved.
+        return scalarBoundary(at: max(index + delta, edited.location), in: text())
+    }
+
+    /// Rebase a UTF-16 index through unchanged text, or, past the search's bound, to the
+    /// same share of the replaced stretch (#283).
+    static func rebased(_ index: Int, from old: String, to new: String) -> Int {
+        let oldCount = old.utf16.count
+        let newCount = new.utf16.count
+        guard oldCount > 0 else { return 0 }
+        let index = min(max(index, 0), oldCount)
+        let a = Array(old.unicodeScalars)
+        let b = Array(new.unicodeScalars)
+        // The suffix is matched first, so text arriving at the anchor goes above it.
+        let suffix = matched(a.reversed(), b.reversed())
+        let prefix = min(matched(a, b), min(a.count, b.count) - suffix)
+        let prefixLength = utf16Length(a.prefix(prefix))
+        let suffixLength = utf16Length(a.suffix(suffix))
+        if index >= oldCount - suffixLength { return index - oldCount + newCount }
+        // A shared prefix can also be an insertion into repeated text; use it only on fallback.
+        if let interior = rebasedInterior(
+            index, from: a[..<(a.count - suffix)], to: b[..<(b.count - suffix)]) {
+            return interior
+        }
+        if index <= prefixLength { return index }
+        let oldMiddle = oldCount - prefixLength - suffixLength
+        let newMiddle = newCount - prefixLength - suffixLength
+        guard newMiddle > 0 else { return prefixLength }
+        // Past the prefix and short of the suffix, so the old middle is at least two units.
+        let share = (Double(index - prefixLength) * Double(newMiddle) / Double(oldMiddle)).rounded()
+        return scalarBoundary(at: prefixLength + min(Int(share), newMiddle), in: new)
+    }
+
+    /// `offset`, or the start of the surrogate pair it falls inside.
+    private static func scalarBoundary(at offset: Int, in text: String) -> Int {
+        let offset = min(max(offset, 0), text.utf16.count)
+        if offset > 0,
+           String.Index(utf16Offset: offset, in: text).samePosition(in: text.unicodeScalars) == nil {
+            return offset - 1
+        }
+        return offset
+    }
+
+    private static func utf16Length(_ scalars: ArraySlice<Unicode.Scalar>) -> Int {
+        scalars.reduce(0) { $0 + $1.utf16.count }
+    }
+
+    private static func rebasedInterior(
+        _ index: Int, from old: ArraySlice<Unicode.Scalar>, to new: ArraySlice<Unicode.Scalar>
+    ) -> Int? {
+        guard !old.isEmpty, !new.isEmpty else { return nil }
+        var target = 0
+        var offset = 0
+        while target < old.count {
+            let width = old[old.startIndex + target].utf16.count
+            if offset + width > index { break }
+            offset += width
+            target += 1
+        }
+        let withinScalar = index - offset
+        func position(_ scalar: Int, surviving: Bool) -> Int {
+            utf16Length(new.prefix(scalar)) + (surviving ? withinScalar : 0)
+        }
+
+        // Reverse matching gives insertions at a surviving anchor the same affinity as the suffix.
+        var x = old.count
+        var y = new.count
+        var insertionMatch: Int?
+        while x > 0, y > 0 {
+            y -= 1
+            if old[old.startIndex + x - 1] == new[new.startIndex + y] {
+                x -= 1
+                if x == target { insertionMatch = y }
+            }
+        }
+        if x == 0, let insertionMatch { return position(insertionMatch, surviving: true) }
+
+        // For deletions only, unmatched old scalars map to the boundary before the matched right side.
+        x = old.count
+        y = new.count
+        var deletionMatch: Int?
+        var targetSurvives = false
+        while x > 0, y > 0 {
+            x -= 1
+            if old[old.startIndex + x] == new[new.startIndex + y - 1] {
+                y -= 1
+                if x == target {
+                    deletionMatch = y
+                    targetSurvives = true
+                }
+            } else if x == target {
+                deletionMatch = y
+            }
+        }
+        if y == 0 { return position(deletionMatch ?? 0, surviving: targetSurvives) }
+
+        // Reverse Myers uses the same matching direction as the insertion-only path.
+        struct Step {
+            var x = -1
+            var mapped = 0
+            var surviving = false
+            var pendingDeletion = false
+        }
+        let reverseTarget = old.count - target - 1
+        // Bound mixed-edit work even for a single long line; exhaustion uses the outer replacement.
+        var budget = max(65_536, 8 * (old.count + new.count))
+        let limit = min(1_024, old.count + new.count)
+        let origin = limit + 1
+        var frontier = Array(repeating: Step(), count: 2 * limit + 3)
+        frontier[origin + 1] = Step(x: 0)
+        var previousLower = 1
+        var previousUpper = 1
+        for edits in 0...limit {
+            // Exclude paths requiring more insertions or deletions than either text permits.
+            let lower = max(-edits, edits - 2 * new.count)
+            let upper = min(edits, 2 * old.count - edits)
+            for diagonal in stride(from: lower, through: upper, by: 2) {
+                budget -= 1
+                guard budget >= 0 else { return nil }
+                let slot = origin + diagonal
+                let left = (previousLower...previousUpper).contains(diagonal - 1)
+                    ? frontier[slot - 1] : Step()
+                let right = (previousLower...previousUpper).contains(diagonal + 1)
+                    ? frontier[slot + 1] : Step()
+                let canInsert = right.x >= 0
+                    && (edits == 0 || right.x - diagonal - 1 < new.count)
+                let canDelete = left.x >= 0 && left.x < old.count
+                guard canInsert || canDelete else {
+                    frontier[slot] = Step()
+                    continue
+                }
+                let inserting = canInsert && (!canDelete || left.x < right.x)
+                var step = inserting ? right : left
+                if !inserting {
+                    if step.x == reverseTarget {
+                        step.pendingDeletion = true
+                        step.surviving = false
+                    }
+                    step.x += 1
+                }
+                var y = step.x - diagonal
+                // A deleted anchor's replacement start is known at the next match to its left.
+                if step.pendingDeletion { step.mapped = new.count - y }
+                while step.x < old.count, y < new.count {
+                    budget -= 1
+                    guard budget >= 0 else { return nil }
+                    guard old[old.endIndex - step.x - 1] == new[new.endIndex - y - 1] else { break }
+                    step.pendingDeletion = false
+                    if step.x == reverseTarget {
+                        step.mapped = new.count - y - 1
+                        step.surviving = true
+                    }
+                    step.x += 1
+                    y += 1
+                }
+                if step.x == old.count, y == new.count {
+                    return position(step.mapped, surviving: step.surviving)
+                }
+                frontier[slot] = step
+            }
+            previousLower = lower
+            previousUpper = upper
+        }
+        return nil
+    }
+
+    private static func matched<Units: Sequence>(_ a: Units, _ b: Units) -> Int
+    where Units.Element: Equatable {
+        var count = 0
+        for (x, y) in zip(a, b) {
+            guard x == y else { break }
+            count += 1
+        }
+        return count
+    }
 }
 
 /// Where the person was on each page: the caret, and how far the page

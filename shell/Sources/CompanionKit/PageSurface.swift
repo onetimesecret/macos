@@ -199,6 +199,12 @@ public struct PageContentView: View {
 /// something to say, so a quiet surface shows none of them and the
 /// layout does not reserve their room.
 public struct PageStatusStack: View {
+    /// The offer's button names the chord the keymap binds, as the
+    /// strip's tooltip does; unbound, it names only the verb.
+    static func sealItTitle(chord: Keystroke?) -> String {
+        Keystroke.chorded("Seal It", chord: chord)
+    }
+
     @ObservedObject var model: PageModel
     /// Observed directly: the controller is its own `ObservableObject`,
     /// and a nested object's changes do not republish through the
@@ -215,34 +221,15 @@ public struct PageStatusStack: View {
         _sync = ObservedObject(wrappedValue: model.sync)
     }
 
-    /// What the discard button says it will do.
-    ///
-    /// Out of the body because it is a sentence rather than a view,
-    /// and because the drafts clause makes it long enough that the
-    /// type checker stops enjoying it inline. The discard drops the
-    /// sealed content file, and the drafts are sealed under the same
-    /// key, so it takes any unsaved file edits with it. Named by
-    /// filename rather than warned about in general (decisions.md
-    /// item 14).
+    /// What the discard button says it will do, as a pure function of the drafts refusal.
     private var discardHelp: String {
-        let base = "Deletes the sealed file this session could not read and starts "
-            + "saving this session's pages in its place. The unreadable file "
-            + "cannot be recovered afterwards."
-        guard let atRisk = PageModel.draftsAtRiskSentence(files: model.openFiles) else {
-            return base
-        }
-        return base + " " + atRisk
+        PageModel.stateDiscardHelp(draftsRefused: model.draftsRestoreRefused)
     }
 
-    /// What the quit anyway button says it will do: the loss named by
-    /// filename where a dirty file is open, for the same reason as
-    /// `discardHelp`.
-    private var quitAnywayHelp: String {
-        let base = "Quits now. The pages this session could not save are lost."
-        guard let atRisk = PageModel.draftsAtRiskSentence(files: model.openFiles) else {
-            return base
-        }
-        return base + " " + atRisk
+    /// What the quit anyway button says it will do: the loss the line beside it names.
+    private func quitAnywayHelp(_ refusal: QuitSaveOutcome) -> String {
+        PageModel.quitAnywayHelp(
+            refusal, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty)
     }
 
     public var body: some View {
@@ -269,6 +256,24 @@ public struct PageStatusStack: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
         }
+        if model.draftsRestoreRefused {
+            // As quiet as the ledger line; the header word comes only with a file's edits
+            // in memory (issue #296). It stands because it is the one route to the discard.
+            HStack(spacing: 8) {
+                Text("the existing drafts file could not be read, so unsaved edits to open files are not kept as drafts")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color.emberText)
+                Button("Discard It and Keep Drafts") { model.clearUnreadableDraftsFile() }
+                    .font(.system(.caption, design: .monospaced))
+                    .controlSize(.small)
+                    .help("Deletes the drafts file this session could not read and keeps this session's drafts in its place. The unreadable file cannot be recovered afterwards; the open files on disk are untouched.")
+                    .accessibilityLabel(
+                        Text("Discard the unreadable drafts file and keep this session's drafts"))
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+        }
         if model.ledgerRestoreRefused {
             // Quieter than the content banner because no page is at
             // stake, but standing for the same reason: the trail stops
@@ -283,16 +288,10 @@ public struct PageStatusStack: View {
         }
         if let refusal = model.quitRefusal,
             let sentence = PageModel.quitRefusalSentence(
-                refusal, files: model.openFiles, draftsUnwritten: model.draftsDirty)
+                refusal, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty)
         {
-            // The quit the terminate path cancelled (issue 172, D-14 and
-            // D-19). Standing rather than a notice, because the condition
-            // it names is; ember because the one thing to do about it is
-            // a decision. The button and a second ⌘Q are the same answer
-            // (`QuitPrompt.terminateReply`), so ⌘Q is never inert: the
-            // first press says what the quit costs and the second pays
-            // it. The recovery line above, when it stands, is the other
-            // way out.
+            // The quit the terminate path cancelled (issue 172, D-14, D-19), standing and ember.
+            // The button and ⌘Q answer it alike; a flush whose outcome changed restates it.
             HStack(spacing: 8) {
                 Text(sentence)
                     .font(.system(.caption, design: .monospaced))
@@ -300,8 +299,11 @@ public struct PageStatusStack: View {
                 Button("Quit Anyway (⌘Q)") { model.requestQuitAnyway() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
-                    .help(quitAnywayHelp)
-                    .accessibilityLabel(Text("Quit without this session's unsaved pages"))
+                    .help(quitAnywayHelp(refusal))
+                    .accessibilityLabel(
+                        Text(refusal == .unsavableWithDrafts
+                            ? "Quit without the unsaved file changes"
+                            : "Quit without this session's unsaved pages"))
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -352,7 +354,9 @@ public struct PageStatusStack: View {
                 Text("the clipboard holds content")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.secondaryInk)
-                Button("Seal It (⇧⌘V)") { model.performSealedPaste?() }
+                Button(Self.sealItTitle(chord: model.keymap.hintKeystroke(for: .clipboardSeal))) {
+                    model.performSealedPaste?()
+                }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .accessibilityLabel(Text("Seal the clipboard's content onto this page"))

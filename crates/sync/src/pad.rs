@@ -7,6 +7,8 @@
 //! fixed overhead rides on top, which shifts every bucket by the same
 //! constant and fingerprints nothing.
 
+use zeroize::Zeroizing;
+
 /// The smallest bucket, bytes.
 pub const FLOOR: usize = 256;
 /// Above this, buckets stop doubling and grow linearly — a 65 KiB and a
@@ -32,13 +34,16 @@ pub fn bucket(len: usize) -> usize {
 
 /// Frame and pad `content` to its bucket.
 #[must_use]
-pub fn pad(content: &[u8]) -> Vec<u8> {
+pub fn pad(content: &[u8]) -> Zeroizing<Vec<u8>> {
     let size = bucket(content.len());
-    let mut out = Vec::with_capacity(size);
+    debug_assert!(
+        size >= PREFIX + content.len(),
+        "a bucket smaller than its frame"
+    );
+    let mut out = Zeroizing::new(vec![0; size]);
     #[allow(clippy::cast_possible_truncation)]
-    out.extend_from_slice(&(content.len() as u32).to_be_bytes());
-    out.extend_from_slice(content);
-    out.resize(size, 0);
+    out[..PREFIX].copy_from_slice(&(content.len() as u32).to_be_bytes());
+    out[PREFIX..PREFIX + content.len()].copy_from_slice(content);
     out
 }
 
@@ -71,7 +76,34 @@ mod tests {
         let content = vec![7u8; 1000];
         let framed = pad(&content);
         assert_eq!(framed.len(), 1024);
+        assert_eq!(framed.capacity(), framed.len());
+        assert_eq!(&framed[..PREFIX], &1000u32.to_be_bytes());
+        assert!(
+            framed[PREFIX + content.len()..]
+                .iter()
+                .all(|byte| *byte == 0)
+        );
         assert_eq!(unpad(&framed).unwrap(), content.as_slice());
+    }
+
+    #[test]
+    fn every_bucket_edge_has_room_for_the_prefix_and_the_content() {
+        let edges = [
+            0,
+            FLOOR - PREFIX,
+            FLOOR - PREFIX + 1,
+            CEILING - PREFIX,
+            CEILING - PREFIX + 1,
+            2 * CEILING - PREFIX,
+            2 * CEILING - PREFIX + 1,
+        ];
+        for len in edges {
+            let content = vec![9u8; len];
+            let framed = pad(&content);
+            assert!(framed.len() >= PREFIX + len, "{len}");
+            assert_eq!(framed.len(), bucket(len));
+            assert_eq!(unpad(&framed).unwrap(), content.as_slice());
+        }
     }
 
     #[test]

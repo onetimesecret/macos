@@ -74,7 +74,7 @@ enum SettingsTab: Int, CaseIterable {
 /// is the backdrop's and never the panel's (ADR-0010).
 @MainActor
 final class BackdropSettingsWindowController: NSObject {
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
     private var tabs: NSTabViewController?
     private let model: BackdropModel
 
@@ -103,14 +103,8 @@ final class BackdropSettingsWindowController: NSObject {
         }
     }
 
-    /// Keeps the Settings window's level in step with the surface while
-    /// it is open, and lets go when it closes. The same type follows
-    /// About (`CompanionLevelFollower`).
-    private let levelFollower: CompanionLevelFollower
-
     init(model: BackdropModel) {
         self.model = model
-        levelFollower = CompanionLevelFollower(model: model)
         super.init()
     }
 
@@ -162,22 +156,10 @@ final class BackdropSettingsWindowController: NSObject {
                 ledgerRestoreRefused: model.pages.ledgerRestoreRefused
             ).index
         }
-        // A raised card floats above normal windows, and so does a
-        // pinned resting one; a .normal-level Settings window would
-        // open key yet invisible beneath it, since level beats key
-        // status for stacking. The altitude comes from
-        // `BackdropAltitude.keylessAltitude` read as a companion level
-        // (ADR-0032, #188): Settings has no key status of its own to
-        // feed the resolver, so it reads the surface's keyless answer
-        // and maps desktop to normal (a titled window at desktop level
-        // could resolve behind the wallpaper as easily as the surface
-        // can). The follower writes it now and on every published
-        // change while the window is up, so a pin or a keep above
-        // switch flipped inside Settings moves the window at the moment
-        // the switch does.
-        if let window {
-            levelFollower.follow(window)
-        }
+        // Settings stays an ordinary window at normal level. A raised,
+        // pinned or kept above card would float over it, so the card
+        // lowers itself for as long as Settings has the keyboard
+        // (`BackdropAltitudeKeeper`, ADR-0032 Amendment 1, #293).
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

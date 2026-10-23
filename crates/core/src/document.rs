@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use loro::cursor::{Cursor, PosType, Side};
 use loro::event::{Diff, DiffEvent};
 use loro::{
-    CommitOptions, ContainerTrait as _, ExpandType, ExportMode, Frontiers, LoroDoc, LoroText,
+    CommitOptions, ContainerTrait as _, ExpandType, ExportMode, Frontiers, ID, LoroDoc, LoroText,
     LoroValue, StyleConfig, StyleConfigMap, TextDelta, UndoItemMeta, UndoManager, VersionVector,
 };
 use zeroize::Zeroizing;
@@ -122,12 +122,21 @@ impl EditIntent {
 }
 
 /// One run of the body: contiguous ink between chips, or one chip.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) enum DocRun {
     /// Visible, editable text.
-    Ink(String),
+    Ink(Zeroizing<String>),
     /// A sealed chip, present in the body as one sentinel character.
     Chip(ItemId),
+}
+
+impl std::fmt::Debug for DocRun {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ink(_) => formatter.write_str("Ink([REDACTED])"),
+            Self::Chip(id) => formatter.debug_tuple("Chip").field(id).finish(),
+        }
+    }
 }
 
 /// An edit whose offsets name no position in the body; the body is unchanged.
@@ -154,8 +163,16 @@ pub(crate) struct SpanProvenance {
     pub(crate) created_s: i64,
     /// Latest change that touched the span, Unix seconds.
     pub(crate) modified_s: i64,
-    /// The created-defining change's message. Content: never a read surface.
-    pub(crate) origin: Option<String>,
+    /// The created-defining change's message, content in a wiping owner: never a read
+    /// surface (Law 0004, C17).
+    pub(crate) origin: Option<Zeroizing<String>>,
+}
+
+/// A span's stamps, and an op of the change that defines created.
+struct SpanStamps {
+    created_s: i64,
+    modified_s: i64,
+    created_by: ID,
 }
 
 /// A sheet's body as a Loro document. The chip mark is `expand: none`, so
@@ -783,17 +800,32 @@ impl SheetDocument {
     /// Earliest and latest commit stamps of a span, Unix seconds (ADR-0013).
     /// `None` for an empty span, a bad offset, or no committed characters.
     pub(crate) fn span_timestamps(&self, start_u16: usize, len_u16: usize) -> Option<(i64, i64)> {
-        self.span_provenance(start_u16, len_u16)
-            .map(|derived| (derived.created_s, derived.modified_s))
+        self.span_stamps(start_u16, len_u16)
+            .map(|stamps| (stamps.created_s, stamps.modified_s))
     }
 
     /// [`SheetDocument::span_timestamps`] plus the created-defining change's
-    /// message. Epoch-stamped changes (the compaction rebuild) do not vote.
+    /// message, copied after the scan from that one change.
     pub(crate) fn span_provenance(
         &self,
         start_u16: usize,
         len_u16: usize,
     ) -> Option<SpanProvenance> {
+        let stamps = self.span_stamps(start_u16, len_u16)?;
+        let origin = self.doc.get_change(stamps.created_by).and_then(|change| {
+            let message = change.message();
+            (!message.is_empty()).then(|| Zeroizing::new(message.to_owned()))
+        });
+        Some(SpanProvenance {
+            created_s: stamps.created_s,
+            modified_s: stamps.modified_s,
+            origin,
+        })
+    }
+
+    /// A span's stamps and the op whose change defines created, with no message read.
+    /// Epoch-stamped changes (the compaction rebuild) do not vote.
+    fn span_stamps(&self, start_u16: usize, len_u16: usize) -> Option<SpanStamps> {
         if len_u16 == 0 {
             return None;
         }
@@ -803,44 +835,36 @@ impl SheetDocument {
         let end = self
             .body
             .convert_pos(start_u16 + len_u16, PosType::Utf16, PosType::Unicode)?;
-        let mut derived: Option<SpanProvenance> = None;
+        let mut stamps: Option<SpanStamps> = None;
         for pos in start..end {
             let Some(id) = self.body.get_cursor(pos, Side::Middle).and_then(|c| c.id) else {
                 continue;
             };
-            let Some(change) = self.doc.get_change(id) else {
+            let Some(stamp) = self.doc.get_change(id).map(|change| change.timestamp) else {
                 continue;
             };
-            let stamp = change.timestamp;
             if stamp <= 0 {
                 continue;
             }
-            let message = || {
-                let message = change.message();
-                (!message.is_empty()).then(|| message.to_string())
-            };
-            derived = Some(match derived {
-                None => SpanProvenance {
+            stamps = Some(match stamps {
+                None => SpanStamps {
                     created_s: stamp,
                     modified_s: stamp,
-                    origin: message(),
+                    created_by: id,
                 },
-                Some(so_far) => {
-                    // A strictly earlier stamp takes the created role; a tie keeps the first.
-                    let origin = if stamp < so_far.created_s {
-                        message()
+                // A strictly earlier stamp takes the created role; a tie keeps the first.
+                Some(so_far) => SpanStamps {
+                    created_s: so_far.created_s.min(stamp),
+                    modified_s: so_far.modified_s.max(stamp),
+                    created_by: if stamp < so_far.created_s {
+                        id
                     } else {
-                        so_far.origin
-                    };
-                    SpanProvenance {
-                        created_s: so_far.created_s.min(stamp),
-                        modified_s: so_far.modified_s.max(stamp),
-                        origin,
-                    }
-                }
+                        so_far.created_by
+                    },
+                },
             });
         }
-        derived
+        stamps
     }
 
     /// The newest change's timestamp, Unix seconds; the epoch-stamped
@@ -962,21 +986,35 @@ impl SheetDocument {
 
 /// A body split into ink and chips; free-standing so a fork can be read.
 fn runs_of(body: &LoroText) -> Vec<DocRun> {
-    let mut runs: Vec<DocRun> = Vec::new();
-    for piece in body.to_delta() {
-        let TextDelta::Insert { insert, attributes } = piece else {
-            continue;
-        };
-        let chip = attributes
-            .as_ref()
-            .and_then(|attrs| attrs.get(CHIP_MARK))
-            .and_then(parse_mark_value);
-        match chip {
-            Some(id) => runs.push(DocRun::Chip(id)),
-            None => match runs.last_mut() {
-                Some(DocRun::Ink(text)) => text.push_str(&insert),
-                _ => runs.push(DocRun::Ink(insert)),
-            },
+    let mut pieces: Vec<_> = body
+        .to_delta()
+        .into_iter()
+        .filter_map(|piece| {
+            let TextDelta::Insert { insert, attributes } = piece else {
+                return None;
+            };
+            let insert = Zeroizing::new(insert);
+            let chip = attributes
+                .as_ref()
+                .and_then(|attrs| attrs.get(CHIP_MARK))
+                .and_then(parse_mark_value);
+            Some((insert, chip))
+        })
+        .collect();
+    let mut runs = Vec::new();
+    for group in pieces.chunk_by_mut(|a, b| a.1.is_none() && b.1.is_none()) {
+        if let Some(id) = group[0].1 {
+            runs.push(DocRun::Chip(id));
+        } else if let [(insert, None)] = group {
+            // One piece moves; projected_ink_coalesces_marked_pieces_at_exact_capacity checks its capacity.
+            runs.push(DocRun::Ink(std::mem::take(insert)));
+        } else {
+            let len = group.iter().map(|(insert, _)| insert.len()).sum();
+            let mut text = Zeroizing::new(String::with_capacity(len));
+            for (insert, _) in group {
+                text.push_str(insert);
+            }
+            runs.push(DocRun::Ink(text));
         }
     }
     runs
@@ -1176,12 +1214,56 @@ mod tests {
     use super::*;
 
     #[test]
+    fn projected_ink_coalesces_marked_pieces_at_exact_capacity() {
+        use zeroize::Zeroize;
+
+        let doc = SheetDocument::new();
+        let expected = "a🙂β\r\nz";
+        doc.insert(0, expected).unwrap();
+        doc.body.mark_utf16(1..3, CHIP_MARK, "unreadable").unwrap();
+        let chip = ItemId::random();
+        doc.insert_chip(doc.utf16_len(), chip).unwrap();
+        doc.insert(doc.utf16_len(), "尾").unwrap();
+        let mut runs = doc.runs();
+        assert_eq!(runs.len(), 3);
+        assert_eq!(runs[1], DocRun::Chip(chip));
+        let ink = runs.iter_mut().filter_map(|run| match run {
+            DocRun::Ink(text) => Some(text),
+            DocRun::Chip(_) => None,
+        });
+        for (text, expected) in ink.zip([expected, "尾"]) {
+            assert_eq!(text.as_str(), expected);
+            assert_eq!(text.capacity(), text.len());
+            let pointer = text.as_ptr();
+            text.as_mut_str().zeroize();
+            assert!(text.as_bytes().iter().all(|byte| *byte == 0));
+            assert_eq!(text.as_ptr(), pointer);
+        }
+        assert!(SheetDocument::new().runs().is_empty());
+    }
+
+    #[test]
+    fn doc_run_debug_output_never_prints_its_ink() {
+        let chip = ItemId::random();
+        let runs = vec![
+            DocRun::Ink(Zeroizing::new("hunter2 🙂 deploy key".to_string())),
+            DocRun::Chip(chip),
+        ];
+        for printed in [format!("{runs:?}"), format!("{runs:#?}")] {
+            assert!(!printed.contains("hunter2"), "{printed}");
+            assert!(!printed.contains("deploy"), "{printed}");
+        }
+        assert_eq!(format!("{:?}", runs[0]), "Ink([REDACTED])");
+        assert_eq!(format!("{:?}", runs[1]), format!("Chip({chip:?})"));
+    }
+
+    #[test]
     fn utf16_offsets_round_trip_through_astral_characters() {
         let doc = SheetDocument::new();
         doc.insert(0, "a\u{1F600}b").unwrap();
         assert_eq!(doc.utf16_len(), 4);
         doc.delete(1, 2).unwrap();
-        assert_eq!(doc.runs(), vec![DocRun::Ink("ab".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("ab".to_string().into())]);
         assert_eq!(doc.utf16_len(), 2);
     }
 
@@ -1197,9 +1279,9 @@ mod tests {
         assert_eq!(
             doc.runs(),
             vec![
-                DocRun::Ink("before".to_string()),
+                DocRun::Ink("before".to_string().into()),
                 DocRun::Chip(id),
-                DocRun::Ink("after".to_string()),
+                DocRun::Ink("after".to_string().into()),
             ]
         );
     }
@@ -1213,7 +1295,7 @@ mod tests {
         assert_eq!(doc.live_chips(), vec![id]);
         doc.delete(1, 1).unwrap();
         assert!(doc.live_chips().is_empty());
-        assert_eq!(doc.runs(), vec![DocRun::Ink("ab".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("ab".to_string().into())]);
     }
 
     #[test]
@@ -1226,9 +1308,9 @@ mod tests {
         assert_eq!(
             doc.runs(),
             vec![
-                DocRun::Ink("x\u{1F600}".to_string()),
+                DocRun::Ink("x\u{1F600}".to_string().into()),
                 DocRun::Chip(id),
-                DocRun::Ink("y".to_string()),
+                DocRun::Ink("y".to_string().into()),
             ]
         );
     }
@@ -1363,6 +1445,43 @@ mod tests {
     }
 
     #[test]
+    fn a_spans_origin_is_the_message_of_its_earliest_change_wherever_it_sits() {
+        let doc = SheetDocument::new();
+        let commit = |stamp: i64, message: &str| {
+            doc.doc.commit_with(
+                CommitOptions::new()
+                    .immediate_renew(true)
+                    .timestamp(stamp)
+                    .commit_msg(message),
+            );
+        };
+        // Stamps rise with each commit, since Loro folds a backdated change into the last.
+        doc.insert(0, "bbb").unwrap();
+        commit(2_000, "two");
+        doc.insert(3, "ccc").unwrap();
+        commit(5_000, "five");
+        doc.insert(0, "aaa").unwrap();
+        commit(9_000, "nine");
+
+        let derived = doc.span_provenance(0, 9).unwrap();
+        assert_eq!((derived.created_s, derived.modified_s), (2_000, 9_000));
+        assert_eq!(
+            derived.origin.as_deref().map(String::as_str),
+            Some("two"),
+            "the earliest change sits mid span and still defines created"
+        );
+        assert_eq!(doc.span_timestamps(0, 9), Some((2_000, 9_000)));
+        assert_eq!(
+            doc.span_provenance(0, 3)
+                .unwrap()
+                .origin
+                .as_deref()
+                .map(String::as_str),
+            Some("nine")
+        );
+    }
+
+    #[test]
     fn deltas_alone_reconstruct_one_document_from_another() {
         let source = SheetDocument::new();
         let mirror = SheetDocument::new();
@@ -1396,7 +1515,7 @@ mod tests {
             doc.import_update(b"not an update batch", &[]),
             Err(UpdateRefusal::Malformed)
         );
-        assert_eq!(doc.runs(), vec![DocRun::Ink("standing".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("standing".to_string().into())]);
     }
 
     #[test]
@@ -1477,10 +1596,13 @@ mod tests {
         assert!(doc.can_undo());
         assert!(!doc.can_redo());
         assert!(doc.undo());
-        assert_eq!(doc.runs(), vec![DocRun::Ink("first".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("first".to_string().into())]);
         assert!(doc.can_redo());
         assert!(doc.redo());
-        assert_eq!(doc.runs(), vec![DocRun::Ink("first second".to_string())]);
+        assert_eq!(
+            doc.runs(),
+            vec![DocRun::Ink("first second".to_string().into())]
+        );
     }
 
     #[test]
@@ -1576,7 +1698,10 @@ mod tests {
         ungrouped.insert(3, " two").unwrap();
         ungrouped.commit(None);
         assert!(ungrouped.undo());
-        assert_eq!(ungrouped.runs(), vec![DocRun::Ink("one".to_string())]);
+        assert_eq!(
+            ungrouped.runs(),
+            vec![DocRun::Ink("one".to_string().into())]
+        );
         assert!(ungrouped.can_undo());
     }
 
@@ -1590,7 +1715,7 @@ mod tests {
         doc.commit(None);
 
         assert!(doc.undo());
-        assert_eq!(doc.runs(), vec![DocRun::Ink("- milk".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("- milk".to_string().into())]);
         assert!(doc.can_undo());
     }
 
@@ -1630,7 +1755,7 @@ mod tests {
 
         assert_eq!(
             restored.runs(),
-            vec![DocRun::Ink("written before the quit".to_string())]
+            vec![DocRun::Ink("written before the quit".to_string().into())]
         );
         assert!(!restored.can_undo());
         assert!(!restored.can_redo());
@@ -1648,7 +1773,7 @@ mod tests {
         assert!(!doc.can_undo());
         assert!(!doc.can_redo());
         assert!(!doc.undo());
-        assert_eq!(doc.runs(), vec![DocRun::Ink("kept".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("kept".to_string().into())]);
     }
 
     #[test]
@@ -1666,15 +1791,8 @@ mod tests {
         assert_eq!(merged, 12);
 
         assert!(mirror.undo());
-        let left: String = mirror
-            .runs()
-            .into_iter()
-            .map(|run| match run {
-                DocRun::Ink(text) => text,
-                DocRun::Chip(_) => String::new(),
-            })
-            .collect();
-        assert_eq!(left, "theirs.");
+        let left = crate::ink::text_of(&mirror);
+        assert_eq!(left.as_str(), "theirs.");
         assert!(!mirror.can_undo(), "the peer's ops were never candidates");
     }
 
@@ -1687,7 +1805,7 @@ mod tests {
         assert_eq!(doc.insert(3, ""), Err(InvalidRange));
         assert_eq!(doc.delete(3, 0), Err(InvalidRange));
         assert_eq!(doc.insert(3, "x"), Err(InvalidRange));
-        assert_eq!(doc.runs(), vec![DocRun::Ink("ab".to_string())]);
+        assert_eq!(doc.runs(), vec![DocRun::Ink("ab".to_string().into())]);
     }
 
     #[test]
@@ -1695,7 +1813,10 @@ mod tests {
         let doc = SheetDocument::new();
         doc.body.insert_utf16(0, CHIP_SENTINEL).unwrap();
         doc.body.mark_utf16(0..1, CHIP_MARK, "not-an-id").unwrap();
-        assert_eq!(doc.runs(), vec![DocRun::Ink(CHIP_SENTINEL.to_string())]);
+        assert_eq!(
+            doc.runs(),
+            vec![DocRun::Ink(CHIP_SENTINEL.to_string().into())]
+        );
         assert!(doc.live_chips().is_empty());
     }
 

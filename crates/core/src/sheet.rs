@@ -1,7 +1,10 @@
 //! The tab, a durable slot, and the sheet, the page that expires in it
 //! (doc 04, ADR-0017). Masking is by gesture, never by content (doc 04).
 
+use std::fmt;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::blocks::{BlockIndex, BlockMeta};
 use crate::document::{DocRun, SheetDocument};
@@ -148,13 +151,38 @@ impl ChipId {
 }
 
 /// One run of the body's projection, cached from the sheet's document.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Segment {
     /// Visible text, exactly as typed.
     Ink(String),
     /// A sealed chip sits here.
     Chip(ChipId),
 }
+
+impl fmt::Debug for Segment {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ink(_) => formatter.write_str("Ink([REDACTED])"),
+            Self::Chip(id) => formatter.debug_tuple("Chip").field(id).finish(),
+        }
+    }
+}
+
+impl Zeroize for Segment {
+    fn zeroize(&mut self) {
+        if let Self::Ink(text) = self {
+            text.zeroize();
+        }
+    }
+}
+
+impl Drop for Segment {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for Segment {}
 
 /// What a chip's bytes are, described without reading them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,7 +214,7 @@ pub const NAME_CAP: usize = 64;
 /// Why a sealed name was refused. A refusal leaves the name as it was.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NameRefusal {
-    /// No such chip.
+    /// No such chip, or one on a page past its deadline (Law 0001, expiry row).
     UnknownChip,
     /// Longer than [`NAME_CAP`] once trimmed.
     TooLong,
@@ -232,18 +260,22 @@ pub fn judge_name(draft: &str) -> Result<Option<&str>, NameRefusal> {
     Ok(Some(name))
 }
 
-/// A sealed chip: secret bytes, the non-secret face it shows, and the
-/// typed name and note beside it (ADR-0043 point 1).
+/// A sealed chip: secret bytes, the face it shows, and the typed name and
+/// note beside it (ADR-0043 point 1); the face and the name are content too,
+/// and wipe with the bytes (Law 0004).
 pub struct SealedChip {
     pub(crate) id: ChipId,
     pub(crate) uuid: ItemId,
     pub(crate) bytes: SecretBuffer,
     pub(crate) meta: ChipMeta,
-    pub(crate) excerpt: String,
+    /// A wiping owner: the excerpt is the content's own head and tail (Law 0004, C09).
+    pub(crate) excerpt: Zeroizing<String>,
     pub(crate) size_label: String,
     pub(crate) conceal: Option<Conceal>,
-    pub(crate) name: Option<String>,
-    /// Made by its first accepted edit.
+    /// A wiping owner, since a name is content (Law 0004, C10).
+    pub(crate) name: Option<Zeroizing<String>>,
+    /// Made by its first accepted edit, or by a restore, a paste or a clone that brings its
+    /// text, which then rests until an edit (C31).
     pub(crate) note: Option<Note>,
     /// Whether its sentinel has stood in a body; the first standing is the
     /// seal's, which no step may take back (D-30).
@@ -281,7 +313,7 @@ impl SealedChip {
     /// Seal image bytes under an existing identity (restore path).
     pub(crate) fn image_with_uuid(id: ChipId, uuid: ItemId, bytes: Vec<u8>) -> Self {
         let byte_len = bytes.len();
-        let excerpt = format!("{} image", sniff_image_kind(&bytes));
+        let excerpt = Zeroizing::new(format!("{} image", sniff_image_kind(&bytes)));
         Self {
             id,
             uuid,
@@ -332,7 +364,7 @@ impl SealedChip {
     /// The mechanical excerpt, the only rendering the content ever gets.
     #[must_use]
     pub fn excerpt(&self) -> &str {
-        &self.excerpt
+        self.excerpt.as_str()
     }
 
     /// The ledger's size class, never an exact length (D-29).
@@ -350,7 +382,7 @@ impl SealedChip {
     /// The typed name, if one was given.
     #[must_use]
     pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+        self.name.as_deref().map(String::as_str)
     }
 
     /// Whether a note holds anything but whitespace: the block's doorway.
@@ -400,7 +432,8 @@ pub struct Sheet {
     pub(crate) id: SheetId,
     pub(crate) uuid: ItemId,
     /// First non-blank line, re-derived on edit; never persisted (ADR-0017).
-    pub(crate) derived_title: Option<String>,
+    /// A wiping owner, since it is ink (Law 0004, C13).
+    pub(crate) derived_title: Option<Zeroizing<String>>,
     /// Unix ms at the page's creation, not the tab's.
     pub(crate) created_wall_ms: u64,
     /// The body (ADR-0013): source of truth for ink and chip positions.
@@ -467,7 +500,7 @@ impl Sheet {
             .runs()
             .into_iter()
             .filter_map(|run| match run {
-                DocRun::Ink(text) => Some(Segment::Ink(text)),
+                DocRun::Ink(mut text) => Some(Segment::Ink(std::mem::take(&mut *text))),
                 DocRun::Chip(uuid) => self
                     .chips
                     .iter()
@@ -685,7 +718,7 @@ impl Sheet {
     /// The first typed line, markdown stripped; `None` until one is typed.
     #[must_use]
     pub fn derived_title(&self) -> Option<&str> {
-        self.derived_title.as_deref()
+        self.derived_title.as_deref().map(String::as_str)
     }
 
     /// Unix ms at this page's creation; neither expiry nor the placeholder reads it.
@@ -720,7 +753,8 @@ pub struct Tab {
     /// Unix ms the slot opened; the placeholder renders from it.
     pub(crate) created_wall_ms: u64,
     /// The name the user typed, at most [`TITLE_CAP`] chars; never derived.
-    pub(crate) name: Option<String>,
+    /// A wiping owner, since a name is content (Law 0004, C14).
+    pub(crate) name: Option<Zeroizing<String>>,
     /// The rung new pages start at. No clock: a tab never expires.
     pub(crate) rung: Ttl,
     /// The page in the slot; `None` once it expires or before the first.
@@ -749,7 +783,7 @@ impl Tab {
     /// The name the user typed, if they typed one.
     #[must_use]
     pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+        self.name.as_deref().map(String::as_str)
     }
 
     /// The rung pages born in this slot start at.
@@ -772,7 +806,7 @@ impl Tab {
     /// The user's name, else the page's derived title, else the placeholder
     /// from the tab's own stamp, so an unnamed slot keeps its label.
     #[must_use]
-    pub fn label(&self, utc_offset_seconds: i32) -> String {
+    pub fn label(&self, utc_offset_seconds: i32) -> Zeroizing<String> {
         match self.label_source() {
             LabelSource::Name => self
                 .name
@@ -783,7 +817,9 @@ impl Tab {
                 .as_ref()
                 .and_then(|page| page.derived_title.clone())
                 .expect("label_source promised Derived has a derived title"),
-            LabelSource::Placeholder => placeholder_title(self.created_wall_ms, utc_offset_seconds),
+            LabelSource::Placeholder => {
+                Zeroizing::new(placeholder_title(self.created_wall_ms, utc_offset_seconds))
+            }
         }
     }
 
@@ -830,12 +866,25 @@ impl LabelSource {
 /// Counted in `char`s so a multibyte scalar is never split.
 pub(crate) const TITLE_CAP: usize = 80;
 
+/// The byte offset where the first [`TITLE_CAP`] chars of `text` end, or its length.
+fn cap_end(text: &str) -> usize {
+    text.char_indices()
+        .nth(TITLE_CAP)
+        .map_or(text.len(), |(index, _)| index)
+}
+
+/// The first [`TITLE_CAP`] chars of any content string, a tab's name included, as a wiping
+/// owner allocated once at its exact size, so no growing scratch is left behind (Law 0004).
+pub(crate) fn capped_title(text: &str) -> Zeroizing<String> {
+    Zeroizing::new(text[..cap_end(text)].to_owned())
+}
+
 /// First non-blank ink line, markdown stripped, capped at [`TITLE_CAP`].
 /// Fence rules are skipped and fenced code is taken as typed (D-12).
 /// No fallback here; that is the tab's (ADR-0017).
-pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
+pub(crate) fn derive_title(segments: &[Segment]) -> Option<Zeroizing<String>> {
     let mut fence: Option<Fence> = None;
-    let mut result: Option<String> = None;
+    let mut result: Option<Zeroizing<String>> = None;
     'outer: for text in segments.iter().filter_map(|s| match s {
         Segment::Ink(text) => Some(text),
         Segment::Chip(_) => None,
@@ -846,7 +895,7 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
                 Some(_) => {
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
-                        result = Some(trimmed.to_string());
+                        result = Some(Zeroizing::new(trimmed.to_string()));
                         break 'outer;
                     }
                 }
@@ -864,7 +913,9 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
             }
         }
     }
-    result.map(|line| line.chars().take(TITLE_CAP).collect())
+    // The resident owner is the cap's size, not the line's: a long first line wipes as the
+    // intermediate drops rather than living on in the title's spare capacity.
+    result.map(|line| capped_title(&line))
 }
 
 /// An open fence. A closer must match its marker and be at least as long
@@ -948,8 +999,9 @@ fn civil_month_day(days_since_epoch: i64) -> (i64, i64) {
     (month, day)
 }
 
-/// Reduce a first line of markdown to its name. Not a parser.
-fn strip_markdown(line: &str) -> String {
+/// Reduce a first line of markdown to its name. Not a parser. Every buffer on the way is a
+/// wiping owner sized once, since the line is ink (Law 0004, C13).
+fn strip_markdown(line: &str) -> Zeroizing<String> {
     let mut rest = line.trim();
 
     // Blockquote markers, however deeply nested: "> > note" → "note".
@@ -960,12 +1012,16 @@ fn strip_markdown(line: &str) -> String {
     rest = strip_list_bullet(rest);
     rest = strip_heading_markup(rest);
 
-    let bare: String = rest
-        .chars()
-        .filter(|c| !matches!(c, '`' | '*' | '_' | '~'))
-        .collect();
+    let mut bare = Zeroizing::new(String::with_capacity(rest.len()));
+    bare.extend(rest.chars().filter(|c| !matches!(c, '`' | '*' | '_' | '~')));
 
-    flatten_links(&bare).trim().to_string()
+    let flat = flatten_links(&bare);
+    let trimmed = flat.trim();
+    if trimmed.len() == flat.len() {
+        flat
+    } else {
+        Zeroizing::new(trimmed.to_owned())
+    }
 }
 
 /// One leading list bullet: `- item`, `* item`, `+ item`, `3. item`.
@@ -1003,8 +1059,8 @@ fn strip_heading_markup(line: &str) -> &str {
 }
 
 /// `[label](url)` becomes `label`; an unterminated link stays as typed.
-fn flatten_links(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
+fn flatten_links(text: &str) -> Zeroizing<String> {
+    let mut out = Zeroizing::new(String::with_capacity(text.len()));
     let mut rest = text;
     while let Some(open) = rest.find('[') {
         let after_open = &rest[open + 1..];
@@ -1025,21 +1081,16 @@ fn flatten_links(text: &str) -> String {
 
 /// The mechanical excerpt rule (doc 04), returning (excerpt, size label,
 /// meta). The label is a size class, never a count (D-29).
-fn text_face(text: &str) -> (String, String, ChipMeta) {
+fn text_face(text: &str) -> (Zeroizing<String>, String, ChipMeta) {
     let size_label = SizeClass::of(text.len()).to_string();
     let trimmed = text.trim_end_matches('\n');
     let lines = trimmed.split('\n').count().max(1);
     if lines > 1 {
-        let head: String = trimmed
-            .split('\n')
-            .next()
-            .unwrap_or_default()
-            .chars()
-            .take(17)
-            .collect();
+        let first = trimmed.split('\n').next().unwrap_or_default();
+        let head = &first[..char_boundary(first, 17)];
         let chars = trimmed.chars().count();
         return (
-            format!("{head}…"),
+            head_and_tail(head, ""),
             size_label,
             ChipMeta::Text { chars, lines },
         );
@@ -1048,14 +1099,32 @@ fn text_face(text: &str) -> (String, String, ChipMeta) {
     let meta = ChipMeta::Text { chars: n, lines };
     let budget = (n / 3).min(24);
     if budget < 1 {
-        return ("···".to_string(), size_label, meta);
+        return (Zeroizing::new("···".to_string()), size_label, meta);
     }
     // 60/40 head–tail, head rounded up: max(1, ⌈0.6·B⌉) = max(1, ⌈3B/5⌉).
     let head_len = (3 * budget).div_ceil(5).max(1);
     let tail_len = budget - head_len;
-    let head: String = trimmed.chars().take(head_len).collect();
-    let tail: String = trimmed.chars().skip(n.saturating_sub(tail_len)).collect();
-    (format!("{head}…{tail}"), size_label, meta)
+    let head = &trimmed[..char_boundary(trimmed, head_len)];
+    let tail = &trimmed[char_boundary(trimmed, n.saturating_sub(tail_len))..];
+    (head_and_tail(head, tail), size_label, meta)
+}
+
+/// The byte offset of the `chars`th char of `text`, or its end.
+fn char_boundary(text: &str, chars: usize) -> usize {
+    text.char_indices()
+        .nth(chars)
+        .map_or(text.len(), |(index, _)| index)
+}
+
+/// The head, the mark and the tail joined into one wiping owner allocated at its exact
+/// size, with no growing scratch and no copy of the slices before it (Law 0004).
+fn head_and_tail(head: &str, tail: &str) -> Zeroizing<String> {
+    const MARK: &str = "…";
+    let mut out = Zeroizing::new(String::with_capacity(head.len() + MARK.len() + tail.len()));
+    out.push_str(head);
+    out.push_str(MARK);
+    out.push_str(tail);
+    out
 }
 
 /// Image container from magic bytes; never a decode.
@@ -1078,9 +1147,12 @@ mod tests {
     use super::*;
     use crate::clock::{Clock, ManualClock};
 
+    /// Compiles only for a type that wipes on drop: the pin the owner tests rest on.
+    fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
+
     fn face(text: &str) -> (String, String) {
         let (excerpt, label, _) = text_face(text);
-        (excerpt, label)
+        (excerpt.as_str().to_owned(), label)
     }
 
     #[test]
@@ -1278,8 +1350,58 @@ mod tests {
     /// `ManualClock::new()`'s stamp, 2023-11-14 22:13:20 UTC.
     const STAMP: u64 = 1_700_000_000_000;
 
+    #[test]
+    fn segment_debug_output_never_prints_its_ink() {
+        let segments = vec![
+            Segment::Ink("hunter2 🙂 deploy key".into()),
+            Segment::Chip(ChipId(7)),
+        ];
+        for printed in [format!("{segments:?}"), format!("{segments:#?}")] {
+            assert!(!printed.contains("hunter2"), "{printed}");
+            assert!(!printed.contains("deploy"), "{printed}");
+        }
+        assert_eq!(format!("{:?}", segments[0]), "Ink([REDACTED])");
+        assert_eq!(format!("{:?}", segments[1]), "Chip(ChipId(7))");
+    }
+
+    #[test]
+    fn segment_ink_and_its_clone_have_independent_wiping_owners() {
+        let mut original = Segment::Ink("🙂\r\n尾".into());
+        let mut cloned = original.clone();
+        wiping_owner(&original);
+        wiping_owner(&cloned);
+        let Segment::Ink(text) = &mut original else {
+            unreachable!();
+        };
+        let pointer = text.as_ptr();
+        let capacity = text.capacity();
+        let Segment::Ink(copy) = &cloned else {
+            unreachable!();
+        };
+        assert_eq!(copy.capacity(), copy.len());
+        assert_ne!(pointer, copy.as_ptr());
+        text.as_mut_str().zeroize();
+        assert!(text.as_bytes().iter().all(|byte| *byte == 0));
+        original.zeroize();
+        let Segment::Ink(text) = &original else {
+            unreachable!();
+        };
+        assert!(text.is_empty());
+        assert_eq!(text.as_ptr(), pointer);
+        assert_eq!(text.capacity(), capacity);
+        assert_eq!(cloned, Segment::Ink("🙂\r\n尾".into()));
+        cloned.zeroize();
+        assert_eq!(cloned, Segment::Ink(String::new()));
+        let mut chip = Segment::Chip(ChipId(1));
+        chip.zeroize();
+        assert_eq!(chip, Segment::Chip(ChipId(1)));
+    }
+
     fn title_of(line: &str) -> String {
-        derive_title(&[Segment::Ink(line.into())]).expect("this line derives a title")
+        derive_title(&[Segment::Ink(line.into())])
+            .expect("this line derives a title")
+            .as_str()
+            .to_owned()
     }
 
     /// An unnamed tab born at [`STAMP`].
@@ -1294,12 +1416,90 @@ mod tests {
         }
     }
 
+    /// The tab's name, the page's derived title and the label built from either are wiping
+    /// owners (Law 0004, C13 to C15): the types say so, and a plain `String` would not compile.
+    #[test]
+    fn a_name_a_derived_title_and_a_label_are_wiping_owners() {
+        let mut page = bare_sheet(STAMP);
+        page.derived_title = Some(Zeroizing::new("deploy notes".into()));
+        let mut tab = unnamed_tab(Some(page));
+        tab.name = Some(Zeroizing::new("the vault".into()));
+        let name = tab.name.as_ref().unwrap();
+        wiping_owner(name);
+        let derived = tab.page.as_ref().unwrap().derived_title.as_ref().unwrap();
+        wiping_owner(derived);
+        let label = tab.label(0);
+        wiping_owner(&label);
+        assert_eq!(name.as_str(), "the vault");
+        assert_eq!(derived.as_str(), "deploy notes");
+        assert_eq!(label.as_str(), "the vault");
+        let fresh = derive_title(&[Segment::Ink("# first\nsecond".into())]).unwrap();
+        wiping_owner(&fresh);
+        assert_eq!(fresh.as_str(), "first");
+    }
+
+    /// The cap counts chars, not bytes, wherever it is taken, and `capped_title` allocates the
+    /// owner once at that size, for a derived title as for a name.
+    #[test]
+    fn the_cap_counts_chars_and_allocates_once() {
+        let long = "🧪".repeat(TITLE_CAP + 5);
+        let capped = capped_title(&long);
+        assert_eq!(capped.chars().count(), TITLE_CAP);
+        assert!(
+            capped.capacity() <= capped.len() + 4,
+            "the owner grew past its size"
+        );
+        assert_eq!(capped_title("short").as_str(), "short");
+        let derived = derive_title(&[Segment::Ink(long.clone())]).unwrap();
+        assert_eq!(derived.chars().count(), TITLE_CAP);
+        assert_eq!(derived.as_str(), capped.as_str());
+        assert!(
+            derived.capacity() <= derived.len() + 4,
+            "the resident title kept the line's capacity"
+        );
+    }
+
+    /// A sealed object's excerpt and typed name are wiping owners (Law 0004, C09, C10), and
+    /// the excerpt is joined once at its size from slices that never split a char.
+    #[test]
+    fn an_objects_excerpt_and_name_are_wiping_owners() {
+        let mut chip = SealedChip::text(ChipId(1), &"🧪".repeat(60));
+        chip.name = Some(Zeroizing::new("TOKEN".into()));
+        wiping_owner(&chip.excerpt);
+        wiping_owner(chip.name.as_ref().unwrap());
+        assert_eq!(chip.name(), Some("TOKEN"));
+        assert_eq!(
+            chip.excerpt().chars().count(),
+            20 + 1,
+            "budget 20, head 12, tail 8, one mark"
+        );
+        assert_eq!(
+            chip.excerpt.capacity(),
+            chip.excerpt.len(),
+            "the excerpt grew past its size"
+        );
+        let (excerpt, _, _) = text_face("🧪🧪🧪🧪🧪\nsecond line");
+        assert_eq!(excerpt.as_str(), "🧪🧪🧪🧪🧪…");
+        let (excerpt, _, _) = text_face(&("🧪".repeat(20) + "\nsecond"));
+        assert_eq!(
+            excerpt.as_str(),
+            "🧪".repeat(17) + "…",
+            "a multibyte first line cut at 17 chars"
+        );
+    }
+
     #[test]
     fn titles_strip_heading_markup_only_when_it_is_markup() {
         let segs = vec![Segment::Ink("### deploy friday\nrest".into())];
-        assert_eq!(derive_title(&segs).as_deref(), Some("deploy friday"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("deploy friday")
+        );
         let segs = vec![Segment::Ink("#hashtag stays".into())];
-        assert_eq!(derive_title(&segs).as_deref(), Some("#hashtag stays"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("#hashtag stays")
+        );
     }
 
     #[test]
@@ -1345,7 +1545,10 @@ mod tests {
             Segment::Chip(ChipId(9)),
             Segment::Ink("\n\n  \nerrands".into()),
         ];
-        assert_eq!(derive_title(&segs).as_deref(), Some("errands"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("errands")
+        );
     }
 
     #[test]
@@ -1358,23 +1561,23 @@ mod tests {
     #[test]
     fn a_label_resolves_name_then_derived_title_then_the_tabs_own_stamp() {
         let mut tab = unnamed_tab(None);
-        assert_eq!(tab.label(0), "1114-2213", "no name, no page");
+        assert_eq!(tab.label(0).as_str(), "1114-2213", "no name, no page");
         assert_eq!(tab.label_source(), LabelSource::Placeholder);
 
         // The page is born a day after the tab.
         let day = 24 * 60 * 60 * 1000;
         let mut page = bare_sheet(STAMP + day);
-        page.derived_title = Some("deploy notes".into());
+        page.derived_title = Some(Zeroizing::new("deploy notes".into()));
         tab.page = Some(page);
-        assert_eq!(tab.label(0), "deploy notes");
+        assert_eq!(tab.label(0).as_str(), "deploy notes");
         assert_eq!(tab.label_source(), LabelSource::Derived);
 
         tab.page = Some(bare_sheet(STAMP + day));
-        assert_eq!(tab.label(0), "1114-2213");
+        assert_eq!(tab.label(0).as_str(), "1114-2213");
         assert_eq!(tab.label_source(), LabelSource::Placeholder);
 
-        tab.name = Some("the vault".into());
-        assert_eq!(tab.label(0), "the vault");
+        tab.name = Some(Zeroizing::new("the vault".into()));
+        assert_eq!(tab.label(0).as_str(), "the vault");
         assert_eq!(tab.label_source(), LabelSource::Name);
     }
 
@@ -1384,11 +1587,14 @@ mod tests {
             "```ruby\n  if Onetime::Utils.yes?(ENV.fetch('STDOUT_SYNC', false))\n```".into(),
         )];
         assert_eq!(
-            derive_title(&segs).as_deref(),
+            derive_title(&segs).as_deref().map(String::as_str),
             Some("if Onetime::Utils.yes?(ENV.fetch('STDOUT_SYNC', false))")
         );
         let segs = vec![Segment::Ink("```\n```\n## after the fence".into())];
-        assert_eq!(derive_title(&segs).as_deref(), Some("after the fence"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("after the fence")
+        );
         assert_eq!(title_of("~~~sh\nls -la"), "ls -la");
         assert_eq!(derive_title(&[Segment::Ink("```ruby\n".into())]), None);
     }
@@ -1398,13 +1604,19 @@ mod tests {
         let segs = vec![Segment::Ink(
             "```\ninner code\n~~~\nmore code\n```\n## after".into(),
         )];
-        assert_eq!(derive_title(&segs).as_deref(), Some("inner code"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("inner code")
+        );
     }
 
     #[test]
     fn a_fence_indented_four_spaces_is_prose_not_a_fence() {
         let segs = vec![Segment::Ink("    ```\n**bold**".into())];
-        assert_eq!(derive_title(&segs).as_deref(), Some("bold"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("bold")
+        );
     }
 
     #[test]
@@ -1412,7 +1624,10 @@ mod tests {
         let segs = vec![Segment::Ink(
             "```\nfirst line of code\n``` js\nstill code\n```".into(),
         )];
-        assert_eq!(derive_title(&segs).as_deref(), Some("first line of code"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("first line of code")
+        );
     }
 
     #[test]
@@ -1609,7 +1824,7 @@ mod tests {
         assert_eq!(tab.created_wall_ms(), STAMP);
         assert_eq!(page.local_day(0), local_day(STAMP, 0) + 3);
         assert_eq!(
-            tab.label(0),
+            tab.label(0).as_str(),
             "1114-2213",
             "and the label still reads the slot's stamp, which is the point of the split"
         );

@@ -8,8 +8,8 @@ import AppKit
 /// something in between. What stance does not decide on its own is
 /// where the window sits in the stacking order: altitude is one of
 /// three window facts (desktop, normal, floating), picked by
-/// `BackdropAltitude.resolve` from stance, key status, the pin and the
-/// keep-above preference together (ADR-0032).
+/// `BackdropAltitude.resolve` from stance, key status, the pin, the
+/// preference and a key companion window (ADR-0032).
 enum BackdropStance: Equatable {
     /// Behind everything: desktop level, mouse-transparent, refuses the
     /// keyboard. Glanceable, never interactive.

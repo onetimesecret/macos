@@ -98,16 +98,14 @@ final class FeedbackDraft: ObservableObject {
 
 @MainActor
 final class FeedbackWindowController: NSObject {
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
     private var draft: FeedbackDraft?
-    private let levelFollower: CompanionLevelFollower
     private let serverURL: () -> String
     private let makeReport: () -> DiagnosticsReport
 
     init(model: BackdropModel, makeReport: @escaping () -> DiagnosticsReport) {
         serverURL = { [weak model] in model?.pages.connection?.serverUrl ?? "https://eu.onetimesecret.com" }
         self.makeReport = makeReport
-        levelFollower = CompanionLevelFollower(model: model)
         super.init()
     }
 
@@ -140,7 +138,6 @@ final class FeedbackWindowController: NSObject {
             self.window = window
         }
         draft?.prepareForPresentation()
-        if let window { levelFollower.follow(window) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
@@ -268,7 +265,9 @@ enum DiagnosticsActions {
 
     private static func savePanel() -> NSSavePanel {
         let panel = NSSavePanel()
-        panel.title = "Export Diagnostics"
+        // `message` is the text a save panel draws above its fields: a
+        // notice, in D-15's lower case (ADR-0055 rule 1).
+        panel.message = "export the diagnostics as a text file"
         panel.nameFieldStringValue = "OnetimePad-Diagnostics.txt"
         panel.allowedContentTypes = [.plainText]
         panel.canCreateDirectories = true

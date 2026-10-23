@@ -472,17 +472,19 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
     func testReseedingSkipsTheSameIdentityButRendersANewWrapper() throws {
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         let rendering = PageModel.QuietRendering(text: NSAttributedString(string: "**first**"), fenceRegions: [])
-        view.reseed(with: rendering)
+        XCTAssertNil(view.reseed(with: rendering), "a first seeding replaced no text")
         XCTAssertEqual(view.string, "first\n")
         let storage = try XCTUnwrap(view.textStorage)
         let sentinel = NSAttributedString.Key("MarkdownPreviewIdentityTest")
         storage.addAttribute(sentinel, value: true, range: NSRange(location: 0, length: 1))
-        view.reseed(with: rendering)
+        XCTAssertNil(view.reseed(with: rendering), "the same rendering replaced nothing")
         XCTAssertNotNil(storage.attribute(sentinel, at: 0, effectiveRange: nil))
         let replacement = PageModel.QuietRendering(text: rendering.text, fenceRegions: [])
-        view.reseed(with: replacement)
+        XCTAssertEqual(view.reseed(with: replacement), "first\n")
         XCTAssertNil(storage.attribute(sentinel, at: 0, effectiveRange: nil))
-        view.reseed(with: PageModel.QuietRendering(text: NSAttributedString(string: "# second"), fenceRegions: []))
+        XCTAssertEqual(
+            view.reseed(with: PageModel.QuietRendering(text: NSAttributedString(string: "# second"), fenceRegions: [])),
+            "first\n")
         XCTAssertEqual(view.string, "second\n")
     }
 }

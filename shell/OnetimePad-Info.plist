@@ -39,6 +39,24 @@
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>OnetimePad</string>
+	<!-- Lists the pad under Open With for text files without making it
+	     their default app. No NSDocumentClass: the delegate's
+	     application(_:open:) hands each file to PageModel.openFile(at:). -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Plain Text</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>OnetimePad</string>
 	<key>CFBundleIconFile</key>
@@ -52,7 +70,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.39.0</string>
+		<string>0.41.3</string>
 	<key>CFBundleVersion</key>
 	<string>0.0.0</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

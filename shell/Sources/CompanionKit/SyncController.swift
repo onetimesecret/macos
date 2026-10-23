@@ -83,7 +83,9 @@ public final class SyncController: ObservableObject {
     /// The device list, refreshed with the status.
     @Published public private(set) var devices: [SyncDevice] = []
     /// The pairing ceremony's stage while one is in flight.
-    @Published public private(set) var pairingStage: SyncPairingStage?
+    /// Settable within the module so a test can stand a ceremony up
+    /// without a relay.
+    @Published public internal(set) var pairingStage: SyncPairingStage?
     /// The last degraded condition the loop met; nil while sync is
     /// quiet and well.
     @Published public private(set) var trouble: Trouble?
@@ -97,9 +99,9 @@ public final class SyncController: ObservableObject {
     @Published public private(set) var enrolledPages: Set<UInt64> = []
 
     /// What a remote change should do to the surface: the model
-    /// refreshes and marks the store dirty, so a peer's edit both
-    /// shows and persists.
-    public var onRemoteChange: (() -> Void)?
+    /// rereads the local pages an applied edit moved, refreshes, and
+    /// marks the store dirty.
+    public var onRemoteChange: ((Set<UInt64>) -> Void)?
     /// What a refused enrolment should do: the model settles as the timer would, since
     /// a page past its deadline refuses (Law 0001, expiry row), and says so.
     public var onEnrolRefused: ((UInt64) -> Void)?
@@ -143,7 +145,8 @@ public final class SyncController: ObservableObject {
     /// The attach response's peer count is the compatibility fallback
     /// until a readable device roster supplies the current count.
     private var lastAttachPeers: Int?
-    private var pumping = false
+    /// Internal, not private, so a test can stand a pump in flight.
+    var pumping = false
     /// Which run of the engine loop is the live one; a turn that comes
     /// back from an earlier session is dropped, since off and on inside
     /// one long poll leaves `enabled` true for both.
@@ -155,6 +158,24 @@ public final class SyncController: ObservableObject {
     /// backoff in `attachRetryDelay`.
     private var quietRefusals = 0
     private nonisolated(unsafe) var pairingTimer: Timer?
+    /// When the round on the wire went out, nil with no round out: one
+    /// pairing poll at a time, as `pumping` is for the pump.
+    private var pairingRoundStartedAt: Date?
+    var pairingPolling: Bool { pairingRoundStartedAt != nil }
+    /// A chosen number: a round is several transport-bounded calls, so
+    /// this frees a wedged sheet without cutting a slow live round
+    /// short; a give-up is one overlap of issue #280.
+    private let pairingPollDeadline: TimeInterval
+    /// The round that owns the flag. A round given up on returns as a
+    /// no-op for the flag, so a newer round's claim is not undone.
+    private var pairingRound: UInt64 = 0
+    /// Async so a test's stand-in can suspend rather than block a
+    /// cooperative thread; the shipping value is one blocking core call.
+    private let pairingPoll: @Sendable () async -> SyncPairingStage?
+    /// The pairing ceremony's generation. A poll is stamped with the one
+    /// it started under; ending a ceremony moves it on, so the poll's
+    /// answer is dropped.
+    private var ceremony: UInt64 = 0
     private nonisolated(unsafe) var elsewhereTimer: Timer?
     /// When a peer's edit last landed on each page; in memory only.
     private var remoteEdits: [UInt64: Date] = [:]
@@ -162,9 +183,18 @@ public final class SyncController: ObservableObject {
     /// nothing about the earliest mark leaves the timer standing.
     private var elsewhereDeadline: Date?
 
-    public init(client: CompanionClient, defaults: UserDefaults = FormFactor.settingsDefaults) {
+    /// `pairingPoll` and `pairingPollDeadline` are test seams in
+    /// ADR-0018's Swift shape: defaulted parameters whose shipping
+    /// values are the core's poll and ninety seconds.
+    public init(
+        client: CompanionClient, defaults: UserDefaults = FormFactor.settingsDefaults,
+        pairingPoll: (@Sendable () async -> SyncPairingStage?)? = nil,
+        pairingPollDeadline: TimeInterval = 90
+    ) {
         self.client = client
         self.defaults = defaults
+        self.pairingPoll = pairingPoll ?? { client.syncPairingPoll() }
+        self.pairingPollDeadline = pairingPollDeadline
         // An enabled flag alone starts nothing; `start()` does, after
         // the state restore, so sync never races the pages it publishes.
         enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? false
@@ -251,7 +281,8 @@ public final class SyncController: ObservableObject {
         }
     }
 
-    private func settleSignin(_ outcome: SyncOutcome, session mine: UInt64) {
+    /// Internal, as `settlePump` is, so a test can drive a settle.
+    func settleSignin(_ outcome: SyncOutcome, session mine: UInt64) {
         // A ceremony belongs to the session that opened the browser.
         guard session == mine else { return }
         status = client.syncStatus()
@@ -293,6 +324,15 @@ public final class SyncController: ObservableObject {
     /// Sign out: one Keychain account goes, the engine dissolves, the
     /// pad is untouched. Turning sync back on is the ceremony again.
     public func signOut() {
+        // The same teardown as the switch, less the core calls: the
+        // core's sign-out abandons the trip and the pairing flow itself.
+        endSession()
+        retryTimer?.invalidate()
+        retryTimer = nil
+        quietRefusals = 0
+        signinGivenUp = false
+        signinFailure = nil
+        clearElsewhere()
         _ = client.syncSignout()
         attached = false
         trouble = enabled ? .signedOut : nil
@@ -302,7 +342,7 @@ public final class SyncController: ObservableObject {
     // MARK: The engine loop (issue #102)
 
     private func begin() {
-        session &+= 1
+        endSession()
         signinFailure = nil
         // A fresh configuration starts the backoff afresh.
         quietRefusals = 0
@@ -330,26 +370,22 @@ public final class SyncController: ObservableObject {
     }
 
     private func stop() {
-        session &+= 1
         let wasAttached = attached
         attached = false
-        pumping = false
+        endSession()
         // The switch ends a browser trip too; the core would persist a
         // late grant before the shell could decline it.
         trouble = nil
         signinFailure = nil
-        pairingStage = nil
-        pairingTimer?.invalidate()
         retryTimer?.invalidate()
+        retryTimer = nil
         quietRefusals = 0
         _ = client.syncSigninCancel()
+        // And a pairing flow, now: the detach that also ends it runs on
+        // a background task below, and not at all when never attached.
+        _ = client.syncPairingCancel()
         signinGivenUp = false
-        // Nothing is arriving now, so no page says something is.
-        elsewhereTimer?.invalidate()
-        elsewhereTimer = nil
-        elsewhereDeadline = nil
-        remoteEdits = [:]
-        editedElsewhere = []
+        clearElsewhere()
         // The enrolment mirror stays, as the core's enrolment does.
         guard wasAttached else {
             refreshState()
@@ -415,9 +451,13 @@ public final class SyncController: ObservableObject {
     }
 
     func settlePump(_ outcome: SyncPumpOutcome?, session mine: UInt64) {
-        // Before the flag: an ended session's turn owns nothing now.
-        guard session == mine else { return }
+        // The wire is free whatever session's round this was; a turn
+        // from an ended session owns nothing else but the next round.
         pumping = false
+        guard session == mine else {
+            pump()
+            return
+        }
         guard enabled else { return }
         guard let outcome else {
             trouble = Self.standing(trouble: trouble, after: .unreachable)
@@ -432,6 +472,7 @@ public final class SyncController: ObservableObject {
         var sawUnreachable = false
         var sawUnauthorized = false
         var remoteChanged = false
+        var editedPages: Set<UInt64> = []
         for event in outcome.events {
             switch event.kind {
             case "applied", "countdown_moved", "terminal":
@@ -440,6 +481,7 @@ public final class SyncController: ObservableObject {
                 // elsewhere (issue #102).
                 if event.kind == "applied", let page = event.pageID {
                     remoteEdits[page] = Date()
+                    editedPages.insert(page)
                 }
             case "rejoin_required", "epoch_conflict":
                 trouble = .behind
@@ -454,7 +496,7 @@ public final class SyncController: ObservableObject {
             }
         }
         sweepElsewhere()
-        if remoteChanged { onRemoteChange?() }
+        if remoteChanged { onRemoteChange?(editedPages) }
         switch Self.pumpTurn(
             ok: outcome.ok, reason: outcome.reason, sawUnreachable: sawUnreachable,
             sawUnauthorized: sawUnauthorized)
@@ -588,6 +630,8 @@ public final class SyncController: ObservableObject {
     }
 
     private func beginPairing(_ begin: (CompanionClient) -> SyncOutcome) {
+        // A ceremony still polling is over the moment a new one begins.
+        endCeremony()
         let outcome = begin(client)
         guard outcome.ok else {
             pairingStage = SyncPairingStage(
@@ -600,41 +644,95 @@ public final class SyncController: ObservableObject {
 
     /// The human's verdict on the six digits; a mismatch aborts whole.
     public func confirmPairing(matched: Bool) {
-        pairingStage = client.syncPairingConfirm(matched: matched)
-        if matched {
-            armPairingPoll()
-        } else {
-            pairingTimer?.invalidate()
+        let stage = client.syncPairingConfirm(matched: matched)
+        // Either way the leg that was polling is over: a poll out
+        // before the verdict must not write the digits back over it.
+        endCeremony()
+        guard let stage else {
+            // The core answered nothing: a sheet that vanished without
+            // a word would be worse than a failure it can read.
+            pairingStage = SyncPairingStage(stage: "failed", sas: nil, reason: "no_ceremony")
+            return
         }
+        pairingStage = stage
+        if matched { armPairingPoll() }
     }
 
     /// Dismiss the pairing flow at any stage.
     public func cancelPairing() {
         _ = client.syncPairingCancel()
+        endCeremony()
+        refreshState()
+    }
+
+    /// The ceremony is over: its poll's answer is dropped and the tick
+    /// stops. The flag stays with the round on the wire; the stage is
+    /// the caller's (a mismatch shows its verdict, a sign-out nothing).
+    private func endCeremony() {
+        ceremony &+= 1
         pairingStage = nil
         pairingTimer?.invalidate()
-        refreshState()
+        pairingTimer = nil
+        // A round still out is the old ceremony's: the next ceremony's
+        // first tick gives it up at once rather than waiting the deadline.
+        if pairingRoundStartedAt != nil { pairingRoundStartedAt = .distantPast }
+    }
+
+    /// The session is over, and its ceremony with it. Neither in-flight
+    /// flag is cleared: each is the round's until its settle frees it.
+    private func endSession() {
+        session &+= 1
+        endCeremony()
+    }
+
+    /// Nothing is arriving now, so no page says something is.
+    private func clearElsewhere() {
+        elsewhereTimer?.invalidate()
+        elsewhereTimer = nil
+        elsewhereDeadline = nil
+        remoteEdits = [:]
+        editedElsewhere = []
     }
 
     private func armPairingPoll() {
         pairingTimer?.invalidate()
+        // Inline, as the clipboard clear is: a hop lets a tick already
+        // enqueued run after endCeremony and poll the next ceremony.
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.pollPairing() }
+            MainActor.assumeIsolated { self?.pollPairing() }
         }
         RunLoop.main.add(timer, forMode: .common)
         pairingTimer = timer
     }
 
-    private func pollPairing() {
+    /// One tick of the ceremony's poll; internal so a test can tick it.
+    func pollPairing() {
         guard pairingStage != nil else {
             pairingTimer?.invalidate()
             return
         }
-        let client = self.client
+        if let started = pairingRoundStartedAt,
+           Date().timeIntervalSince(started) > pairingPollDeadline {
+            pairingRoundStartedAt = nil
+        }
+        guard !pairingPolling else { return }
+        pairingRoundStartedAt = Date()
+        pairingRound &+= 1
+        let poll = pairingPoll
+        let mine = (session: session, ceremony: ceremony, round: pairingRound)
         Task.detached(priority: .utility) {
-            let stage = client.syncPairingPoll()
+            let stage = await poll()
             await MainActor.run { [weak self] in
-                guard let self, self.pairingStage != nil else { return }
+                guard let self else { return }
+                // The wire is freed by the round that owns the flag,
+                // whatever ceremony it served; the answer belongs to the
+                // ceremony that asked, and a stale one is dropped.
+                guard self.pairingRound == mine.round else { return }
+                self.pairingRoundStartedAt = nil
+                // A round given up on is stale too: its answer must not
+                // write over the round that replaced it.
+                guard self.session == mine.session, self.ceremony == mine.ceremony else { return }
+                guard self.pairingStage != nil else { return }
                 switch stage?.stage {
                 case "done":
                     self.pairingStage = stage
