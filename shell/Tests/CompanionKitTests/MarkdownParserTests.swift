@@ -1,4 +1,6 @@
 import AppKit
+import CMarkCommonMark
+import CMarkGFM
 import XCTest
 
 @testable import CompanionKit
@@ -437,6 +439,57 @@ final class MarkdownParserTests: XCTestCase {
             let found = attachments(in: rendered)
             XCTAssertEqual(found.count, count, "\(parts)")
             XCTAssertEqual(Set(found.map(ObjectIdentifier.init)), Set(chips.map(ObjectIdentifier.init)), "\(parts)")
+        }
+    }
+
+    // MARK: The two shims
+
+    /// One walker reads both trees through `OTSCM_KIND_*`, so the GFM shim must number its kinds
+    /// and reference parts the same way.
+    func testBothShimsNumberKindsAndReferencePartsAlike() {
+        let pairs = [
+            (OTSCM_KIND_OTHER, OTSGFM_KIND_OTHER), (OTSCM_KIND_DOCUMENT, OTSGFM_KIND_DOCUMENT),
+            (OTSCM_KIND_BLOCK_QUOTE, OTSGFM_KIND_BLOCK_QUOTE), (OTSCM_KIND_LIST, OTSGFM_KIND_LIST),
+            (OTSCM_KIND_ITEM, OTSGFM_KIND_ITEM), (OTSCM_KIND_CODE_BLOCK, OTSGFM_KIND_CODE_BLOCK),
+            (OTSCM_KIND_HTML_BLOCK, OTSGFM_KIND_HTML_BLOCK), (OTSCM_KIND_PARAGRAPH, OTSGFM_KIND_PARAGRAPH),
+            (OTSCM_KIND_HEADING, OTSGFM_KIND_HEADING), (OTSCM_KIND_THEMATIC_BREAK, OTSGFM_KIND_THEMATIC_BREAK),
+            (OTSCM_KIND_TABLE, OTSGFM_KIND_TABLE), (OTSCM_KIND_TABLE_ROW, OTSGFM_KIND_TABLE_ROW),
+            (OTSCM_KIND_TABLE_CELL, OTSGFM_KIND_TABLE_CELL), (OTSCM_KIND_TEXT, OTSGFM_KIND_TEXT),
+            (OTSCM_KIND_SOFTBREAK, OTSGFM_KIND_SOFTBREAK), (OTSCM_KIND_LINEBREAK, OTSGFM_KIND_LINEBREAK),
+            (OTSCM_KIND_CODE, OTSGFM_KIND_CODE), (OTSCM_KIND_HTML_INLINE, OTSGFM_KIND_HTML_INLINE),
+            (OTSCM_KIND_EMPH, OTSGFM_KIND_EMPH), (OTSCM_KIND_STRONG, OTSGFM_KIND_STRONG),
+            (OTSCM_KIND_LINK, OTSGFM_KIND_LINK), (OTSCM_KIND_IMAGE, OTSGFM_KIND_IMAGE),
+            (OTSCM_KIND_STRIKETHROUGH, OTSGFM_KIND_STRIKETHROUGH),
+            (OTSCM_REFERENCE_LABEL, OTSGFM_REFERENCE_LABEL), (OTSCM_REFERENCE_URL, OTSGFM_REFERENCE_URL),
+            (OTSCM_REFERENCE_TITLE, OTSGFM_REFERENCE_TITLE),
+        ].map { (Int($0.0), Int($0.1)) }
+        for (commonMark, gfm) in pairs { XCTAssertEqual(commonMark, gfm) }
+        XCTAssertEqual(Set(pairs.prefix(23).map(\.0)).count, 23, "every kind has its own number")
+    }
+
+    /// cmark-gfm's inline parser rewrites a process wide table, so its shim parses under a lock;
+    /// cmark 0.31.2 keeps no such table and its shim takes none. Parses on many threads at once
+    /// equal the same parses run one at a time.
+    func testParsesOnManyThreadsEqualTheSameParsesInTurn() throws {
+        let pages = [
+            "~~a~~ ~b~ *c* https://example.com/x www.example.org/y person@example.com",
+            "| a | b |\n| :- | -: |\n| ~c~ | **d** |\n| e |",
+            "_x_ **y** `z` &amp; &#x41; <b>h</b> ~~~not~~~",
+            "[r]: /u \"t\"\n\n[link][r] ![i](/i) <https://example.net/>",
+            "- [ ] task ~~done~~\n- [x] *other*\n\n> quoted | not | a table",
+        ]
+        let jobs = PreviewDialect.allCases.flatMap { dialect in pages.map { (dialect, $0) } }
+        let serial = try jobs.map { try MarkdownParser.parse($0.1, dialect: $0.0) }
+        let rounds = 40
+        let results = UnsafeMutableBufferPointer<MarkdownDocument?>.allocate(capacity: jobs.count * rounds)
+        results.initialize(repeating: nil)
+        defer { results.deallocate() }
+        DispatchQueue.concurrentPerform(iterations: results.count) { index in
+            let job = jobs[index % jobs.count]
+            results[index] = try? MarkdownParser.parse(job.1, dialect: job.0)
+        }
+        for (index, result) in results.enumerated() {
+            XCTAssertEqual(result, serial[index % jobs.count], "\(jobs[index % jobs.count])")
         }
     }
 
