@@ -398,6 +398,44 @@ snapshot_source() {
   SOURCE_RECORD=$ref
 }
 
+# Prints its argument, or "unknown" when it is empty or has a slash, as a path would.
+version_or_unknown() {
+  case $1 in
+    '' | */*) echo unknown ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+# Prints a record's annotation without paths or certificate subjects, which can contain an account
+# name or a person's legal name (docs/development/handling-signing-assets-and-credentials.md).
+build_annotation() {
+  local source=$SOURCE_HEAD signing=ad-hoc swift rust xcode
+  [[ -z "$SOURCE_SNAPSHOT" ]] || source="$source with uncommitted changes in snapshot $SOURCE_SNAPSHOT"
+  if [[ -n "${CODESIGN_IDENTITY:-}" && "$CODESIGN_IDENTITY" != "-" ]]; then
+    signing="team ${TEAM_ID:-unknown}"
+  fi
+  swift="$(swift --version 2>/dev/null | sed -n 1p)" || swift=""
+  rust="$(rustc --version 2>/dev/null)" || rust=""
+  xcode="$(xcodebuild -version 2>/dev/null | tr '\n' ' ')" || xcode=""
+  printf '%s\n' \
+    "OnetimePad $VERSION, $BUILD_LANE build ${BUNDLE_VERSION:-unknown}" \
+    "" \
+    "Version: $VERSION" \
+    "Build: ${BUNDLE_VERSION:-unknown}" \
+    "Lane: $BUILD_LANE" \
+    "Configuration: $CONFIG" \
+    "Bundle identifier: $BUILD_BUNDLE_ID" \
+    "Source: $source" \
+    "Signing: $signing" \
+    "Pre-signature digest: ${DIGEST:-unknown}" \
+    "Core: ${CORE_VERSION:-unknown}" \
+    "FFI: ${FFI_VERSION:-unknown}" \
+    "Swift: $(version_or_unknown "$swift")" \
+    "Rust: $(version_or_unknown "$rust")" \
+    "Xcode: $(version_or_unknown "${xcode% }")" \
+    "Built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
 # Tags the commit a build came from. Returns 0 when the tag names that commit,
 # whether made now or already there; otherwise it warns and returns 1.
 create_build_tag() { # <name> <commit> <message> [--no-sign]
@@ -464,7 +502,7 @@ write_build_record() { # <ref> <commit> <message>
 # Dev and local builds are recorded under refs/builds/, which `git push --tags` leaves behind.
 # App Store builds are tagged build/app-store/<version>-<number> and v<version>, for pushing.
 tag_build() {
-  local name pushable=()
+  local name message pushable=()
   if in_ci; then
     echo "==> CI is set, so this build writes no tag or record."
     return 0
@@ -478,19 +516,17 @@ tag_build() {
     echo "    no record: no snapshot was made of the uncommitted changes." >&2
     return 0
   fi
+  message="$(build_annotation)"
   if [[ -n "$SOURCE_DIRTY" ]]; then
-    write_build_record "$SOURCE_RECORD" "$SOURCE_SNAPSHOT" \
-      "OnetimePad $VERSION, $BUILD_LANE build of $SOURCE_SHORT with uncommitted changes" || true
+    write_build_record "$SOURCE_RECORD" "$SOURCE_SNAPSHOT" "$message" || true
     return 0
   fi
   if [[ -z "$APP_STORE_BUILD_NUMBER" ]]; then
-    write_build_record "refs/builds/$BUILD_LANE/$VERSION-$SOURCE_SHORT" "$SOURCE_HEAD" \
-      "OnetimePad $VERSION, $BUILD_LANE build of $SOURCE_SHORT" || true
+    write_build_record "refs/builds/$BUILD_LANE/$VERSION-$SOURCE_SHORT" "$SOURCE_HEAD" "$message" || true
     return 0
   fi
   name="build/$BUILD_LANE/$VERSION-$APP_STORE_BUILD_NUMBER"
-  if ! create_build_tag "$name" "$SOURCE_HEAD" \
-    "OnetimePad $VERSION, App Store build $APP_STORE_BUILD_NUMBER" --no-sign; then
+  if ! create_build_tag "$name" "$SOURCE_HEAD" "$message" --no-sign; then
     echo "    error: the App Store package was built, but it has no record: tag $name was not written," >&2
     echo "    so v$VERSION was not tagged and there is nothing to push." >&2
     return 1
@@ -731,19 +767,19 @@ if ((APP_STORE_MODE)); then
     echo "--app-store stops before stamping or signing; package again to take another build number." >&2
     exit 1
   fi
-  plutil -replace CFBundleVersion -string "$APP_STORE_BUILD_NUMBER" "$APP/Contents/Info.plist"
+  BUNDLE_VERSION="$APP_STORE_BUILD_NUMBER"
 else
-  plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
+  BUNDLE_VERSION="$VERSION"
   # Dogfood builds carry the commit in CFBundleVersion so "which build am
   # I on" has a one-glance answer. An uncommitted tree is part of the
   # answer: the SHA alone would claim a build the repo cannot reproduce.
   # Outside a git checkout the plain version stands.
   if [[ -n "$SOURCE_SHORT" ]]; then
-    SHA="$SOURCE_SHORT"
-    [[ -z "$SOURCE_DIRTY" ]] || SHA="$SHA.dirty"
-    plutil -replace CFBundleVersion -string "$VERSION+$SHA" "$APP/Contents/Info.plist"
+    BUNDLE_VERSION="$VERSION+$SOURCE_SHORT"
+    [[ -z "$SOURCE_DIRTY" ]] || BUNDLE_VERSION="$BUNDLE_VERSION.dirty"
   fi
 fi
+plutil -replace CFBundleVersion -string "$BUNDLE_VERSION" "$APP/Contents/Info.plist"
 
 # Stamp provenance independently of the App Store's numeric build counter.
 # A dirty tree stays visible in reports from locally packaged builds, and
