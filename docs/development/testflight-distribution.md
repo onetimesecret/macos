@@ -195,10 +195,10 @@ one without being told:
   `onetimepad-app-store-build-number` in the git common directory
   (`git rev-parse --git-common-dir`), so every worktree of one clone reads and
   advances the same file. It is not tracked by git. Set
-  `APP_STORE_BUILD_NUMBER_FILE` in the staging file to use another path;
-  outside a git checkout that variable is required. A path in the staging
-  directory is shared by every clone on the Mac, not only by one clone's
-  worktrees.
+  `APP_STORE_BUILD_NUMBER_FILE` in the staging file to use another path.
+  Outside a git checkout, `--app-store` refuses to run, with or without that
+  variable (step 6). A path in the staging directory is shared by every clone
+  on the Mac, not only by one clone's worktrees.
 - **Reservation.** After the Swift build succeeds, the script takes an
   exclusive lock, reads the last number, writes its successor to a temporary
   file beside the counter, and renames that file over the counter. Concurrent
@@ -252,6 +252,22 @@ a build number, replaces `dist/OnetimePad.app`, and replaces
 `dist/OnetimePad.pkg` when it reaches package creation. It neither installs the
 app nor uploads it. Use only the output of a successful run; an older package
 may remain after an earlier failure.
+
+The script packages only a clean commit. Before compiling, it refuses to run
+in CI, outside a git checkout, on an unborn branch, when the tree cannot be
+read, with uncommitted changes (untracked files git does not ignore count), and
+with index entries flagged assume-unchanged or skip-worktree, as a sparse
+checkout has. With `--build-number N`, it also refuses when the tag
+`build/app-store/<version>-N` already names another commit. If a file changes
+during the build, it stops before reserving a build number. If the reserved
+number's tag already names another commit, it stops before signing, and that
+number stays unused. It always runs cargo for the Rust core rather than reusing
+the cached xcframework. A successful run tags the commit
+`build/app-store/<version>-<build number>`, and `v<version>` when no tag of
+that name exists, then prints a `git push` command for those tags; it pushes
+nothing. If the `build/app-store` tag is not written, the run exits with an
+error after building the package, without tagging `v<version>` or printing a
+push command. See [Build records](build-records.md).
 
 Before compiling, the script checks identity availability and the profile's
 team, explicit App ID, Keychain group, selected certificate, expiry, and profile
