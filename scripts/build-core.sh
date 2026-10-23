@@ -78,6 +78,11 @@ UNIVERSAL="target/universal-apple-darwin/release"
 echo "==> Ensuring Apple targets are installed"
 rustup target add "${TARGETS[@]}"
 
+# Dated before cargo reads a source and copied onto the xcframework at the end, so
+# --if-stale counts a file saved during the build as newer than the build.
+BUILD_START="$(mktemp -t companion-core-build-start)"
+trap 'rm -f "$BUILD_START"' EXIT
+
 for t in "${TARGETS[@]}"; do
   echo "==> cargo build --locked --release -p companion-ffi --target $t${FEATURES:+ --features $FEATURES}"
   cargo build --locked --release -p companion-ffi --target "$t" ${FEATURES:+--features "$FEATURES"}
@@ -112,5 +117,6 @@ cmp -s THIRD_PARTY_NOTICES.md "$XCF/THIRD_PARTY_NOTICES.md" || {
   echo "xcframework third-party notices do not match the canonical notice" >&2
   exit 1
 }
+touch -r "$BUILD_START" "$XCF"
 printf '%s\n' "$SHAPE" > "$STAMP"
 echo "Built $XCF ($SHAPE)"

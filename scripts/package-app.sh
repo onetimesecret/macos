@@ -494,6 +494,10 @@ fi
 
 if [[ "$CONFIG" == "debug" ]]; then
   scripts/build-core.sh --if-stale --test-util
+elif ((APP_STORE_MODE)); then
+  # An upload reruns cargo instead of reusing the cached xcframework;
+  # cargo's own fingerprints keep that incremental.
+  scripts/build-core.sh
 else
   # ADR-0018: never trust whichever development framework happens to be in
   # bindings/. The explicit release shape rebuilds whenever the stamp differs.
