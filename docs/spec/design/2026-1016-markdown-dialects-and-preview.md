@@ -669,6 +669,9 @@ and sealed objects are still ASCII tokens. R2's preference: the view always
 composes as GFM, and `MarkdownPreviewView.render(_:dialect:limits:)` takes
 CommonMark only from tests. R4 requests and R5 image controls, lifecycle and
 accessibility: there is no Load Image control and no image attachment.
+The [R1 entry](#2026-10-23-r1-parser-integration-in-the-rendered-page-preview)
+below replaces the parser and the tokens; this paragraph records the code
+as it was after R3.
 
 #### Composition contract as implemented
 
@@ -781,8 +784,11 @@ and [`CMarkGFM/UPSTREAM.md`](../../../shell/Sources/CMarkGFM/UPSTREAM.md)
 list them with SHA-256 sums, and `scripts/vendor-cmark.sh --check`, a step
 of CI's shell job, verifies the files, the patches and `prefix.h` offline.
 Each target finds its `prefix.h` through its own header search path, so the
-manifest names no absolute path. Without the prefix the two
-libraries share 131 external names, each a duplicate symbol at link.
+manifest names no absolute path; `-include` still needs `unsafeFlags`, which
+SwiftPM refuses in a package another package depends on, and the shell is a
+root package. Release builds define `NDEBUG`, as upstream's CMake release
+builds do, and debug builds keep cmark's asserts armed. Without the prefix
+the two libraries share 131 external names, each a duplicate symbol at link.
 
 Not chosen: swift-cmark `08ddb528923cc1a6527e02b7a1aee9e516ca749a`, whose
 core inline parser reads Apple's `^[…](…)` with no option to turn it off;
@@ -807,13 +813,14 @@ and are not in the app.
 
 | Area | Implemented behavior |
 | --- | --- |
-| Parsing | Both shims parse with `CMARK_OPT_DEFAULT` and render nothing; Swift reads the node tree, the reference map and block source positions. The GFM shim attaches `table`, `strikethrough`, `autolink`, `tagfilter` and `tasklist`, and parses under one process wide lock because cmark-gfm's special character table and patch `0003`'s cell budget are global. cmark-gfm frees its reference map when a parse finishes, so the GFM shim copies the map in a postprocess extension first. Each shim refuses input over 256 MiB. |
+| Parsing | Both shims parse with `CMARK_OPT_DEFAULT` and render nothing; Swift reads the node tree, the reference map and block source positions. The GFM shim attaches `table`, `strikethrough`, `autolink`, `tagfilter` and `tasklist`; `tagfilter` acts only in cmark-gfm's HTML writer, which nothing calls, so the composer applies the GFM filter (R3). The GFM shim parses under one process wide lock because cmark-gfm's special character table and patch `0003`'s cell budget are global. cmark-gfm frees its reference map when a parse finishes, so the GFM shim copies the map in a postprocess extension first. Each shim refuses input over 256 MiB. |
 | Input | Before parsing, CR and CRLF become LF, NUL becomes U+FFFD and a leading U+FEFF is dropped, as cmark treats each, so block columns count the bytes the parser reads. The composer's 1,000,000 scalar input limit applies first. |
 | Placeholders | Object k is the scalar base + k in U+100000..U+10FFFD. The base is the lowest whose window avoids every plane 16 scalar in the page and every terminated decimal or hexadecimal numeric reference value. A page with more than 65,534 objects, or fewer when its own plane 16 scalars split the range, has no window. The scalar is private use, neither punctuation nor whitespace in either dialect, so it flanks delimiter runs as a letter does. |
 | Atoms | Text, code, raw HTML, fence info, destinations and titles are split at placeholders into `HTMLPart.object` parts; no placeholder reaches the composer as text. `MarkdownDocument.atoms` lists each object's identity, its index, and its UTF-16 offset. |
 | Ownership | Text, code spans, code blocks, raw HTML and fence info emit their objects in place; fence info objects are part of `codeBlock(info:)`. A link's own destination and title objects follow its label, outside the link, and an image's follow its alt text, as they do in the source, unless the label or alt text already showed them, and a link or image inside alt text follows the same order. The link's `enterLink` destination and title have a U+FFFC stand-in for each. An object in a reference definition's label, destination or title stays at the definition, and every address that uses the definition has a stand-in. The composer refuses an address with a stand-in. |
 | Placement | An object no node emitted, a definition's or one in a table cell cmark-gfm dropped, is placed by block source position: in the deepest block quote or list item whose span covers it, before the first block after it; before a covering leaf when it is a definition's; between two list items, in the earlier one; in a table body row, at the end of the row's last kept cell. cmark-gfm gives the paragraph it keeps above a table line 0; that paragraph takes the table's start. Inline source positions are not used. |
-| Links | `enterLink` and `leaveLink` bracket a Markdown link's label. Inside it the innermost Markdown link's address applies, accepted or refused, and no HTML link does. A title object does not refuse the address. |
+| Links | `enterLink` and `leaveLink` bracket a Markdown link's label. Inside it the innermost Markdown link's address applies, accepted or refused, and no HTML link does. A title object does not refuse the address. `safeURL` also refuses an http or https address with a user or password, which reads as one host and opens another. |
+| Object style | An object shows as its chip at the preview's base font, whatever block or trait surrounds it, so it does not grow in a heading or take a strikethrough; it keeps the paragraph's style, so it stays in its table cell or quote. |
 | Tables | One cell per header column, as cmark-gfm keeps them; no cell spans. All of a page's tables together may have 100,000 cells (`CompositionLimits.maximumTableCells`), header rows and padded cells included, since cmark-gfm pads a short row to the header's width and its own cap is per table. |
 | Failure | Parsing throws past the input, depth or table cell limit, with no placeholder window, or for an object emitted twice, and rendering fails when its output shows any object other than once. Either way the page renders as its plain source text with LF line endings, each object as its attachment in source order. The renderer logs the error's name under the `preview` category, at info level for a limit or a missing placeholder window and as a fault for anything else. |
 
@@ -909,11 +916,11 @@ composes as text in both dialects.
 
 | File | Coverage |
 | --- | --- |
-| [`MarkdownParserTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownParserTests.swift) | The placeholder window, both parsers' named entity tables (none decodes into plane 16), the input and depth limits, object offsets, line endings and atom offsets, definitions, a tab before a definition's object, inline destination and title objects, angle autolinks, fence info, excess table cells, a definition above the paragraph a table splits off, the table cell budget, every object once on pages that hide or copy one, flanking, and autolinks ending at an object. |
+| [`MarkdownParserTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownParserTests.swift) | The placeholder window, both parsers' named entity tables (none decodes into plane 16), the input and depth limits, object offsets, line endings and atom offsets, definitions, a tab before a definition's object, inline destination and title objects, angle autolinks, fence info, excess table cells, a definition above the paragraph a table splits off, the table cell budget, every object once on pages that hide or copy one, both shims' kind and reference part numbers, parses on many threads against the same parses in turn (it fails with the GFM shim's lock removed), flanking, and autolinks ending at an object. |
 | [`MarkdownCorpusTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownCorpusTests.swift) | Download checksums, example numbering, the GFM extraction against the lab's, and both corpora against the mismatch table. |
 | [`MarkdownSealedAtomTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownSealedAtomTests.swift) | Ordinary text conformance, P01 to P07 and native restrictions, as above. |
 | [`PreviewComposerTests.swift`](../../../shell/Tests/CompanionKitTests/PreviewComposerTests.swift) | The new events: breaks, a Markdown link over HTML links, a refused link shadowing them, destination and title objects at the link's opening, title objects leaving the address, empty and stand-in addresses, an image's title objects in its fallback, unbalanced link events and link events in raw text, and depth. |
-| [`MarkdownPreviewRenderingTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownPreviewRenderingTests.swift) | `testTableCellsNeverSpanSoEmptyAndCaretCellsKeepTheirOwnColumns` replaces the `\|\|` and `^` span expectations, and `testAnObjectInALinkDestinationFollowsTheLabel` replaces the flush expectation. |
+| [`MarkdownPreviewRenderingTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownPreviewRenderingTests.swift) | `testTableCellsNeverSpanSoEmptyAndCaretCellsKeepTheirOwnColumns` replaces the `\|\|` and `^` span expectations, and `testAnObjectInALinkDestinationFollowsTheLabel` replaces the flush expectation; `testAWebAddressWithUserinfoIsNoLink` covers Markdown and HTML links with a user or password. |
 
 Before this record, the agent writing the object fixtures and an adversarial
 review of the slice ran inputs against the parser and the renderer and
@@ -939,7 +946,7 @@ Those are the review's own runs; this record repeats none of them.
 
 Run from `shell/` on 2026-10-23, macOS 27.2 on arm64, Apple Swift 6.4:
 `swift test --filter "HTMLTokenizerTests|PreviewComposerTests|MarkdownPreviewCompositionTests|MarkdownPreviewRenderingTests|CheckpointMarkdownPreviewTests|CheckpointInsertionTests|DayScrollPreviewRenderingTests|PageModelPreviewRenderingTests|MarkdownParserTests|MarkdownCorpusTests|MarkdownSealedAtomTests|LinkDetectionTests|LinkRenderingTests|FenceScannerTests|FenceRenderingTests|FenceRegionFoldTests|CodeSlabTests"`,
-326 tests, 0 failures; `scripts/vendor-cmark.sh --check` passes. Not run:
+329 tests, 0 failures; `scripts/vendor-cmark.sh --check` passes. Not run:
 the full shell suite (left to CI), a macOS 13 runtime, a manual interaction
 pass and VoiceOver.
 
