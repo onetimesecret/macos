@@ -235,6 +235,111 @@ if ((APP_STORE_MODE)); then
 fi
 validate_signing_configuration
 
+# Prints a warning followed by git's own text, indented.
+git_warning() { # <warning> <git output>
+  echo "    warning: $1" >&2
+  printf '%s\n' "$2" | sed 's/^/    /' >&2
+}
+
+# Fails with a warning when git would refuse <ref> as a name, before anything is made for it.
+ref_name_ok() { # <ref>
+  git check-ref-format "$1" && return 0
+  echo "    warning: $1 is not a valid ref name (git check-ref-format), so it is not written." >&2
+  return 1
+}
+
+# Tags the commit a build came from. Returns 0 when the tag names that commit,
+# whether made now or already there; otherwise it warns and returns 1.
+create_build_tag() { # <name> <commit> <message> [--no-sign]
+  local name=$1 commit=$2 message=$3 flags=(-a) existing output
+  [[ -z "${4:-}" ]] || flags+=("$4")
+  ref_name_ok "refs/tags/$name" || return 1
+  if existing="$(git rev-parse -q --verify "refs/tags/$name^{commit}" 2>/dev/null)"; then
+    if [[ "$existing" == "$commit" ]]; then
+      echo "    tag $name already names this commit; its annotation is from an earlier build."
+      return 0
+    fi
+    echo "    warning: tag $name names ${existing:0:12}, not this build's commit; left as it is." >&2
+    return 1
+  fi
+  if output="$(git tag "${flags[@]}" -m "$message" "$name" "$commit" 2>&1)"; then
+    echo "==> tagged $name"
+    return 0
+  fi
+  git_warning "could not create tag $name:" "$output"
+  printf '    run by hand: git tag %s -m %q %q %s\n' "${flags[*]}" "$message" "$name" "$commit" >&2
+  return 1
+}
+
+# Fails when tag build/app-store/<version>-<number> is not a valid name or names a commit
+# other than SOURCE_HEAD; a tag on the same commit is fine.
+app_store_tag_free() { # <number>
+  local name="build/$BUILD_LANE/$VERSION-$1" existing
+  ref_name_ok "refs/tags/$name" || return 1
+  existing="$(git rev-parse -q --verify "refs/tags/$name^{commit}" 2>/dev/null)" || return 0
+  [[ "$existing" != "$SOURCE_HEAD" ]] || return 0
+  echo "    error: tag $name already names ${existing:0:12}, not this build's commit." >&2
+  return 1
+}
+
+# Points <ref> at a new annotated tag object for <commit>; the empty old value makes
+# update-ref refuse a ref that exists. Returns 0 when <ref> names <commit>.
+write_build_record() { # <ref> <commit> <message>
+  local ref=$1 commit=$2 message=$3 existing tagger tag output
+  ref_name_ok "$ref" || return 1
+  if existing="$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null)"; then
+    if [[ "$existing" == "$commit" ]]; then
+      echo "    record $ref already names this commit; its annotation is from an earlier build."
+      return 0
+    fi
+    echo "    warning: $ref names ${existing:0:12}, not this build's source; left as it is." >&2
+    return 1
+  fi
+  if ! tagger="$(git var GIT_COMMITTER_IDENT 2>&1)"; then
+    output=$tagger
+  elif ! tag="$(printf 'object %s\ntype commit\ntag %s\ntagger %s\n\n%s\n' \
+    "$commit" "${ref#refs/}" "$tagger" "$message" | git mktag 2>&1)" \
+    || [[ ! "$tag" =~ ^[0-9a-f]{40,64}$ ]]; then
+    output=$tag
+  elif output="$(git update-ref "$ref" "$tag" "" 2>&1)"; then
+    echo "==> recorded $ref"
+    return 0
+  fi
+  git_warning "could not record $ref:" "$output"
+  echo "    this build's source is $commit; once the cause is fixed, keep a plain record with:" >&2
+  printf '    git update-ref %q %q\n' "$ref" "$commit" >&2
+  return 1
+}
+
+# Dev and local builds are recorded under refs/builds/, which `git push --tags` leaves behind.
+# App Store builds are tagged build/app-store/<version>-<number> and v<version>, for pushing.
+tag_build() {
+  local name pushable=()
+  [[ -n "$SOURCE_HEAD" ]] || return 0
+  if [[ -n "$TREE_DIRTY" ]]; then
+    echo "    no record: the tree has uncommitted changes, so no commit names this build." >&2
+    return 0
+  fi
+  if [[ -z "$APP_STORE_BUILD_NUMBER" ]]; then
+    write_build_record "refs/builds/$BUILD_LANE/$VERSION-$SOURCE_SHORT" "$SOURCE_HEAD" \
+      "OnetimePad $VERSION, $BUILD_LANE build of $SOURCE_SHORT" || true
+    return 0
+  fi
+  name="build/$BUILD_LANE/$VERSION-$APP_STORE_BUILD_NUMBER"
+  if ! create_build_tag "$name" "$SOURCE_HEAD" \
+    "OnetimePad $VERSION, App Store build $APP_STORE_BUILD_NUMBER" --no-sign; then
+    echo "    error: the App Store package was built, but it has no record: tag $name was not written," >&2
+    echo "    so v$VERSION was not tagged and there is nothing to push." >&2
+    return 1
+  fi
+  pushable=("$name")
+  create_build_tag "v$VERSION" "$SOURCE_HEAD" "OnetimePad $VERSION" && pushable+=("v$VERSION")
+  printf '    push with: git push origin'
+  printf ' %q' "${pushable[@]}"
+  printf '\n'
+  return 0
+}
+
 if [[ "$CONFIG" == "debug" ]]; then
   scripts/build-core.sh --if-stale --test-util
 else
@@ -448,13 +553,24 @@ reserve_app_store_build_number() { # <counter file> [explicit number]
 # file nobody has added yet builds into the binary just the same. Asked
 # once, so the two stamps below name the same tree.
 TREE_DIRTY="$(git status --porcelain --untracked-files=normal 2>/dev/null || true)"
+# HEAD is read once, and its first 12 hex digits name the build in both
+# CFBundleVersion and the record; empty outside a checkout or on an unborn branch.
+SOURCE_HEAD="$(git rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)"
+SOURCE_SHORT="${SOURCE_HEAD:0:12}"
 
 if ((APP_STORE_MODE)); then
   # Keep the App Store build number separate from the marketing version and
   # reserve it only now, after the compile, so a broken build does not
   # spend one.
+  # A build number adds only digits, so probing with 1 checks the tag name before one is spent.
+  ref_name_ok "refs/tags/build/$BUILD_LANE/$VERSION-1" || exit 1
   reserve_app_store_build_number "$APP_STORE_BUILD_NUMBER_FILE" "$REQUESTED_BUILD_NUMBER"
   echo "==> App Store build number: $APP_STORE_BUILD_NUMBER (counter: $APP_STORE_BUILD_NUMBER_FILE)"
+  # A number whose tag names another commit cannot name this build; it is left as a gap.
+  if ! app_store_tag_free "$APP_STORE_BUILD_NUMBER"; then
+    echo "--app-store stops before stamping or signing; package again to take another build number." >&2
+    exit 1
+  fi
   plutil -replace CFBundleVersion -string "$APP_STORE_BUILD_NUMBER" "$APP/Contents/Info.plist"
 else
   plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
@@ -462,7 +578,8 @@ else
   # I on" has a one-glance answer. An uncommitted tree is part of the
   # answer: the SHA alone would claim a build the repo cannot reproduce.
   # Outside a git checkout the plain version stands.
-  if SHA="$(git rev-parse --short HEAD 2>/dev/null)"; then
+  if [[ -n "$SOURCE_SHORT" ]]; then
+    SHA="$SOURCE_SHORT"
     [[ -z "$TREE_DIRTY" ]] || SHA="$SHA.dirty"
     plutil -replace CFBundleVersion -string "$VERSION+$SHA" "$APP/Contents/Info.plist"
   fi
@@ -474,8 +591,8 @@ fi
 # About box and the diagnostics report cannot disagree about a build.
 plutil -replace OnetimePadBuildLane -string "$BUILD_LANE" "$APP/Contents/Info.plist"
 SOURCE_REVISION="unknown"
-if RESOLVED_REVISION="$(git rev-parse HEAD 2>/dev/null)"; then
-  SOURCE_REVISION="$RESOLVED_REVISION"
+if [[ -n "$SOURCE_HEAD" ]]; then
+  SOURCE_REVISION="$SOURCE_HEAD"
   [[ -z "$TREE_DIRTY" ]] || SOURCE_REVISION="$SOURCE_REVISION.dirty"
 fi
 plutil -replace OnetimePadSourceRevision -string "$SOURCE_REVISION" "$APP/Contents/Info.plist"
@@ -683,3 +800,4 @@ if ((APP_STORE_MODE)); then
 else
   echo "Built $APP. Launch with: open \"$APP\""
 fi
+tag_build
