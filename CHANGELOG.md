@@ -9,8 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The rendered preview reads Markdown as published GFM does** (app
+  0.43.0; the 2026-10-16 Markdown dialects plan, R1). The preview parses
+  each page with cmark-gfm 0.29.0.gfm.13 instead of swift-markdown, whose
+  parser added Apple's syntax. Table cells no longer span: `||` leaves an
+  empty cell and `^` is a cell's text. `^[text](key)` is a caret and an
+  ordinary link. A bare `www.`, `https://` or email address is a link, and
+  an address ends where a sealed object starts. Sealed objects keep their
+  source order and are never part of an address: one in a link's address
+  or title shows where the link starts, one in a reference definition
+  shows where the definition is, and one in a table cell past the header's
+  columns ends its row. cmark 0.31.2 reads CommonMark, but the Settings
+  dialect choice is not part of this change, so every page reads as GFM.
 
-- **The rendered preview formats a restricted set of HTML** (app 0.39.0;
+- **The rendered preview formats a restricted set of HTML** (app 0.42.0;
   ADR-0059; the 2026-10-16 Markdown dialects plan, R3). Raw HTML in a
   page's rendered preview is composed rather than shown as markup: `em`,
   `i`, `strong`, `b`, `del`, `s`, `strike`, `code` and `span` format the
