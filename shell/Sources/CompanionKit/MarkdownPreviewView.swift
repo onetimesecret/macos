@@ -334,7 +334,8 @@ private final class MarkdownPreviewRenderer {
         switch error {
         case MarkdownParseError.inputLimit, MarkdownParseError.depthLimit, MarkdownParseError.tableCellLimit,
              MarkdownParseError.noPlaceholderWindow, CompositionError.inputLimit, CompositionError.eventLimit,
-             CompositionError.depthLimit, CompositionError.outputLimit:
+             CompositionError.depthLimit, CompositionError.outputLimit, HTMLTokenizationError.inputLimit,
+             HTMLTokenizationError.tokenLimit:
             logger.info("plain text preview: \(String(describing: error), privacy: .public)")
         default:
             logger.fault("plain text preview: \(String(describing: error), privacy: .public)")
