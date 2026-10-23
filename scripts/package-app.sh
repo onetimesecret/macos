@@ -219,7 +219,7 @@ if ((APP_STORE_MODE)); then
   # after the compile. Every worktree shares the git common directory.
   if [[ -z "${APP_STORE_BUILD_NUMBER_FILE:-}" ]]; then
     if ! GIT_COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
-      echo "APP_STORE_BUILD_NUMBER_FILE must name the build number counter outside a git checkout." >&2
+      echo "--app-store packages only from a git checkout, and none was found here." >&2
       exit 1
     fi
     APP_STORE_BUILD_NUMBER_FILE="$GIT_COMMON_DIR/onetimepad-app-store-build-number"
@@ -234,6 +234,40 @@ if ((APP_STORE_MODE)); then
   fi
 fi
 validate_signing_configuration
+
+# The app's marketing version is the product's own number and it lives
+# in shell/OnetimePad-Info.plist, edited by hand when user visible work
+# lands (issue #89). It used to be read from crates/ffi/Cargo.toml,
+# which told the user about the Rust seam rather than about the app.
+# The FFI and core crate versions are separate artifact identities, so all
+# three are read and echoed at the assembly line below. The plist is copied into the
+# bundle whole, so CFBundleShortVersionString needs no stamping; only
+# CFBundleVersion does.
+VERSION="$(plutil -extract CFBundleShortVersionString raw shell/OnetimePad-Info.plist 2>/dev/null || true)"
+if [[ -z "$VERSION" ]]; then
+  echo "could not read CFBundleShortVersionString from shell/OnetimePad-Info.plist" >&2
+  exit 1
+fi
+# The placeholder is the shape the file had before it held a real
+# number, and shipping it would put 0.0.0 in About and in the tray.
+if [[ "$VERSION" == "0.0.0" ]]; then
+  echo "shell/OnetimePad-Info.plist still holds the 0.0.0 placeholder." >&2
+  echo "Set CFBundleShortVersionString there to the version this build ships." >&2
+  exit 1
+fi
+# Read, not stamped: companion_ffi_version() answers from the linked
+# xcframework at runtime, while this reads what Cargo says today. A
+# difference means build-core.sh has not rebuilt the linked artifact.
+FFI_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/ffi/Cargo.toml | head -n1)"
+if [[ -z "$FFI_VERSION" ]]; then
+  echo "could not read version from crates/ffi/Cargo.toml" >&2
+  exit 1
+fi
+CORE_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/core/Cargo.toml | head -n1)"
+if [[ -z "$CORE_VERSION" ]]; then
+  echo "could not read version from crates/core/Cargo.toml" >&2
+  exit 1
+fi
 
 # Prints the tree `git add -A` would write, tracked changes and untracked files
 # alike, staged in a copy of the index rather than the real one.
@@ -436,6 +470,27 @@ if ((APP_STORE_MODE)) && in_ci; then
   echo "--app-store does not package in CI, where no build record is written." >&2
   exit 1
 fi
+# An App Store build is uploaded and tagged for release, so it is packaged only from a clean commit.
+if ((APP_STORE_MODE)); then
+  if [[ -z "$SOURCE_HEAD" ]]; then
+    echo "--app-store packages only a commit, and HEAD names none here (no checkout, an unborn branch, or a missing object)." >&2
+    exit 1
+  fi
+  if [[ -z "$SOURCE_TREE" ]]; then
+    echo "--app-store packages only a commit it can compare with the tree, and the tree could not be read." >&2
+    exit 1
+  fi
+  if [[ -n "$SOURCE_DIRTY" ]]; then
+    echo "--app-store packages only a committed tree. Commit these changes, or set them aside with" >&2
+    echo "git stash -u, which also takes untracked files (git status --short, first 20 lines):" >&2
+    GIT_OPTIONAL_LOCKS=0 git status --short 2>&1 | sed -n '1,20p' >&2 || true
+    exit 1
+  fi
+  if [[ -n "$REQUESTED_BUILD_NUMBER" ]] && ! app_store_tag_free "$REQUESTED_BUILD_NUMBER"; then
+    echo "--app-store stops before compiling; choose another --build-number." >&2
+    exit 1
+  fi
+fi
 
 if [[ "$CONFIG" == "debug" ]]; then
   scripts/build-core.sh --if-stale --test-util
@@ -455,40 +510,6 @@ if ! cmp -s THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PART
 fi
 if [[ "$CONFIG" == "release" ]]; then
   scripts/verify-release-core.sh
-fi
-
-# The app's marketing version is the product's own number and it lives
-# in shell/OnetimePad-Info.plist, edited by hand when user visible work
-# lands (issue #89). It used to be read from crates/ffi/Cargo.toml,
-# which told the user about the Rust seam rather than about the app.
-# The FFI and core crate versions are separate artifact identities, so all
-# three are read and echoed at the assembly line below. The plist is copied into the
-# bundle whole, so CFBundleShortVersionString needs no stamping; only
-# CFBundleVersion does.
-VERSION="$(plutil -extract CFBundleShortVersionString raw shell/OnetimePad-Info.plist 2>/dev/null || true)"
-if [[ -z "$VERSION" ]]; then
-  echo "could not read CFBundleShortVersionString from shell/OnetimePad-Info.plist" >&2
-  exit 1
-fi
-# The placeholder is the shape the file had before it held a real
-# number, and shipping it would put 0.0.0 in About and in the tray.
-if [[ "$VERSION" == "0.0.0" ]]; then
-  echo "shell/OnetimePad-Info.plist still holds the 0.0.0 placeholder." >&2
-  echo "Set CFBundleShortVersionString there to the version this build ships." >&2
-  exit 1
-fi
-# Read, not stamped: companion_ffi_version() answers from the linked
-# xcframework at runtime, while this reads what Cargo says today. A
-# difference means build-core.sh has not rebuilt the linked artifact.
-FFI_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/ffi/Cargo.toml | head -n1)"
-if [[ -z "$FFI_VERSION" ]]; then
-  echo "could not read version from crates/ffi/Cargo.toml" >&2
-  exit 1
-fi
-CORE_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/core/Cargo.toml | head -n1)"
-if [[ -z "$CORE_VERSION" ]]; then
-  echo "could not read version from crates/core/Cargo.toml" >&2
-  exit 1
 fi
 
 echo "==> swift build -c $CONFIG --product OnetimePad"
@@ -648,6 +669,10 @@ reserve_app_store_build_number() { # <counter file> [explicit number]
 # The stamps below and the record name the source read before the compile,
 # provided the tree is still the one read then.
 check_source_unchanged
+if ((APP_STORE_MODE)) && [[ -n "$SOURCE_CHANGED" ]]; then
+  echo "--app-store stops instead, before a build number is reserved; package again when nothing in the checkout is changing." >&2
+  exit 1
+fi
 
 if ((APP_STORE_MODE)); then
   # Keep the App Store build number separate from the marketing version and
