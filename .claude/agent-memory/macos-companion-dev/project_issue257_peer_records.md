@@ -12,8 +12,9 @@ Unit 2: `import_update` returns the identities a batch stands that the page lack
 **Why:** ADR-0058 (proposed) lets a peer keep a record whose value lives on another device, so a sync never stalls on an object it cannot import.
 
 **How to apply:**
-- Loro's `to_delta` coalesces two adjacent sentinels with the same chip mark into one piece; `runs_of` now splits an all-sentinel marked piece into one `DocRun::Chip` per sentinel. Any position math over runs depends on that.
+- Loro's `to_delta` coalesces two adjacent sentinels with the same chip mark into one piece; `runs_of` (via `split_marked`) reads only a U+FFFC under a chip mark as a chip, one per sentinel; any other marked character is ink. Any position math over runs depends on that.
 - A record moves only between readable pages, and the page it leaves forgets its undo (a step there could stand the sentinel with no record). A detached record replaces a standing record with no value; a detached record with no value drops where a value stands.
+- `delete_chip` then drops every record with no value for the burned identity on readable pages (no ledger event) and takes out its standings; a dropped detached one forgets its page's undo.
 - `entomb` mutates its page now, so its old `#[expect(clippy::needless_pass_by_value)]` had to go.
 - A core helper an ffi test needs must be `#[cfg(any(test, feature = "test-util"))] pub`; a `#[cfg(test)]` helper in core is invisible to ffi tests. `SheetStore::stand_peer_record` mints a random identity, so a test needing a peer record for a real object builds it by shipping a batch.
 - Two restores of equivalent snapshots re-snapshot byte for byte (Loro's export is deterministic), so `assert_eq!(a.snapshot(0), b.snapshot(0))` is a usable equivalence check.

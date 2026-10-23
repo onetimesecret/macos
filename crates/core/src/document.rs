@@ -623,7 +623,8 @@ impl SheetDocument {
         self.doc.commit_with(options);
     }
 
-    /// The body split into ink and chips. A sentinel with an unreadable mark is ink.
+    /// The body split into ink and chips. A sentinel with an unreadable mark is ink,
+    /// and so is any other character under a chip mark.
     pub(crate) fn runs(&self) -> Vec<DocRun> {
         runs_of(&self.body)
     }
@@ -1011,32 +1012,25 @@ impl SheetDocument {
 
 /// A body split into ink and chips; free-standing so a fork can be read.
 fn runs_of(body: &LoroText) -> Vec<DocRun> {
-    let mut pieces: Vec<_> = body
-        .to_delta()
-        .into_iter()
-        .filter_map(|piece| {
-            let TextDelta::Insert { insert, attributes } = piece else {
-                return None;
-            };
-            let insert = Zeroizing::new(insert);
-            let chip = attributes
-                .as_ref()
-                .and_then(|attrs| attrs.get(CHIP_MARK))
-                .and_then(parse_mark_value);
-            Some((insert, chip))
-        })
-        .collect();
+    let mut pieces: Vec<(Zeroizing<String>, Option<ItemId>)> = Vec::new();
+    for piece in body.to_delta() {
+        let TextDelta::Insert { insert, attributes } = piece else {
+            continue;
+        };
+        let insert = Zeroizing::new(insert);
+        match attributes
+            .as_ref()
+            .and_then(|attrs| attrs.get(CHIP_MARK))
+            .and_then(parse_mark_value)
+        {
+            Some(id) => split_marked(&insert, id, &mut pieces),
+            None => pieces.push((insert, None)),
+        }
+    }
     let mut runs = Vec::new();
     for group in pieces.chunk_by_mut(|a, b| a.1.is_none() && b.1.is_none()) {
         if let Some(id) = group[0].1 {
-            // Adjacent standings of one identity come back as one piece.
-            let insert = group[0].0.as_str();
-            let standings = if insert.chars().all(|c| CHIP_SENTINEL.starts_with(c)) {
-                insert.chars().count().max(1)
-            } else {
-                1
-            };
-            runs.extend(std::iter::repeat_n(DocRun::Chip(id), standings));
+            runs.push(DocRun::Chip(id));
         } else if let [(insert, None)] = group {
             // One piece moves; projected_ink_coalesces_marked_pieces_at_exact_capacity checks its capacity.
             runs.push(DocRun::Ink(std::mem::take(insert)));
@@ -1050,6 +1044,23 @@ fn runs_of(body: &LoroText) -> Vec<DocRun> {
         }
     }
     runs
+}
+
+/// A marked piece as one chip per sentinel; any other character under the mark is ink.
+fn split_marked(insert: &str, id: ItemId, pieces: &mut Vec<(Zeroizing<String>, Option<ItemId>)>) {
+    let mut rest = insert;
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix(CHIP_SENTINEL) {
+            pieces.push((Zeroizing::new(String::new()), Some(id)));
+            rest = after;
+            continue;
+        }
+        let end = rest.find(CHIP_SENTINEL).unwrap_or(rest.len());
+        let mut ink = Zeroizing::new(String::with_capacity(end));
+        ink.push_str(&rest[..end]);
+        pieces.push((ink, None));
+        rest = &rest[end..];
+    }
 }
 
 /// Every chip standing in a body, in document order.
@@ -1592,6 +1603,67 @@ mod tests {
         assert!(doc.take_out_standings(&[]).is_empty());
         assert_eq!(doc.take_out_standings(&[id]), vec![1]);
         assert_eq!(doc.runs(), vec![ink("ab")]);
+    }
+
+    /// A peer's batch whose body is `text` with `marked` under `id`'s chip mark,
+    /// written through Loro below this build's guards, imported by a fresh page.
+    fn crafted(text: &str, marked: std::ops::Range<usize>, id: ItemId) -> SheetDocument {
+        let source = SheetDocument::new();
+        source.body.insert_utf16(0, text).unwrap();
+        source
+            .body
+            .mark_utf16(marked, CHIP_MARK, id.to_string())
+            .unwrap();
+        source.commit(None);
+        let mirror = SheetDocument::new();
+        let delta = source.export_updates_since(&mirror.version()).unwrap();
+        mirror.import_update(&delta, &[]).unwrap();
+        mirror
+    }
+
+    #[test]
+    fn a_peers_chip_mark_over_ink_reads_as_ink_and_the_take_out_leaves_it() {
+        let id = ItemId::random();
+        let mirror = crafted("keep abc tail", 5..8, id);
+        let runs = mirror.runs();
+        assert_eq!(runs, vec![DocRun::Ink("keep abc tail".to_string().into())]);
+        if let [DocRun::Ink(text)] = &runs[..] {
+            assert_eq!(text.capacity(), text.len());
+        }
+        assert!(mirror.live_chips().is_empty(), "marked ink names no object");
+
+        assert!(mirror.take_out_standings(&[id]).is_empty());
+        assert!(mirror.take_out_standings(&[]).is_empty());
+        assert_eq!(mirror.runs(), runs);
+        assert_eq!(mirror.utf16_len(), 13);
+    }
+
+    #[test]
+    fn mixed_marked_ink_and_sentinels_take_out_only_the_doubled_sentinel() {
+        let id = ItemId::random();
+        let mirror = crafted("ax\u{FFFC}y\u{FFFC}b", 1..5, id);
+        let ink = |text: &str| DocRun::Ink(text.to_string().into());
+        let runs = mirror.runs();
+        assert_eq!(
+            runs,
+            vec![
+                ink("ax"),
+                DocRun::Chip(id),
+                ink("y"),
+                DocRun::Chip(id),
+                ink("b")
+            ]
+        );
+        for run in &runs {
+            if let DocRun::Ink(text) = run {
+                assert_eq!(text.capacity(), text.len());
+            }
+        }
+        assert_eq!(mirror.chip_position(id), Some(2));
+
+        assert_eq!(mirror.take_out_standings(&[]), vec![4]);
+        assert_eq!(mirror.runs(), vec![ink("ax"), DocRun::Chip(id), ink("yb")]);
+        assert_eq!(mirror.utf16_len(), 5);
     }
 
     #[test]
