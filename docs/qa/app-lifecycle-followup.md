@@ -52,7 +52,28 @@ The later completed Claude review expanded to 23 numbered items in the same comm
 
 Apple's [launch metadata reference](https://developer.apple.com/documentation/appkit/nsapplication/launchisdefaultuserinfokey) identifies file opens, Services and saved-state restoration as nondefault launches. The [reopen callback reference](https://developer.apple.com/documentation/appkit/nsapplicationdelegate/applicationshouldhandlereopen(_:hasvisiblewindows:)) describes the native untitled fallback when only panels remain. These API descriptions motivate the callback tests; they do not substitute for the remaining platform executions.
 
+## Updated Claude review and CI follow-up
+
+The review on commit `50825193` added these findings. Its [updated comment](https://github.com/onetimesecret/macos/pull/326#issuecomment-6353671800) is assessed separately from the earlier reviews above.
+
+| Feedback | Disposition | Implementation or rationale |
+| --- | --- | --- |
+| 1: other users' processes can fail inspection with EPERM | Addressed; confirmed by CI | Both shell and release packaging failed before building in run 39878137339 with EPERM. Enumerate current-user processes with libproc's PROC_UID_ONLY; inspection errors for those processes still stop the lane. Native fixtures and a libproc argument regression cover the change. A local ordinary-user audit saw no EPERM, which does not negate the runner failures. |
+| 2: public FormFactor.panel traps in a packaged pad host | Addressed | Remove the archived panel's production accessor. Legacy panel configuration is explicit in a test-only fixture, and the runtime resolver is internal. ADR-0014's accepted decision is “Archive the panel.” No production callers remained. |
+| 3: arbitrary reopen window and ordering a sheet directly | Addressed | Use AppKit's front-to-back window enumeration, which includes panels, and order a sheet's parent. The scripting orderedWindows list can omit panels. Delegate regressions check actual panel ordering and attached-sheet parent selection. |
+| 4: localized Help title breaks delegate lookup | Addressed | Pass the constructed Help menu directly to item installation and register NSApp.helpMenu alongside the other roles. A non-English menu-title fixture exercises installation. |
+| 5: secure restoration policy and late menu construction | Addressed | Install menus during willFinishLaunching and opt in to secure restoration coders. This does not enable restoration for windows marked isRestorable=false; session restoration remains a manual check. |
+| 5: missing CLI arguments and lsof text mappings | Addressed | Invalid arguments produce a usage message and status 2. README records that conservative text mapping checks include dylibs. |
+| 5: custom Swift build locations | Scope clarified | Supported scripts check shell/.build. README explicitly excludes custom --scratch-path / --build-path outputs and provides the direct guard command for them. |
+| 5: repeated file checks during activation and reopen | Retained | An explicit reopen can occur while the application is already active, so it cannot rely on a new didBecomeActive callback. Keep the idempotent file refresh at both entry points. |
+
+The separate platform failure in run 39878137339 occurred in companion-pasteboard: a text read failed and an Objective-C exception aborted the test process. Twenty isolated pasteboard tests passed locally, and 50 repetitions passed (1,000 executions); the general-pasteboard-name test was excluded. No Rust behavior change is justified by that evidence. The platform job passed on rerun at the same commit; the original exception remains unexplained. Subsequent runs expose uncaptured test output and Rust backtraces for diagnosis if it repeats.
+
 ## Validation scope
+
+The updated-review follow-up passed all 385 native tests and all 1,826 CompanionKit tests (2,211 total), plus 101 script tests. A targeted lifecycle run also passed all 21 tests. The new panel-order fixture initially hid on XCTest deactivation; it now stays onscreen and verifies enumeration order before calling the delegate. SDK-backed front-to-back enumeration includes panels that the scripting orderedWindows list omits. ADR lint (52 records), shell syntax, whitespace checks and a direct current-user guard invocation passed. No installed application was launched, quit or used as a fixture.
+
+Previous review follow-up:
 
 The review follow-up passed 381 OnetimePad tests and 1,826 CompanionKit tests (2,207 total), plus 99 script tests. The full Swift run passed CompanionKit but initially failed four native assertions comparing `/var` with `/private/var`; after normalizing both sides of those fixture path comparisons, all 381 native tests passed on rerun. The final source passed ADR lint (52 records), shell syntax, whitespace diagnostics and 39 changed-document local file links. Native menu tests include an actual archive roundtrip and Services-role reinstallation. No installed application was launched, quit or used as a fixture.
 
