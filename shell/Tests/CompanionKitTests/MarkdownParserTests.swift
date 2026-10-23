@@ -72,6 +72,33 @@ final class MarkdownParserTests: XCTestCase {
 
     // MARK: The placeholder window
 
+    /// The window avoids literal plane 16 scalars and numeric references because no other
+    /// spelling decodes to one: neither parser's named entity table has a plane 16 replacement,
+    /// whose UTF-8 lead byte 0xF4 starts no other scalar. A parser update that adds one fails here.
+    func testNoNamedEntityOfEitherParserDecodesIntoPlaneSixteen() throws {
+        let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Sources")
+        let commonMark = try String(
+            contentsOf: sources.appendingPathComponent("CMarkCommonMark/upstream/entities.inc"), encoding: .utf8
+        )
+        let text = try XCTUnwrap(commonMark.components(separatedBy: "cmark_entity_text[").last?
+            .split(separator: "{", maxSplits: 1).last)
+        let bytes = text.prefix { $0 != "}" }.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .compactMap { $0.hasPrefix("0x") ? Int($0.dropFirst(2), radix: 16) : Int($0) }
+        XCTAssertEqual(bytes.count, 20_220, "names and replacements of cmark 0.31.2")
+        XCTAssertFalse(bytes.contains(0xF4), "cmark 0.31.2")
+
+        let gfm = try String(
+            contentsOf: sources.appendingPathComponent("CMarkGFM/upstream/src/entities.inc"), encoding: .utf8
+        )
+        let replacements = gfm.matches(of: /\{([0-9, ]+)\}/).map {
+            $0.1.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        }
+        XCTAssertEqual(replacements.count, 2_125, "entities of cmark-gfm 0.29.0.gfm.13")
+        XCTAssertFalse(replacements.joined().contains(0xF4), "cmark-gfm 0.29.0.gfm.13")
+    }
+
     func testPlaneSixteenTextAndNumericReferencesStayTextBesideTheObjects() throws {
         let parts: [String?] = ["\u{100000} &#1048576; &#x100001; &#X100002; ", nil, " end"]
         let (_, offsets) = page(parts)
@@ -192,6 +219,23 @@ final class MarkdownParserTests: XCTestCase {
             XCTAssertEqual(items.map(\.blocks), [
                 [.paragraph([.text("a")])], [.objects(["0"])], [.paragraph([.text("b")])],
             ], "\(dialect): in an item of its own")
+        }
+    }
+
+    /// Placement compares byte columns, as cmark's block positions count them; a tab that cmark
+    /// expands to its tab stop moves neither the object nor the block it lands in.
+    func testATabBeforeADefinitionsObjectKeepsItInItsContainer() throws {
+        for dialect in PreviewDialect.allCases {
+            XCTAssertEqual(try parse(["-\t[r]:\t/u", nil, "\n\n\ta", nil, "\n- b"], dialect).blocks, [
+                .list(ordered: false, start: 0, tight: true, items: [
+                    MarkdownListItem(task: nil, blocks: [.objects(["0"]), .paragraph([.text("a"), .object("1")])]),
+                    MarkdownListItem(task: nil, blocks: [.paragraph([.text("b")])]),
+                ]),
+            ], "\(dialect): in a list item")
+            XCTAssertEqual(try parse([">\t[r]: /u", nil, "\n>\n>\ta", nil, "\n\nafter"], dialect).blocks, [
+                .quote([.objects(["0"]), .paragraph([.text("a"), .object("1")])]),
+                .paragraph([.text("after")]),
+            ], "\(dialect): in a quote")
         }
     }
 
