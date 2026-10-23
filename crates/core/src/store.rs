@@ -104,9 +104,6 @@ pub enum RemoteRefusal {
     /// recovery is [`SheetStore::adopt_key_frame`] (relay decision
     /// background section 1).
     MissingHistory,
-    /// The update would stand a chip sentinel this page does not own, or
-    /// stand one twice.
-    ChipRoster,
     /// A key frame was offered to a page whose document already holds
     /// history (relay decision background sections 1 and 5).
     NotFresh,
@@ -119,9 +116,6 @@ impl std::fmt::Display for RemoteRefusal {
             RemoteRefusal::Malformed => write!(f, "the update does not decode"),
             RemoteRefusal::MissingHistory => {
                 write!(f, "the update depends on history this page does not hold")
-            }
-            RemoteRefusal::ChipRoster => {
-                write!(f, "the update references a chip this page does not own")
             }
             RemoteRefusal::NotFresh => {
                 write!(f, "a key frame lands only on a fresh page")
@@ -1013,6 +1007,10 @@ impl<C: Clock> SheetStore<C> {
             return;
         };
         sheet.settle_roster();
+        self.follow_sentinels(id);
+        let Some(sheet) = self.sheet_mut(id) else {
+            return;
+        };
         sheet.rebuild_segments();
         // Rebuilds with fresh identities if the mutation went unnarrated
         // (ADR-0013).
@@ -1048,21 +1046,159 @@ impl<C: Clock> SheetStore<C> {
             .export_updates_since(since)
     }
 
-    /// Apply a peer's update batch, refused whole unless it decodes, has
-    /// its dependencies, and resolves every chip sentinel one-to-one. An
-    /// accepted batch settles like a local edit.
+    /// Apply a peer's update batch, refused whole unless it decodes and has
+    /// its dependencies. An accepted batch gives each object it stands a
+    /// record (ADR-0058 point 1) and settles like a local edit.
     pub fn apply_remote_update(&mut self, id: SheetId, bytes: &[u8]) -> Result<(), RemoteRefusal> {
         let Some(sheet) = self.sheet_mut(id) else {
             return Err(RemoteRefusal::UnknownSheet);
         };
         // A detached chip is still the page's own (ADR-0046 point 1).
         let owned = sheet.owned_uuids();
-        sheet
+        let arrived = sheet
             .document
             .import_update(bytes, &owned)
             .map_err(refusal_from)?;
+        self.admit(id, arrived);
         self.settle_document(id);
+        self.take_out_standings(id);
         Ok(())
+    }
+
+    /// Give each arrived identity the record another page keeps detached, none
+    /// if it ended here, or else a record with no value (ADR-0058 points 1, 3, 8).
+    fn admit(&mut self, id: SheetId, arrived: Vec<ItemId>) {
+        let open = !self.is_due(id);
+        for uuid in arrived {
+            let moved = open.then(|| self.take_detached(id, uuid)).flatten();
+            let record = match moved {
+                Some(record) => record,
+                None if self.terminal_cause(uuid).is_some() => continue,
+                None => {
+                    let chip = ChipId(self.next_chip_id);
+                    self.next_chip_id += 1;
+                    SealedChip::peer(chip, uuid)
+                }
+            };
+            if let Some(sheet) = self.sheet_mut(id) {
+                sheet.chips.push(record);
+            }
+        }
+    }
+
+    /// Take `uuid`'s record out of another readable page's detached store,
+    /// and that page's steps with it, since one could stand the sentinel again.
+    fn take_detached(&mut self, id: SheetId, uuid: ItemId) -> Option<SealedChip> {
+        self.readable_sheets_mut()
+            .filter(|sheet| sheet.id != id)
+            .find_map(|sheet| {
+                let index = sheet.detached.iter().position(|chip| chip.uuid == uuid)?;
+                sheet.document.forget_undo();
+                Some(sheet.detached.remove(index))
+            })
+    }
+
+    /// Move each record detached here into the record with no value standing its identity
+    /// on another page; a detached one with no value drops where a value stands (ADR-0058 point 3).
+    fn follow_sentinels(&mut self, id: SheetId) {
+        if self.is_due(id) {
+            return;
+        }
+        let Some(sheet) = self.sheet(id) else {
+            return;
+        };
+        let detached: Vec<ItemId> = sheet.detached.iter().map(|chip| chip.uuid).collect();
+        for uuid in detached {
+            let Some((there, local_there)) = self.standing_elsewhere(id, uuid) else {
+                continue;
+            };
+            let Some(sheet) = self.sheet_mut(id) else {
+                return;
+            };
+            let Some(index) = sheet
+                .detached
+                .iter()
+                .position(|chip| chip.uuid == uuid && !(local_there && chip.is_local()))
+            else {
+                continue;
+            };
+            let record = sheet.detached.remove(index);
+            // A step here could stand the moved sentinel a second time.
+            sheet.document.forget_undo();
+            if !local_there {
+                self.stand_in(there, record);
+            }
+        }
+    }
+
+    /// Move each value on a page that is ending to the readable page standing
+    /// its identity in a record with no value (ADR-0058 point 3).
+    fn rehome_values(&mut self, sheet: &mut Sheet) {
+        let id = sheet.id;
+        for records in [&mut sheet.chips, &mut sheet.detached] {
+            let mut index = 0;
+            while index < records.len() {
+                let home = records[index]
+                    .is_local()
+                    .then(|| self.standing_elsewhere(id, records[index].uuid))
+                    .flatten()
+                    .filter(|(_, local_there)| !local_there);
+                match home {
+                    Some((there, _)) => self.stand_in(there, records.remove(index)),
+                    None => index += 1,
+                }
+            }
+        }
+    }
+
+    /// Another readable page standing `uuid`, and whether its value is there.
+    fn standing_elsewhere(&self, id: SheetId, uuid: ItemId) -> Option<(SheetId, bool)> {
+        self.readable_sheets()
+            .filter(|sheet| sheet.id != id)
+            .find_map(|sheet| {
+                let standing = sheet.chips.iter().find(|chip| chip.uuid == uuid)?;
+                Some((sheet.id, standing.is_local()))
+            })
+    }
+
+    /// Put `record` in place of the record standing its identity on `there`,
+    /// or keep it detached there if none stands.
+    fn stand_in(&mut self, there: SheetId, record: SealedChip) {
+        let Some(dest) = self.sheet_mut(there) else {
+            return;
+        };
+        match dest.chips.iter_mut().find(|chip| chip.uuid == record.uuid) {
+            Some(slot) => *slot = record,
+            None => dest.detached.push(record),
+        }
+        dest.rebuild_segments();
+    }
+
+    /// Take out each later standing of an identity, and each of an ended one
+    /// this page has no record for, as local edits (ADR-0058 points 2 and 8).
+    fn take_out_standings(&mut self, id: SheetId) {
+        let Some(sheet) = self.sheet(id) else {
+            return;
+        };
+        let owned = sheet.owned_uuids();
+        let ended: Vec<ItemId> = sheet
+            .document
+            .live_chips()
+            .into_iter()
+            .filter(|uuid| !owned.contains(uuid) && self.terminal_cause(*uuid).is_some())
+            .collect();
+        let Some(sheet) = self.sheet_mut(id) else {
+            return;
+        };
+        let taken = sheet.document.take_out_standings(&ended);
+        if taken.is_empty() {
+            return;
+        }
+        // Last first, as they went, so each offset is still true.
+        for at in &taken {
+            sheet.blocks.note_delete(*at, 1);
+        }
+        self.settle_document(id);
     }
 
     /// Join a fresh page to a channel's key frame (relay decision
@@ -1082,12 +1218,14 @@ impl<C: Clock> SheetStore<C> {
             return Err(RemoteRefusal::NotFresh);
         }
         let owned = sheet.owned_uuids();
-        sheet
+        let arrived = sheet
             .document
             .import_update(frame, &owned)
             .map_err(refusal_from)?;
         sheet.uuid = page;
+        self.admit(id, arrived);
         self.settle_document(id);
+        self.take_out_standings(id);
         Ok(())
     }
 
@@ -1833,14 +1971,13 @@ impl<C: Clock> SheetStore<C> {
 
     /// Record each chip's end, attached or detached, then the page's unless it
     /// held neither chip nor content (Law 0001, lifecycle states), and drop it,
-    /// chips zeroized.
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "consuming is the point: the page dies here, and its SecretBuffers zeroize as it drops"
-    )]
-    fn entomb(&mut self, sheet: Sheet, label: Zeroizing<String>, event: LedgerEvent) {
+    /// chips zeroized; a value standing on another page moves there unrecorded (ADR-0058 point 3).
+    fn entomb(&mut self, mut sheet: Sheet, label: Zeroizing<String>, event: LedgerEvent) {
         // The page has left the strip, so a cut it held ends here.
         self.end_a_broken_cut();
+        // A detached chip is a payload the page held, though nothing shows it.
+        let recorded = sheet.has_content() || sheet.detached.iter().any(SealedChip::is_local);
+        self.rehome_values(&mut sheet);
         // A record whose value is on another device was never sealed here.
         for (uuid, len) in sheet
             .chips
@@ -1857,8 +1994,7 @@ impl<C: Clock> SheetStore<C> {
                 DestinationClass::None,
             );
         }
-        // A detached chip is a payload the page held, though nothing shows it.
-        if !sheet.has_content() && !sheet.detached.iter().any(SealedChip::is_local) {
+        if !recorded {
             return;
         }
         // The label was resolved by the caller; nothing is derived from ink
@@ -1896,7 +2032,6 @@ fn refusal_from(refusal: UpdateRefusal) -> RemoteRefusal {
     match refusal {
         UpdateRefusal::Malformed => RemoteRefusal::Malformed,
         UpdateRefusal::MissingHistory => RemoteRefusal::MissingHistory,
-        UpdateRefusal::ChipRoster => RemoteRefusal::ChipRoster,
     }
 }
 
@@ -2446,7 +2581,7 @@ mod tests {
     }
 
     #[test]
-    fn sync_rejects_foreign_and_duplicate_chips() {
+    fn a_restate_still_refuses_foreign_and_doubled_chips() {
         let (mut store, _) = store();
         let a = store.new_tab().1;
         let b = store.new_tab().1;
@@ -5072,28 +5207,123 @@ mod tests {
         assert_eq!(beta.sheet(b).unwrap().derived_title(), Some("title"));
     }
 
+    /// Every record for `uuid` on a store's pages, attached or detached.
+    fn records_of(store: &SheetStore<ManualClock>, uuid: ItemId) -> Vec<(SheetId, &SealedChip)> {
+        store
+            .sheets()
+            .flat_map(|sheet| {
+                sheet
+                    .chips()
+                    .chain(sheet.detached())
+                    .map(move |chip| (sheet.id(), chip))
+            })
+            .filter(|(_, chip)| chip.uuid() == uuid)
+            .collect()
+    }
+
+    fn uuid_of(store: &SheetStore<ManualClock>, chip: ChipId) -> ItemId {
+        store
+            .sheets()
+            .find_map(|sheet| sheet.owned_chip(chip))
+            .expect("a record for the chip")
+            .uuid()
+    }
+
+    fn ended_on_record(store: &SheetStore<ManualClock>, uuid: ItemId) -> usize {
+        store
+            .ledger()
+            .filter(|record| {
+                record.item == uuid
+                    && matches!(
+                        record.event(),
+                        LedgerEvent::Expired | LedgerEvent::Discarded
+                    )
+            })
+            .count()
+    }
+
     #[test]
-    fn a_remote_chip_the_page_does_not_own_refuses_whole() {
+    fn a_remote_chip_the_page_does_not_own_admits_as_a_record_with_no_value() {
         let (mut alpha, _) = store();
         let (mut beta, _) = store();
         let a = alpha.new_tab().1;
         let b = beta.new_tab().1;
 
-        assert!(alpha.apply_ops(
-            a,
-            &[EditOp::Insert {
-                pos_u16: 0,
-                text: "ink".into(),
-            }],
-        ));
-        alpha.seal_text_at(a, "sealed bytes", 0, 0).unwrap();
+        assert!(alpha.apply_ops(a, &typed(0, "ink")));
+        let chip = alpha.seal_text_at(a, "sealed bytes", 0, 0).unwrap();
+        let uuid = uuid_of(&alpha, chip);
+        let batch = alpha
+            .export_document_updates(a, &beta.document_version(b).unwrap())
+            .unwrap();
+        assert!(!contains(&batch, b"sealed bytes"));
 
-        let before = beta.sheet(b).unwrap().segments().to_vec();
-        assert_eq!(
-            ship(&alpha, a, &mut beta, b),
-            Err(RemoteRefusal::ChipRoster)
+        assert_eq!(beta.apply_remote_update(b, &batch), Ok(()));
+        let records = records_of(&beta, uuid);
+        assert_eq!(records.len(), 1);
+        let (page, record) = records[0];
+        assert_eq!(page, b);
+        assert!(
+            beta.sheet(b).unwrap().chip(record.id()).is_some(),
+            "it stands"
         );
-        assert_eq!(beta.sheet(b).unwrap().segments(), &before[..]);
+        assert!(matches!(
+            record.availability(),
+            crate::sheet::Availability::Peer {
+                kind: None,
+                size: None
+            }
+        ));
+        assert!(beta.copy_out_chip(record.id()).is_none());
+        assert_eq!(
+            beta.sheet(b).unwrap().document.runs(),
+            alpha.sheet(a).unwrap().document.runs()
+        );
+        assert!(
+            !beta.ledger().any(|entry| entry.item == uuid),
+            "a record with no value was never sealed here"
+        );
+
+        // An echo of the applied batch makes no second record.
+        assert_eq!(beta.apply_remote_update(b, &batch), Ok(()));
+        take_out(&mut beta, b, 0);
+        assert_eq!(beta.apply_remote_update(b, &batch), Ok(()));
+        assert_eq!(records_of(&beta, uuid).len(), 1);
+    }
+
+    #[test]
+    fn malformed_bytes_and_missing_history_refuse_and_leave_body_and_roster_unchanged() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().1;
+        let b = beta.new_tab().1;
+        assert!(alpha.apply_ops(a, &typed(0, "one ")));
+        ship(&alpha, a, &mut beta, b).unwrap();
+        alpha.seal_text_at(a, "the secret", 4, 0).unwrap();
+        let after_seal = alpha.document_version(a).unwrap();
+        type_on(&mut alpha, a, " later");
+        // The tail builds on a seal the peer never received.
+        let tail = alpha.export_document_updates(a, &after_seal).unwrap();
+
+        let roster = |store: &SheetStore<ManualClock>| {
+            let sheet = store.sheet(b).unwrap();
+            (
+                sheet.owned_uuids(),
+                sheet.document.runs(),
+                sheet.document.version(),
+            )
+        };
+        let before = roster(&beta);
+        let next_chip = beta.next_chip_id;
+        assert_eq!(
+            beta.apply_remote_update(b, b"not an update batch"),
+            Err(RemoteRefusal::Malformed)
+        );
+        assert_eq!(
+            beta.apply_remote_update(b, &tail),
+            Err(RemoteRefusal::MissingHistory)
+        );
+        assert_eq!(roster(&beta), before);
+        assert_eq!(beta.next_chip_id, next_chip, "a refusal minted a record");
     }
 
     #[test]
@@ -5180,17 +5410,17 @@ mod tests {
             self.beta.apply_remote_update(self.pages[page].1, batch)
         }
 
+        /// Whether both bodies read alike, objects compared by identity.
         fn agree(&self, page: usize) -> bool {
             let (id, mirror, _) = &self.pages[page];
-            self.alpha.sheet(*id).unwrap().segments()
-                == self.beta.sheet(*mirror).unwrap().segments()
+            self.alpha.sheet(*id).unwrap().document.runs()
+                == self.beta.sheet(*mirror).unwrap().document.runs()
         }
 
-        fn mirrors(&self) -> Vec<Vec<Segment>> {
-            self.pages
-                .iter()
-                .map(|(_, mirror, _)| self.beta.sheet(*mirror).unwrap().segments().to_vec())
-                .collect()
+        /// Deliver beta's batch for a page to alpha, as alpha's sweep asks for it.
+        fn return_to_alpha(&mut self, page: usize) -> Result<(), RemoteRefusal> {
+            let (id, mirror, _) = self.pages[page].clone();
+            ship(&self.beta, mirror, &mut self.alpha, id)
         }
     }
 
@@ -5228,51 +5458,46 @@ mod tests {
     ) {
         let mut pair = TwoPages::inked(["ink ", "dest "]);
         let (home, away) = (pair.pages[0].0, pair.pages[1].0);
-        let before = pair.mirrors();
         let chip = pair.alpha.seal_text_at(home, "the secret", 4, 0).unwrap();
+        let uuid = uuid_of(&pair.alpha, chip);
         let sealed = pair.publish(0);
-        assert_eq!(pair.deliver(0, &sealed), Err(RemoteRefusal::ChipRoster));
+        assert_eq!(pair.deliver(0, &sealed), Ok(()));
+        assert!(pair.agree(0));
 
         carry(&mut pair.alpha, home, away);
         let batches = [pair.publish(0), pair.publish(1)];
-        let mut refusals = [Ok(()), Ok(())];
         for page in order {
-            refusals[page] = pair.deliver(page, &batches[page]);
+            assert_eq!(pair.deliver(page, &batches[page]), Ok(()));
+            assert!(pair.agree(page), "each page agrees on its own");
         }
-        // The source builds on the refused seal; the destination stands an
-        // object its mirror does not own.
-        assert_eq!(
-            refusals,
-            [
-                Err(RemoteRefusal::MissingHistory),
-                Err(RemoteRefusal::ChipRoster)
-            ]
-        );
-        assert_eq!(pair.mirrors(), before, "the peer holds what it held");
-        assert!(
-            pair.beta
-                .sheets()
-                .all(|sheet| sheet.chip_count() == 0 && sheet.detached().next().is_none()),
-            "no object on any page of the peer, so none twice"
-        );
+        type_on(&mut pair.alpha, away, " later");
+        let later = pair.publish(1);
+        assert_eq!(pair.deliver(1, &later), Ok(()));
+        assert!(pair.agree(0) && pair.agree(1));
+        for batch in batches.iter().chain([&sealed, &later]) {
+            assert!(!contains(batch, b"the secret"));
+        }
+
+        // The peer keeps one record, standing where the object went, with no value.
+        let mirror_away = pair.pages[1].1;
+        let records = records_of(&pair.beta, uuid);
+        assert_eq!(records.len(), 1, "one record for the object on the peer");
+        let (page, record) = records[0];
+        assert_eq!(page, mirror_away);
+        assert!(pair.beta.sheet(page).unwrap().chip(record.id()).is_some());
+        assert!(!record.is_local());
 
         // On alpha the object stands once, where it was carried, intact.
-        assert!(pair.alpha.sheet(home).unwrap().chip(chip).is_none());
-        assert!(pair.alpha.sheet(home).unwrap().detached().next().is_none());
+        assert_eq!(records_of(&pair.alpha, uuid).len(), 1);
         assert!(pair.alpha.sheet(away).unwrap().chip(chip).is_some());
         assert_eq!(
             pair.alpha.copy_out_chip(chip).unwrap().0.as_slice(),
             b"the secret"
         );
-
-        // Every later batch of the destination builds on the refused one.
-        type_on(&mut pair.alpha, away, " later");
-        let later = pair.publish(1);
-        assert_eq!(pair.deliver(1, &later), Err(RemoteRefusal::MissingHistory));
     }
 
     #[test]
-    fn sync_carries_no_object_so_a_move_between_pages_stands_none_on_a_peer() {
+    fn a_move_between_pages_reaches_a_peer_as_one_record_with_no_value_in_either_order() {
         for order in [[1, 0], [0, 1]] {
             carry_an_object_between_pages(order, |store, home, away| {
                 let placed = store.move_range_to(home, 4, 1, away, 0).unwrap();
@@ -5282,7 +5507,8 @@ mod tests {
     }
 
     #[test]
-    fn sync_carries_no_object_so_a_cut_reattached_on_another_page_stands_none_on_a_peer() {
+    fn a_cut_reattached_on_another_page_reaches_a_peer_as_one_record_with_no_value_in_either_order()
+    {
         for order in [[1, 0], [0, 1]] {
             carry_an_object_between_pages(order, |store, home, away| {
                 store.cut_fragment(home, 4, 1).unwrap();
@@ -5290,6 +5516,268 @@ mod tests {
                 assert_eq!(placed.reattached, 1);
             });
         }
+    }
+
+    /// Two inked pages with an object sealed on alpha's first, which beta moves
+    /// to its second; nothing of the move has reached alpha yet.
+    fn moved_by_the_peer() -> (TwoPages, ChipId, ItemId) {
+        let mut pair = TwoPages::inked(["ink ", "dest "]);
+        let home = pair.pages[0].0;
+        let chip = pair.alpha.seal_text_at(home, "the secret", 4, 0).unwrap();
+        let uuid = uuid_of(&pair.alpha, chip);
+        let sealed = pair.publish(0);
+        pair.deliver(0, &sealed).unwrap();
+        let (mirror_home, mirror_away) = (pair.pages[0].1, pair.pages[1].1);
+        let placed = pair
+            .beta
+            .move_range_to(mirror_home, 4, 1, mirror_away, 0)
+            .unwrap();
+        assert_eq!(placed.reattached, 1);
+        (pair, chip, uuid)
+    }
+
+    #[test]
+    fn a_peers_move_between_pages_takes_the_value_to_the_destination_in_either_order() {
+        for order in [[1, 0], [0, 1]] {
+            let (mut pair, chip, uuid) = moved_by_the_peer();
+            for page in order {
+                assert_eq!(pair.return_to_alpha(page), Ok(()));
+                assert!(pair.agree(page));
+            }
+            let away = pair.pages[1].0;
+            let records = records_of(&pair.alpha, uuid);
+            assert_eq!(records.len(), 1, "the value moved, never copied");
+            assert_eq!(records[0].0, away);
+            assert!(pair.alpha.sheet(away).unwrap().chip(chip).is_some());
+            assert_eq!(
+                pair.alpha.copy_out_chip(chip).unwrap().0.as_slice(),
+                b"the secret"
+            );
+            assert_eq!(ended_on_record(&pair.alpha, uuid), 0);
+        }
+    }
+
+    #[test]
+    fn a_source_page_that_ends_leaves_its_value_on_the_page_that_stands_it() {
+        let (mut pair, chip, uuid) = moved_by_the_peer();
+        let (home, away) = (pair.pages[0].0, pair.pages[1].0);
+        assert_eq!(pair.return_to_alpha(1), Ok(()));
+        let standing = records_of(&pair.alpha, uuid);
+        assert_eq!(
+            standing.len(),
+            2,
+            "the value at home, a record with none away"
+        );
+        let home_uuid = pair.alpha.sheet(home).unwrap().uuid();
+
+        assert!(pair.alpha.discard_page(home));
+        let records = records_of(&pair.alpha, uuid);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].0, away);
+        assert!(pair.alpha.sheet(away).unwrap().chip(chip).is_some());
+        assert_eq!(
+            pair.alpha.copy_out_chip(chip).unwrap().0.as_slice(),
+            b"the secret"
+        );
+        assert_eq!(
+            ended_on_record(&pair.alpha, uuid),
+            0,
+            "the value did not end"
+        );
+        assert_eq!(ended_on_record(&pair.alpha, home_uuid), 1, "the page did");
+    }
+
+    #[test]
+    fn a_value_cut_while_its_sentinel_stands_on_another_page_goes_there_and_the_cut_ends() {
+        let (mut pair, chip, uuid) = moved_by_the_peer();
+        let (home, away) = (pair.pages[0].0, pair.pages[1].0);
+        assert_eq!(pair.return_to_alpha(1), Ok(()));
+
+        pair.alpha.cut_fragment(home, 4, 1).unwrap();
+        assert!(
+            pair.alpha.active_cut().is_none(),
+            "its object left the page"
+        );
+        assert!(
+            !pair.alpha.can_undo(home),
+            "a step could stand it here again"
+        );
+        let records = records_of(&pair.alpha, uuid);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].0, away);
+        assert!(pair.alpha.sheet(away).unwrap().chip(chip).is_some());
+        assert_eq!(
+            pair.alpha.copy_out_chip(chip).unwrap().0.as_slice(),
+            b"the secret"
+        );
+    }
+
+    /// One page on each device holding `one ￼two three`, its object sealed on alpha.
+    fn shared_object() -> (
+        SheetStore<ManualClock>,
+        SheetStore<ManualClock>,
+        SheetId,
+        SheetId,
+        ChipId,
+    ) {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().1;
+        let b = beta.new_tab().1;
+        assert!(alpha.apply_ops(a, &typed(0, "one two three")));
+        let chip = alpha.seal_text_at(a, "the secret", 4, 0).unwrap();
+        ship(&alpha, a, &mut beta, b).unwrap();
+        (alpha, beta, a, b, chip)
+    }
+
+    /// Each device's batch past the other's frontier, both taken before either applies.
+    fn exchange(
+        alpha: &mut SheetStore<ManualClock>,
+        a: SheetId,
+        beta: &mut SheetStore<ManualClock>,
+        b: SheetId,
+    ) {
+        let to_beta = alpha
+            .export_document_updates(a, &beta.document_version(b).unwrap())
+            .unwrap();
+        let to_alpha = beta
+            .export_document_updates(b, &alpha.document_version(a).unwrap())
+            .unwrap();
+        assert_eq!(alpha.apply_remote_update(a, &to_alpha), Ok(()));
+        assert_eq!(beta.apply_remote_update(b, &to_beta), Ok(()));
+    }
+
+    fn standings(store: &SheetStore<ManualClock>, id: SheetId) -> Vec<ItemId> {
+        store.sheet(id).unwrap().document.live_chips()
+    }
+
+    #[test]
+    fn a_doubled_identity_from_a_merge_converges_on_one_standing_on_both_devices() {
+        let (mut alpha, mut beta, a, b, chip) = shared_object();
+        let uuid = uuid_of(&alpha, chip);
+        alpha.cut_fragment(a, 4, 1).unwrap();
+        assert_eq!(alpha.paste_active_cut(a, 0, 0).unwrap().reattached, 1);
+        assert!(beta.move_range(b, 4, 1, 14).is_some());
+
+        // The merge stands it twice on each device, which takes out its later one.
+        exchange(&mut alpha, a, &mut beta, b);
+        assert_eq!(standings(&alpha, a), vec![uuid]);
+        assert_eq!(standings(&beta, b), vec![uuid]);
+        exchange(&mut alpha, a, &mut beta, b);
+        assert_eq!(
+            alpha.sheet(a).unwrap().document.runs(),
+            beta.sheet(b).unwrap().document.runs()
+        );
+        assert_eq!(body(&alpha, a), "\u{FFFC}one two three");
+        assert_eq!(records_of(&alpha, uuid).len(), 1);
+        assert_eq!(records_of(&beta, uuid).len(), 1);
+        assert_eq!(
+            alpha.copy_out_chip(chip).unwrap().0.as_slice(),
+            b"the secret"
+        );
+    }
+
+    #[test]
+    fn concurrent_standings_of_one_identity_keep_the_first_in_body_order_on_both_devices() {
+        let (mut alpha, mut beta, a, b, chip) = shared_object();
+        let uuid = uuid_of(&alpha, chip);
+        assert!(alpha.move_range(a, 4, 1, 14).is_some());
+        assert!(beta.move_range(b, 4, 1, 0).is_some());
+
+        exchange(&mut alpha, a, &mut beta, b);
+        exchange(&mut alpha, a, &mut beta, b);
+        for (store, id) in [(&alpha, a), (&beta, b)] {
+            assert_eq!(standings(store, id), vec![uuid]);
+            assert_eq!(body(store, id), "\u{FFFC}one two three", "the first stands");
+        }
+        assert_eq!(
+            alpha.sheet(a).unwrap().document.runs(),
+            beta.sheet(b).unwrap().document.runs()
+        );
+    }
+
+    #[test]
+    fn a_burned_identity_a_peer_stands_again_is_taken_out_and_the_peer_converges() {
+        let (mut alpha, mut beta, a, b, chip) = shared_object();
+        let uuid = uuid_of(&alpha, chip);
+        take_out(&mut beta, b, 4);
+        assert!(alpha.delete_chip(chip));
+        ship(&alpha, a, &mut beta, b).unwrap();
+        assert!(beta.undo(b), "the peer steps back over its removal");
+        assert_eq!(standings(&beta, b), vec![uuid]);
+
+        ship(&beta, b, &mut alpha, a).unwrap();
+        assert!(standings(&alpha, a).is_empty(), "taken out on import");
+        assert!(records_of(&alpha, uuid).is_empty());
+        assert_eq!(ended_on_record(&alpha, uuid), 1);
+        assert!(!alpha.undo(a), "no step stands it again");
+
+        ship(&alpha, a, &mut beta, b).unwrap();
+        assert!(standings(&beta, b).is_empty());
+        assert_eq!(
+            alpha.sheet(a).unwrap().document.runs(),
+            beta.sheet(b).unwrap().document.runs()
+        );
+    }
+
+    #[test]
+    fn an_identity_whose_page_ended_here_is_taken_out_when_a_peer_stands_it_again() {
+        let (mut alpha, clock) = store();
+        let (mut beta, _) = store();
+        let home = alpha.new_tab().1;
+        let (away_tab, away) = alpha.new_tab();
+        // Before anything ships, since a rung change compacts the page (ADR-0013).
+        alpha
+            .set_rung(away_tab, Ttl::from_secs(24 * 60 * 60).unwrap())
+            .unwrap();
+        let (mirror_home, mirror_away) = (beta.new_tab().1, beta.new_tab().1);
+        type_on(&mut alpha, home, "ink ");
+        type_on(&mut alpha, away, "dest ");
+        let chip = alpha.seal_text_at(home, "the secret", 4, 0).unwrap();
+        let uuid = uuid_of(&alpha, chip);
+        ship(&alpha, home, &mut beta, mirror_home).unwrap();
+        ship(&alpha, away, &mut beta, mirror_away).unwrap();
+        beta.move_range_to(mirror_home, 4, 1, mirror_away, 0)
+            .unwrap();
+
+        clock.advance(9 * HOUR);
+        assert_eq!(alpha.expire_due(), vec![home]);
+        assert_eq!(ended_on_record(&alpha, uuid), 1);
+
+        ship(&beta, mirror_away, &mut alpha, away).unwrap();
+        assert!(standings(&alpha, away).is_empty());
+        assert!(records_of(&alpha, uuid).is_empty());
+        ship(&alpha, away, &mut beta, mirror_away).unwrap();
+        assert!(standings(&beta, mirror_away).is_empty());
+        assert_eq!(
+            alpha.sheet(away).unwrap().document.runs(),
+            beta.sheet(mirror_away).unwrap().document.runs()
+        );
+    }
+
+    #[test]
+    fn a_key_frame_standing_an_unknown_identity_admits_a_record_with_no_value() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().1;
+        type_on(&mut alpha, a, "ink ");
+        let chip = alpha.seal_text_at(a, "the secret", 4, 0).unwrap();
+        let uuid = uuid_of(&alpha, chip);
+        let frame = alpha.sheet(a).unwrap().document.export_snapshot();
+        assert!(!contains(&frame, b"the secret"));
+
+        let fresh = beta.new_tab().1;
+        let page = alpha.sheet(a).unwrap().uuid();
+        assert_eq!(beta.adopt_key_frame(fresh, page, &frame), Ok(()));
+        let records = records_of(&beta, uuid);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].0, fresh);
+        assert!(!records[0].1.is_local());
+        assert_eq!(standings(&beta, fresh), vec![uuid]);
+        assert_eq!(
+            beta.sheet(fresh).unwrap().document.runs(),
+            alpha.sheet(a).unwrap().document.runs()
+        );
     }
 
     #[test]
@@ -5319,10 +5807,9 @@ mod tests {
 
         let refusal = ship(&alpha, a, &mut beta, b);
         assert!(
-            matches!(
-                refusal,
-                Err(RemoteRefusal::MissingHistory | RemoteRefusal::ChipRoster)
-            ) || { beta.sheet(b).unwrap().segments() != alpha.sheet(a).unwrap().segments() },
+            matches!(refusal, Err(RemoteRefusal::MissingHistory)) || {
+                beta.sheet(b).unwrap().segments() != alpha.sheet(a).unwrap().segments()
+            },
             "a stale mirror must never silently agree across a ceremony"
         );
 

@@ -155,6 +155,8 @@ impl<C: Clock> SheetStore<C> {
                 members,
                 envelope: envelope.clone(),
             });
+            // The settle may have moved a value to a page standing its sentinel.
+            self.end_a_broken_cut();
         }
         Ok(Copied { envelope, plain })
     }
@@ -512,7 +514,7 @@ impl<C: Clock> SheetStore<C> {
 
     /// The newest `expired` or `discarded` record for an identity, the only
     /// evidence of how an object ended (Law 0001, lifecycle states).
-    fn terminal_cause(&self, uuid: ItemId) -> Option<LedgerEvent> {
+    pub(crate) fn terminal_cause(&self, uuid: ItemId) -> Option<LedgerEvent> {
         self.ledger
             .iter()
             .find(|record| {
