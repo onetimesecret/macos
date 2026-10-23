@@ -807,9 +807,9 @@ and are not in the app.
 | --- | --- |
 | Parsing | Both shims parse with `CMARK_OPT_DEFAULT` and render nothing; Swift reads the node tree, the reference map and block source positions. The GFM shim attaches `table`, `strikethrough`, `autolink`, `tagfilter` and `tasklist`, and parses under one process wide lock because cmark-gfm's special character table and patch `0003`'s cell budget are global. cmark-gfm frees its reference map when a parse finishes, so the GFM shim copies the map in a postprocess extension first. Each shim refuses input over 256 MiB. |
 | Input | Before parsing, CR and CRLF become LF, NUL becomes U+FFFD and a leading U+FEFF is dropped, as cmark treats each, so block columns count the bytes the parser reads. The composer's 1,000,000 scalar input limit applies first. |
-| Placeholders | Object k is the scalar base + k in U+100000..U+10FFFD. The base is the lowest whose window avoids every plane 16 scalar in the page and every terminated decimal or hexadecimal numeric reference value. The scalar is private use, neither punctuation nor whitespace in either dialect, so it flanks delimiter runs as a letter does. |
+| Placeholders | Object k is the scalar base + k in U+100000..U+10FFFD. The base is the lowest whose window avoids every plane 16 scalar in the page and every terminated decimal or hexadecimal numeric reference value. A page with more than 65,534 objects, or fewer when its own plane 16 scalars split the range, has no window. The scalar is private use, neither punctuation nor whitespace in either dialect, so it flanks delimiter runs as a letter does. |
 | Atoms | Text, code, raw HTML, fence info, destinations and titles are split at placeholders into `HTMLPart.object` parts; no placeholder reaches the composer as text. `MarkdownDocument.atoms` lists each object's identity, its index, and its UTF-16 offset. |
-| Ownership | Text, code spans, code blocks, raw HTML and fence info emit their objects in place; fence info objects are part of `codeBlock(info:)`. A link's own destination or title object is emitted where the link opens and an image's after its alt text, unless the label or alt text already showed it. An object in a reference definition's label, destination or title stays at the definition, and every address that uses the definition has a U+FFFC stand-in, which the composer refuses. |
+| Ownership | Text, code spans, code blocks, raw HTML and fence info emit their objects in place; fence info objects are part of `codeBlock(info:)`. A link's own destination and title objects follow its label, outside the link, and an image's follow its alt text, as they do in the source, unless the label or alt text already showed them, and a link or image inside alt text follows the same order. The link's `enterLink` destination and title have a U+FFFC stand-in for each. An object in a reference definition's label, destination or title stays at the definition, and every address that uses the definition has a stand-in. The composer refuses an address with a stand-in. |
 | Placement | An object no node emitted, a definition's or one in a table cell cmark-gfm dropped, is placed by block source position: in the deepest block quote or list item whose span covers it, before the first block after it; before a covering leaf when it is a definition's; between two list items, in the earlier one; in a table body row, at the end of the row's last kept cell. cmark-gfm gives the paragraph it keeps above a table line 0; that paragraph takes the table's start. Inline source positions are not used. |
 | Links | `enterLink` and `leaveLink` bracket a Markdown link's label. Inside it the innermost Markdown link's address applies, accepted or refused, and no HTML link does. A title object does not refuse the address. |
 | Tables | One cell per header column, as cmark-gfm keeps them; no cell spans. All of a page's tables together may have 100,000 cells (`CompositionLimits.maximumTableCells`), header rows and padded cells included, since cmark-gfm pads a short row to the header's width and its own cap is per table. |
@@ -847,6 +847,35 @@ The lab's earlier run of swift-cmark `08ddb52` with its own HTML writer
 mismatched the same examples except 649 and 650, which matched there, and
 279, 280 and 633, which mismatched there.
 
+Where cmark-gfm and the published page differ, the GFM dialect is what
+cmark-gfm 0.29.0.gfm.13 does, and none of the differences is patched. The
+[published page](https://github.github.com/gfm/) states:
+
+> GitHub Flavored Markdown, often shortened as GFM, is the dialect of Markdown that is currently supported for user content on GitHub.com and GitHub Enterprise.
+
+Its latest version is `Version 0.29-gfm (2019-04-06)`. The
+[cmark-gfm README](https://github.com/github/cmark-gfm) describes the
+library as adding
+
+> GitHub Flavored Markdown extensions to the upstream implementation, as defined in the spec.
+
+and cmark-gfm's own `test/spec.txt` at the pinned commit, still headed
+`version: 0.29` and `date: '2019-04-06'`, has already moved past the
+published page in two of the departures. Its extended URL autolink takes
+
+> `http://`, `https://`, or `ftp://`, followed by a [valid domain]
+
+and its comment grammar is CommonMark 0.31's:
+
+> An [HTML comment](@) consists of `<!-->`, `<!--->`, or  `<!--`
+
+A page written as GFM is written for GitHub's renderer, so matching
+GitHub's parser is what a writer expects. The departures the tests pin are
+therefore the dialect's: `textarea` opens an HTML block of the first kind,
+`ftp://` gets an extended autolink (inert in the view, which opens only
+http, https and mailto), `www. x` links `www` to `http://www`, and comments
+follow the CommonMark 0.31 grammar.
+
 #### Object fixtures and native restrictions
 
 [`MarkdownSealedAtomTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownSealedAtomTests.swift)
@@ -861,7 +890,7 @@ a link, the link runs and the image descriptors.
 | P03 | Under GFM an extended autolink ends at an object as at whitespace, and an object before `www.` is a boundary; the object is never in a link's text or address. CommonMark links no bare address. |
 | P04 | An email autolink's local part and domain both end at an object. |
 | P05 | An object beside a pipe, an escaped pipe or an empty cell stays in its cell; an object in an excess cell ends its row's last kept cell, in a block quote and a list item too; an object in the delimiter row leaves no table. CommonMark keeps the lines as paragraph text. |
-| P06 | Label and alt text objects stay in their element and are never linked. An inline destination's object stands where the element opens and refuses the address; a title's stands there and leaves the address live. An object between `]` and `(` breaks the link, and GFM then autolinks the exposed URL. A definition's object stays at the definition and every use refuses the address. An angle autolink shows its object once and opens nothing. |
+| P06 | Label and alt text objects stay in their element and are never linked. An inline destination's object follows the element's text and refuses the address; a title's follows it too and leaves the address live. An object between `]` and `(` breaks the link, and GFM then autolinks the exposed URL. A definition's object stays at the definition and every use refuses the address. An angle autolink shows its object once and opens nothing. |
 | P07 | An object where a tag or attribute name continues leaves literal text. Attribute value and comment objects stand where their tag stands. An `img` source with an object is refused, and `srcset` and CSS addresses show only their objects. HTML block and `script` body objects show in place. |
 
 The same file covers the R1 row's ordinary text cases: single, double and
@@ -882,7 +911,7 @@ composes as text in both dialects.
 | [`MarkdownCorpusTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownCorpusTests.swift) | Download checksums, example numbering, the GFM extraction against the lab's, and both corpora against the mismatch table. |
 | [`MarkdownSealedAtomTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownSealedAtomTests.swift) | Ordinary text conformance, P01 to P07 and native restrictions, as above. |
 | [`PreviewComposerTests.swift`](../../../shell/Tests/CompanionKitTests/PreviewComposerTests.swift) | The new events: breaks, a Markdown link over HTML links, a refused link shadowing them, destination and title objects at the link's opening, title objects leaving the address, empty and stand-in addresses, an image's title objects in its fallback, unbalanced link events and link events in raw text, and depth. |
-| [`MarkdownPreviewRenderingTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownPreviewRenderingTests.swift) | `testTableCellsNeverSpanSoEmptyAndCaretCellsKeepTheirOwnColumns` replaces the `\|\|` and `^` span expectations, and `testAnObjectInALinkDestinationStandsWhereTheLinkOpens` replaces the flush expectation. |
+| [`MarkdownPreviewRenderingTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownPreviewRenderingTests.swift) | `testTableCellsNeverSpanSoEmptyAndCaretCellsKeepTheirOwnColumns` replaces the `\|\|` and `^` span expectations, and `testAnObjectInALinkDestinationFollowsTheLabel` replaces the flush expectation. |
 
 Before this record, the agent writing the object fixtures and an adversarial
 review of the slice ran inputs against the parser and the renderer and
@@ -917,26 +946,32 @@ pass and VoiceOver.
 - R2 exposes CommonMark; until then the CommonMark adapter runs only in
   tests. R3's open item on inline raw text tags under CommonMark
   composition still applies.
-- cmark-gfm 0.29.0.gfm.13 departs from published GFM 0.29-gfm where the
-  tests show it: `textarea` opens an HTML block of the first kind, `ftp://`
-  gets an extended autolink (inert in the view), `www. x` links `www` to
-  `http://www`, and comments follow the CommonMark 0.31 grammar. Decide
-  whether the GFM dialect is published 0.29-gfm or this parser, and patch
-  or record each.
-- A title object leaves its address live (P06). ADR-0059's refusal names
-  destinations; confirm that titles are outside it.
-- A link's destination and title objects show before its label, where it
-  opens, and an image's after its alt text. In source order both come
-  after, so a link with objects in its label and its destination renders
-  and copies them out of source order. Choose one rule for both.
-- Placement by block source position is this slice's rule; no accepted
-  source fixes where an object no node emitted shows. Review it against
-  Law 0001.
-- A page with more than 65,534 sealed objects, or fewer when its own plane
-  16 scalars split the range, has no placeholder window and renders as
-  plain text.
 - Parse and render time on large pages is not recorded here; R6 benchmarks
   it.
+
+#### Choices made in this slice
+
+At the maintainer's direction on 2026-10-23 to settle these by practical
+judgment and idiomatic behavior:
+
+- The GFM dialect is cmark-gfm's reading where it departs from the
+  published page, as [Ordinary text conformance](#ordinary-text-conformance)
+  sets out.
+- A title object leaves its link live. [ADR-0059](../../adr/0059-preview-images-use-an-explicit-resource-request-route.md)
+  decision 5 says to
+
+  > Reject every resource address containing a sealed object or its parser placeholder
+
+  and a title is a tooltip, not an address the app would load or open.
+- A link's own destination and title objects follow its label, as an
+  image's follow its alt text: both then show and copy in source order,
+  and ADR-0059 decision 5 already asks R1 to place alt text objects
+  "without dropping or reordering those objects". The walker had put a
+  link's objects before its label; it now emits them after `leaveLink`.
+- Placement by block source position applies the governing sentence of
+  [Law 0001](../../law/0001-sealed-object.md): "A sealed item occupies one
+  position in the document". An object no node shows takes the nearest
+  block boundary to its source, once, and the copy follows rendered order.
 
 ## Acceptance criteria
 
