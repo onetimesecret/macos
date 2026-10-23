@@ -153,6 +153,11 @@ stack.
 - A peer can show `value on another device` for an object its sealer
   burned, until the page ends or the sealer's device sees that
   identity stand again.
+- An enrolled peer's move can lengthen a value's life on the device
+  that has it, as a local move can under ADR-0057: the move is the
+  person's instruction, as the hold is under ADR-0021. ADR-0021's
+  earliest expiry rule governs a page's deadline, not where a value
+  stands.
 - An earlier build still refuses these batches on `ChipRoster` and
   skips the two new envelopes; no capability negotiation exists. No
   user meets this before the relay ships.
