@@ -995,9 +995,9 @@ final class BackdropModelTests: XCTestCase {
 
         XCTAssertTrue(model.editorWindowCanTakeKeys)
         XCTAssertEqual(
-            ActivationRouter.decide(
-                .lateActivation,
-                in: ActivationContext(
+            ActivationRouter.routeForActivation(
+                pendingSummon: nil,
+                context: ActivationContext(
                     ambientPanelEnabled: model.ambientPanelEnabled,
                     owner: model.pages.owner,
                     claimedByAnotherWindow: false

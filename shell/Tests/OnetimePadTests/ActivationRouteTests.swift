@@ -49,8 +49,8 @@ final class ActivationRouteTests: XCTestCase {
     func testOrdinaryActivationLeavesWindowOrderingToAppKit() {
         for enabled in [false, true] {
             for owner in [PresentationOwner.panel, .editorWindow] {
-                XCTAssertEqual(ActivationRouter.decide(.lateActivation,
-                    in: base(ambientPanelEnabled: enabled, owner: owner)), .noop)
+                XCTAssertEqual(ActivationRouter.routeForActivation(pendingSummon: nil,
+                    context: base(ambientPanelEnabled: enabled, owner: owner)), .noop)
             }
         }
     }
@@ -101,23 +101,11 @@ final class ActivationRouteTests: XCTestCase {
 
     // MARK: About and Settings keep their claim
 
-    func testActivationsClaimedByAnotherWindowNoop() {
-        // About and Settings activate the app for themselves. Every
-        // activation reason honours their claim; every summon does
-        // not, because a hotkey inside an About sheet is still a
-        // summon.
-        for reason in [
-            ActivationReason.launchActivation,
-            .lateActivation,
-            .reopen,
-        ] {
-            XCTAssertEqual(
-                ActivationRouter.decide(
-                    reason,
-                    in: base(claimedByAnotherWindow: true)
-                ),
-                .noop
-            )
+    func testExplicitLaunchAndReopenRoutesDoNotReadAnUnusedCompanionFlag() {
+        for claimed in [false, true] {
+            let context = base(claimedByAnotherWindow: claimed)
+            XCTAssertEqual(ActivationRouter.decide(.launchActivation, in: context), .openEditorWindow(.summon))
+            XCTAssertEqual(ActivationRouter.decide(.reopen, in: context), .openEditorWindow(.activation))
         }
     }
 

@@ -1,10 +1,9 @@
 import CompanionKit
 import Foundation
 
-/// Explicit presentation requests and ordinary application activation (ADR-0059).
+/// Explicit presentation requests (ADR-0059).
 enum ActivationReason: Equatable, Sendable {
     case launchActivation
-    case lateActivation
     case reopen
     case modalReturn
     case cancelledQuit
@@ -49,12 +48,8 @@ enum ActivationRouter {
         case .showAmbientPresentation:
             return context.ambientPanelEnabled ? .showAmbientPanel : .noop
         case .launchActivation:
-            if context.claimedByAnotherWindow { return .noop }
             return .openEditorWindow(.summon)
-        case .lateActivation:
-            return .noop
         case .reopen:
-            if context.claimedByAnotherWindow { return .noop }
             return .openEditorWindow(.activation)
         case .modalReturn, .cancelledQuit:
             switch context.owner {

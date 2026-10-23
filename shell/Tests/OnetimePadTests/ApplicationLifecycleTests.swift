@@ -7,31 +7,37 @@ import XCTest
 
 @MainActor
 final class ApplicationLifecycleTests: XCTestCase {
-    private func withApplication(keymapOverride: String? = nil, _ test: (BackdropAppDelegate, BackdropModel) throws -> Void) rethrows {
+    private func withApplication(keymapOverride: String? = nil, _ test: (BackdropAppDelegate, BackdropModel) throws -> Void) throws {
         _ = NSApplication.shared
         let suite = "onetimepad.lifecycle.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
         defer {
             defaults.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(at: directory)
         }
         companion_init()
-        let handle = suite.withCString { companion_new_ephemeral($0) }!
+        let handle = try XCTUnwrap(suite.withCString { companion_new_ephemeral($0) })
         var overrideURL: URL?
         if let keymapOverride {
-            try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let file = directory.appendingPathComponent("keymap.json")
-            try! keymapOverride.write(to: file, atomically: true, encoding: .utf8)
+            try keymapOverride.write(to: file, atomically: true, encoding: .utf8)
             overrideURL = file
         }
         let pages = PageModel(formFactor: .backdrop, defaults: defaults,
             seams: .init(stateDirectory: directory, client: CompanionClient(adopting: handle), keymapOverride: overrideURL))
         let model = BackdropModel(defaults: defaults, pages: pages)
+        let originalWindows = Set(NSApp.windows.map(ObjectIdentifier.init))
+        defer {
+            for window in NSApp.windows where !originalWindows.contains(ObjectIdentifier(window)) {
+                window.close()
+            }
+        }
         try test(BackdropAppDelegate(model: model), model)
     }
 
-    func testUnbundledAndUnrecognizedLaunchesAreRejected() {
+    func testUnbundledAndUnrecognizedLaunchesAreRejected() throws {
         for identifier in [nil, "", "dev.onetimepad.settings-lifecycle-probe", "com.example.OnetimePad",
                            "dev.onetimesecret.pad.debug.copy", "com.onetimesecret.companion"] as [String?] {
             XCTAssertFalse(AppLaunchIdentity.accepts(identifier))
@@ -59,8 +65,8 @@ final class ApplicationLifecycleTests: XCTestCase {
         }
     }
 
-    func testBackgroundStartupAndOrdinaryActivationOpenNoSettingsOrEditor() {
-        withApplication { app, model in
+    func testBackgroundStartupAndOrdinaryActivationOpenNoSettingsOrEditor() throws {
+        try withApplication { app, model in
             var initialOpens = 0
             app.selectInitialEditor = { initialOpens += 1 }
             app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
@@ -73,8 +79,8 @@ final class ApplicationLifecycleTests: XCTestCase {
         }
     }
 
-    func testForegroundOpenWaitsForStartupAndIsConsumedOnce() {
-        withApplication { app, model in
+    func testForegroundOpenWaitsForStartupAndIsConsumedOnce() throws {
+        try withApplication { app, model in
             var opens = 0
             app.selectInitialEditor = { opens += 1 }
             XCTAssertTrue(app.applicationShouldOpenUntitledFile(NSApplication.shared))
@@ -85,6 +91,228 @@ final class ApplicationLifecycleTests: XCTestCase {
             app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
             XCTAssertEqual(opens, 1)
             XCTAssertNil(app.madeSettings)
+            XCTAssertFalse(model.editorWindowOpen)
+        }
+    }
+
+    func testQueuedFinderOpenSupersedesPendingUntitledOpen() throws {
+        for finderFirst in [false, true] {
+            try withApplication { app, model in
+                let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let file = directory.appendingPathComponent("notes.txt")
+                try "notes".write(to: file, atomically: true, encoding: .utf8)
+                let pages = model.pages
+                pages.loadStateIfNeeded()
+                pages.showsTimeUnits = true
+                pages.perform(.pageNew)
+                var initialOpens = 0, finderOpens = 0, anchors = 0
+                pages.installTodayAnchor({ anchors += 1 }, from: pages.owner)
+                XCTAssertNotNil(pages.onAnchorToday)
+                app.selectEditor = { finderOpens += 1 }
+                app.selectInitialEditor = { initialOpens += 1; pages.anchorOnToday() }
+                if finderFirst { app.application(NSApp, open: [file]) }
+                XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+                if !finderFirst { app.application(NSApp, open: [file]) }
+
+                app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+
+                XCTAssertEqual(finderOpens, 1)
+                XCTAssertEqual(initialOpens, 0)
+                XCTAssertEqual(anchors, 0)
+                XCTAssertEqual(pages.selectedFile, pages.openFiles.first?.id)
+                XCTAssertNotNil(pages.selectedFile)
+                XCTAssertEqual(pages.activeFile.map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path },
+                               file.resolvingSymlinksInPath().path)
+                XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+                app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+                XCTAssertEqual(initialOpens, 0)
+                XCTAssertEqual(anchors, 0)
+                XCTAssertEqual(pages.activeFile.map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path },
+                               file.resolvingSymlinksInPath().path)
+            }
+        }
+    }
+
+    func testReopenBeforeStartupDoesNotReplayAsAnInitialLaunch() throws {
+        for defaultLaunch in [true, false] {
+            try withApplication { app, model in
+                model.pages.loadStateIfNeeded()
+                model.pages.showsTimeUnits = true
+                model.pages.perform(.pageNew)
+                var initialOpens = 0, anchors = 0
+                app.selectInitialEditor = { initialOpens += 1; model.pages.anchorOnToday() }
+                model.pages.installTodayAnchor({ anchors += 1 }, from: model.pages.owner)
+                XCTAssertNotNil(model.pages.onAnchorToday)
+
+                XCTAssertFalse(app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false))
+                app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification,
+                    userInfo: [NSApplication.launchIsDefaultUserInfoKey: defaultLaunch]))
+                app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+
+                XCTAssertEqual(initialOpens, 0)
+                XCTAssertEqual(anchors, 0)
+                XCTAssertTrue(model.editorWindowOpen)
+                XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+                XCTAssertEqual(initialOpens, 0)
+                XCTAssertEqual(anchors, 0)
+            }
+        }
+    }
+
+    func testNonDefaultLaunchSuppressesQueuedAndLaterUntitledOpen() throws {
+        for queued in [true, false] {
+            try withApplication { app, model in
+                var initialOpens = 0
+                app.selectInitialEditor = { initialOpens += 1 }
+                if queued { XCTAssertTrue(app.applicationOpenUntitledFile(NSApp)) }
+                app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification,
+                    userInfo: [NSApplication.launchIsDefaultUserInfoKey: false]))
+                if !queued { XCTAssertTrue(app.applicationOpenUntitledFile(NSApp)) }
+                model.pages.perform(.pageNew)
+                let selection = model.pages.selection
+                XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+
+                XCTAssertEqual(initialOpens, 0)
+                XCTAssertEqual(model.pages.selection, selection)
+                XCTAssertFalse(model.editorWindowOpen)
+            }
+        }
+    }
+
+    func testExplicitDefaultLaunchConsumesQueuedUntitledOpen() throws {
+        try withApplication { app, _ in
+            var initialOpens = 0
+            app.selectInitialEditor = { initialOpens += 1 }
+            XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification,
+                userInfo: [NSApplication.launchIsDefaultUserInfoKey: true]))
+            XCTAssertEqual(initialOpens, 1)
+        }
+    }
+
+    func testRepeatedUntitledOpenUsesReopenWithoutAnchoringAgain() throws {
+        try withApplication { app, model in
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let file = directory.appendingPathComponent("notes.txt")
+            try "notes".write(to: file, atomically: true, encoding: .utf8)
+            let pages = model.pages
+            pages.loadStateIfNeeded()
+            pages.showsTimeUnits = true
+            pages.perform(.pageNew)
+            var initialOpens = 0, anchors = 0
+            pages.installTodayAnchor({ anchors += 1 }, from: pages.owner)
+            app.selectInitialEditor = { initialOpens += 1; pages.anchorOnToday() }
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+            XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+            XCTAssertEqual(initialOpens, 1)
+            XCTAssertEqual(anchors, 1)
+            pages.openFile(at: file)
+            let selectedFile = try XCTUnwrap(pages.selectedFile)
+
+            XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+            app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+
+            XCTAssertEqual(initialOpens, 1)
+            XCTAssertEqual(anchors, 1)
+            XCTAssertEqual(pages.selectedFile, selectedFile)
+            XCTAssertTrue(model.editorWindowOpen)
+        }
+    }
+
+    func testQueuedFinderOpenDuringModalSuppressesPendingUntitledUntilDrain() throws {
+        try withApplication { app, model in
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let file = directory.appendingPathComponent("notes.txt")
+            try "notes".write(to: file, atomically: true, encoding: .utf8)
+            model.pages.loadStateIfNeeded()
+            var initialOpens = 0, finderOpens = 0
+            app.selectInitialEditor = { initialOpens += 1 }
+            app.selectEditor = { finderOpens += 1 }
+            XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+            app.application(NSApp, open: [file])
+            ModalSession.run {
+                app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+                XCTAssertEqual(app.finderDocuments, [file])
+                XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+                XCTAssertEqual(initialOpens, 0)
+                XCTAssertEqual(finderOpens, 0)
+            }
+            app.application(NSApp, open: [])
+            XCTAssertEqual(app.finderDocuments, [])
+            XCTAssertEqual(initialOpens, 0)
+            XCTAssertEqual(finderOpens, 1)
+            XCTAssertNotNil(model.pages.selectedFile)
+        }
+    }
+
+    func testNonFileFinderURLDoesNotSuppressPendingUntitledOpen() throws {
+        try withApplication { app, _ in
+            var initialOpens = 0, finderOpens = 0
+            app.selectInitialEditor = { initialOpens += 1 }
+            app.selectEditor = { finderOpens += 1 }
+            XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+            app.application(NSApp, open: [URL(string: "https://example.com/notes.txt")!])
+
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+
+            XCTAssertEqual(app.finderDocuments, [])
+            XCTAssertEqual(initialOpens, 1)
+            XCTAssertEqual(finderOpens, 0)
+        }
+    }
+
+    func testVisibleSettingsKeepsNativeReopenHandling() throws {
+        try withApplication { app, model in
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+            app.openSettings()
+            let settings = try XCTUnwrap(app.madeSettings?.window)
+            defer { settings.close() }
+            XCTAssertTrue(settings.isVisible)
+
+            XCTAssertTrue(app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: true))
+
+            XCTAssertTrue(settings.isVisible)
+            XCTAssertFalse(model.editorWindowOpen)
+            XCTAssertTrue(app.madeSettings?.window === settings)
+        }
+    }
+
+    func testAboutOnlyReopenDoesNotPermitUntitledFallback() throws {
+        try withApplication { app, model in
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+            var initialOpens = 0
+            app.selectInitialEditor = { initialOpens += 1 }
+            app.showAbout()
+            let panel = try XCTUnwrap(NSApp.windows.first { app.isCompanionWindow($0) && $0.isVisible })
+            defer { panel.close() }
+            XCTAssertTrue(panel is NSPanel)
+            let allowNativeReopen = app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+            if allowNativeReopen { _ = app.applicationOpenUntitledFile(NSApp) }
+            XCTAssertFalse(allowNativeReopen)
+            XCTAssertTrue(panel.isVisible)
+            XCTAssertEqual(initialOpens, 0)
+            XCTAssertFalse(model.editorWindowOpen)
+            XCTAssertNil(app.madeSettings)
+        }
+    }
+
+    func testModalReopenDoesNotPermitUntitledFallback() throws {
+        try withApplication { app, model in
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+            var initialOpens = 0
+            app.selectInitialEditor = { initialOpens += 1 }
+            ModalSession.run {
+                let allowNativeReopen = app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+                if allowNativeReopen { _ = app.applicationOpenUntitledFile(NSApp) }
+                XCTAssertFalse(allowNativeReopen)
+            }
+            XCTAssertEqual(initialOpens, 0)
             XCTAssertFalse(model.editorWindowOpen)
         }
     }
@@ -142,7 +370,7 @@ final class ApplicationLifecycleTests: XCTestCase {
         }
     }
 
-    func testAVisibleCompanionPanelPreventsEditorReopen() {
+    func testAVisibleCompanionPanelPreventsEditorReopen() throws {
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 120, height: 80),
                             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
@@ -154,7 +382,7 @@ final class ApplicationLifecycleTests: XCTestCase {
             panel, isAmbientWindow: true, isCompanion: true))
     }
 
-    func testOnlyVisibleOrdinaryWindowsPreventAnEditorReopen() {
+    func testOnlyVisibleOrdinaryWindowsPreventAnEditorReopen() throws {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 120, height: 80),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false

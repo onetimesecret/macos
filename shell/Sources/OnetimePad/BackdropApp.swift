@@ -10,7 +10,7 @@ enum BackdropApp {
     static func main() {
         guard AppLaunchIdentity.accepts(Bundle.main.bundleIdentifier) else {
             FileHandle.standardError.write(Data(
-                "OnetimePad refused startup: launch a packaged app with a recognized bundle identifier. Use scripts/dev.sh for development and scripts/test-shell.sh for isolated tests.\n".utf8))
+                "OnetimePad refused startup (bundle identifier: \(Bundle.main.bundleIdentifier ?? "none")): launch a packaged app with a recognized bundle identifier. Use scripts/dev.sh for development and scripts/test-shell.sh for isolated tests.\n".utf8))
             exit(EXIT_FAILURE)
         }
         let application = NSApplication.shared
@@ -96,7 +96,13 @@ enum ManualLanguageChoiceTarget: Equatable {
 final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private let model: BackdropModel
     private var startupComplete = false
-    private var untitledOpenPending = false
+    private enum PendingApplicationOpen {
+        case untitled
+        case reopen(hasVisibleWindows: Bool)
+    }
+    private var pendingApplicationOpen: PendingApplicationOpen?
+    private var defaultLaunch = true
+    private var initialOpenHandled = false
 
     override init() {
         model = BackdropModel()
@@ -217,23 +223,20 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
         guard startupComplete else {
-            untitledOpenPending = true
+            if case nil = pendingApplicationOpen { pendingApplicationOpen = .untitled }
             return true
         }
+        guard defaultLaunch, finderDocuments.isEmpty else { return true }
+        if initialOpenHandled {
+            _ = applicationShouldHandleReopen(sender, hasVisibleWindows: false)
+            return true
+        }
+        initialOpenHandled = true
         selectInitialEditor()
         return true
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // A regular app, deliberately — the panel's accessory posture
-        // (menu bar only, docs/spec/03 §2) is amended for this form
-        // factor: living in ⌘Tab is what makes flipping between the
-        // work window and the surface (copy from one, paste into the
-        // other) a reflex instead of a remembered chord. The Dock icon
-        // is the fee; whether it makes the surface too central is the
-        // feature spec's open question №7.
-        NSApp.setActivationPolicy(.regular)
-
         let mainMenu = MainMenuController(app: self)
         self.mainMenu = mainMenu
         mainMenu.install()
@@ -346,6 +349,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Drain queued document and application-open events after model startup.
     func completeStartup(_ notification: Notification) {
+        defaultLaunch = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool != false
         startupComplete = true
         // @Published emits before the store, so the drain waits a turn to read the decision gone.
         closeDecisionObserver = pages.$pendingFileClose
@@ -356,10 +360,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in self?.drainFinderDocuments() }
             }
-        drainFinderDocuments()
-        if untitledOpenPending {
-            untitledOpenPending = false
-            _ = applicationOpenUntitledFile(NSApplication.shared)
+        let openedFinderDocument = drainFinderDocuments()
+        if let pendingApplicationOpen {
+            self.pendingApplicationOpen = nil
+            if !openedFinderDocument && finderDocuments.isEmpty {
+                switch pendingApplicationOpen {
+                case .untitled:
+                    _ = applicationOpenUntitledFile(NSApplication.shared)
+                case .reopen(let visible):
+                    _ = applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: visible)
+                }
+            }
         }
     }
 
@@ -498,6 +509,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// Queued, then opened by the drain once startup is done, no modal is
     /// up and no close decision stands.
     func application(_ application: NSApplication, open urls: [URL]) {
+        if urls.contains(where: \.isFileURL) { initialOpenHandled = true }
         finderDocuments += urls
         drainFinderDocuments()
     }
@@ -582,16 +594,22 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {
+        initialOpenHandled = true
         guard startupComplete else {
-            untitledOpenPending = true
+            pendingApplicationOpen = .reopen(hasVisibleWindows: flag)
             return false
         }
         pages.checkOpenFilesOnActivate()
-        let visibleWindow = sender.windows.contains { window in
+        if ModalSession.isRunning || ModalSession.isBracketed { return false }
+        let visibleWindows = sender.windows.filter { window in
             Self.isVisibleOrdinaryWindow(window, isAmbientWindow: controller?.owns(window) == true,
                                          isCompanion: isCompanionWindow(window))
         }
-        if visibleWindow || ModalSession.isRunning || ModalSession.isBracketed { return true }
+        if !visibleWindows.isEmpty {
+            // AppKit can report no visible windows when only an NSPanel remains.
+            if !flag { visibleWindows.first?.makeKeyAndOrderFront(nil) }
+            return flag
+        }
         applySummon(.reopen)
         return false
     }

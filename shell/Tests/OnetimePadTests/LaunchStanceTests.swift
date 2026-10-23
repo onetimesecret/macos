@@ -38,26 +38,18 @@ final class LaunchStanceTests: XCTestCase {
         XCTAssertTrue(BackdropModel.anchorsOnToday(raise: editorRaise!))
     }
 
-    // MARK: Every later activation is the user choosing the app
+    // MARK: Ordinary activation leaves ordering to AppKit
 
     func testReturningToTheApplicationDoesNotSelectAnEditor() {
-        XCTAssertEqual(ActivationRouter.decide(.lateActivation, in: context()), .noop)
+        XCTAssertEqual(ActivationRouter.routeForActivation(pendingSummon: nil, context: context()), .noop)
     }
 
     // MARK: About and Settings keep their claim
 
     func testAnActivationAnotherWindowAskedForDoesNothing() {
-        // About and Settings activate the app for themselves; the
-        // editor must not be selected inside or after the launch window.
         XCTAssertEqual(
-            ActivationRouter.decide(
-                .launchActivation, in: context(claimedByAnotherWindow: true)
-            ),
-            .noop
-        )
-        XCTAssertEqual(
-            ActivationRouter.decide(
-                .lateActivation, in: context(claimedByAnotherWindow: true)
+            ActivationRouter.routeForActivation(
+                pendingSummon: nil, context: context(claimedByAnotherWindow: true)
             ),
             .noop
         )
