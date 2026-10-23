@@ -273,6 +273,29 @@ final class MarkdownParserTests: XCTestCase {
         XCTAssertEqual(block.map { [$0.startingRow, $0.startingColumn] }, [1, 1], "the object ends its row's last cell")
     }
 
+    /// cmark-gfm pads a short row to the header's width, so a few kilobytes of wide tables ask for
+    /// hundreds of thousands of cells; every table of a page shares one budget, and past it the
+    /// page shows as plain text.
+    func testTablesPastTheCellBudgetThrow() throws {
+        var limits = CompositionLimits()
+        limits.maximumTableCells = 6
+        let six = "| a | b |\n| - | - |\n| c |\n| d |"
+        XCTAssertNoThrow(try MarkdownParser.parse(six, dialect: .gfm, limits: limits))
+        assertThrows(.tableCellLimit) { try MarkdownParser.parse(six + "\n| e |", dialect: .gfm, limits: limits) }
+        assertThrows(.tableCellLimit) {
+            try MarkdownParser.parse("| a | b |\n| - | - |\n| c |\n\n| a | b |\n| - | - |\n| d |", dialect: .gfm, limits: limits)
+        }
+        XCTAssertNoThrow(try MarkdownParser.parse(six + "\n| e |", dialect: .commonMark, limits: limits))
+
+        let wide = "|" + String(repeating: " a |", count: 2_000) + "\n|" + String(repeating: " - |", count: 2_000)
+            + "\n" + String(repeating: "x\n", count: 262)
+        assertThrows(.tableCellLimit) { try MarkdownParser.parse(String(repeating: wide + "\n", count: 3), dialect: .gfm) }
+        let rendered = MarkdownPreviewView.render(NSAttributedString(string: wide))
+        let style = rendered.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        XCTAssertTrue(style?.textBlocks.isEmpty ?? true, "the page shows as plain text")
+        XCTAssertTrue(rendered.string.hasPrefix("| a | a |"))
+    }
+
     /// Every object identity in `blocks`, in document order.
     private func identities(_ blocks: [MarkdownBlock]) -> [String] {
         func events(_ events: [PreviewEvent]) -> [String] {

@@ -45,6 +45,7 @@ struct otsgfm_document {
   cmark_syntax_extension *capture; // copies the reference map before finish resets it
   cmark_node *root;
   int capture_failed;
+  int table_cells_exhausted;
   size_t reference_count;
   span (*references)[3];
   char *reference_bytes;
@@ -109,7 +110,7 @@ static cmark_node *capture_references(cmark_syntax_extension *extension,
   return NULL;
 }
 
-otsgfm_document *otsgfm_parse(const char *text, size_t length) {
+otsgfm_document *otsgfm_parse(const char *text, size_t length, int64_t table_cells) {
   if ((text == NULL && length > 0) || length > INPUT_LIMIT)
     return NULL;
   if (pthread_once(&registration, register_extensions) != 0)
@@ -133,8 +134,10 @@ otsgfm_document *otsgfm_parse(const char *text, size_t length) {
   cmark_parser_attach_syntax_extension(document->parser, document->capture);
 
   pthread_mutex_lock(&parse_lock);
+  ots_table_set_cell_budget(table_cells);
   cmark_parser_feed(document->parser, text != NULL ? text : "", length);
   document->root = cmark_parser_finish(document->parser);
+  document->table_cells_exhausted = ots_table_cell_budget_exhausted();
   pthread_mutex_unlock(&parse_lock);
 
   if (document->root == NULL || document->capture_failed) {
@@ -160,6 +163,10 @@ void otsgfm_document_free(otsgfm_document *document) {
 
 const void *otsgfm_document_root(const otsgfm_document *document) {
   return document != NULL ? document->root : NULL;
+}
+
+int otsgfm_document_table_cells_exhausted(const otsgfm_document *document) {
+  return document != NULL && document->table_cells_exhausted;
 }
 
 size_t otsgfm_reference_count(const otsgfm_document *document) {

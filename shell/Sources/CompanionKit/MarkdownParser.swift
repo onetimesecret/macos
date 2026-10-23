@@ -5,6 +5,7 @@ import CMarkGFM
 enum MarkdownParseError: Error, Equatable {
     case inputLimit
     case depthLimit
+    case tableCellLimit
     /// No run of plane 16 scalars, one per object, avoids the page's own plane 16 scalars and
     /// numeric character reference values.
     case noPlaceholderWindow
@@ -26,10 +27,13 @@ enum MarkdownParser {
         let source = try PlaceholderSource(text, objects: objects, limits: limits)
         let library = dialect == .gfm ? CMarkLibrary.gfm : CMarkLibrary.commonMark
         let parsed = source.bytes.withUnsafeBufferPointer { buffer in
-            buffer.withMemoryRebound(to: CChar.self) { library.parse($0.baseAddress, $0.count) }
+            buffer.withMemoryRebound(to: CChar.self) {
+                library.parse($0.baseAddress, $0.count, Int64(limits.maximumTableCells))
+            }
         }
         guard let parsed else { throw MarkdownParseError.parserFailure }
         defer { library.free(parsed) }
+        guard !library.tableCellsExhausted(parsed) else { throw MarkdownParseError.tableCellLimit }
         let walker = TreeWalker(library: library, document: parsed, source: source, limits: limits)
         return MarkdownDocument(blocks: try walker.walk(), atoms: source.atoms)
     }
@@ -207,8 +211,10 @@ private struct CMarkLibrary {
     typealias Bytes = (UnsafeRawPointer?, UnsafeMutablePointer<Int>?) -> UnsafePointer<CChar>?
     typealias Number = (UnsafeRawPointer?) -> Int32
 
-    let parse: (UnsafePointer<CChar>?, Int) -> OpaquePointer?
+    /// Text, its length and the table cell budget, which only cmark-gfm has tables to spend.
+    let parse: (UnsafePointer<CChar>?, Int, Int64) -> OpaquePointer?
     let free: (OpaquePointer?) -> Void
+    let tableCellsExhausted: (OpaquePointer?) -> Bool
     let root: (OpaquePointer?) -> UnsafeRawPointer?
     let referenceCount: (OpaquePointer?) -> Int
     let referencePart: (OpaquePointer?, Int, Int32, UnsafeMutablePointer<Int>?) -> UnsafePointer<CChar>?
@@ -234,7 +240,8 @@ private struct CMarkLibrary {
 
     static var commonMark: CMarkLibrary {
         CMarkLibrary(
-            parse: otscm_parse, free: otscm_document_free, root: otscm_document_root,
+            parse: { text, length, _ in otscm_parse(text, length) }, free: otscm_document_free,
+            tableCellsExhausted: { _ in false }, root: otscm_document_root,
             referenceCount: otscm_reference_count, referencePart: otscm_reference_part,
             firstChild: otscm_node_first_child, next: otscm_node_next, kind: otscm_node_kind,
             literal: otscm_node_literal, url: otscm_node_url, title: otscm_node_title,
@@ -250,7 +257,8 @@ private struct CMarkLibrary {
 
     static var gfm: CMarkLibrary {
         CMarkLibrary(
-            parse: otsgfm_parse, free: otsgfm_document_free, root: otsgfm_document_root,
+            parse: otsgfm_parse, free: otsgfm_document_free,
+            tableCellsExhausted: { otsgfm_document_table_cells_exhausted($0) != 0 }, root: otsgfm_document_root,
             referenceCount: otsgfm_reference_count, referencePart: otsgfm_reference_part,
             firstChild: otsgfm_node_first_child, next: otsgfm_node_next, kind: otsgfm_node_kind,
             literal: otsgfm_node_literal, url: otsgfm_node_url, title: otsgfm_node_title,

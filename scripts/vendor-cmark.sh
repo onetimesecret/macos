@@ -321,9 +321,10 @@ $(for patch in "${PATCHES[@]}"; do printf '  - `%s` (SHA-256 %s)\n' "${patch#"$G
 \`0001\` is upstream master commit $GFM_FIX_COMMIT, exported with
 \`git format-patch\`: the fix for the unsigned pointer wrap in
 \`validate_protocol\` (\`extensions/autolink.c\`). The script compares its patch
-id with that commit's. \`0002\` is Onetime Pad's own: a scalar in
-U+100000..U+10FFFD, the preview's sealed-object placeholder, ends a www or
-http extended autolink.
+id with that commit's. \`0002\` and \`0003\` are Onetime Pad's own. \`0002\`: a
+scalar in U+100000..U+10FFFD, the preview's sealed-object placeholder, ends a
+www or http extended autolink. \`0003\`: every table of a parse shares one cell
+budget, which the shim sets (\`extensions/table.c\`, \`extensions/table.h\`).
 
 ## Kept files
 

@@ -14,6 +14,27 @@
 // Limit to prevent a malicious input from causing a denial of service.
 #define MAX_AUTOCOMPLETED_CELLS 0x80000
 
+// Onetime Pad: the cells every table of the parse may still take, header rows
+// and autocompleted cells included, and whether a row was refused for want of them.
+static int64_t ots_table_cells_left = INT64_MAX;
+static bool ots_table_cells_exhausted = false;
+
+void ots_table_set_cell_budget(int64_t cells) {
+  ots_table_cells_left = cells;
+  ots_table_cells_exhausted = false;
+}
+
+bool ots_table_cell_budget_exhausted(void) { return ots_table_cells_exhausted; }
+
+static bool ots_take_cells(int64_t cells) {
+  if (cells > ots_table_cells_left) {
+    ots_table_cells_exhausted = true;
+    return false;
+  }
+  ots_table_cells_left -= cells;
+  return true;
+}
+
 // Custom node flag, initialized in `create_table_extension`.
 static cmark_node_internal_flags CMARK_NODE__TABLE_VISITED;
 
@@ -346,6 +367,14 @@ static cmark_node *try_opening_table_header(cmark_syntax_extension *self,
     return parent_container;
   }
 
+  if (!ots_take_cells(header_row->n_columns)) {
+    free_table_row(parser->mem, delimiter_row);
+    free_table_row(parser->mem, header_row);
+    cmark_arena_pop();
+    parent_container->flags |= CMARK_NODE__TABLE_VISITED;
+    return parent_container;
+  }
+
   if (cmark_arena_pop()) {
     delimiter_row = row_from_string(
         self, parser, input + cmark_parser_get_first_nonspace(parser),
@@ -436,6 +465,10 @@ static cmark_node *try_opening_table_row(cmark_syntax_extension *self,
     return NULL;
 
   if (get_n_autocompleted_cells(parent_container) > MAX_AUTOCOMPLETED_CELLS) {
+    return NULL;
+  }
+
+  if (!ots_take_cells(get_n_table_columns(parent_container))) {
     return NULL;
   }
 

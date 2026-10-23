@@ -4,6 +4,7 @@
 #define OTS_GFM_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,9 +48,12 @@ typedef struct otsgfm_document otsgfm_document;
 
 // Parses UTF-8 with CMARK_OPT_DEFAULT plus table, strikethrough, autolink, tagfilter and tasklist, one
 // parse at a time. NULL on allocation failure, for NULL text with a nonzero length, and from 256 MiB.
-otsgfm_document *otsgfm_parse(const char *text, size_t length);
+// Every table of the parse together may take `table_cells` cells, padding included (patches/0003).
+otsgfm_document *otsgfm_parse(const char *text, size_t length, int64_t table_cells);
 void otsgfm_document_free(otsgfm_document *document);
 const void *otsgfm_document_root(const otsgfm_document *document);
+// 1 when a table header or row was refused for want of cells, so the tree is not the page's.
+int otsgfm_document_table_cells_exhausted(const otsgfm_document *document);
 
 // Every reference definition the parser collected, in the map's own order
 // (latest first), duplicates included. Labels are the normalized map labels.

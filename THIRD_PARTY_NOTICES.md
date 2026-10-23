@@ -530,7 +530,8 @@ Upstream revision (tag 0.29.0.gfm.13), vendored in
 shell/Sources/CMarkGFM/upstream:
 587a12bb54d95ac37241377e6ddc93ea0e45439b
 
-Modified file: extensions/autolink.c, changed by the two patches in
+Modified files: extensions/autolink.c, extensions/table.c and
+extensions/table.h, changed by the three patches in
 shell/Sources/CMarkGFM/patches, applied in this order:
 
 0001-autolink-fix-unsigned-pointer-overflow-in-validate_protocol.patch
@@ -539,6 +540,9 @@ shell/Sources/CMarkGFM/patches, applied in this order:
 0002-autolink-end-extended-autolinks-at-object-placeholders.patch
     Onetime Pad's change: a scalar in U+100000..U+10FFFD ends a www or
     http extended autolink.
+0003-table-share-one-cell-budget-across-a-parse.patch
+    Onetime Pad's change: every table of a parse shares one cell budget,
+    and a header or row past it is refused.
 
 COPYING (verbatim)
 ------------------

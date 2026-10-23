@@ -66,14 +66,16 @@ struct PreviewComposition: Equatable {
     var objectOrder: [String] { runs.objectIdentities }
 }
 
-/// Input bounds the work; the other counts sit above what that input can produce in an
-/// ordinary page, where Markdown traits cost events but no input.
+/// Input bounds the work, except GFM table cells, which pad short rows to the header's width; the
+/// other counts sit above what that input can produce in an ordinary page.
 struct CompositionLimits {
     var maximumInputScalars = 1_000_000
     var maximumEvents = 4_000_000
     var maximumTokens = 1_000_000
     var maximumDepth = 64
     var maximumOutputRuns = 2_000_000
+    /// Every table of a page together, header rows and padding included.
+    var maximumTableCells = 100_000
 }
 
 enum CompositionError: Error, Equatable {

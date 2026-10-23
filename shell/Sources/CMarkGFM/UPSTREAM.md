@@ -9,13 +9,15 @@ this file, `upstream/`, `patches/` and `prefix.h` offline. Do not edit by hand.
 - Patches, applied in order with `git apply` to the files of that commit:
   - `patches/0001-autolink-fix-unsigned-pointer-overflow-in-validate_protocol.patch` (SHA-256 cd8c4af910e044ae17435c6ae83b3747424660c92d700e10daeb3bd6864a83cf)
   - `patches/0002-autolink-end-extended-autolinks-at-object-placeholders.patch` (SHA-256 bfe2cf7636ea14b8bfeead8b9dc32bcaafe56e87b752eadb105c2b2f767f4bba)
+  - `patches/0003-table-share-one-cell-budget-across-a-parse.patch` (SHA-256 57ecaeacfa9b40eaf03917478a8185f2c9d2267daa694343923c20fec4b8de40)
 
 `0001` is upstream master commit 46829933c318b4c3108581e82469fe4474f744a9, exported with
 `git format-patch`: the fix for the unsigned pointer wrap in
 `validate_protocol` (`extensions/autolink.c`). The script compares its patch
-id with that commit's. `0002` is Onetime Pad's own: a scalar in
-U+100000..U+10FFFD, the preview's sealed-object placeholder, ends a www or
-http extended autolink.
+id with that commit's. `0002` and `0003` are Onetime Pad's own. `0002`: a
+scalar in U+100000..U+10FFFD, the preview's sealed-object placeholder, ends a
+www or http extended autolink. `0003`: every table of a parse shares one cell
+budget, which the shim sets (`extensions/table.c`, `extensions/table.h`).
 
 ## Kept files
 
@@ -47,6 +49,8 @@ force-includes it into every C file.
 | File | SHA-256 |
 | --- | --- |
 | `upstream/extensions/autolink.c` | ce87706761fbdd21ad4019f070731f9e2e19538c66933a3a6266466074f327e8 |
+| `upstream/extensions/table.c` | 2f021e64aed145578322c767475399138e76b94ec07599696a5a15ee14133ed1 |
+| `upstream/extensions/table.h` | e054b8c846fcedff9b02981caa518c01ac93c09237267eb57f6959fecaf1fced |
 
 ## SHA-256 after patching
 
@@ -60,8 +64,8 @@ b1a43cc31a5149438b12beed1f1e4940e8e63f9b1c883311235d885a2fbd2877  upstream/exten
 a7fa1df781d227e84a0f41db22a8c544037611241dad82fed2c6e1e16acf7780  upstream/extensions/ext_scanners.h
 47ce340067b63eb062b2b6b40212f86e7734627b0affb82902a935125e88927e  upstream/extensions/strikethrough.c
 76957f0e97d1e51227b05a48efaa879a349c7123b74510a2741d832435096644  upstream/extensions/strikethrough.h
-2f021e64aed145578322c767475399138e76b94ec07599696a5a15ee14133ed1  upstream/extensions/table.c
-e054b8c846fcedff9b02981caa518c01ac93c09237267eb57f6959fecaf1fced  upstream/extensions/table.h
+3a32400214e4936d10ee068f10d5dc6f647e7649524eba60449e15806751dacf  upstream/extensions/table.c
+dd30e3db80fbd241943e66cdbe0b53c1ec88cae87a7904a9fa4ec8cad0f9db9c  upstream/extensions/table.h
 9657363955756efc83539a5a852d37545853c2893bbcb7d70d31a4f31b4e27d0  upstream/extensions/tagfilter.c
 bf5a55e109c9fa98be9499adf95992ba5281ded4a3dcc34633b2a45446530f19  upstream/extensions/tagfilter.h
 9869288ae527b81849b631051d79ca73931d25dc1ef43e53268f9c6e54c04c29  upstream/extensions/tasklist.c

@@ -267,4 +267,6 @@
 #define houdini_unescape_html otsgfm_houdini_unescape_html
 #define houdini_unescape_html_f otsgfm_houdini_unescape_html_f
 #define normalize_map_label otsgfm_normalize_map_label
+#define ots_table_cell_budget_exhausted otsgfm_ots_table_cell_budget_exhausted
+#define ots_table_set_cell_budget otsgfm_ots_table_set_cell_budget
 #endif
