@@ -248,6 +248,14 @@ ref_name_ok() { # <ref>
   return 1
 }
 
+# True in CI, where builds are stamped but get no record and --app-store is refused.
+# CI=false and CI=0 count as unset.
+in_ci() {
+  case "${CI:-}" in
+    '' | false | 0) return 1 ;;
+  esac
+}
+
 # Tags the commit a build came from. Returns 0 when the tag names that commit,
 # whether made now or already there; otherwise it warns and returns 1.
 create_build_tag() { # <name> <commit> <message> [--no-sign]
@@ -315,6 +323,10 @@ write_build_record() { # <ref> <commit> <message>
 # App Store builds are tagged build/app-store/<version>-<number> and v<version>, for pushing.
 tag_build() {
   local name pushable=()
+  if in_ci; then
+    echo "==> CI is set, so this build writes no tag or record."
+    return 0
+  fi
   [[ -n "$SOURCE_HEAD" ]] || return 0
   if [[ -n "$TREE_DIRTY" ]]; then
     echo "    no record: the tree has uncommitted changes, so no commit names this build." >&2
@@ -339,6 +351,12 @@ tag_build() {
   printf '\n'
   return 0
 }
+
+# An App Store build needs a record, and CI writes none.
+if ((APP_STORE_MODE)) && in_ci; then
+  echo "--app-store does not package in CI, where no build record is written." >&2
+  exit 1
+fi
 
 if [[ "$CONFIG" == "debug" ]]; then
   scripts/build-core.sh --if-stale --test-util
