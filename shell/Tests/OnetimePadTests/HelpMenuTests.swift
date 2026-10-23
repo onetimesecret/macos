@@ -54,7 +54,7 @@ final class HelpMenuTests: XCTestCase {
         in mainMenu: NSMenu?, keystroke: Keystroke? = nil, target: BackdropAppDelegate
     ) -> NSMenu? {
         BackdropAppDelegate.installHelpItem(
-            in: mainMenu, productName: "OnetimePad", keystroke: keystroke, target: target)
+            in: mainMenu?.items.first?.submenu, productName: "OnetimePad", keystroke: keystroke, target: target)
     }
 
     func testTheHelpItemHeadsTheMenuWithItsChord() throws {
@@ -121,8 +121,7 @@ final class HelpMenuTests: XCTestCase {
             menus.help.items.filter { $0.action == #selector(BackdropAppDelegate.openHelp(_:)) }.count, 1)
     }
 
-    /// The install runs again on every activation, so an item a menu
-    /// rebuild dropped comes back, with one separator and no second copy.
+    /// Reinstalling an item removed by a menu rebuild adds one copy.
     func testInstallingAgainAfterTheItemIsDroppedPutsItBack() throws {
         let delegate = makeDelegate(opened: OpenedLinks())
         let menus = makeMainMenu()
@@ -178,6 +177,15 @@ final class HelpMenuTests: XCTestCase {
         _ = target.perform(action, with: item)
 
         XCTAssertEqual(opened.urls, [URL(string: "https://docs.onetimesecret.dev/macos")!])
+    }
+
+    func testLocalizedHelpMenuDoesNotDependOnEnglishTitle() throws {
+        let delegate = makeDelegate(opened: OpenedLinks())
+        let menu = NSMenu(title: "Aide")
+        let installed = BackdropAppDelegate.installHelpItem(
+            in: menu, productName: "OnetimePad", keystroke: try helpChord(), target: delegate)
+        XCTAssertTrue(installed === menu)
+        XCTAssertEqual(menu.items.first?.action, #selector(BackdropAppDelegate.openHelp(_:)))
     }
 
     func testNoHelpMenuMeansNothingToInstall() {

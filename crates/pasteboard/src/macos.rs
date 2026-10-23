@@ -476,14 +476,46 @@ mod tests {
         let receipt = write_text(&mut pb, "our copy-out", true);
         assert!(!pb.holds_external_content());
 
-        pb.clear_if_unchanged(receipt);
+        assert!(pb.clear_if_unchanged(receipt));
         assert!(!pb.holds_external_content());
 
-        pb.pasteboard.clearContents();
-        let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
-        pb.pasteboard
-            .setString_forType(&NSString::from_str("from elsewhere"), string_type);
+        put_external_text(&pb, "from elsewhere");
         assert!(pb.holds_external_content());
+        assert_eq!(
+            pb.read().unwrap().content,
+            PasteboardContent::Text("from elsewhere".into())
+        );
+    }
+
+    fn put_external_text(pb: &SystemPasteboard, text: &str) {
+        let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
+        let types = NSArray::from_slice(&[string_type]);
+        // SAFETY: concrete bytes follow immediately; no owner callbacks are needed.
+        unsafe { pb.pasteboard.declareTypes_owner(&types, None) };
+        assert!(
+            pb.pasteboard
+                .setString_forType(&NSString::from_str(text), string_type),
+            "external fixture write was refused"
+        );
+    }
+
+    #[test]
+    fn external_replacement_removes_transient_types_and_invalidates_copy_receipts() {
+        let mut pb = SystemPasteboard::for_testing();
+        for sequence in 0..100 {
+            let receipt = write_text(&mut pb, "our copy-out", true);
+            assert!(!pb.holds_external_content());
+            let external = format!("external replacement {sequence}");
+            put_external_text(&pb, &external);
+            assert!(!pb.declares(&[&NSString::from_str(TRANSIENT_TYPE)]));
+            assert!(!pb.declares(&[&NSString::from_str(CONCEALED_TYPE)]));
+            assert!(pb.holds_external_content());
+            assert!(!pb.clear_if_unchanged(receipt));
+            assert_eq!(
+                pb.read().unwrap().content,
+                PasteboardContent::Text(external)
+            );
+        }
     }
 
     fn raw<T>(object: &T) -> *mut c_void {

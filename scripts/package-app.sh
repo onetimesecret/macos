@@ -118,6 +118,9 @@ else
   select_build_lane local
 fi
 
+require_stopped_build
+require_stopped_executables "$PWD/dist/$BUILD_APP_NAME.app/Contents/MacOS"
+
 DECLARED_PRODUCTION_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw shell/OnetimePad-Info.plist 2>/dev/null || true)"
 if [[ "$DECLARED_PRODUCTION_BUNDLE_ID" != "$PRODUCTION_BUNDLE_ID" ]]; then
   echo "shell/OnetimePad-Info.plist declares $DECLARED_PRODUCTION_BUNDLE_ID; expected $PRODUCTION_BUNDLE_ID from scripts/build-lanes.sh" >&2

@@ -70,23 +70,12 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-# The dev lane builds the dev shape of the core, test seams included
-# (ADR-0018), which keeps bindings/ linkable by `swift test` between
-# runs. The release lane (scripts/install.sh) builds without the
-# feature, and the stamp build-core.sh leaves means each lane rebuilds
-# the other's leftovers automatically.
-scripts/build-core.sh --if-stale --test-util
+require_stopped_build
 
 # package-app.sh deletes and reassembles the dist/ bundle, so a copy
 # still running from there has to quit first. Only the graceful
 # AppleScript path runs the quit-time persistence snapshot; if the app
 # will not quit, stop rather than pull the bundle out from under it.
-
-# pgrep -f reads its pattern as an extended regex; escape the path so
-# the match is literal.
-running_from() { # <absolute path>
-  pgrep -f "$(printf '%s' "$1" | sed 's/[][\.|$(){}?+*^]/\\&/g')" >/dev/null
-}
 
 DIST_APP="$PWD/dist/$DEV_APP_NAME.app"
 if running_from "$DIST_APP/Contents/MacOS"; then
@@ -107,6 +96,9 @@ if running_from "$DIST_APP/Contents/MacOS"; then
     exit 1
   fi
 fi
+
+# Build the dev core with test seams (ADR-0018); build-core.sh checks its feature stamp.
+scripts/build-core.sh --if-stale --test-util
 
 echo "==> scripts/package-app.sh --debug"
 scripts/package-app.sh --debug

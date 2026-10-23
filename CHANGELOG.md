@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/development/build-records.md` covers reading and pruning
   records.
 
+- Cmd-Tab preserves the current window instead of always selecting the editor.
+  A Dock reopen opens the editor only when no ordinary window is visible.
+  See [ADR-0059](docs/adr/0059-appkit-owns-window-presentation.md).
+
 - **Seat words and note hints take their size from the platform** (app
   0.40.8; issue #297). The twelve places that spelled the mini font
   size as a literal 9 now read `NSFont.systemFontSize(for: .mini)`
@@ -1035,6 +1039,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bottom edge (docs/dogfood/ABERRATIONS.md, 2026-09-05; issue #156).
 
 ### Fixed
+
+- Settings no longer opens automatically at application startup.
 
 - **A paste's origin URL is wiped when it goes** (`companion-core`
   0.34.4, `companion-ffi` 0.43.3, `companion-pasteboard` 0.5.0; issue
