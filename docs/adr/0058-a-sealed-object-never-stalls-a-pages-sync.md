@@ -6,337 +6,192 @@ documentation_status: needs-review
 
 - **Status:** proposed
 - **Date:** 2026-10-16
-- **Depends on:** [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md), [ADR-0043](0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md) (accepted 2026-10-16), [ADR-0046](0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md) (accepted 2026-10-16).
+- **Depends on:** [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md), whose relay, key model and key frame this record extends; [ADR-0043](0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md) (accepted 2026-10-16), whose name and note travel here; [ADR-0046](0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md) (accepted 2026-10-16), whose detached store a peer's record enters and leaves; [ADR-0057](0057-moved-content-lives-as-long-as-the-page-it-lands-on.md) (proposed), whose lifetime rule a moved value follows.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
 
-**Review proposal, not acceptance.** Every choice under Decision is a
-recommendation for maintainer review. In particular, neither note replication
-nor lossy whole-note last-writer-wins (LWW) has been accepted. Implementation
-waits for #256's integrated buffer/FFI foundations and the decisions listed in
-the [design and implementation plan](../plans/issue-257-sealed-object-sync.md).
-
 ## Context
 
-At review baseline `bc1bc4e4`, `SheetDocument::import_update` trials an update
-on a fork and refuses both an unknown chip identity and a duplicate sentinel
-with `ChipRoster`. The page's attached and detached chip records are the
-roster. `DeltaEnvelope::Ops` transports only document bytes, not those records.
-An unknown object's insertion is therefore rejected, and later dependent
-updates can fail with `MissingHistory`. The two move/cut sync tests in
-`crates/core/src/store.rs` reproduce this behavior; they are implementation
-evidence, not acceptance authority.
+A page holding a sealed object stops syncing to every peer, and nobody
+is told. `SheetDocument::import_update` (`crates/core/src/document.rs`)
+trials a peer's batch on a fork and refuses it whole with
+`UpdateRefusal::ChipRoster` when a sentinel names an identity the page
+does not own, or one twice. `DeltaEnvelope::Ops`
+(`crates/sync/src/envelope.rs`) moves only the page's Loro bytes; the
+chip's payload, kind, size, name and note live on `SealedChip`
+(`crates/core/src/sheet.rs`), outside the document. A peer refuses the
+first batch that stands an object sealed elsewhere, and every later
+batch of that page fails with `MissingHistory`. Client protocol row
+10.31 describes this, and two tests in `crates/core/src/store.rs` pin
+it: `sync_carries_no_object_so_a_move_between_pages_stands_none_on_a_peer`
+and
+`sync_carries_no_object_so_a_cut_reattached_on_another_page_stands_none_on_a_peer`.
+No user meets it yet, because the relay is not built.
 
-### Accepted sources and their scope
-
-These are existing authoritative records, not evidence created by this review:
-
-- [ADR-0021, Decision](0021-multi-device-sync-over-a-blind-relay.md#decision),
-  accepted: “The relay never receives a content key, transport key, or pairing
-  secret.” Also: “A joining device starts at the current key frame and receives
-  no prior history.” The relay and key model remain in scope here.
-- [ADR-0021, Decision history](0021-multi-device-sync-over-a-blind-relay.md#decision-history):
-  “The protocol specification is the authoritative message-shape record.” The
-  [relay protocol §3](../spec/feature/sync/relay-protocol.md#3-the-storage-contract)
-  specifies: “**The delta buffer is capped**: 8 MiB or 4096 blobs, whichever comes
-  first.” This is a channel storage bound, not a metadata allocation budget.
-- [ADR-0043, Decision](0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md#decision),
-  accepted: “A sealed object's name and note are fields of its chip, not ink in
-  the page's document, not on the tab and not in the ledger.” Point 4:
-  “The note persists as its text, not its operation log, and restores with an
-  empty undo stack, as a page's undo starts empty after a relaunch.” Its sync
-  open question explicitly decides nothing about sync.
-- [ADR-0046, Decision](0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md#decision),
-  accepted: “A page keeps the sealed objects its body no longer shows, on its own
-  clock, until the page ends or the object is burned.” Point 2:
-  “Only a page's death and the explicit burn destroy payload.” Its sync
-  open question remains open.
-- [ADR-0016, Decision](0016-content-persists-across-restart.md#decision),
-  accepted: “A failed restore withholds the save licence and leaves the prior
-  file untouched.” Its older format-break decision does not authorize a new
-  destructive format break for #257.
-- [ADR-0012, accepted Amendment 1](0012-framing-threat-boundary-and-persistence-model.md#amendment-1-three-egress-points-and-one-clear-interval):
-  “All three complete-payload writes are core-side. The Swift shell asks the
-  core to write to a named destination and never receives the sealed payload.”
-  Metadata sync is not permission to add a payload egress.
-
-[Law 0001](../law/0001-sealed-object.md), accepted, supplies the existing
-placement/fragment behavior; it is not edited here. Its exact relevant wording
-is quoted in the plan. Worktree A (#267) covers placement overlays only and
-coordinates shared Law 0001 textual edits. Cross-device object ownership/clock
-and ADR-0057 design are not A's scope; they require maintainer decisions.
-[Law 0004](../law/0004-secret-plaintext-never-reallocates.md) is **draft**, not
-an accepted authority; #256 owns its resolution. The
-[client protocol](../spec/feature/sync/client-protocol.md) calls itself
-“draft, not accepted”; its limits and row 10.31 describe the build, not a
-normative exception allowing sync to stall. The sealed-row interaction note
-also says nothing in it has been ratified.
-
-### Design input, not normative authority
-
-[Issue #257](https://github.com/onetimesecret/macos/issues/257) records the
-maintainer's direction of 2026-10-14:
+The maintainer's direction of 2026-10-14, quoted from
+[issue #257](https://github.com/onetimesecret/macos/issues/257):
 
 > - A batch never fails to sync because of a sealed object or chip.
 > - The object's name, note and other metadata, everything except its value, can be synced. Can, not must.
 > - Where a technical limit or a product detail keeps that metadata from syncing, the batch still syncs.
 > - The value itself does not sync.
 
-Under root `AGENTS.md`, the issue is design input, not itself normative
-supersession. No accepted wording excluding all chip metadata from sync was
-located in ADR-0021. Treat this as the requested successor/extension proposal;
-do not invent a partial-supersession relationship to an absent exclusion.
-Acceptance must identify any actual accepted decision being replaced and add
-reciprocal ADR relationships then, if applicable. Do not change accepted ADRs
-or laws during this review.
+The maintainer's answers of 2026-10-23 to the gates in the
+[#257 plan](../plans/issue-257-sealed-object-sync.md) (paraphrase): kind,
+size class and name travel; notes merge as a CRDT in this change; a
+burn does not travel in this change.
+
+Accepted wording this record keeps:
+
+- ADR-0021: "The relay never receives a content key, transport key, or
+  pairing secret." and "A joining device starts at the current key
+  frame and receives no prior history."
+- ADR-0043: "A sealed object's name and note are fields of its chip,
+  not ink in the page's document, not on the tab and not in the
+  ledger." Its point 4: "The note persists as its text, not its
+  operation log, and restores with an empty undo stack, as a page's
+  undo starts empty after a relaunch."
+- ADR-0046: "A page keeps the sealed objects its body no longer shows,
+  on its own clock, until the page ends or the object is burned." Its
+  point 2: "Only a page's death and the explicit burn destroy payload."
+- ADR-0016: "A failed restore withholds the save licence and leaves
+  the prior file untouched."
+
+ADR-0057 is proposed; its Context quotes the maintainer's answer of
+2026-10-14: "Moved text inherits the lifetime of where it arrives to."
 
 ## Decision
 
-### 1. Separate payload availability from object identity and placement
+A peer imports every valid batch, whatever objects it stands. An object
+whose value is not on this device is a record with an identity, a kind
+and size class when known, a name and a note, and no value. Its kind,
+size class and name travel beside the page's ops; its note merges as a
+Loro text of its own; its value never travels.
 
-Propose an object record with stable `ItemId` UUID and a sum type:
-`LocalPayload { SecretBuffer, exact_meta, excerpt, receipt }` or
-`PeerOnly { optional kind, optional size_class }`. Name, local note, field
-revisions and origin evidence belong to the common record. Attachment versus
-detachment is placement, not payload availability. A terminal reference has a
-separate evidence record and cannot become either live variant by metadata.
+1. **Admission.** A batch or key frame that stands an identity the page
+   does not own creates a record with no value for it before the page
+   settles. Malformed bytes and missing history stay refusals. The
+   record is the page's own for every roster purpose: it detaches,
+   reattaches and ends with its page as ADR-0046 says.
+2. **One standing per identity.** When a merge leaves an identity
+   standing twice in one body, the page's settle keeps the first
+   standing in body order and takes the later ones out, outside the
+   undo stack. Every device removes the same element, so the deletes
+   converge. A local fragment or restore that names an identity twice
+   stays refused.
+3. **The value follows its sentinel.** When a record with the value
+   detaches from one page while a record with no value for that
+   identity stands on another page of the same device, the value moves
+   into the standing record and lives on that page's clock, as ADR-0057
+   proposes for a local move. The value is never copied.
+4. **The face and its routes.** A record with no value shows its kind
+   and size class when known and the line `value on another device`.
+   The core refuses Copy Decrypted Contents, Copy Name=Value, the
+   one-time link, the decrypted drag and the chip's conceal for it, and
+   refuses the whole page's conceal while one stands in the body.
+   Rename, the note, a move, a cut, the cut's first paste and removal
+   stay available. A paste that would clone it (a paste after a copy,
+   or a later paste of a cut) places `[sealed content · unavailable]`,
+   and the outcome names the cause.
+5. **Metadata.** A `Metadata` envelope beside the page's `Ops`, under
+   the same seal, padding and epoch, names each changed object's
+   identity, kind, size class and name. The name has a version: a
+   counter and the writing device's fingerprint, compared in that
+   order; the greater wins, and a clear is a versioned empty name. A
+   local rename takes one more than the highest counter known for that
+   name. Equal versions with different names keep the local name.
+   Versions persist. An envelope names at most 128 objects. An entry
+   for an identity this device has no record for waits in a cache of
+   at most 256 entries until its sentinel arrives. A device restates
+   every entry of an enrolled page at attach and at each new epoch.
+6. **Notes.** A note is a Loro text with a history of its own. Its ops
+   travel as a `NoteOps` envelope beside the page's `Ops`, exported,
+   acknowledged, rewound and withdrawn by the rules the page's ops
+   follow, and a peer imports them with the page's refusals plus one:
+   a note never stands a chip. A note persists its operation log beside
+   its text and restores with an empty undo stack. It compacts with its
+   page, under a fresh peer id, and the key frame includes each note's
+   rebuild beside the page's. Note ops for an identity this device has
+   no record for wait in the metadata cache, bounded at 256 KiB.
+7. **The ops never wait.** A `Metadata` or `NoteOps` envelope that
+   fails to encode, is refused or is skipped leaves the page's ops
+   applied, and its loss is made good by the next change or restate.
+8. **Burns stay on the device.** A burn deletes the sentinel, and that
+   delete syncs, so a peer's record detaches and ends with its page. A
+   device whose ledger records an identity's burn takes a later standing
+   of that identity out at settle, outside the undo stack.
+9. **At rest.** A new content snapshot version writes each record's
+   availability as a tag ahead of any payload bytes, the name's version
+   and the note's operation log. This build reads the previous version.
+   An earlier build refuses the new one, and by ADR-0016 the file is
+   left untouched.
 
-No peer variant contains an empty payload buffer, a fabricated `ChipMeta`, an
-excerpt or a receipt. A legitimate zero-length local payload remains local.
-An absent kind is unknown, not text. A peer face says `value not on this device`
-(proposed copy): no owner/device-online assertion is possible from a bare UUID.
-
-Import document history independently of optional metadata. Discover previously
-unknown UUIDs on the trial document and prepare peer records before committing
-the import and projection. A metadata-only entry never attaches an object or
-creates an unlimited detached roster; bind it to an existing record, or keep
-it in a bounded, evictable cache until its sentinel arrives. Missing, malformed,
-oversized or unknown-version optional metadata cannot prevent valid ops from
-being imported or advance the ops export cursor prematurely.
-
-Keep duplicate validation in local transactions, fragments and snapshots. The
-existing remote whole-batch duplicate refusal needs a separate decision:
-concurrent valid edits can also stand a UUID twice. Recommended resolution is
-to import the dependency graph and deterministically project one active
-occurrence, with an inert diagnostic for extras, not clone payload or silently
-choose by arrival order. Its stable occurrence key and cross-device ownership
-semantics require a #257 maintainer design decision before changing
-`document.rs`. Continuing to reject valid concurrent duplicates would retain a
-chip-induced sync stall.
-Corrupt encoding and genuine missing history remain distinct errors.
-
-### 2. Optional metadata has a bounded, independent delivery lane
-
-Replace the full-roster snapshot on every edit with versioned, bounded patches.
-Recommend kind, coarse size class and name for the first increment; omit note
-text until question Q2 is accepted. Never export payload, payload-derived
-excerpt, exact length/line counts, receipt or note undo/history.
-
-Proposed initial budgets (not accepted protocol constants): at most 16 KiB of
-encoded metadata JSON and 128 entries per metadata envelope; at most 64 KiB of
-optional metadata JSON per publish request or composite frame. Count escaped
-UTF-8 JSON, then check padding, seal overhead, base64 and complete transport
-size. Reduce or omit optional entries whenever the effective request/frame
-budget is smaller. A count cap alone is insufficient. Apply inbound limits
-before allocating entries or decoding large field strings. Bound pending
-metadata cache by both 256 entries and 64 KiB of encoded content.
-
-Schedule ops and policy/control independently; an optional metadata serialization,
-validation, seal or size failure drops/defers that lane, never the ops lane.
-Do not retain a rejected oversized metadata envelope as a permanently retried
-head of the ops queue. Metadata-only edits publish without body edits. Use fair,
-bounded roster slices for anti-entropy, with separate metadata acknowledgments,
-and repeat current fields after restart, reconnect and ceremony. Omission means
-unknown/unchanged, never clear or deletion. Key-frame metadata can be partial;
-joining ops do not wait for its completion. These limits do not cap local note
-editing or impose a new object-count limit on an otherwise valid document.
-
-### 3. Per-field versions are fully ordered and durable
-
-For each replicated mutable field propose `Version(counter: u64,
-writer: 32-byte device fingerprint)` and a distinct unknown state. Order versions
-lexicographically by counter, then unsigned fingerprint bytes; greater wins.
-A clear name is `value: null` with a version, not an absent field. Local edits
-use checked `1 + max(local counter, highest valid received counter for that
-object/field)` and the local fingerprint. Persist the winning writer and counter,
-not just the counter. Forward another writer's version unchanged. Restart and
-moves keep versions; a new clone starts a new identity and new versions.
-
-Equal complete versions with different values are protocol conflicts, not
-last-arrival-wins. Retain the known field, report a content-free conflict and
-request a fresh local revision; do not block ops. The sealer's signed immutable
-kind/size descriptor, if accepted for Q3, is not an editable LWW field.
-Counters do not wrap; exhaustion refuses the metadata edit, not document sync.
-
-### 4. Note synchronization requires its own explicit choice
-
-Do **not** silently replace a local note with received text. Recommended first
-increment: notes remain local, visibly described as not synced on this build;
-the metadata schema has no note-text field. This is permitted by the issue's
-“Can, not must” design input, not an already accepted product choice.
-
-If note sync is required now, choose separately between a chip-owned note CRDT
-with a reviewed restart/compaction format, a conflict-preserving register with
-resolution UI and retention, or whole-text LWW with explicit loss acceptance.
-Whole-text LWW discards one entire offline edit; replacing text outside undo can
-make it unrecoverable. An accepted per-field version order for names would not
-accept that loss for notes. A future bounded note snapshot must omit, not
-truncate, text beyond its byte budget, distinguish omission from an explicit
-empty note and show that it has not synced. These are review proposals only.
-
-### 5. Burns need origin evidence and one terminal rule
-
-The earlier proposal's absorbing burn combined with a payload device ignoring
-remote burns is withdrawn. A shared GOP seal establishes channel access; it
-does not establish which device sealed or burned an object. Structural removal
-is reversible, so the ability to remove a sentinel does not justify authority
-to irreversibly destroy payload.
-
-Recommend sealer-authorized explicit burns: a signed origin descriptor binds
-object UUID to its sealer's verified device key, and a domain-separated signed
-burn binds object UUID, origin descriptor digest, event identity, reason and
-reporting timestamp to that same key. Full proposed fields are in the plan.
-Unknown origin or invalid signatures leave the object nonterminal and unavailable
-where appropriate; bounded pending evidence cannot delay ops. A metadata-only
-device offers removal, not burn. Existing objects without origin evidence need
-an explicit migration policy before they can publish authoritative burns.
-
-Once verified, the same burn evidence is terminal on **every** device, including
-one with a local payload. No payload-device exception. Persist the tombstone
-and provenance atomically with the local mutation; suppress value-dependent
-routes and retain a typed terminal projection for any remaining sentinel.
-Do not generate unrelated document deletions on each receiver or refuse a later
-stale insertion: absorb its history and project terminal. Replays are idempotent;
-a stale live metadata patch cannot recreate payload or erase evidence.
-
-Terminal evidence is a durable protocol fact, not an evictable metadata cache
-entry or a synthetic local `discarded` ledger action. Retain it on the live
-owning page, include it in bounded re-advertisement and frame metadata when it
-fits, and keep the durable remainder due for later publication. A partial frame
-alone cannot establish complete terminal knowledge; a join can temporarily lack
-evidence until an awake peer restates it. Do not promise immediate burn
-convergence from a frame that omitted evidence. If that delay is unacceptable,
-Q3 requires a complete bounded checkpoint design before shipping remote burns.
-Page expiry is still a page fact; it is not evidence that an object moved to
-another live page was explicitly burned. Retention, page-end cleanup and ledger
-presentation require the #257 maintainer decisions recorded in Q3 and Q5.
-
-### 6. Persistence and transfer are explicit boundaries
-
-Use a new inner content-snapshot version with a tagged object record, not a
-trailing availability flag after legacy payload bytes. Recommend a one-way,
-nondestructive reader for the previous snapshot version. Earlier builds must
-refuse the new version and retain the existing file/save-licence gate; do not
-add the previous content format to a destructive superseded-format list. Verify
-the enclosing FFI/shell path with an older-reader fixture. This new format and
-migration need maintainer acceptance; ADR-0043's append-only name/note detail
-would need an explicit scoped successor relationship, not silent editing.
-
-Persist UUIDs, availability tags, field versions, origin/burn evidence, metadata
-delivery state and the active cut. Re-mint process-local `ChipId` handles after
-restore. No peer restore calls a local sealing constructor with empty bytes.
-
-Cut/first paste, same-page move and cross-page move preserve UUID, metadata and
-revisions without requiring a value. Copy/later-cut-paste/option-drag cannot
-clone a peer-only payload: recommend a cause-specific unavailable placeholder
-and outcome, without minting a fake sealed object. Keep fragment duplicate and
-size validation before any mutation. Source/destination transfer plus active-cut
-consumption must remain transactional and restart-durable under the existing
-save window, not a new stronger crash guarantee.
-
-Cross-page updates can arrive in either order, including a move performed on a
-peer while the payload remains on the original device. UUID preservation alone
-does not migrate page ownership or its clock. Cross-device ownership/clock
-reconciliation and concurrent move policy are a #257 maintainer design gate;
-no metadata patch may copy payload or decide ownership by arrival order.
+Never on the wire: the value, the excerpt made from it, the exact
+character and line counts, the conceal receipt and the note's undo
+stack.
 
 ## Consequences
 
-- Proposed behavior: unknown objects no longer prevent ordinary valid document
-  updates from being applied; missing optional metadata produces a typed face.
-- Optional metadata uses bounded buffers and transport capacity. Local data can
-  remain unsynced and the UI must disclose that distinction. Padding does not
-  erase metadata's traffic-size contribution; measure it against ADR-0021's
-  existing admission before release.
-- Notes remain unsynced under the recommended first increment. This avoids
-  introducing silent whole-note loss; it is not acceptance of a final note policy.
-- Tagged persistence prevents the proposed peer representation from being read
-  as an empty local secret. Older builds cannot edit new-format state; new builds
-  must demonstrate preservation rather than assume length framing provides it.
-- Signed terminal evidence adds key verification, durable protocol state and a
-  migration question. This proposal cannot establish global terminal convergence
-  by unsigned booleans or ordinary ledger records.
-- Mixed sync builds remain incompatible: skipping an unknown metadata envelope
-  does not teach an old build to import an unknown sentinel. Require an explicit
-  protocol/capability gate with an upgrade outcome before enrollment/attachment,
-  not silent send-and-drop. Exact negotiation is a pre-release decision.
-- Accepted records, Law 0001 and draft Law 0004 are unchanged by this review.
-  The implementation/test inventory belongs in the linked plan, not this ADR.
+- A page holding sealed objects syncs and converges on every device;
+  sealing on an enrolled page, a move onto one and a cut's paste onto
+  one no longer end its sync.
+- A second device sees an object's kind, size class, name and note,
+  and can rename it, annotate it, move it and remove it. It cannot
+  copy, drag, link, conceal or burn the value.
+- The relay learns nothing new: both envelopes ride inside the seal
+  and padding. Their bytes raise the padded size of a batch, which is
+  the relay admission's existing delta size item.
+- The name and the note's text leave the device over sync, sealed. A
+  person who writes a secret into a note syncs it to every enrolled
+  device.
+- A note's deleted text now persists at rest until its page compacts,
+  as the body's does. Before this record a relaunch shed it.
+- A peer can show `value on another device` for an object its sealer
+  burned, until the page ends or the sealer's device sees that
+  identity stand again.
+- An earlier build still refuses these batches on `ChipRoster` and
+  skips the two new envelopes; no capability negotiation exists. No
+  user meets this before the relay ships.
+- An earlier app build cannot open content this build writes.
+- On acceptance: ADR-0043 point 4 is superseded in part (the note
+  persists its operation log, and the record is no longer readable by
+  a build that predates it), and ADR-0043's and ADR-0046's first open
+  questions are answered here; each gains a reciprocal line. Client
+  protocol row 10.31 is replaced, and Law 0001's lifecycle table gains
+  the record with no value, both for ratification.
 
 ## Alternatives
 
-- **Full unbounded roster tables:** not recommended. Many small entries, detached
-  records or tombstones can exceed limits even if each note is capped.
-- **Empty bytes plus trailing peer flag:** not recommended. The current reader
-  rebuilds a local text/image chip before interpreting any future trailing flag.
-- **Unsigned absorbing burn with a payload-device exception:** not recommended.
-  It both lacks origin authorization and makes terminal results device-dependent.
-- **Whole-note LWW now:** remains an unaccepted alternative, with explicit text
-  loss and undo consequences; no inferred approval from name LWW or #257.
-- **Chip-owned note CRDT:** viable for later review. It need not put note ink into
-  the page body, but ADR-0043's text-only restore means shared causal identity
-  across restart and compaction needs design before reuse of the local `Note`.
-- **Import only the non-chip part of a Loro delta:** not recommended; removing
-  operations from its dependency graph can reproduce `MissingHistory`.
-- **No optional metadata in the first increment:** a valid narrower proposal if
-  the maintainer prefers it. Typed peer records still allow document progress.
-
-## Open questions
-
-These require maintainer acceptance; the plan gives concrete choices and tests.
-
-1. **Q1 — Metadata and budgets:** accept kind/size/name patches, the proposed
-   byte/count budgets, partial frame semantics and independent delivery, or
-   start with bare peer records?
-2. **Q2 — Notes:** accept local-only notes for the first increment (recommended),
-   or require CRDT/conflict preservation now? Lossy LWW requires separate,
-   explicit acceptance of whole-text loss and its undo behavior.
-3. **Q3 — Burns:** accept sealer-signed origin/burn evidence and uniform terminal
-   treatment, with delayed knowledge after a partial frame? Decide legacy
-   objects, revoked sealer keys, retention/page-end cleanup and remote-event
-   presentation. Otherwise defer remote burn replication, explicitly.
-4. **Q4 — At rest and mixed versions:** accept nondestructive format migration,
-   older-reader refusal and a negotiated minimum sync capability? Confirm the
-   scoped relationship to ADR-0043 on acceptance.
-5. **Q5 — Cross-device ownership/clock and duplicates:** obtain a #257
-   maintainer decision on cross-page reconciliation, concurrent moves and
-   stable-occurrence duplicate projection before imports change. A's #267
-   placement overlays do not decide these. Is refusing malformed duplicate
-   input an intended exception to the direction, distinct from duplicates
-   produced by valid concurrent edits?
-6. **Q6 — Authority:** who accepts this ADR and any related law/spec amendments,
-   and which exact accepted clauses, if any, does it supersede? This review
-   makes no acceptance or supersession edit.
+- **Metadata in the page's Loro document:** rejected; ADR-0043 puts the
+  name and note "not ink in the page's document".
+- **A full table of every object on each change:** rejected; its size
+  grows with the roster and it can crowd the transport bounds.
+- **Whole note text, last writer wins:** rejected; two offline edits
+  keep one side's text and lose the other's outside undo.
+- **Notes stay on each device:** rejected by the maintainer on
+  2026-10-23.
+- **Signed burn evidence:** deferred. It needs a signed origin at seal
+  time, durable tombstones and a migration for objects sealed before.
+- **Import the batch without the sentinel:** rejected; a Loro update is
+  one dependency graph, and dropping an insertion breaks the ops after
+  it.
 
 ## Eject triggers
 
-- Measured metadata overhead cannot fit the proposed independent budgets at the
-  normal sync cadence; reconsider the metadata set or encoding.
-- Product requirements need note edits on every device immediately; reopen Q2
-  rather than enabling lossy LWW implicitly.
-- Payload transfer between devices is proposed; re-review origin authorization,
-  placement and terminal evidence for multiple local payload copies.
-- The product requires complete burn knowledge at frame-only join with all peers
-  asleep; partial metadata frames are insufficient and Q3 must be reopened.
+- A measured padded batch or key frame, with metadata and note ops,
+  exceeds the protocol specification's batching and padding bounds.
+- Two devices current with the relay show different names or notes for
+  one object after edits on each.
+- A note's text appears twice after a merge: two histories with no
+  shared base met.
+- A record decides payload transfer between devices.
+- A burned object's value is readable on any device.
 
 ## Decision history
 
 - 2026-10-16: Proposed.
-- 2026-10-16: Design-only review at `bc1bc4e4`; revised recommendations for bounded
-  optional metadata, typed peer persistence, terminal evidence, field versions
-  and explicit note-policy acceptance. No architectural acceptance; no Rust,
-  Swift, accepted-record or law changes. Implementation remains gated on #256.
-- 2026-10-16: Scope clarification: A's #267 work is placement overlays only;
-  cross-device ownership/clock remains a #257 maintainer design gate. The plan
-  records B's local #256 implementation at `fe03c8cb`; upstream integration and
-  acceptance remain pending. No rebase, implementation or acceptance change.
+- 2026-10-16: Design review at `bc1bc4e4`; the review and its gates are
+  in the [#257 plan](../plans/issue-257-sealed-object-sync.md).
+- 2026-10-23: Rewritten to the maintainer's gate answers after #256's
+  buffers merged: kind, size class and name travel, notes merge as a
+  CRDT, burns stay on the device. Still proposed.
