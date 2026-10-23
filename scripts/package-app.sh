@@ -296,6 +296,8 @@ read_source_state() {
   SOURCE_DIRTY=""
   SOURCE_HIDDEN=""
   SOURCE_CHANGED=""
+  SOURCE_SNAPSHOT=""
+  SOURCE_RECORD=""
   [[ -n "$SOURCE_HEAD" ]] || return 0
   SOURCE_INDEX="$(mktemp -t onetimepad-source-index)"
   TEMP_FILES+=("$SOURCE_INDEX")
@@ -362,6 +364,38 @@ in_ci() {
   case "${CI:-}" in
     '' | false | 0) return 1 ;;
   esac
+}
+
+# A dirty dev or local build outside CI is stamped with a snapshot commit of its tree, recorded
+# under refs/builds/; flagged index entries rule it out, since the snapshot would miss their edits.
+snapshot_source() {
+  local ref existing output
+  SOURCE_SNAPSHOT=""
+  SOURCE_RECORD=""
+  [[ -n "$SOURCE_DIRTY" && -n "$SOURCE_TREE" && -z "$SOURCE_CHANGED" && -z "$SOURCE_HIDDEN" ]] || return 0
+  if in_ci; then
+    return 0
+  fi
+  ref="refs/builds/$BUILD_LANE/$VERSION-$SOURCE_SHORT-${SOURCE_TREE:0:12}"
+  ref_name_ok "$ref" || return 0
+  if existing="$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null)"; then
+    if [[ "$(git rev-parse -q --verify "$existing^{tree}" 2>/dev/null)" == "$SOURCE_TREE" \
+      && "$(git rev-parse -q --verify "$existing^1" 2>/dev/null)" == "$SOURCE_HEAD" ]]; then
+      SOURCE_SNAPSHOT=$existing
+      SOURCE_RECORD=$ref
+    else
+      echo "    warning: $ref names another snapshot; left as it is, and this build gets no record." >&2
+    fi
+    return 0
+  fi
+  if ! output="$(git commit-tree --no-gpg-sign -p "$SOURCE_HEAD" \
+    -m "OnetimePad $VERSION, $BUILD_LANE build of $SOURCE_SHORT with uncommitted changes" \
+    "$SOURCE_TREE" 2>&1)" || [[ ! "$output" =~ ^[0-9a-f]{40,64}$ ]]; then
+    git_warning "could not snapshot the uncommitted changes, so this build is stamped $SOURCE_SHORT.dirty with no record:" "$output"
+    return 0
+  fi
+  SOURCE_SNAPSHOT=$output
+  SOURCE_RECORD=$ref
 }
 
 # Tags the commit a build came from. Returns 0 when the tag names that commit,
@@ -440,8 +474,13 @@ tag_build() {
     echo "    no record: the source changed during the build." >&2
     return 0
   fi
+  if [[ -n "$SOURCE_DIRTY" && -z "$SOURCE_RECORD" ]]; then
+    echo "    no record: no snapshot was made of the uncommitted changes." >&2
+    return 0
+  fi
   if [[ -n "$SOURCE_DIRTY" ]]; then
-    echo "    no record: the tree has uncommitted changes, so no commit names this build." >&2
+    write_build_record "$SOURCE_RECORD" "$SOURCE_SNAPSHOT" \
+      "OnetimePad $VERSION, $BUILD_LANE build of $SOURCE_SHORT with uncommitted changes" || true
     return 0
   fi
   if [[ -z "$APP_STORE_BUILD_NUMBER" ]]; then
@@ -677,6 +716,7 @@ if ((APP_STORE_MODE)) && [[ -n "$SOURCE_CHANGED" ]]; then
   echo "--app-store stops instead, before a build number is reserved; package again when nothing in the checkout is changing." >&2
   exit 1
 fi
+snapshot_source
 
 if ((APP_STORE_MODE)); then
   # Keep the App Store build number separate from the marketing version and
@@ -711,7 +751,9 @@ fi
 # About box and the diagnostics report cannot disagree about a build.
 plutil -replace OnetimePadBuildLane -string "$BUILD_LANE" "$APP/Contents/Info.plist"
 SOURCE_REVISION="unknown"
-if [[ -n "$SOURCE_HEAD" ]]; then
+if [[ -n "$SOURCE_SNAPSHOT" ]]; then
+  SOURCE_REVISION="$SOURCE_SNAPSHOT"
+elif [[ -n "$SOURCE_HEAD" ]]; then
   SOURCE_REVISION="$SOURCE_HEAD"
   [[ -z "$SOURCE_DIRTY" ]] || SOURCE_REVISION="$SOURCE_REVISION.dirty"
 fi
