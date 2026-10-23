@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect current-user executables; conservatively check text mappings when unlinked."""
+"""Inspect current-user executables and unlinked text mappings. Requires Python 3.9+."""
 import ctypes
 import errno
 import os
@@ -45,15 +45,15 @@ class ProcessPaths:
 def mapped_paths(pid):
     result = subprocess.run(["/usr/sbin/lsof", "-nP", "-a", "-p", str(pid), "-d", "txt", "-Fpn0"],
                             capture_output=True)
-    paths = [Path(os.fsdecode(field[1:])) for raw in result.stdout.split(b"\0")
-             if (field := raw.lstrip(b"\n")).startswith(b"n")]
+    fields = [raw.lstrip(b"\n") for raw in result.stdout.split(b"\0")]
+    paths = [Path(os.fsdecode(field[1:])) for field in fields if field.startswith(b"n")]
     if result.returncode == 0 and paths:
         return paths
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return []
-    raise OSError(f"cannot inspect executable mappings for process {pid}")
+    raise OSError(errno.EIO, f"cannot inspect executable mappings for process {pid}")
 
 
 def running_build(build_directory, processes):
@@ -73,6 +73,10 @@ def running_build(build_directory, processes):
 
 
 def main(arguments):
+    if sys.version_info < (3, 9):
+        print("Process inspection requires Python 3.9 or later; no build or tests were started.",
+              file=sys.stderr)
+        return 2
     detect_only = bool(arguments and arguments[0] == "--running")
     if len(arguments) != (2 if detect_only else 1) or (not detect_only and arguments[0].startswith("-")):
         print("Usage: check-live-build.py [--running] DIRECTORY", file=sys.stderr)
@@ -83,7 +87,7 @@ def main(arguments):
     except (OSError, RuntimeError) as error:
         print(f"Cannot inspect running build executables; no build or tests were started: {error}",
               file=sys.stderr)
-        return 2 if detect_only else 1
+        return 2
     if detect_only:
         return 0 if active else 1
     if active:

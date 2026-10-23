@@ -36,21 +36,26 @@ sys.exit(1 if os.environ["GUARD_BLOCK"] and os.environ["GUARD_BLOCK"] in args[0]
                 scripts / "build-core.sh": '#!/bin/sh\necho core >> "$GUARD_CALLS"\n',
                 commands / "osascript": '#!/bin/sh\necho quit >> "$GUARD_CALLS"\n',
                 commands / "swift": '#!/bin/sh\necho swift >> "$GUARD_CALLS"\nexit 90\n',
+                commands / "pgrep": '#!/bin/sh\necho legacy-pgrep >> "$GUARD_CALLS"\nexit 90\n',
                 commands / "uname": '#!/bin/sh\necho Darwin\n',
                 commands / "plutil": '#!/bin/sh\necho plutil >> "$GUARD_CALLS"\nexit 90\n',
             }
-            if lane == "dev.sh":
+            if lane == "install.sh":
+                programs[commands / "rm"] = '#!/bin/sh\necho remove >> "$GUARD_CALLS"\n'
+                programs[commands / "ditto"] = '#!/bin/sh\necho copy >> "$GUARD_CALLS"\nexit 90\n'
+            if lane in ("dev.sh", "install.sh"):
                 programs[scripts / "package-app.sh"] = '#!/bin/sh\necho package >> "$GUARD_CALLS"\n'
             for path, body in programs.items():
                 path.write_text(body)
                 path.chmod(0o755)
             calls = root / "calls"
             result = subprocess.run(["bash", str(scripts / lane), "--no-launch"]
-                                    if lane == "dev.sh" else ["bash", str(scripts / lane)],
+                                    if lane in ("dev.sh", "install.sh") else ["bash", str(scripts / lane)],
                                     env=dict(os.environ, PATH=f"{commands}:{os.environ['PATH']}",
                                              GUARD_CALLS=str(calls), GUARD_ERROR=str(int(inspection_error)),
                                              GUARD_RUNNING=str(int(dist_running)), GUARD_BLOCK=blocked,
-                                             ONETIMEPAD_ENVIRONMENTS_DIR=str(root / "environments")),
+                                             ONETIMEPAD_ENVIRONMENTS_DIR=str(root / "environments"),
+                                             APP_DEST=str(root / "installed[local]")),
                                     text=True, capture_output=True)
             return result, calls.read_text().splitlines()
 
@@ -83,6 +88,31 @@ sys.exit(1 if os.environ["GUARD_BLOCK"] and os.environ["GUARD_BLOCK"] in args[0]
         self.assertLess(calls.index("quit"), calls.index("core"))
         self.assertLess(calls.index("core"), calls.index("package"))
         self.assertNotIn("swift", calls)
+
+    def test_install_stops_on_inspection_error_before_quit_or_replacement(self):
+        result, calls = self.run_lane("install.sh", inspection_error=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls[0], "package")
+        self.assertEqual(len(calls), 2)
+        self.assertIn("--running", calls[1])
+        self.assertIn("installed[local]/OnetimePad Local.app/Contents/MacOS", calls[1])
+        self.assertIn("Process inspection failed", result.stderr)
+
+    def test_install_shared_query_checks_graceful_quit_before_replacement(self):
+        result, calls = self.run_lane("install.sh", dist_running=True)
+        self.assertEqual(result.returncode, 90, result.stderr)
+        self.assertEqual(calls[0], "package")
+        self.assertLess(calls.index("quit"), calls.index("remove"))
+        self.assertEqual(sum("--running" in call for call in calls), 2)
+        self.assertNotIn("legacy-pgrep", calls)
+        self.assertEqual(calls[-2:], ["remove", "copy"])
+
+    def test_install_absent_process_does_not_send_quit(self):
+        result, calls = self.run_lane("install.sh")
+        self.assertEqual(result.returncode, 90, result.stderr)
+        self.assertNotIn("quit", calls)
+        self.assertNotIn("legacy-pgrep", calls)
+        self.assertEqual(calls[-2:], ["remove", "copy"])
 
     def test_running_query_propagates_inspection_errors(self):
         source = SCRIPTS / "build-lanes.sh"

@@ -60,7 +60,7 @@ class LiveBuildGuardTests(unittest.TestCase):
     def test_inspection_error_is_reported_and_fails_closed(self):
         with patch.object(GUARD, "ProcessPaths", side_effect=OSError(errno.EPERM, "denied")):
             with patch("sys.stderr") as output:
-                self.assertEqual(GUARD.main(["/tmp/build"]), 1)
+                self.assertEqual(GUARD.main(["/tmp/build"]), 2)
         self.assertIn("Cannot inspect", "".join(call.args[0] for call in output.write.call_args_list))
 
     def test_running_query_distinguishes_present_absent_and_inspection_error(self):
@@ -72,6 +72,23 @@ class LiveBuildGuardTests(unittest.TestCase):
             inspect.side_effect = OSError(errno.EPERM, "denied")
             with patch("sys.stderr"):
                 self.assertEqual(GUARD.main(["--running", "/tmp/build"]), 2)
+
+    def test_old_python_refuses_before_process_inspection(self):
+        with patch.object(GUARD.sys, "version_info", (3, 8)), patch("sys.stderr") as output:
+            with patch.object(GUARD, "ProcessPaths") as processes:
+                self.assertEqual(GUARD.main(["/tmp/build"]), 2)
+                processes.assert_not_called()
+        self.assertIn("Python 3.9", "".join(call.args[0] for call in output.write.call_args_list))
+
+    def test_build_check_distinguishes_running_from_inspection_failure(self):
+        with patch.object(GUARD, "ProcessPaths"), patch.object(GUARD, "running_build") as inspect:
+            with patch("sys.stderr"):
+                inspect.return_value = True
+                self.assertEqual(GUARD.main(["/tmp/build"]), 1)
+                inspect.return_value = False
+                self.assertEqual(GUARD.main(["/tmp/build"]), 0)
+                inspect.side_effect = OSError(errno.EIO, "inspection failed")
+                self.assertEqual(GUARD.main(["/tmp/build"]), 2)
 
     def test_process_enumeration_is_limited_to_the_current_user(self):
         processes = GUARD.ProcessPaths.__new__(GUARD.ProcessPaths)
@@ -109,7 +126,7 @@ class LiveBuildGuardTests(unittest.TestCase):
         processes.pids.return_value = [123]
         processes.executable.side_effect = OSError(errno.EPERM, "denied")
         with patch.object(GUARD, "ProcessPaths", return_value=processes), patch("sys.stderr"):
-            self.assertEqual(GUARD.main(["/tmp/build"]), 1)
+            self.assertEqual(GUARD.main(["/tmp/build"]), 2)
 
     def test_symlinked_build_directory_matches_resolved_executable(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -145,8 +162,9 @@ class LiveBuildGuardTests(unittest.TestCase):
     def test_text_mapping_failure_does_not_skip_existing_process(self):
         output = subprocess.CompletedProcess([], 1, b"", b"denied")
         with patch.object(GUARD.subprocess, "run", return_value=output), patch.object(GUARD.os, "kill"):
-            with self.assertRaises(OSError):
+            with self.assertRaises(OSError) as raised:
                 GUARD.mapped_paths(123)
+        self.assertEqual(raised.exception.errno, errno.EIO)
 
     def test_exited_process_is_skipped(self):
         processes = Mock()
