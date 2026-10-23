@@ -54,3 +54,5 @@
 - [Issue #256 C27 stub summary](project_issue256_c27_stub_summary.md): IgnoredAny skips a string without serde_json scratch, a lone surrogate witnesses it; B1 is C08, C19 to C21 (C17 left it in PR 315)
 - [Close chord and Help menu](project_close_chord_and_help_menu.md): PRs 301/302 route cmd-w by key window identity and insert the Help item from AppKit after launch; SwiftUI rebuild and title flip owe hardware looks
 - [Issue #310 deadline writes](project_issue310_deadline_writes.md): chip_mut reads readable_sheets_mut; the note chord skips menu validation; mirror lib.rs docs in companion_ffi.h; page ink on a due page is still ungated
+- [Roll jump tests](project_roll_jump_tests.md): ordered offscreen window animates jumps; only a zero duration group cancels one, so only settlePendingPlace supersedes
+- [SwiftUI AX tree absent in xctest](project_swiftui_ax_tree_absent_in_xctest.md): a hosted SwiftUI view exposes no accessibility children or actions; test the pure builder the view reads
