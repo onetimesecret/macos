@@ -1,7 +1,7 @@
 import CompanionKit
 import Foundation
 
-/// Explicit presentation requests (ADR-0059).
+/// Explicit presentation requests (ADR-0061).
 enum ActivationReason: Equatable, Sendable {
     case launchActivation
     case reopen

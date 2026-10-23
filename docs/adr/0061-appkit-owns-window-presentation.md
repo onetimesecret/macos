@@ -2,7 +2,7 @@
 documentation_status: needs-review
 ---
 
-# ADR-0059: AppKit owns application window presentation
+# ADR-0061: AppKit owns application window presentation
 
 - **Status:** accepted
 - **Date:** 2026-10-22
@@ -38,3 +38,7 @@ There is no launch timer and no dependency on the macOS 15 SwiftUI launch-suppre
 ## Eject triggers
 
 Revisit this decision if a supported macOS release fails to deliver initial-open or reopen events as required, native focus restoration consistently selects the wrong ordinary window, or a future document-scene architecture can replace the AppKit window controllers as a complete presentation owner.
+
+## Decision history
+
+- 2026-10-23: renumbered from 0059, the number the Markdown dialects branch had already given [ADR-0059](0059-preview-images-use-an-explicit-resource-request-route.md), which more documents cite; an open pull request uses 0060. The decision is unchanged.

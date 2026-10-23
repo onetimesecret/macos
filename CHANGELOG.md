@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Cmd-Tab preserves the current window instead of always selecting the editor.
   A Dock reopen opens the editor only when no ordinary window is visible.
-  See [ADR-0059](docs/adr/0059-appkit-owns-window-presentation.md).
+  See [ADR-0061](docs/adr/0061-appkit-owns-window-presentation.md).
 
 - **Seat words and note hints take their size from the platform** (app
   0.40.8; issue #297). The twelve places that spelled the mini font
