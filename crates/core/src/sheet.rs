@@ -260,18 +260,55 @@ pub fn judge_name(draft: &str) -> Result<Option<&str>, NameRefusal> {
     Ok(Some(name))
 }
 
-/// A sealed chip: secret bytes, the face it shows, and the typed name and
-/// note beside it (ADR-0043 point 1); the face and the name are content too,
-/// and wipe with the bytes (Law 0004).
-pub struct SealedChip {
-    pub(crate) id: ChipId,
-    pub(crate) uuid: ItemId,
+/// What a record with no value is, as the device with the value tells it
+/// (ADR-0058 point 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeerKind {
+    /// UTF-8 text.
+    Text,
+    /// An image.
+    Image,
+}
+
+/// A sealed value on this device and the face made from it; the face is
+/// content too, and wipes with the bytes (Law 0004).
+pub struct LocalValue {
     pub(crate) bytes: SecretBuffer,
     pub(crate) meta: ChipMeta,
     /// A wiping owner: the excerpt is the content's own head and tail (Law 0004, C09).
     pub(crate) excerpt: Zeroizing<String>,
     pub(crate) size_label: String,
     pub(crate) conceal: Option<Conceal>,
+}
+
+impl LocalValue {
+    /// What the bytes are, described without reading them.
+    #[must_use]
+    pub fn meta(&self) -> ChipMeta {
+        self.meta
+    }
+}
+
+/// Where a sealed object's value lives (ADR-0058 point 1).
+pub enum Availability {
+    /// Sealed on this device.
+    Local(LocalValue),
+    /// Sealed on another device: no bytes, no excerpt, no receipt here.
+    Peer {
+        /// Its kind, once the device with the value has told it.
+        kind: Option<PeerKind>,
+        /// Its size class, once told.
+        size: Option<SizeClass>,
+    },
+}
+
+/// A sealed chip: its value, here or on another device, and the typed name
+/// and note beside it (ADR-0043 point 1); the name is content too, and
+/// wipes with the bytes (Law 0004).
+pub struct SealedChip {
+    pub(crate) id: ChipId,
+    pub(crate) uuid: ItemId,
+    pub(crate) availability: Availability,
     /// A wiping owner, since a name is content (Law 0004, C10).
     pub(crate) name: Option<Zeroizing<String>>,
     /// Made by its first accepted edit, or by a restore, a paste or a clone that brings its
@@ -291,14 +328,38 @@ impl SealedChip {
     /// Seal text under an existing identity (restore path).
     pub(crate) fn text_with_uuid(id: ChipId, uuid: ItemId, text: &str) -> Self {
         let (excerpt, size_label, meta) = text_face(text);
+        Self::record(
+            id,
+            uuid,
+            Availability::Local(LocalValue {
+                bytes: SecretBuffer::from_text(text),
+                meta,
+                excerpt,
+                size_label,
+                conceal: None,
+            }),
+        )
+    }
+
+    /// A record for an object sealed on another device: no value, kind or
+    /// size class until told (ADR-0058 point 1).
+    pub(crate) fn peer(id: ChipId, uuid: ItemId) -> Self {
+        Self::record(
+            id,
+            uuid,
+            Availability::Peer {
+                kind: None,
+                size: None,
+            },
+        )
+    }
+
+    /// A record with no name, no note and no standing yet.
+    fn record(id: ChipId, uuid: ItemId, availability: Availability) -> Self {
         Self {
             id,
             uuid,
-            bytes: SecretBuffer::from_text(text),
-            meta,
-            excerpt,
-            size_label,
-            conceal: None,
+            availability,
             name: None,
             note: None,
             stood: false,
@@ -314,33 +375,56 @@ impl SealedChip {
     pub(crate) fn image_with_uuid(id: ChipId, uuid: ItemId, bytes: Vec<u8>) -> Self {
         let byte_len = bytes.len();
         let excerpt = Zeroizing::new(format!("{} image", sniff_image_kind(&bytes)));
-        Self {
+        Self::record(
             id,
             uuid,
-            bytes: SecretBuffer::new_unlocked(bytes),
-            meta: ChipMeta::Image { byte_len },
-            excerpt,
-            size_label: SizeClass::of(byte_len).to_string(),
-            conceal: None,
-            name: None,
-            note: None,
-            stood: false,
-        }
+            Availability::Local(LocalValue {
+                bytes: SecretBuffer::new_unlocked(bytes),
+                meta: ChipMeta::Image { byte_len },
+                excerpt,
+                size_label: SizeClass::of(byte_len).to_string(),
+                conceal: None,
+            }),
+        )
     }
 
     /// A clone under a new identity: the payload copied core-side at its exact size, with
     /// no receipt, name or note; resolution then sets the envelope's (Law 0001, sealed fragment).
-    pub(crate) fn duplicate(&self, id: ChipId) -> Self {
-        let mut clone = match self.meta {
+    /// `None` for a record whose value is on another device (ADR-0058 point 4).
+    pub(crate) fn duplicate(&self, id: ChipId) -> Option<Self> {
+        let local = self.local()?;
+        let mut clone = match local.meta {
             ChipMeta::Text { .. } => Self::text(
                 id,
-                std::str::from_utf8(self.bytes.expose()).expect("a text chip is sealed from UTF-8"),
+                std::str::from_utf8(local.bytes.expose())
+                    .expect("a text chip is sealed from UTF-8"),
             ),
-            ChipMeta::Image { .. } => Self::image(id, self.bytes.expose().to_vec()),
+            ChipMeta::Image { .. } => Self::image(id, local.bytes.expose().to_vec()),
         };
         // Its first standing is a paste, which a step may take back.
         clone.stood = true;
-        clone
+        Some(clone)
+    }
+
+    /// The value and its face, when they are on this device.
+    pub(crate) fn local(&self) -> Option<&LocalValue> {
+        match &self.availability {
+            Availability::Local(local) => Some(local),
+            Availability::Peer { .. } => None,
+        }
+    }
+
+    /// The same, mutably.
+    pub(crate) fn local_mut(&mut self) -> Option<&mut LocalValue> {
+        match &mut self.availability {
+            Availability::Local(local) => Some(local),
+            Availability::Peer { .. } => None,
+        }
+    }
+
+    /// Its sealed byte count when the value is here, for a ledger size class.
+    pub(crate) fn local_len(&self) -> Option<usize> {
+        self.local().map(|local| local.bytes.len())
     }
 
     /// Identifier.
@@ -355,28 +439,46 @@ impl SealedChip {
         self.uuid
     }
 
-    /// What the bytes are, described without reading them.
+    /// Where its value lives (ADR-0058 point 1).
     #[must_use]
-    pub fn meta(&self) -> ChipMeta {
-        self.meta
+    pub fn availability(&self) -> &Availability {
+        &self.availability
     }
 
-    /// The mechanical excerpt, the only rendering the content ever gets.
+    /// Whether its value is on this device.
+    #[must_use]
+    pub fn is_local(&self) -> bool {
+        self.local().is_some()
+    }
+
+    /// What the bytes are, described without reading them; `None` when they
+    /// are on another device.
+    #[must_use]
+    pub fn meta(&self) -> Option<ChipMeta> {
+        self.local().map(LocalValue::meta)
+    }
+
+    /// The mechanical excerpt, the only rendering the content ever gets;
+    /// empty when the value is on another device.
     #[must_use]
     pub fn excerpt(&self) -> &str {
-        self.excerpt.as_str()
+        self.local().map_or("", |local| local.excerpt.as_str())
     }
 
-    /// The ledger's size class, never an exact length (D-29).
+    /// The ledger's size class, never an exact length (D-29); empty for a
+    /// record with no value whose size class is not known.
     #[must_use]
     pub fn size_label(&self) -> &str {
-        &self.size_label
+        match &self.availability {
+            Availability::Local(local) => &local.size_label,
+            Availability::Peer { size, .. } => size.map_or("", SizeClass::as_str),
+        }
     }
 
     /// Conceal annotation, if this chip became a one-time link.
     #[must_use]
     pub fn conceal(&self) -> Option<&Conceal> {
-        self.conceal.as_ref()
+        self.local().and_then(|local| local.conceal.as_ref())
     }
 
     /// The typed name, if one was given.
@@ -1334,9 +1436,9 @@ mod tests {
         assert_eq!(chip.size_label(), "large");
         assert_eq!(
             chip.meta(),
-            ChipMeta::Image {
+            Some(ChipMeta::Image {
                 byte_len: 212 * 1024
-            }
+            })
         );
     }
 
@@ -1465,7 +1567,8 @@ mod tests {
     fn an_objects_excerpt_and_name_are_wiping_owners() {
         let mut chip = SealedChip::text(ChipId(1), &"🧪".repeat(60));
         chip.name = Some(Zeroizing::new("TOKEN".into()));
-        wiping_owner(&chip.excerpt);
+        let excerpt = &chip.local().unwrap().excerpt;
+        wiping_owner(excerpt);
         wiping_owner(chip.name.as_ref().unwrap());
         assert_eq!(chip.name(), Some("TOKEN"));
         assert_eq!(
@@ -1474,8 +1577,8 @@ mod tests {
             "budget 20, head 12, tail 8, one mark"
         );
         assert_eq!(
-            chip.excerpt.capacity(),
-            chip.excerpt.len(),
+            excerpt.capacity(),
+            excerpt.len(),
             "the excerpt grew past its size"
         );
         let (excerpt, _, _) = text_face("🧪🧪🧪🧪🧪\nsecond line");

@@ -69,6 +69,9 @@ pub enum PayloadError {
     ImageChip,
     /// The page's countdown has run out, swept or not (Law 0001, expiry row).
     Expired,
+    /// An object standing in the body has its value on another device
+    /// (ADR-0058 point 4).
+    ValueElsewhere,
 }
 
 impl std::fmt::Display for PayloadError {
@@ -80,6 +83,9 @@ impl std::fmt::Display for PayloadError {
                 "this page holds an image, which cannot travel as a text secret yet"
             ),
             PayloadError::Expired => write!(f, "this page has expired"),
+            PayloadError::ValueElsewhere => {
+                write!(f, "an object on this page has its value on another device")
+            }
         }
     }
 }
@@ -673,6 +679,25 @@ impl<C: Clock> SheetStore<C> {
         } else {
             Err(Refusal::InvalidRange)
         }
+    }
+
+    /// Stand a record with no value at `at_u16`, as admission from a peer
+    /// will (ADR-0058 point 1). `test-util` only (ADR-0018).
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn stand_peer_record(
+        &mut self,
+        id: SheetId,
+        at_u16: u32,
+        kind: Option<crate::sheet::PeerKind>,
+        size: Option<SizeClass>,
+    ) -> ChipId {
+        let chip = ChipId(self.next_chip_id);
+        self.next_chip_id += 1;
+        let mut record = SealedChip::peer(chip, ItemId::random());
+        record.availability = crate::sheet::Availability::Peer { kind, size };
+        self.sheet_mut(id).expect("a live page").chips.push(record);
+        self.place_chip(id, chip, at_u16, 0, None)
+            .expect("a point on the page")
     }
 
     /// Apply a batch of edits to a page's body (ADR-0013). The batch is
@@ -1421,27 +1446,29 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Copy a chip's bytes back out, without consuming the chip (doc 01).
-    /// `None` for an unknown chip or a page past its deadline
-    /// (Law 0001, expiry row).
+    /// `None` for an unknown chip, one whose value is on another device
+    /// (ADR-0058 point 4) or a page past its deadline (Law 0001, expiry row).
     #[must_use]
     pub fn copy_out_chip(&self, id: ChipId) -> Option<(Zeroizing<Vec<u8>>, ChipMeta)> {
-        let (_, chip) = self.chip_home(id)?;
-        Some((Zeroizing::new(chip.bytes.expose().to_vec()), chip.meta))
+        let local = self.chip_home(id)?.1.local()?;
+        Some((Zeroizing::new(local.bytes.expose().to_vec()), local.meta))
     }
 
     /// The name, `=` and a text chip's payload, raw, in one buffer at its
     /// final size (ADR-0047 point 1; core interface, `NAME=value`).
-    /// `None` for an unknown, unnamed or image chip, or a page past its
-    /// deadline (Law 0001, expiry row).
+    /// `None` for an unknown, unnamed or image chip, one whose value is on
+    /// another device (ADR-0058 point 4), or a page past its deadline
+    /// (Law 0001, expiry row).
     /// Consumes nothing and records nothing.
     #[must_use]
     pub fn copy_out_name_value(&self, id: ChipId) -> Option<Zeroizing<Vec<u8>>> {
         let (_, chip) = self.chip_home(id)?;
-        if matches!(chip.meta, ChipMeta::Image { .. }) {
+        let local = chip.local()?;
+        if matches!(local.meta, ChipMeta::Image { .. }) {
             return None;
         }
         let name = chip.name.as_ref()?.as_str();
-        let value = chip.bytes.expose();
+        let value = local.bytes.expose();
         // Exact size: a reallocation would strand sealed bytes unwiped (Law 0004).
         let mut out = Zeroizing::new(Vec::with_capacity(name.len() + 1 + value.len()));
         out.extend_from_slice(name.as_bytes());
@@ -1451,7 +1478,9 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Burn a chip, attached or detached: its bytes wiped and its page's undo
-    /// stack with it (ADR-0046 point 2). False for an unknown chip.
+    /// stack with it (ADR-0046 point 2). False for an unknown chip, and for
+    /// one whose value is on another device, which only that device burns
+    /// (ADR-0058 point 8).
     pub fn delete_chip(&mut self, id: ChipId) -> bool {
         let offset = self.clock.local_offset_seconds();
         let mut removed: Option<(ItemId, usize, Zeroizing<String>, u64)> = None;
@@ -1459,6 +1488,12 @@ impl<C: Clock> SheetStore<C> {
             let label = tab.label(offset);
             let Some(sheet) = tab.page.as_mut() else {
                 continue;
+            };
+            let len = match sheet.owned_chip(id).map(SealedChip::local_len) {
+                None => continue,
+                // Only the device with the value burns it (ADR-0058 point 8).
+                Some(None) => return false,
+                Some(Some(len)) => len,
             };
             let chip = if let Some(index) = sheet.chips.iter().position(|c| c.id == id) {
                 let uuid = sheet.chips[index].uuid;
@@ -1476,7 +1511,7 @@ impl<C: Clock> SheetStore<C> {
             };
             // A step could stand the burned sentinel again.
             sheet.document.forget_undo();
-            removed = Some((chip.uuid, chip.bytes.len(), label, sheet.created_wall_ms));
+            removed = Some((chip.uuid, len, label, sheet.created_wall_ms));
             drop(chip); // zeroizes
             sheet.rebuild_segments();
             sheet.settle_blocks();
@@ -1498,7 +1533,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Record that a chip's bytes left for `destination` (ADR-0012).
-    /// Returns whether the chip existed.
+    /// Returns whether the chip existed with its value on this device.
     pub fn record_sent(&mut self, chip: ChipId, destination: DestinationClass) -> bool {
         let offset = self.clock.local_offset_seconds();
         // Detached ones too: a conceal's send outlives a removal made mid-flight.
@@ -1509,7 +1544,10 @@ impl<C: Clock> SheetStore<C> {
             return false;
         };
         let uuid = sealed.uuid;
-        let size = SizeClass::of(sealed.bytes.len());
+        let Some(len) = sealed.local_len() else {
+            return false;
+        };
+        let size = SizeClass::of(len);
         let host = self
             .tab_of(sheet_id)
             .expect("the page was found a line above");
@@ -1535,7 +1573,7 @@ impl<C: Clock> SheetStore<C> {
         let page = tab.page.as_ref().expect("the tab holds the page found");
         let uuid = page.uuid;
         let created = page.created_wall_ms;
-        let sealed_bytes: usize = page.chips.iter().map(|c| c.bytes.len()).sum();
+        let sealed_bytes: usize = page.chips.iter().filter_map(SealedChip::local_len).sum();
         self.record(
             LedgerEvent::Sent,
             uuid,
@@ -1548,12 +1586,16 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Record a successful conceal: only the receipt id stays on the chip
-    /// (doc 03 §5).
+    /// (doc 03 §5). False for an unknown chip or one whose value is on
+    /// another device (ADR-0058 point 4).
     pub fn mark_chip_concealed(&mut self, id: ChipId, receipt_id: String) -> bool {
         for sheet in self.tabs.iter_mut().filter_map(|tab| tab.page.as_mut()) {
             let mut owned = sheet.chips.iter_mut().chain(sheet.detached.iter_mut());
             if let Some(chip) = owned.find(|c| c.id == id) {
-                chip.conceal = Some(Conceal { receipt_id });
+                let Some(local) = chip.local_mut() else {
+                    return false;
+                };
+                local.conceal = Some(Conceal { receipt_id });
                 return true;
             }
         }
@@ -1568,8 +1610,9 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// The whole page as one conceal payload, chips inlined in document
-    /// order. Pages holding image chips, and pages past their deadline
-    /// (Law 0001, expiry row), are refused.
+    /// order. Pages with image chips or an object whose value is on another
+    /// device standing in the body (ADR-0058 point 4), and pages past their
+    /// deadline (Law 0001, expiry row), are refused.
     pub fn sheet_payload(&self, id: SheetId) -> Result<Zeroizing<String>, PayloadError> {
         let Some(sheet) = self.readable_sheet(id) else {
             return Err(if self.sheet(id).is_some() {
@@ -1578,10 +1621,14 @@ impl<C: Clock> SheetStore<C> {
                 PayloadError::UnknownSheet
             });
         };
+        // A detached one does not refuse it: the payload is the body.
+        if sheet.chips.iter().any(|c| !c.is_local()) {
+            return Err(PayloadError::ValueElsewhere);
+        }
         if sheet
             .chips
             .iter()
-            .any(|c| matches!(c.meta, ChipMeta::Image { .. }))
+            .any(|c| matches!(c.meta(), Some(ChipMeta::Image { .. })))
         {
             return Err(PayloadError::ImageChip);
         }
@@ -1591,7 +1638,10 @@ impl<C: Clock> SheetStore<C> {
             .iter()
             .map(|segment| match segment {
                 Segment::Ink(text) => text.len(),
-                Segment::Chip(chip_id) => sheet.chip(*chip_id).map_or(0, |c| c.bytes.len()),
+                Segment::Chip(chip_id) => sheet
+                    .chip(*chip_id)
+                    .and_then(SealedChip::local_len)
+                    .unwrap_or(0),
             })
             .sum();
         let mut out = Zeroizing::new(String::with_capacity(total));
@@ -1599,8 +1649,8 @@ impl<C: Clock> SheetStore<C> {
             match segment {
                 Segment::Ink(text) => out.push_str(text),
                 Segment::Chip(chip_id) => {
-                    if let Some(chip) = sheet.chip(*chip_id)
-                        && let Ok(text) = std::str::from_utf8(chip.bytes.expose())
+                    if let Some(local) = sheet.chip(*chip_id).and_then(SealedChip::local)
+                        && let Ok(text) = std::str::from_utf8(local.bytes.expose())
                     {
                         out.push_str(text);
                     }
@@ -1791,18 +1841,24 @@ impl<C: Clock> SheetStore<C> {
     fn entomb(&mut self, sheet: Sheet, label: Zeroizing<String>, event: LedgerEvent) {
         // The page has left the strip, so a cut it held ends here.
         self.end_a_broken_cut();
-        for chip in sheet.chips.iter().chain(&sheet.detached) {
+        // A record whose value is on another device was never sealed here.
+        for (uuid, len) in sheet
+            .chips
+            .iter()
+            .chain(&sheet.detached)
+            .filter_map(|chip| Some((chip.uuid, chip.local_len()?)))
+        {
             self.record(
                 event,
-                chip.uuid,
+                uuid,
                 label.clone(),
                 sheet.created_wall_ms,
-                SizeClass::of(chip.bytes.len()),
+                SizeClass::of(len),
                 DestinationClass::None,
             );
         }
         // A detached chip is a payload the page held, though nothing shows it.
-        if !sheet.has_content() && sheet.detached.is_empty() {
+        if !sheet.has_content() && !sheet.detached.iter().any(SealedChip::is_local) {
             return;
         }
         // The label was resolved by the caller; nothing is derived from ink
@@ -1811,7 +1867,7 @@ impl<C: Clock> SheetStore<C> {
             .chips
             .iter()
             .chain(&sheet.detached)
-            .map(|c| c.bytes.len())
+            .filter_map(SealedChip::local_len)
             .sum();
         self.record(
             event,
@@ -2004,7 +2060,7 @@ mod tests {
     use super::*;
     use crate::clock::ManualClock;
     use crate::ledger::LEDGER_RETENTION_MS;
-    use crate::sheet::NAME_CAP;
+    use crate::sheet::{NAME_CAP, PeerKind};
     use crate::sync::PageChannel;
 
     #[test]
@@ -6449,5 +6505,148 @@ mod tests {
         assert!(alpha.undo(a));
         assert_eq!(body(&alpha, a), "theirs.");
         assert!(!alpha.can_undo(a));
+    }
+
+    /// A page reading `before ￼after` whose object's value is on another device.
+    fn page_with_a_peer_record() -> (SheetStore<ManualClock>, ManualClock, SheetId, ChipId) {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        assert!(store.apply_ops(id, &typed(0, "before after")));
+        let chip = store.stand_peer_record(id, 7, Some(PeerKind::Text), Some(SizeClass::Small));
+        (store, clock, id, chip)
+    }
+
+    fn take_out(store: &mut SheetStore<ManualClock>, id: SheetId, pos_u16: u32) {
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16,
+                len_u16: 1
+            }]
+        ));
+    }
+
+    #[test]
+    fn every_value_route_refuses_a_record_whose_value_is_elsewhere_and_records_nothing() {
+        let (mut store, _clock, id, chip) = page_with_a_peer_record();
+        store.set_chip_name(chip, "API_KEY").unwrap();
+        let ledger = events(&store);
+        let before = body(&store, id);
+
+        assert!(store.copy_out_chip(chip).is_none());
+        assert!(store.copy_out_name_value(chip).is_none());
+        assert!(store.chip_payload(chip).is_none());
+        assert!(!store.mark_chip_concealed(chip, "receipt-elsewhere".into()));
+        for destination in [
+            DestinationClass::Clipboard,
+            DestinationClass::OneTimeLink,
+            DestinationClass::Drag,
+        ] {
+            assert!(!store.record_sent(chip, destination));
+        }
+
+        let record = store.sheet(id).unwrap().chip(chip).unwrap();
+        assert!(!record.is_local());
+        assert!(record.conceal().is_none(), "no receipt was kept");
+        assert_eq!(record.meta(), None);
+        assert_eq!(record.excerpt(), "");
+        assert_eq!(record.size_label(), "small");
+        assert_eq!(events(&store), ledger, "no route recorded an event");
+        assert_eq!(body(&store, id), before, "no route wrote the body");
+    }
+
+    #[test]
+    fn the_page_conceal_refuses_while_a_record_with_no_value_stands_and_not_once_it_detaches() {
+        let (mut store, _clock, id, chip) = page_with_a_peer_record();
+        assert_eq!(
+            store.sheet_payload(id).err(),
+            Some(PayloadError::ValueElsewhere)
+        );
+
+        take_out(&mut store, id, 7);
+        assert_eq!(detached_ids(&store, id), vec![chip]);
+        assert_eq!(&**store.sheet_payload(id).unwrap(), "before after");
+
+        assert!(store.undo(id), "the removal is a step like any other");
+        assert!(store.sheet(id).unwrap().chip(chip).is_some(), "reattached");
+        assert_eq!(
+            store.sheet_payload(id).err(),
+            Some(PayloadError::ValueElsewhere)
+        );
+    }
+
+    #[test]
+    fn a_burn_of_a_record_whose_value_is_elsewhere_is_refused_and_records_nothing() {
+        let (mut store, _clock, id, chip) = page_with_a_peer_record();
+        let ledger = events(&store);
+        let before = body(&store, id);
+        assert!(!store.delete_chip(chip));
+        assert!(
+            store.sheet(id).unwrap().chip(chip).is_some(),
+            "it still stands"
+        );
+        assert_eq!(body(&store, id), before);
+
+        take_out(&mut store, id, 7);
+        assert!(
+            !store.delete_chip(chip),
+            "detached, it is refused all the same"
+        );
+        assert_eq!(detached_ids(&store, id), vec![chip]);
+        assert!(store.can_undo(id), "the refused burn kept the page's undo");
+        assert_eq!(events(&store), ledger);
+    }
+
+    #[test]
+    fn a_record_with_no_value_takes_a_name_and_a_note() {
+        let (mut store, _clock, id, chip) = page_with_a_peer_record();
+        store.set_chip_name(chip, "DEPLOY_KEY").unwrap();
+        write_note(&mut store, chip, "rotate monthly");
+        let record = store.sheet(id).unwrap().chip(chip).unwrap();
+        assert_eq!(record.name(), Some("DEPLOY_KEY"));
+        assert!(record.has_note());
+        assert_eq!(&**store.note_text(chip).unwrap(), "rotate monthly");
+
+        store.set_chip_name(chip, "").unwrap();
+        assert_eq!(store.sheet(id).unwrap().chip(chip).unwrap().name(), None);
+    }
+
+    #[test]
+    fn a_record_with_no_value_ends_with_its_page_and_leaves_no_record_of_its_own() {
+        let (mut store, clock, id, standing) = page_with_a_peer_record();
+        let local = store.seal_text_at(id, "sealed here", 0, 0).unwrap();
+        let detached = store.stand_peer_record(id, 0, None, None);
+        take_out(&mut store, id, 0);
+        assert_eq!(detached_ids(&store, id), vec![detached]);
+        let sheet = store.sheet(id).unwrap();
+        let uuid_of = |chip| sheet.owned_chip(chip).unwrap().uuid();
+        let (page, local, standing, detached) = (
+            sheet.uuid(),
+            uuid_of(local),
+            uuid_of(standing),
+            uuid_of(detached),
+        );
+
+        clock.advance(8 * HOUR + Duration::from_secs(1));
+        assert_eq!(store.expire_due(), vec![id]);
+        let expired: Vec<ItemId> = store
+            .ledger()
+            .filter(|record| record.event() == LedgerEvent::Expired)
+            .map(LedgerRecord::item)
+            .collect();
+        assert_eq!(expired.len(), 2, "{expired:?}");
+        assert!(expired.contains(&page) && expired.contains(&local));
+        assert!(!expired.contains(&standing) && !expired.contains(&detached));
+    }
+
+    #[test]
+    fn a_page_left_with_only_a_detached_record_with_no_value_ends_unrecorded() {
+        let (mut store, _clock) = store();
+        let id = store.new_tab().1;
+        store.stand_peer_record(id, 0, Some(PeerKind::Image), None);
+        take_out(&mut store, id, 0);
+        let ledger = events(&store);
+        assert!(store.discard_page(id));
+        assert_eq!(events(&store), ledger, "nothing sealed here ended");
     }
 }

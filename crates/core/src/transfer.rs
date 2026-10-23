@@ -60,6 +60,9 @@ pub struct Placed {
     pub burned: u32,
     /// References placed as `[sealed content · unavailable]`.
     pub unavailable: u32,
+    /// References placed as `[sealed content · unavailable]` because the
+    /// value is on another device (ADR-0058 point 4).
+    pub elsewhere: u32,
     /// The envelope could not be read, so its public text was placed.
     pub unreadable: bool,
     /// Pages past their deadline the route swept before resolving
@@ -397,7 +400,7 @@ impl<C: Clock> SheetStore<C> {
                     }
                 }
                 Planned::Clone(chip) => {
-                    clones.push((chip.uuid, chip.bytes.len()));
+                    clones.extend(chip.local_len().map(|len| (chip.uuid, len)));
                     if let Some(sheet) = self.sheet_mut(id) {
                         sheet.detached.push(*chip);
                     }
@@ -446,18 +449,27 @@ impl<C: Clock> SheetStore<C> {
                 continue;
             }
             let id = ChipId(self.next_chip_id);
-            if let Some(mut clone) = self.live_object(uuid).map(|source| source.duplicate(id)) {
-                self.next_chip_id += 1;
-                // The envelope's name and note, the name judged as a typed one is.
-                clone.name = reference
-                    .name
-                    .as_ref()
-                    .and_then(|name| judge_name(name.as_str()).ok().flatten())
-                    .map(|name| Zeroizing::new(name.to_owned()));
-                clone.note = reference.note.as_deref().map(|text| Note::holding(text));
-                placed.cloned += 1;
-                plan.push(Planned::Clone(Box::new(clone)));
-                continue;
+            match self.live_object(uuid).map(|source| source.duplicate(id)) {
+                Some(Some(mut clone)) => {
+                    self.next_chip_id += 1;
+                    // The envelope's name and note, the name judged as a typed one is.
+                    clone.name = reference
+                        .name
+                        .as_ref()
+                        .and_then(|name| judge_name(name.as_str()).ok().flatten())
+                        .map(|name| Zeroizing::new(name.to_owned()));
+                    clone.note = reference.note.as_deref().map(|text| Note::holding(text));
+                    placed.cloned += 1;
+                    plan.push(Planned::Clone(Box::new(clone)));
+                    continue;
+                }
+                // Live here with its value elsewhere, so there is nothing to clone.
+                Some(None) => {
+                    placed.elsewhere += 1;
+                    plan.push(Planned::Placeholder(placeholder("unavailable")));
+                    continue;
+                }
+                None => {}
             }
             let word = match self.terminal_cause(uuid) {
                 Some(LedgerEvent::Expired) => {
@@ -644,7 +656,7 @@ mod tests {
     use crate::clock::ManualClock;
     use crate::fragment::{EnvelopeCap, REFERENCE_CAP};
     use crate::ledger::LEDGER_RETENTION_MS;
-    use crate::sheet::{NameRefusal, Segment};
+    use crate::sheet::{NameRefusal, PeerKind, Segment};
     use crate::store::EditOp;
     use crate::ttl::Ttl;
 
@@ -2092,5 +2104,112 @@ mod tests {
         revived.restore(&snapshot, 0).unwrap();
         assert!(revived.active_cut().is_none());
         assert_eq!(revived.sheets().next().unwrap().detached().count(), 1);
+    }
+
+    /// `ab`, a record whose value is on another device, then `cd`: five units.
+    fn with_a_peer_record(store: &mut SheetStore<ManualClock>) -> (SheetId, ChipId) {
+        let id = store.new_tab().1;
+        type_at(store, id, 0, "abcd");
+        let peer = store.stand_peer_record(id, 2, Some(PeerKind::Text), Some(SizeClass::Tiny));
+        (id, peer)
+    }
+
+    const UNAVAILABLE: &str = "[sealed content \u{b7} unavailable]";
+
+    #[test]
+    fn a_cut_and_its_first_paste_keep_a_record_with_no_value_by_identity() {
+        let (mut store, _) = store();
+        let (id, peer) = with_a_peer_record(&mut store);
+        let uuid = uuid_of(&store, peer);
+        let envelope = store.cut_fragment(id, 1, 3).unwrap().envelope.unwrap();
+        assert_eq!(detached(&store, id), vec![uuid]);
+
+        let placed = store.paste_fragment(id, 0, 0, &envelope, None).unwrap();
+        assert_eq!(
+            (placed.reattached, placed.cloned, placed.elsewhere),
+            (1, 0, 0)
+        );
+        assert_eq!(standing(&store, id), vec![uuid]);
+        let record = store.sheet(id).unwrap().chip(peer).expect("the same chip");
+        assert!(!record.is_local());
+    }
+
+    #[test]
+    fn a_drag_moves_a_record_with_no_value_keeping_its_identity_inside_a_page_and_between_pages() {
+        let (mut store, _) = store();
+        let (home, peer) = with_a_peer_record(&mut store);
+        let uuid = uuid_of(&store, peer);
+        let away = store.new_tab().1;
+        type_at(&mut store, away, 0, "xy");
+        let records = store.ledger().count();
+
+        let inside = store.move_range(home, 1, 3, 5).unwrap();
+        assert_eq!((inside.reattached, inside.elsewhere), (1, 0));
+        assert_eq!(body(&store, home), "adb\u{FFFC}c");
+        assert_eq!(standing(&store, home), vec![uuid]);
+
+        let between = store.move_range_to(home, 2, 3, away, 1).unwrap();
+        assert_eq!((between.reattached, between.elsewhere), (1, 0));
+        assert_eq!(body(&store, away), "xb\u{FFFC}cy");
+        assert_eq!(standing(&store, away), vec![uuid]);
+        assert!(standing(&store, home).is_empty() && detached(&store, home).is_empty());
+        assert!(!store.sheet(away).unwrap().chip(peer).unwrap().is_local());
+        assert_eq!(copies(&store, uuid), 1);
+        assert_eq!(store.ledger().count(), records, "a move records nothing");
+    }
+
+    #[test]
+    fn a_paste_after_copy_places_unavailable_for_a_record_with_no_value_and_counts_elsewhere() {
+        let (mut store, _) = store();
+        let (id, peer) = with_a_peer_record(&mut store);
+        let unknown = store.stand_peer_record(id, 5, None, None);
+        let uuids = vec![uuid_of(&store, peer), uuid_of(&store, unknown)];
+        let copied = store.copy_fragment(id, 1, 5).unwrap();
+        assert_eq!(
+            copied.plain.as_str(),
+            format!("b[sealed content \u{b7} tiny]cd{UNAVAILABLE}")
+        );
+        let records = store.ledger().count();
+
+        let envelope = copied.envelope.unwrap();
+        let placed = store.paste_fragment(id, 6, 0, &envelope, None).unwrap();
+        assert_eq!(
+            (placed.cloned, placed.elsewhere, placed.unavailable),
+            (0, 2, 0)
+        );
+        assert_eq!(
+            body(&store, id),
+            format!("ab\u{FFFC}cd\u{FFFC}b{UNAVAILABLE}cd{UNAVAILABLE}")
+        );
+        assert_eq!(standing(&store, id), uuids, "nothing cloned");
+        assert_eq!(store.ledger().count(), records, "no clone was sealed");
+    }
+
+    #[test]
+    fn a_later_paste_of_a_cut_places_unavailable_for_a_record_with_no_value() {
+        let (mut store, _) = store();
+        let (id, peer) = with_a_peer_record(&mut store);
+        let uuid = uuid_of(&store, peer);
+        let envelope = store.cut_fragment(id, 1, 3).unwrap().envelope.unwrap();
+        let first = store.paste_fragment(id, 0, 0, &envelope, None).unwrap();
+        assert_eq!(first.reattached, 1);
+
+        let later = store.paste_fragment(id, 0, 0, &envelope, None).unwrap();
+        assert_eq!((later.reattached, later.cloned, later.elsewhere), (0, 0, 1));
+        assert_eq!(body(&store, id), format!("b{UNAVAILABLE}cb\u{FFFC}cad"));
+        assert_eq!(copies(&store, uuid), 1);
+    }
+
+    #[test]
+    fn an_option_drag_places_unavailable_for_a_record_with_no_value() {
+        let (mut store, _) = store();
+        let (id, peer) = with_a_peer_record(&mut store);
+        let uuid = uuid_of(&store, peer);
+        let records = store.ledger().count();
+        let placed = store.clone_range(id, 1, 3, 5).unwrap();
+        assert_eq!((placed.cloned, placed.elsewhere), (0, 1));
+        assert_eq!(body(&store, id), format!("ab\u{FFFC}cdb{UNAVAILABLE}c"));
+        assert_eq!(copies(&store, uuid), 1);
+        assert_eq!(store.ledger().count(), records);
     }
 }
