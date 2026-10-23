@@ -131,7 +131,7 @@ The person does not name a window as they type. They type into the
 window with the keyboard, and where the keyboard is decides where the
 hand off has already run. Concretely:
 
-- **From panel to editor.** Use Open in Window, the header's expand control, or a Dock reopen when no ordinary window is visible. A person's initial foreground open also selects the editor. With the ambient panel off, the hotkey and status item select it. Cmd-Tab leaves focus to AppKit and does not change presentation. The explicit switch closes the panel's editing presentation before the editor takes the keyboard (ADR-0036).
+- **From panel to editor.** Use Open in Window, the header's expand control, or a Dock reopen when no ordinary window is visible. A person's initial foreground open also selects the editor. With the ambient panel off, the hotkey and status item select it. Cmd-Tab leaves focus to AppKit and does not change presentation. The explicit switch closes the panel's editing presentation before the editor takes the keyboard (ADR-0036). The editor shows the same page at the caret and scroll position left in the panel; both presentations use the model's existing page and view state.
 - **From editor to panel.** Summon the panel (⌃⌥Space, the status
   item, a click on the resting card). The editor window drops out of
   key without closing; the panel takes the keys. Typing lands in the

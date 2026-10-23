@@ -179,8 +179,9 @@ previous run's persistent identity or authorize Keychain prompts to keep an
 automated test going. See the runtime-testing rules in [AGENTS.md](AGENTS.md).
 
 Do not rebuild an executable while it is running from `shell/.build/`.
-`scripts/test-shell.sh` checks for such processes and stops before building;
-it does not terminate them. A packaged app in `dist/` or `/Applications` uses
+The shared build-lane check inspects resolved executable paths before test,
+development and packaging builds and stops if a live build executable is found;
+it does not terminate it. A packaged app in `dist/` or `/Applications` uses
 a separate executable, but its existing content still makes it unsuitable as
 an automated-test fixture.
 
