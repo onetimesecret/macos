@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   source order and are never part of an address: one in a link's address
   or title shows where the link starts, one in a reference definition
   shows where the definition is, and one in a table cell past the header's
-  columns ends its row. cmark 0.31.2 reads CommonMark, but the Settings
+  columns ends its row. A page whose tables come to more than 100,000
+  cells, counting the empty cells that pad short rows, shows its plain
+  text. cmark 0.31.2 reads CommonMark, but the Settings
   dialect choice is not part of this change, so every page reads as GFM.
 
 - **The rendered preview formats a restricted set of HTML** (app 0.42.0;
