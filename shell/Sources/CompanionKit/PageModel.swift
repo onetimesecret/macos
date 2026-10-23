@@ -1192,6 +1192,15 @@ public final class PageModel: ObservableObject {
     // preceding page, so these carry a page and text anchor rather than pixels.
     private var padReadingPlaces: [UUID: RollPlace] = [:]
 
+    // Session-only, and never pruned: the pads a roll has shown. ADR-0060's selected page step
+    // applies to any remount of one, a switch back or a return from a file or the Ledger.
+    private var padsShown: Set<UUID> = []
+
+    /// Note that the roll shows `pad`; true when it had shown it earlier this session.
+    func rollShows(pad: UUID) -> Bool {
+        !padsShown.insert(pad).inserted
+    }
+
     func rememberPadReadingPlace(_ place: RollPlace?, for pad: UUID) {
         // A detached or not-yet-measured roll has no new reading to contribute.
         // Dead pages are removed by refresh and checked again on retrieval.
@@ -1220,8 +1229,8 @@ public final class PageModel: ObservableObject {
         return showsTimeUnits ? rollRequest : nil
     }
 
-    /// The one rule for a gesture that selects a page: it opens the next roll on that page
-    /// when a stand in gave way or no roll is mounted, and otherwise drops any older request.
+    /// The one rule for a gesture that selects a page: it opens the next roll on that page when a
+    /// stand in or another pad gave way or no roll is mounted, and otherwise drops any older request.
     private func requestRoll(onPickedPageLeaving standIn: Bool) {
         let noRoll = standIn || onAnchorToday == nil
         rollRequest = noRoll && showsTimeUnits ? selectedPageID.map { .page($0) } : nil
@@ -5137,24 +5146,28 @@ public final class PageModel: ObservableObject {
     /// `refresh()` reconciles, so a page that expires under the cursor
     /// leaves an empty tab rather than a fresh countdown on nothing.
     public func select(_ id: UInt64) {
+        // Read before a pad switch, which restores the incoming pad's file and drops any request.
+        let leavingLedger = showingLedger
+        let fileWasShowing = selectedFile != nil
+        var changedPad = false
         if pads.isEnabled, let tab = tabs.first(where: { $0.id == id }) {
             let target = pads.owner(ofTabUUID: tab.uuid)
             if target != pads.activeID {
                 activatePad(target)
                 guard pads.activeID == target else { return }
+                changedPad = true
             }
         }
-        let leavingLedger = showingLedger
         clearPendingFileClose()
         // A slot and a file are never both showing, so choosing a slot
         // puts the file away. The file itself stays open and keeps its
         // place in the FILES group; only the surface moved.
-        let leavingFile = selectedFile != nil
+        let leavingFile = fileWasShowing || selectedFile != nil
         selectedFile = nil
         showingLedger = false
         selection = id
         let minted = openPageIfSlotIsEmpty(id)
-        requestRoll(onPickedPageLeaving: leavingLedger || leavingFile)
+        requestRoll(onPickedPageLeaving: leavingLedger || leavingFile || changedPad)
         // Both arms change what is *mounted*, rather than what the one
         // persistent editor is showing, and a mount nobody focuses is
         // the lit ember over a keystroke that beeps (issue #22).

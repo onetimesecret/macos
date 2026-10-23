@@ -622,12 +622,16 @@ final class DayStackView: NSView {
             }
             let waiting = pendingPlace != nil || pendingPage != nil
             if changingPad, let pad = signature.padID {
-                // On a new mount an ownership handoff may already have supplied a
-                // more recent anchor. Otherwise use this pad's own last reading.
+                // A hand off may already have supplied a newer anchor. Otherwise ADR-0060: the remembered anchor,
+                // else for a pad shown earlier (switch back, file or Ledger return) its selected page, else Today.
+                let shownBefore = model.rollShows(pad: pad)
                 if !waiting {
                     if !todayRequested, let place = model.readingPlace(for: pad),
                        projected.contains(place.page) {
                         open(at: place)
+                    } else if shownBefore, !todayRequested, let selectedPage,
+                              projected.contains(selectedPage) {
+                        open(onPage: selectedPage)
                     } else {
                         pendingTodayAnchor = true
                     }

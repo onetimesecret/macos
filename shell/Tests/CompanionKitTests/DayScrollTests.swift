@@ -2446,6 +2446,169 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(roll.stack.currentPlace?.page, oldest)
     }
 
+    /// A pad of long pages mounted on a short roll, with its pages in roll order.
+    private func padWithPages(_ count: Int) throws -> (model: PageModel, roll: Roll, pages: [UInt64]) {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        for _ in 0..<count { _ = try page(in: model, saying: longPage(lines: 180)) }
+        let roll = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        return (model, roll, pageRows(of: roll).map(\.page))
+    }
+
+    private func top(of page: UInt64, in roll: Roll) throws -> CGFloat {
+        try XCTUnwrap(pageRows(of: roll).first { $0.page == page }).top
+    }
+
+    /// ADR-0060: a pad whose remembered anchor is not on the roll opens on its
+    /// selected page when that page is, rather than on Today.
+    func testASwitchBackWithNoResolvingAnchorOpensOnTheSelectedPage() throws {
+        let (model, roll, pages) = try padWithPages(3)
+        let (upper, lower) = (try XCTUnwrap(pages.first), try XCTUnwrap(pages.last))
+        let scratch = PadCatalog.scratchID
+        model.select(try XCTUnwrap(model.tabs.first { $0.pageID == lower }?.id))
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        roll.stack.scroll(toDocumentOffset: try top(of: upper, in: roll) + 500, animated: false)
+        XCTAssertEqual(roll.stack.currentPlace?.page, upper)
+        _ = try XCTUnwrap(model.createPad(named: "Other"))
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        model.activatePad(scratch)
+        XCTAssertEqual(model.selectedPageID, lower)
+
+        let withoutAnchor = TimeUnitProjection.project(
+            tabs: model.navigationTabs.filter { $0.pageID != upper }, selectedPageID: lower, unit: .day)
+        roll.stack.update(projection: withoutAnchor, selectedPage: lower, readOnly: false)
+        let y = roll.scroll.contentView.bounds.origin.y
+        XCTAssertEqual(y, try pickedOffset(of: lower, in: roll), accuracy: 1)
+        XCTAssertGreaterThan(y, 0, "Today is at the origin")
+        try assertGutterInView(of: lower, in: roll)
+    }
+
+    /// ADR-0060's selected page step is for switching back, so the first mount of
+    /// a pad with its selected page off Today still opens at Today.
+    func testTheFirstMountOfAPadOpensAtTodayWhateverItsSelectedPage() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        for _ in 0..<2 { _ = try page(in: model, saying: longPage(lines: 180)) }
+        let lower = try XCTUnwrap(model.timeUnits.units.flatMap(\.pageIDs).last)
+        model.select(try XCTUnwrap(model.tabs.first { $0.pageID == lower }?.id))
+        // A launch restores the selection without a gesture, so no pick waits for the roll.
+        XCTAssertEqual(model.takeRollRequest(), .page(lower))
+        let roll = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        XCTAssertEqual(model.selectedPageID, lower)
+        XCTAssertGreaterThan(try pickedOffset(of: lower, in: roll), 0, "the selected page is off Today")
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin.y, 0, accuracy: 1)
+    }
+
+    /// A return from a file to a shown pad whose anchor page closed meanwhile opens
+    /// on the selected page, as a switch back does.
+    func testAFileRoundTripWhoseAnchorPageClosedReturnsOnTheSelectedPage() throws {
+        let (model, roll, pages) = try padWithPages(3)
+        let (middle, lower) = (pages[1], pages[2])
+        model.select(try XCTUnwrap(model.tabs.first { $0.pageID == lower }?.id))
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        roll.stack.scroll(toDocumentOffset: try top(of: middle, in: roll) + 500, animated: false)
+        XCTAssertEqual(roll.stack.currentPlace?.page, middle)
+        model.openFile(at: try scratchFile())
+        let file = try XCTUnwrap(model.selectedFile)
+        DayScrollView.dismantleNSView(roll.scroll, coordinator: roll.coordinator)
+        model.close(try XCTUnwrap(model.tabs.first { $0.pageID == middle }?.id))
+        XCTAssertNil(model.readingPlace(for: PadCatalog.scratchID))
+        model.closeFile(file)
+        XCTAssertNil(model.selectedFile)
+
+        let back = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(back.scroll, model: model, readOnly: false, coordinator: back.coordinator)
+        XCTAssertEqual(model.selectedPageID, lower)
+        let y = back.scroll.contentView.bounds.origin.y
+        XCTAssertEqual(y, try pickedOffset(of: lower, in: back), accuracy: 1)
+        XCTAssertGreaterThan(y, 0, "Today is at the origin")
+    }
+
+    /// A summon outranks the selected page step: a shown pad with no anchor, an
+    /// empty Today and an older page selected opens at Today.
+    func testASummonOnARemountOutranksTheSelectedPage() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        for _ in 0..<2 { _ = try page(in: model, saying: longPage(lines: 180)) }
+        let olderDays = TimeUnitProjection.project(
+            tabs: filed(model, under: [-1, -2]), selectedPageID: nil, unit: .day)
+        let older = try XCTUnwrap(olderDays.units.flatMap(\.pageIDs).last)
+        let shown = try mountRoll(model: model, height: 120)
+        shown.stack.update(projection: olderDays, selectedPage: older, readOnly: false)
+        XCTAssertNil(model.readingPlace(for: PadCatalog.scratchID))
+
+        let remount = try mountRoll(model: model, height: 120)
+        // What `updateRoll` does with a summon that found no roll to move.
+        remount.stack.requestToday()
+        remount.stack.update(projection: olderDays, selectedPage: older, readOnly: false)
+        XCTAssertGreaterThan(try pickedOffset(of: older, in: remount), 0, "the selected page is off Today")
+        XCTAssertEqual(remount.scroll.contentView.bounds.origin.y, 0, accuracy: 1)
+    }
+
+    /// ADR-0060 restores the anchor before the selection: the clip returns to the
+    /// page being read while the selection stays on the page the editor left.
+    func testASwitchBackRestoresTheAnchorPageAndKeepsADifferentSelection() throws {
+        let (model, roll, pages) = try padWithPages(2)
+        let (upper, lower) = (try XCTUnwrap(pages.first), try XCTUnwrap(pages.last))
+        let scratch = PadCatalog.scratchID
+        model.select(try XCTUnwrap(model.tabs.first { $0.pageID == upper }?.id))
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        roll.stack.scroll(toDocumentOffset: try top(of: lower, in: roll) + 500, animated: false)
+        let reading = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(reading.page, lower)
+        _ = try XCTUnwrap(model.createPad(named: "Other"))
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        model.activatePad(scratch)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        XCTAssertEqual(roll.stack.currentPlace, reading)
+        XCTAssertEqual(model.selectedPageID, upper)
+    }
+
+    /// A tab picked on another pad opens the roll on the picked page, with the
+    /// Timeline showing and with a file showing, ahead of that pad's saved place.
+    func testAPickOnAnotherPadOpensTheRollOnThePickedPage() throws {
+        for overFile in [false, true] {
+            let label = overFile ? "over a file" : "over the Timeline"
+            let model = try makeModel()
+            model.pads.isEnabled = true
+            let scratch = PadCatalog.scratchID
+            _ = try page(in: model, saying: longPage(lines: 180))
+            let other = try XCTUnwrap(model.createPad(named: "Other"))
+            let ink = longPage(lines: 180).replacingOccurrences(of: "\n", with: "\\n")
+            for _ in 0..<2 {
+                model.newPage()
+                let created = try XCTUnwrap(model.selectedPageID)
+                XCTAssertTrue(model.coreClient.syncDocument(sheet: created, json: "[{\"ink\":\"\(ink)\"}]"))
+                model.refresh()
+            }
+            var roll = try mountRoll(model: model, height: 120)
+            DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+            let rows = pageRows(of: roll)
+            let upper = try XCTUnwrap(rows.first).page
+            let lower = try XCTUnwrap(rows.last).page
+            roll.stack.scroll(toDocumentOffset: try top(of: upper, in: roll) + 500, animated: false)
+            model.activatePad(scratch)
+            DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+            XCTAssertEqual(model.readingPlace(for: other)?.page, upper, label)
+            if overFile {
+                model.openFile(at: try scratchFile())
+                DayScrollView.dismantleNSView(roll.scroll, coordinator: roll.coordinator)
+            }
+
+            model.select(try XCTUnwrap(model.tabs.first { $0.pageID == lower }?.id))
+            XCTAssertEqual(model.pads.activeID, other, label)
+            XCTAssertNil(model.selectedFile, label)
+            if overFile { roll = try mountRoll(model: model, height: 120) }
+            DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+            let y = roll.scroll.contentView.bounds.origin.y
+            XCTAssertEqual(y, try pickedOffset(of: lower, in: roll), accuracy: 1, label)
+            XCTAssertGreaterThan(y, 0, label)
+            try assertGutterInView(of: lower, in: roll, label)
+        }
+    }
+
     /// Wait for the clip to stand at `offset`, asked on every bounds change.
     private func waitForClip(of roll: Roll, at offset: CGFloat, timeout: TimeInterval = 2) {
         let clip = roll.scroll.contentView
