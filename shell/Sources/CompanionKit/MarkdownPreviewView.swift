@@ -1,4 +1,5 @@
 import AppKit
+import os
 
 /// A page's Markdown, rendered. It is the page's text shown another way, so every
 /// AppKit route out of it asks the page first (Law 0001, the preview's rows): copy
@@ -321,7 +322,22 @@ private final class MarkdownPreviewRenderer {
             guard shown == attachments.count else { throw RenderFailure.objectMissing }
             return NSAttributedString(attributedString: output)
         } catch {
+            Self.log(error)
             return plainText()
+        }
+    }
+
+    private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "preview")
+
+    /// A limit is an expected refusal; any other error is a broken invariant, logged as a fault.
+    private static func log(_ error: Error) {
+        switch error {
+        case MarkdownParseError.inputLimit, MarkdownParseError.depthLimit, MarkdownParseError.tableCellLimit,
+             MarkdownParseError.noPlaceholderWindow, CompositionError.inputLimit, CompositionError.eventLimit,
+             CompositionError.depthLimit, CompositionError.outputLimit:
+            logger.info("plain text preview: \(String(describing: error), privacy: .public)")
+        default:
+            logger.fault("plain text preview: \(String(describing: error), privacy: .public)")
         }
     }
 
