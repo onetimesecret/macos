@@ -1,6 +1,6 @@
 import CompanionKit
 
-/// Validate the bundle before constructing a default model or resolving its stores.
+/// Recognized packaging identifiers for executable startup.
 enum AppLaunchIdentity {
     static func accepts(_ identifier: String?) -> Bool {
         guard let identifier else { return false }
