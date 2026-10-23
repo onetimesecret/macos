@@ -61,6 +61,21 @@ final class FindMenuTests: XCTestCase {
         }
     }
 
+    func testJumpToSelectionUsesTheNativeResponderAction() throws {
+        try withApplication { app in
+            let menus = MainMenuController(app: app)
+            menus.install()
+            let edit = try XCTUnwrap(NSApp.mainMenu?.items.first { $0.title == "Edit" }?.submenu)
+            let find = try XCTUnwrap(edit.items.first { $0.title == "Find" }?.submenu)
+            let jump = try XCTUnwrap(find.items.first { $0.title == "Jump to Selection" })
+            XCTAssertEqual(jump.action, #selector(NSResponder.centerSelectionInVisibleArea(_:)))
+            XCTAssertNil(jump.target)
+            XCTAssertEqual(jump.keyEquivalent, "j")
+            XCTAssertEqual(jump.keyEquivalentModifierMask, .command)
+            withExtendedLifetime(menus) {}
+        }
+    }
+
     func testCharacterPaletteUsesThePublicNativeAction() throws {
         try withApplication { app in
             let menus = MainMenuController(app: app)

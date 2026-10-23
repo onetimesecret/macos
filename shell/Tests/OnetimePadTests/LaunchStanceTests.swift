@@ -82,7 +82,4 @@ final class LaunchStanceTests: XCTestCase {
             BackdropAppDelegate.raisesAfterModal(stance: .raised, modalSessionRunning: true)
         )
     }
-
-    // MARK: The login launch — no activation, so nothing opens (B4)
-
 }

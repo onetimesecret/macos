@@ -29,8 +29,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         let application = submenu(BackdropAppDelegate.productName, in: main)
         application.addItem(action(CompanionL10n.format("About %@", BackdropAppDelegate.productName)) { [app] in app.showAbout() })
         application.addItem(.separator())
-        application.addItem(action("Settings…", command: .appSettings) { [app] in app.openSettings() })
-        application.addItem(action("Customize Keyboard Shortcuts…") { [app] in app.pages.openUserKeymapFile() })
+        application.addItem(action(CompanionL10n.string("Settings…"), command: .appSettings) { [app] in app.openSettings() })
+        application.addItem(action(CompanionL10n.string("Customize Keyboard Shortcuts…")) { [app] in app.pages.openUserKeymapFile() })
         application.addItem(.separator())
         let services = NSApp.servicesMenu ?? NSMenu(title: CompanionL10n.string("Services"))
         services.supermenu?.items.first { $0.submenu === services }?.submenu = nil
@@ -39,26 +39,26 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         application.addItem(servicesItem)
         application.addItem(.separator())
         application.addItem(responder(CompanionL10n.format("Hide %@", BackdropAppDelegate.productName), #selector(NSApplication.hide(_:)), key: "h"))
-        application.addItem(responder("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), key: "h", modifiers: [.command, .option]))
-        application.addItem(responder("Show All", #selector(NSApplication.unhideAllApplications(_:))))
+        application.addItem(responder(CompanionL10n.string("Hide Others"), #selector(NSApplication.hideOtherApplications(_:)), key: "h", modifiers: [.command, .option]))
+        application.addItem(responder(CompanionL10n.string("Show All"), #selector(NSApplication.unhideAllApplications(_:))))
         application.addItem(.separator())
         application.addItem(responder(CompanionL10n.format("Quit %@", BackdropAppDelegate.productName), #selector(NSApplication.terminate(_:)), key: "q"))
         return services
     }
 
     private func makeFileMenu(in main: NSMenu) {
-        let file = submenu("File", in: main)
+        let file = submenu(CompanionL10n.string("File"), in: main)
         file.delegate = self
-        file.addItem(action("New Page", command: .pageNew) { [app] in
+        file.addItem(action(CompanionL10n.string("New Page"), command: .pageNew) { [app] in
             app.pages.perform(.pageNew)
             if !app.pages.holdsKeys { app.returnToOwner() }
         })
-        file.addItem(action("Open…", command: .fileOpen) { [app] in app.pages.perform(.fileOpen) })
+        file.addItem(action(CompanionL10n.string("Open…"), command: .fileOpen) { [app] in app.pages.perform(.fileOpen) })
         file.addItem(.separator())
-        file.addItem(action("Save", command: .stateSaveNow, enabled: onFile) { [app] in app.pages.perform(.stateSaveNow) })
-        file.addItem(action("Save As…", command: .fileSaveAs, enabled: onFile) { [app] in app.pages.perform(.fileSaveAs) })
+        file.addItem(action(CompanionL10n.string("Save"), command: .stateSaveNow, enabled: onFile) { [app] in app.pages.perform(.stateSaveNow) })
+        file.addItem(action(CompanionL10n.string("Save As…"), command: .fileSaveAs, enabled: onFile) { [app] in app.pages.perform(.fileSaveAs) })
         file.addItem(.separator())
-        let close = action("Close", command: .pageClose, enabled: { [weak self] in self?.closeChoice.isEnabled ?? false }) { [app] in
+        let close = action(CompanionL10n.string("Close"), command: .pageClose, enabled: { [weak self] in self?.closeChoice.isEnabled ?? false }) { [app] in
             app.pages.closeWhatIsShowing(app.keyWindow.closeTarget) {
                 app.sendToResponder(#selector(NSWindow.performClose(_:)))
             }
@@ -68,24 +68,24 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     }
 
     private func makeEditMenu(in main: NSMenu) {
-        let edit = submenu("Edit", in: main)
-        edit.addItem(responder("Undo", #selector(EditStepResponder.undo(_:)), command: .editorUndo))
-        edit.addItem(responder("Redo", #selector(EditStepResponder.redo(_:)), command: .editorRedo))
+        let edit = submenu(CompanionL10n.string("Edit"), in: main)
+        edit.addItem(responder(CompanionL10n.string("Undo"), #selector(EditStepResponder.undo(_:)), command: .editorUndo))
+        edit.addItem(responder(CompanionL10n.string("Redo"), #selector(EditStepResponder.redo(_:)), command: .editorRedo))
         edit.addItem(.separator())
-        edit.addItem(responder("Cut", #selector(NSText.cut(_:)), key: "x"))
-        edit.addItem(responder("Copy", #selector(NSText.copy(_:)), key: "c"))
-        edit.addItem(responder("Paste", #selector(NSText.paste(_:)), key: "v"))
-        edit.addItem(responder("Paste and Match Style", #selector(NSTextView.pasteAsPlainText(_:)), key: "v", modifiers: [.command, .option, .shift]))
-        edit.addItem(responder("Delete", #selector(NSText.delete(_:))))
-        edit.addItem(responder("Select All", #selector(NSText.selectAll(_:)), key: "a"))
+        edit.addItem(responder(CompanionL10n.string("Cut"), #selector(NSText.cut(_:)), key: "x"))
+        edit.addItem(responder(CompanionL10n.string("Copy"), #selector(NSText.copy(_:)), key: "c"))
+        edit.addItem(responder(CompanionL10n.string("Paste"), #selector(NSText.paste(_:)), key: "v"))
+        edit.addItem(responder(CompanionL10n.string("Paste and Match Style"), #selector(NSTextView.pasteAsPlainText(_:)), key: "v", modifiers: [.command, .option, .shift]))
+        edit.addItem(responder(CompanionL10n.string("Delete"), #selector(NSText.delete(_:))))
+        edit.addItem(responder(CompanionL10n.string("Select All"), #selector(NSText.selectAll(_:)), key: "a"))
         edit.addItem(.separator())
-        edit.addItem(action(SealSelectionMenu.editMenuTitle, command: SealSelectionMenu.command,
+        edit.addItem(action(CompanionL10n.string(SealSelectionMenu.editMenuTitle), command: SealSelectionMenu.command,
                             enabled: { [app] in app.sealActions.canSeal }) { [app] in
             app.sendToResponder(#selector(SealResponder.sealSelectedContent(_:)))
         })
         if PageModel.languageDetectionFeaturesAvailable { addLanguageItems(to: edit) }
         edit.addItem(.separator())
-        let find = submenu("Find", in: edit)
+        let find = submenu(CompanionL10n.string("Find"), in: edit)
         for (title, key, modifiers, tag) in [
             ("Find…", "f", NSEvent.ModifierFlags.command, NSTextFinder.Action.showFindInterface),
             ("Find and Replace…", "f", [.command, .option], .showReplaceInterface),
@@ -93,55 +93,56 @@ final class MainMenuController: NSObject, NSMenuDelegate {
             ("Find Previous", "g", [.command, .shift], .previousMatch),
             ("Use Selection for Find", "e", .command, .setSearchString)
         ] {
-            let item = responder(title, #selector(NSTextView.performTextFinderAction(_:)), key: key, modifiers: modifiers)
+            let item = responder(CompanionL10n.string(title), #selector(NSTextView.performTextFinderAction(_:)), key: key, modifiers: modifiers)
             item.tag = tag.rawValue
             find.addItem(item)
         }
-        let spelling = submenu("Spelling and Grammar", in: edit)
-        spelling.addItem(responder("Show Spelling and Grammar", #selector(NSTextView.showGuessPanel(_:)), key: ":"))
-        spelling.addItem(responder("Check Document Now", #selector(NSTextView.checkSpelling(_:)), key: ";"))
-        spelling.addItem(responder("Check Spelling While Typing", #selector(NSTextView.toggleContinuousSpellChecking(_:))))
-        let substitutions = submenu("Substitutions", in: edit)
-        substitutions.addItem(responder("Show Substitutions", #selector(NSTextView.orderFrontSubstitutionsPanel(_:))))
-        substitutions.addItem(responder("Smart Quotes", #selector(NSTextView.toggleAutomaticQuoteSubstitution(_:))))
-        substitutions.addItem(responder("Smart Dashes", #selector(NSTextView.toggleAutomaticDashSubstitution(_:))))
-        substitutions.addItem(responder("Text Replacement", #selector(NSTextView.toggleAutomaticTextReplacement(_:))))
-        let transformations = submenu("Transformations", in: edit)
-        transformations.addItem(responder("Make Upper Case", #selector(NSTextView.uppercaseWord(_:))))
-        transformations.addItem(responder("Make Lower Case", #selector(NSTextView.lowercaseWord(_:))))
-        transformations.addItem(responder("Capitalize", #selector(NSTextView.capitalizeWord(_:))))
-        let speech = submenu("Speech", in: edit)
-        speech.addItem(responder("Start Speaking", #selector(NSTextView.startSpeaking(_:))))
-        speech.addItem(responder("Stop Speaking", #selector(NSTextView.stopSpeaking(_:))))
+        find.addItem(responder(CompanionL10n.string("Jump to Selection"), #selector(NSResponder.centerSelectionInVisibleArea(_:)), key: "j"))
+        let spelling = submenu(CompanionL10n.string("Spelling and Grammar"), in: edit)
+        spelling.addItem(responder(CompanionL10n.string("Show Spelling and Grammar"), #selector(NSTextView.showGuessPanel(_:)), key: ":"))
+        spelling.addItem(responder(CompanionL10n.string("Check Document Now"), #selector(NSTextView.checkSpelling(_:)), key: ";"))
+        spelling.addItem(responder(CompanionL10n.string("Check Spelling While Typing"), #selector(NSTextView.toggleContinuousSpellChecking(_:))))
+        let substitutions = submenu(CompanionL10n.string("Substitutions"), in: edit)
+        substitutions.addItem(responder(CompanionL10n.string("Show Substitutions"), #selector(NSTextView.orderFrontSubstitutionsPanel(_:))))
+        substitutions.addItem(responder(CompanionL10n.string("Smart Quotes"), #selector(NSTextView.toggleAutomaticQuoteSubstitution(_:))))
+        substitutions.addItem(responder(CompanionL10n.string("Smart Dashes"), #selector(NSTextView.toggleAutomaticDashSubstitution(_:))))
+        substitutions.addItem(responder(CompanionL10n.string("Text Replacement"), #selector(NSTextView.toggleAutomaticTextReplacement(_:))))
+        let transformations = submenu(CompanionL10n.string("Transformations"), in: edit)
+        transformations.addItem(responder(CompanionL10n.string("Make Upper Case"), #selector(NSTextView.uppercaseWord(_:))))
+        transformations.addItem(responder(CompanionL10n.string("Make Lower Case"), #selector(NSTextView.lowercaseWord(_:))))
+        transformations.addItem(responder(CompanionL10n.string("Capitalize"), #selector(NSTextView.capitalizeWord(_:))))
+        let speech = submenu(CompanionL10n.string("Speech"), in: edit)
+        speech.addItem(responder(CompanionL10n.string("Start Speaking"), #selector(NSTextView.startSpeaking(_:))))
+        speech.addItem(responder(CompanionL10n.string("Stop Speaking"), #selector(NSTextView.stopSpeaking(_:))))
         edit.addItem(.separator())
-        edit.addItem(responder("Emoji & Symbols", #selector(NSApplication.orderFrontCharacterPalette(_:))))
+        edit.addItem(responder(CompanionL10n.string("Emoji & Symbols"), #selector(NSApplication.orderFrontCharacterPalette(_:))))
     }
 
     private func makeViewMenu(in main: NSMenu) {
-        let view = submenu("View", in: main)
-        view.addItem(responder("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), key: "f", modifiers: [.command, .control]))
+        let view = submenu(CompanionL10n.string("View"), in: main)
+        view.addItem(responder(CompanionL10n.string("Enter Full Screen"), #selector(NSWindow.toggleFullScreen(_:)), key: "f", modifiers: [.command, .control]))
     }
 
     private func makeWindowMenu(in main: NSMenu) -> NSMenu {
-        let window = submenu("Window", in: main)
-        window.addItem(action("Open in Window") { [app] in app.openEditorPresentation() })
-        window.addItem(action("Show Ambient Panel", enabled: { [app] in app.ambientPanelEnabled }) { [app] in app.showAmbientPresentation() })
+        let window = submenu(CompanionL10n.string("Window"), in: main)
+        window.addItem(action(CompanionL10n.string("Open in Window")) { [app] in app.openEditorPresentation() })
+        window.addItem(action(CompanionL10n.string("Show Ambient Panel"), enabled: { [app] in app.ambientPanelEnabled }) { [app] in app.showAmbientPresentation() })
         window.addItem(.separator())
-        window.addItem(responder("Close Window", #selector(NSWindow.performClose(_:)), command: .windowClose))
+        window.addItem(responder(CompanionL10n.string("Close Window"), #selector(NSWindow.performClose(_:)), command: .windowClose))
         window.addItem(.separator())
-        window.addItem(responder("Minimize", #selector(NSWindow.performMiniaturize(_:)), key: "m"))
-        window.addItem(responder("Zoom", #selector(NSWindow.performZoom(_:))))
+        window.addItem(responder(CompanionL10n.string("Minimize"), #selector(NSWindow.performMiniaturize(_:)), key: "m"))
+        window.addItem(responder(CompanionL10n.string("Zoom"), #selector(NSWindow.performZoom(_:))))
         window.addItem(.separator())
-        window.addItem(responder("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))))
+        window.addItem(responder(CompanionL10n.string("Bring All to Front"), #selector(NSApplication.arrangeInFront(_:))))
         return window
     }
 
     private func makeHelpMenu(in main: NSMenu) -> NSMenu {
-        let help = submenu("Help", in: main)
-        help.addItem(action("Export Diagnostics…") { [app] in app.exportDiagnostics() })
-        help.addItem(action("Copy Diagnostic Summary") { [app] in app.copyDiagnosticSummary() })
+        let help = submenu(CompanionL10n.string("Help"), in: main)
+        help.addItem(action(CompanionL10n.string("Export Diagnostics…")) { [app] in app.exportDiagnostics() })
+        help.addItem(action(CompanionL10n.string("Copy Diagnostic Summary")) { [app] in app.copyDiagnosticSummary() })
         help.addItem(.separator())
-        help.addItem(action("Send Feedback…") { [app] in app.sendFeedback() })
+        help.addItem(action(CompanionL10n.string("Send Feedback…")) { [app] in app.sendFeedback() })
         BackdropAppDelegate.installHelpItem(in: help, productName: BackdropAppDelegate.productName,
             keystroke: app.pages.keymap.menuKeystroke(for: .appHelp), target: app)
         return help
@@ -169,17 +170,17 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     }
 
     private func addLanguageItems(to edit: NSMenu) {
-        edit.addItem(action("Detect Code Language", enabled: { [app] in app.pages.languageActions.canDetect }) { [app] in
+        edit.addItem(action(CompanionL10n.string("Detect Code Language"), enabled: { [app] in app.pages.languageActions.canDetect }) { [app] in
             app.sendToResponder(#selector(LanguageDetectionResponder.detectCodeLanguage(_:)))
         })
-        let choose = action("Choose Language", enabled: { [weak self] in self?.languageTarget != nil }) {}
+        let choose = action(CompanionL10n.string("Choose Language"), enabled: { [weak self] in self?.languageTarget != nil }) {}
         let languages = NSMenu(title: CompanionL10n.string("Choose Language"))
         languages.delegate = self
         choose.submenu = languages
         languageMenu = languages
         edit.addItem(choose)
         updateLanguages(in: languages)
-        edit.addItem(action("Paste Without Detection", enabled: { [app] in app.pages.languageActions.canPaste }) { [app] in
+        edit.addItem(action(CompanionL10n.string("Paste Without Detection"), enabled: { [app] in app.pages.languageActions.canPaste }) { [app] in
             app.sendToResponder(#selector(LanguageDetectionResponder.pasteWithoutDetection(_:)))
         })
     }
@@ -187,8 +188,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     private func updateLanguages(in menu: NSMenu) {
         menu.removeAllItems()
         if case .file(let id) = languageTarget {
-            menu.addItem(action("Plain Text") { [app] in app.pages.selectFileRenderMode(.plainText, for: id) })
-            menu.addItem(action("Markdown") { [app] in app.pages.selectFileRenderMode(.markdown, for: id) })
+            menu.addItem(action(CompanionL10n.string("Plain Text")) { [app] in app.pages.selectFileRenderMode(.plainText, for: id) })
+            menu.addItem(action(CompanionL10n.string("Markdown")) { [app] in app.pages.selectFileRenderMode(.markdown, for: id) })
             menu.addItem(.separator())
         }
         for language in InkEditorView.Coordinator.manualLanguages {
@@ -202,8 +203,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     }
 
     private func submenu(_ title: String, in parent: NSMenu) -> NSMenu {
-        let item = NSMenuItem(title: CompanionL10n.string(title), action: nil, keyEquivalent: "")
-        let menu = NSMenu(title: CompanionL10n.string(title))
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: title)
         item.submenu = menu
         parent.addItem(item)
         return menu
@@ -211,14 +212,14 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     private func action(_ title: String, command: CommandID? = nil,
                         enabled: @escaping () -> Bool = { true }, _ run: @escaping () -> Void) -> NSMenuItem {
-        let item = MenuActionItem(title: CompanionL10n.string(title), enabled: enabled, run: run)
+        let item = MenuActionItem(title: title, enabled: enabled, run: run)
         if let command { bind(command, to: item) }
         return item
     }
 
     private func responder(_ title: String, _ selector: Selector, key: String = "",
                            modifiers: NSEvent.ModifierFlags = .command, command: CommandID? = nil) -> NSMenuItem {
-        let item = NSMenuItem(title: CompanionL10n.string(title), action: selector, keyEquivalent: key)
+        let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
         item.keyEquivalentModifierMask = key.isEmpty ? [] : modifiers
         if let command { bind(command, to: item) }
         return item

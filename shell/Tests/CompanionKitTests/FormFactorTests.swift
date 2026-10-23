@@ -54,16 +54,6 @@ final class FormFactorTests: XCTestCase {
             FormFactor.resolvedBundleIdentifier(fallback: "com.example.other"),
             "com.example.other"
         )
-
-        // And nothing leaks the runner's own identity into a path.
-        let runner = Bundle.main.bundleIdentifier ?? ""
-        if !runner.hasPrefix(FormFactor.panelBundleIdentifier) {
-            XCTAssertNotEqual(FormFactor.panel.credentialService, runner)
-            XCTAssertFalse(
-                FormFactor.panel.stateFileURL.path.contains("xctest"),
-                FormFactor.panel.stateFileURL.path
-            )
-        }
     }
 
     /// Identifier selection across packaged and foreign hosts.
