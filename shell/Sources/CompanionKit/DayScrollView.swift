@@ -175,6 +175,12 @@ public struct DayScrollView: NSViewRepresentable {
                 stack.open(at: place)
             }
         }
+        // The latest gesture that found no roll to move outranks the pad's saved place.
+        switch model.takeRollRequest() {
+        case .today: stack.requestToday()
+        case .page(let page): stack.open(onPage: page)
+        case nil: break
+        }
         stack.update(
             projection: model.timeUnits,
             selectedPage: model.selectedPageID,
@@ -206,7 +212,7 @@ public struct DayScrollView: NSViewRepresentable {
         guard let stack = scroll.documentView as? DayStackView else { return }
         if coordinator.model.pads.isEnabled,
            coordinator.model.rollGeometry.holdsClaim(stack), let pad = stack.renderedPadID {
-            coordinator.model.rememberPadReadingPlace(stack.currentPlace, for: pad)
+            coordinator.model.rememberPadReadingPlace(stack.departingPlace, for: pad)
         }
         stack.unobserveEditor()
         // Whatever became of the editor, this roll's measurement
@@ -385,6 +391,8 @@ final class DayStackView: NSView {
     /// retired jump's completion cannot clear a later jump's entry.
     private var jumpSerial = 0
     private var activeJump: Int?
+    /// Whether a rail jump is still animating, for the tests.
+    var jumpInFlight: Bool { activeJump != nil }
 
     /// Where the caret goes once the editor lands on the page a click
     /// into a quiet region promoted. The click knows the character it
@@ -600,25 +608,34 @@ final class DayStackView: NSView {
             padID: model.pads.isEnabled ? model.pads.activeID : nil
         )
         let changingPad = signature.padExperiment && signature.padID != renderedPadID
-        if changingPad, let pad = signature.padID {
-            // On a new mount an ownership handoff may already have supplied a
-            // more recent anchor. Otherwise use this pad's own last reading.
-            if let place = pendingPlace, !signature.pages.joined().contains(place.page) {
-                pendingPlace = nil
-            }
-            if pendingPlace == nil {
-                if let place = model.readingPlace(for: pad), signature.pages.joined().contains(place.page) {
-                    open(at: place)
-                } else {
-                    pendingTodayAnchor = true
+        let rowsMoved = signature.padExperiment && rendered.map {
+            $0.buckets != signature.buckets || $0.pages != signature.pages
+        } == true
+        if changingPad || rowsMoved {
+            let projected = Set(signature.pages.joined())
+            if changingPad, let pad = signature.padID {
+                // On a new mount an ownership handoff may already have supplied a
+                // more recent anchor. Otherwise use this pad's own last reading.
+                if let place = pendingPlace, !projected.contains(place.page) {
+                    pendingPlace = nil
                 }
+                if let page = pendingPage, !projected.contains(page) {
+                    pendingPage = nil
+                }
+                if pendingPlace == nil, pendingPage == nil {
+                    if !todayRequested, let place = model.readingPlace(for: pad),
+                       projected.contains(place.page) {
+                        open(at: place)
+                    } else {
+                        pendingTodayAnchor = true
+                    }
+                }
+            } else if rowsMoved, let place = readingPlace, !projected.contains(place.page) {
+                pendingPlace = nil
+                pendingTodayAnchor = true
             }
-        } else if signature.padExperiment, let previous = rendered,
-                  previous.buckets != signature.buckets || previous.pages != signature.pages,
-                  let place = readingPlace, !signature.pages.joined().contains(place.page) {
-            pendingPlace = nil
-            pendingTodayAnchor = true
         }
+        todayRequested = false
         renderedPadID = signature.padID
         // The typeface can change under a roll that is otherwise still:
         // the editor's page is restyled here, and the quiet days follow
@@ -678,8 +695,8 @@ final class DayStackView: NSView {
         // A row appearing above the viewport must not move what the
         // reader is looking at, so where the topmost page stands is
         // remembered across the assembly and answered for afterwards.
-        let anchor = !changingPad && pendingPlace == nil && expandedLayout == model.isPageExpanded
-            ? topmostPageAnchor() : nil
+        let anchor = !changingPad && pendingPlace == nil && pendingPage == nil
+            && expandedLayout == model.isPageExpanded ? topmostPageAnchor() : nil
         rendered = signature
         assembleRows(projection: projection, selectedPage: selectedPage)
         settleEditor(on: selectedPage)
@@ -1300,17 +1317,7 @@ final class DayStackView: NSView {
             reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         )
         guard animated, duration > 0, window?.isVisible == true else {
-            if activeJump != nil {
-                // A zero length group on the same property supersedes
-                // the running one, so the jump stops where it is.
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0
-                    clip.animator().setBoundsOrigin(target)
-                }
-                activeJump = nil
-            }
-            clip.scroll(to: target)
-            scroll.reflectScrolledClipView(clip)
+            moveClip(of: scroll, to: target, supersedingJump: true)
             return
         }
         jumpSerial += 1
@@ -1329,6 +1336,22 @@ final class DayStackView: NSView {
                 scroll.reflectScrolledClipView(scroll.contentView)
             }
         }
+    }
+
+    /// One bounds change and one reflection. Only a caller that supersedes stops a travelling
+    /// jump; an ordinary pass leaves the clip to the jump.
+    private func moveClip(of scroll: NSScrollView, to target: NSPoint, supersedingJump: Bool) {
+        let clip = scroll.contentView
+        if supersedingJump, activeJump != nil {
+            // A zero length group on the same property supersedes the running one.
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0
+                clip.animator().setBoundsOrigin(target)
+            }
+            activeJump = nil
+        }
+        if clip.bounds.origin != target { clip.scroll(to: target) }
+        scroll.reflectScrolledClipView(clip)
     }
 
     /// Hand the measurement to the rail. The model's own observable
@@ -1375,6 +1398,7 @@ final class DayStackView: NSView {
     func scrollToDayZero() {
         // A summon outranks a place still waiting to be opened on.
         pendingPlace = nil
+        pendingPage = nil
         guard let scroll = enclosingScrollView else { return }
         if model.pads.isEnabled {
             guard let today = rows.first(where: { $0.bucket == 0 }),
@@ -1411,6 +1435,14 @@ final class DayStackView: NSView {
             length: text.textStorage?.length ?? 0, atTop: origin.y <= 0)
     }
 
+    /// The rendered pad's place on the way out: the clip's, or out of a window the last
+    /// reading place while its page still stands on the roll.
+    var departingPlace: RollPlace? {
+        if let place = currentPlace { return place }
+        guard let place = readingPlace, rows.contains(where: { $0.page == place.page }) else { return nil }
+        return place
+    }
+
     private static func reading(of text: NSTextView) -> RollPlace.Reading {
         text is MarkdownPreviewView ? .preview : .source
     }
@@ -1428,6 +1460,23 @@ final class DayStackView: NSView {
         pendingPlace = place
     }
 
+    /// A page picked while no roll stood, opened with its gutter where a rail jump puts it.
+    private var pendingPage: UInt64?
+
+    /// A summon that reached no roll; the next pass opens on Today, not the pad's saved place.
+    private var todayRequested = false
+
+    func open(onPage page: UInt64) {
+        pendingTodayAnchor = false
+        pendingPlace = nil
+        pendingPage = page
+    }
+
+    func requestToday() {
+        todayRequested = true
+        scrollToDayZero()
+    }
+
     /// Move the clip to the waiting place, against this roll's own
     /// layout: the other window wrapped every page above it
     /// differently, so the distance is worked out here and was never
@@ -1437,11 +1486,24 @@ final class DayStackView: NSView {
     /// Never from inside a pass, where the rows are half assembled and
     /// a frame change arrives for every region being built.
     private func settlePendingPlace() {
-        guard !isLayingOut, let place = pendingPlace, !rows.isEmpty,
+        guard !isLayingOut, pendingPlace != nil || pendingPage != nil, !rows.isEmpty,
               let scroll = enclosingScrollView, !scroll.contentView.bounds.isEmpty
         else { return }
+        if let page = pendingPage {
+            pendingPage = nil
+            if let row = rows.first(where: { $0.page == page && !$0.body.isHidden }) {
+                self.scroll(
+                    toDocumentOffset: StreamNavigator.jumpOffset(forDocumentTop: row.header.frame.minY),
+                    animated: false)
+            } else {
+                scrollToDayZero()
+            }
+            return
+        }
+        guard let place = pendingPlace else { return }
         pendingPlace = nil
-        if restore(place: place) {
+        // A waiting place belongs to another document order, so it supersedes a travelling jump.
+        if restore(place: place, supersedingJump: true) {
             readingPlace = place
         } else if model.pads.isEnabled {
             scrollToDayZero()
@@ -1450,7 +1512,7 @@ final class DayStackView: NSView {
 
     /// True when the place's page stood on the roll and the clip was moved to it.
     @discardableResult
-    private func restore(place: RollPlace) -> Bool {
+    private func restore(place: RollPlace, supersedingJump: Bool = false) -> Bool {
         guard let scroll = enclosingScrollView,
               let row = rows.first(where: { $0.page == place.page && !$0.body.isHidden }),
               let text = row.body as? NSTextView,
@@ -1463,11 +1525,7 @@ final class DayStackView: NSView {
             x: min(max(within.x, 0), max(frame.width - clip.bounds.width, 0)),
             y: place.atTop ? 0 : min(max(text.frame.minY + within.y, 0), floor)
         )
-        // Restoring a different document order supersedes a navigation jump
-        // still animating toward coordinates in the previous document.
-        self.scroll(toDocumentOffset: target.y, animated: false)
-        clip.scroll(to: target)
-        scroll.reflectScrolledClipView(clip)
+        moveClip(of: scroll, to: target, supersedingJump: supersedingJump)
         return true
     }
 
