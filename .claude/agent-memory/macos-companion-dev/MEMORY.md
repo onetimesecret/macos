@@ -48,7 +48,7 @@
 - [R1 corpus tests](project_r1_corpus_tests.md): compare corpus HTML by utf8, never String ==; typecheck test files against a stub module when another agent owns swift build
 - [R1 vendored parsers](project_r1_vendored_parsers.md): gfm's parser_finish frees the refmap (copy it in a postprocess extension), gfm parses race without parse_lock, vendor-cmark.sh --check is offline
 - [R1 parser adapter](project_r1_parser_adapter.md): over 65,534 objects always falls back; depth skips leaf blocks so `**a**` survives depth 1; title objects never refuse an address
-- [R1 sealed atom fixtures](project_r1_sealed_atom_fixtures.md): render through a closing **fin** paragraph; cmark-gfm.13 departs from published GFM 0.29 in four places; excess cell objects reorder
+- [R1 sealed atom fixtures](project_r1_sealed_atom_fixtures.md): render through a closing **fin** paragraph; cmark-gfm.13 departs from published GFM 0.29 in four places; excess cell objects end their row's last cell
 
 - [Issue #267 Timeline node drops](project_issue267_timeline_node_drops.md): SlotRailView and TimeStripView were undrawn and are deleted (issue 275, 2026-10-21); the side Timeline has two renderings (stream navigator default, pads rail); readOnly is required
 
