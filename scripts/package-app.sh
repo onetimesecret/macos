@@ -235,6 +235,80 @@ if ((APP_STORE_MODE)); then
 fi
 validate_signing_configuration
 
+# Prints the tree `git add -A` would write, tracked changes and untracked files
+# alike, staged in a copy of the index rather than the real one.
+worktree_tree() { # <scratch index>
+  local scratch=$1 index output
+  index="$(git rev-parse --git-path index 2>/dev/null)" || return 1
+  if [[ -f "$index" ]]; then
+    cp -p "$index" "$scratch" || return 1
+  else
+    rm -f "$scratch"
+  fi
+  if ! output="$(GIT_INDEX_FILE="$scratch" git add -A 2>&1)"; then
+    printf '%s\n' "$output" | sed 's/^/    /' >&2
+    return 1
+  fi
+  GIT_INDEX_FILE="$scratch" git write-tree
+}
+
+# Reads, before the compile, HEAD (empty outside a checkout, on an unborn branch or with a
+# missing object) and the tree `git add -A` would write; dirty means it is not HEAD's tree.
+read_source_state() {
+  local hidden
+  SOURCE_HEAD="$(git rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)"
+  SOURCE_SHORT="${SOURCE_HEAD:0:12}"
+  SOURCE_TREE=""
+  SOURCE_DIRTY=""
+  SOURCE_HIDDEN=""
+  SOURCE_CHANGED=""
+  [[ -n "$SOURCE_HEAD" ]] || return 0
+  SOURCE_INDEX="$(mktemp -t onetimepad-source-index)"
+  TEMP_FILES+=("$SOURCE_INDEX")
+  if ! SOURCE_TREE="$(worktree_tree "$SOURCE_INDEX")"; then
+    SOURCE_TREE=""
+    echo "    warning: could not read the source tree, so this build counts as dirty." >&2
+  fi
+  [[ -n "$SOURCE_TREE" && "$SOURCE_TREE" == "$(git rev-parse -q --verify "$SOURCE_HEAD^{tree}" 2>/dev/null)" ]] \
+    || SOURCE_DIRTY=1
+  # `git add -A` skips entries flagged assume-unchanged or skip-worktree, yet the compile reads them.
+  hidden="$(git ls-files -v 2>/dev/null | LC_ALL=C sed -n 's/^[a-zS] //p')" || hidden=""
+  if [[ -n "$hidden" ]]; then
+    SOURCE_HIDDEN=1
+    SOURCE_DIRTY=1
+    echo "    warning: these index entries are flagged assume-unchanged or skip-worktree, so git" >&2
+    echo "    cannot see edits to them, and this build counts as dirty with no record (first 5):" >&2
+    printf '%s\n' "$hidden" | sed -n '1,5s/^/      /p' >&2
+    echo "    clear the flags with git update-index --no-assume-unchanged or --no-skip-worktree." >&2
+  fi
+  echo "==> Source: $SOURCE_SHORT${SOURCE_DIRTY:+ with uncommitted changes}"
+}
+
+# Reads HEAD and the tree again after the compile. Only a tree change voids the build; a HEAD
+# move is followed when the new commit's tree is the one built, and set aside otherwise.
+check_source_unchanged() {
+  local head tree
+  [[ -n "$SOURCE_TREE" ]] || return 0
+  head="$(git rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)"
+  tree="$(worktree_tree "$SOURCE_INDEX")" || tree=""
+  if [[ "$tree" != "$SOURCE_TREE" ]]; then
+    echo "    warning: files changed during the build, or the tree could not be read again." >&2
+    echo "    warning: stamping the build dirty against $SOURCE_SHORT, with no record." >&2
+    SOURCE_CHANGED=1
+    SOURCE_DIRTY=1
+  elif [[ "$head" != "$SOURCE_HEAD" ]]; then
+    if [[ -n "$head" && "$(git rev-parse -q --verify "$head^{tree}" 2>/dev/null)" == "$SOURCE_TREE" ]]; then
+      echo "    note: HEAD moved during the build to ${head:0:12}, whose tree is the one built; recording that commit."
+      SOURCE_HEAD=$head
+      SOURCE_SHORT=${head:0:12}
+      SOURCE_DIRTY=$SOURCE_HIDDEN
+    else
+      echo "    note: HEAD moved during the build, but the tree did not; recording against $SOURCE_SHORT."
+    fi
+  fi
+  return 0
+}
+
 # Prints a warning followed by git's own text, indented.
 git_warning() { # <warning> <git output>
   echo "    warning: $1" >&2
@@ -328,7 +402,11 @@ tag_build() {
     return 0
   fi
   [[ -n "$SOURCE_HEAD" ]] || return 0
-  if [[ -n "$TREE_DIRTY" ]]; then
+  if [[ -n "$SOURCE_CHANGED" ]]; then
+    echo "    no record: the source changed during the build." >&2
+    return 0
+  fi
+  if [[ -n "$SOURCE_DIRTY" ]]; then
     echo "    no record: the tree has uncommitted changes, so no commit names this build." >&2
     return 0
   fi
@@ -352,6 +430,7 @@ tag_build() {
   return 0
 }
 
+read_source_state
 # An App Store build needs a record, and CI writes none.
 if ((APP_STORE_MODE)) && in_ci; then
   echo "--app-store does not package in CI, where no build record is written." >&2
@@ -566,15 +645,9 @@ reserve_app_store_build_number() { # <counter file> [explicit number]
   APP_STORE_BUILD_NUMBER=$next
 }
 
-# Whether the tree the build came from is one the repo can reproduce. A
-# modified tracked file and an untracked new one both say no: a source
-# file nobody has added yet builds into the binary just the same. Asked
-# once, so the two stamps below name the same tree.
-TREE_DIRTY="$(git status --porcelain --untracked-files=normal 2>/dev/null || true)"
-# HEAD is read once, and its first 12 hex digits name the build in both
-# CFBundleVersion and the record; empty outside a checkout or on an unborn branch.
-SOURCE_HEAD="$(git rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)"
-SOURCE_SHORT="${SOURCE_HEAD:0:12}"
+# The stamps below and the record name the source read before the compile,
+# provided the tree is still the one read then.
+check_source_unchanged
 
 if ((APP_STORE_MODE)); then
   # Keep the App Store build number separate from the marketing version and
@@ -598,7 +671,7 @@ else
   # Outside a git checkout the plain version stands.
   if [[ -n "$SOURCE_SHORT" ]]; then
     SHA="$SOURCE_SHORT"
-    [[ -z "$TREE_DIRTY" ]] || SHA="$SHA.dirty"
+    [[ -z "$SOURCE_DIRTY" ]] || SHA="$SHA.dirty"
     plutil -replace CFBundleVersion -string "$VERSION+$SHA" "$APP/Contents/Info.plist"
   fi
 fi
@@ -611,7 +684,7 @@ plutil -replace OnetimePadBuildLane -string "$BUILD_LANE" "$APP/Contents/Info.pl
 SOURCE_REVISION="unknown"
 if [[ -n "$SOURCE_HEAD" ]]; then
   SOURCE_REVISION="$SOURCE_HEAD"
-  [[ -z "$TREE_DIRTY" ]] || SOURCE_REVISION="$SOURCE_REVISION.dirty"
+  [[ -z "$SOURCE_DIRTY" ]] || SOURCE_REVISION="$SOURCE_REVISION.dirty"
 fi
 plutil -replace OnetimePadSourceRevision -string "$SOURCE_REVISION" "$APP/Contents/Info.plist"
 
