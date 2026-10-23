@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class FindMenuTests: XCTestCase {
     private func withApplication(_ test: (BackdropAppDelegate) throws -> Void) rethrows {
-        _ = NSApplication.shared
+        prepareApplicationMenuRoles()
         let suite = "onetimepad.find-menu.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
@@ -34,6 +34,26 @@ final class FindMenuTests: XCTestCase {
         let app = BackdropAppDelegate(model: BackdropModel(defaults: defaults, pages: pages))
         try test(app)
         withExtendedLifetime(app) {}
+    }
+
+    func testFixtureRestoresMenuRolesAndReleasesItsDelegate() {
+        prepareApplicationMenuRoles()
+        let main = NSApp.mainMenu, windows = NSApp.windowsMenu
+        let services = NSApp.servicesMenu, help = NSApp.helpMenu
+        let servicesParent = services?.supermenu
+        weak var releasedApp: BackdropAppDelegate?
+        autoreleasepool {
+            withApplication { app in
+                releasedApp = app
+                MainMenuController(app: app).install()
+            }
+        }
+        XCTAssertTrue(NSApp.mainMenu === main)
+        XCTAssertTrue(NSApp.windowsMenu === windows)
+        XCTAssertTrue(NSApp.servicesMenu === services)
+        XCTAssertTrue(NSApp.helpMenu === help)
+        XCTAssertTrue(services?.supermenu === servicesParent)
+        XCTAssertNil(releasedApp)
     }
 
     func testFindCommandsRetainNativeActionsAndShortcuts() throws {

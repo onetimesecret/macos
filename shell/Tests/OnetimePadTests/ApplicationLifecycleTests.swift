@@ -7,27 +7,8 @@ import XCTest
 
 @MainActor
 final class ApplicationLifecycleTests: XCTestCase {
-    private func prepareMenuRoles() {
-        _ = NSApplication.shared
-        let main = NSApp.mainMenu ?? NSMenu(title: "Lifecycle Fixture")
-        NSApp.mainMenu = main
-        func attach(_ title: String, to parent: NSMenu) -> NSMenu {
-            let menu = NSMenu(title: title)
-            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-            item.submenu = menu
-            parent.addItem(item)
-            return menu
-        }
-        if NSApp.windowsMenu == nil { NSApp.windowsMenu = attach("Window", to: main) }
-        if NSApp.helpMenu == nil { NSApp.helpMenu = attach("Help", to: main) }
-        if NSApp.servicesMenu == nil {
-            let application = attach("Application", to: main)
-            NSApp.servicesMenu = attach("Services", to: application)
-        }
-    }
-
     private func withApplication(keymapOverride: String? = nil, applicationIsActive: @escaping () -> Bool = { NSApp.isActive }, _ test: (BackdropAppDelegate, BackdropModel) throws -> Void) throws {
-        prepareMenuRoles()
+        prepareApplicationMenuRoles()
         let oldMain = NSApp.mainMenu, oldWindows = NSApp.windowsMenu
         let oldServices = NSApp.servicesMenu, oldHelp = NSApp.helpMenu
         let oldServicesParent = oldServices?.supermenu?.items.first { $0.submenu === oldServices }
@@ -557,7 +538,7 @@ final class ApplicationLifecycleTests: XCTestCase {
     }
 
     func testMenuFixtureRestoresRolesAndReleasesItsModel() throws {
-        prepareMenuRoles()
+        prepareApplicationMenuRoles()
         let main = NSApp.mainMenu, windows = NSApp.windowsMenu
         let services = NSApp.servicesMenu, help = NSApp.helpMenu
         let servicesParent = services?.supermenu
