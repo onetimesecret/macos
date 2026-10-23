@@ -34,7 +34,7 @@ public enum StreamNavigator {
     public static let windowDays = 7
 
     /// What a node past the window says in place of a gauge.
-    public static let retainedLabel = "7d+ · retained"
+    public static var retainedLabel: String { CompanionL10n.string("pad.stream.retained") }
 
     /// One checkpoint on the stream: a page under its day, or the empty
     /// place today keeps while it holds no page.
@@ -175,7 +175,7 @@ public enum StreamNavigator {
     /// "1 empty day", "2 empty days": the note above a node whose day
     /// does not follow the one above it.
     public static func emptyDaysLabel(_ count: Int) -> String {
-        "\(count) empty day\(count == 1 ? "" : "s")"
+        CompanionL10n.format(count == 1 ? "pad.stream.emptyDay.one" : "pad.stream.emptyDay.many", count)
     }
 
     /// How a page's birth time reads where its day is already said.
@@ -360,6 +360,9 @@ public enum StreamNavigator {
         /// How far above its node's y a row is drawn; a day's first row rises a point more
         /// so its larger dot centres on the same line as a later row's.
         public static func rowLift(firstOfDay: Bool) -> CGFloat { firstOfDay ? 7 : 6 }
+
+        /// The side of a node's mark on the track, larger for a day's first page.
+        public static func markerSize(firstOfDay: Bool) -> CGFloat { firstOfDay ? 7 : 5 }
     }
 
     /// A node with its place on the rail.
@@ -429,7 +432,8 @@ public enum StreamNavigator {
         /// The track runs from here to the window's end or the foot.
         public let trackTop: CGFloat
         public let trackBottom: CGFloat
-        /// Where the seven day window ends, when a node lies past it.
+        /// Where the seven day mark is drawn, when a node lies past the window; the compact map
+        /// draws its tick only where the track between two marks fits one.
         public let windowY: CGFloat?
         /// The track inside the window, drawn solid, and the track past it, drawn dashed when
         /// a node lies there; the nodes' order (`runsOldestFirst`) decides which end each takes.
@@ -485,10 +489,11 @@ public enum StreamNavigator {
         layout.packedHeight > columnHeight
     }
 
-    /// The dense rail's map height: two fifths of the column, at least 40 points, and short
-    /// enough that the list under it shows a `row` points tall row whole (ADR-0060).
+    /// The dense rail's map height: two fifths of the column, at least 40 points, short enough for
+    /// the list to show a `row` points tall row whole, and 0 where a compact `layout` draws nothing.
     public static func denseMapHeight(columnHeight: CGFloat, row: CGFloat) -> CGFloat {
-        max(0, min(max(40, columnHeight * 0.4), columnHeight - Metrics.mapGap - row))
+        let height = min(max(40, columnHeight * 0.4), columnHeight - Metrics.mapGap - row)
+        return height > Metrics.top + Metrics.bottom ? height : 0
     }
 
     /// The dense rail's checkpoint list (ADR-0060): every placed node's row stacked from the
@@ -713,11 +718,22 @@ public enum StreamNavigator {
             segment = Segment(y: from, height: max(2, to - from))
         }
 
-        let windowY = windowIndex.map { index in
-            guard index < nodes.count else { return compact ? nodeYs[index - 1] : lastBottom + 2 }
-            return compact ? nodeYs[index] : ys[index] + gapBands[index] + 2
-        }
         let trackTop = Metrics.top - 8
+        // Compact, the boundary is the middle of the free track between the marks on either
+        // side, and its one point tick is drawn only where that stretch fits it.
+        var boundary: CGFloat?
+        var windowY: CGFloat?
+        if let index = windowIndex, compact {
+            let upper = nodes.indices.prefix(index).map {
+                nodeYs[$0] + Metrics.markerSize(firstOfDay: nodes[$0].firstOfDay)
+            }.max() ?? trackTop
+            let lower = index < nodes.count ? nodeYs[index] : limit
+            boundary = (upper + lower - 1) / 2
+            windowY = lower - upper >= 1 ? boundary : nil
+        } else if let index = windowIndex {
+            boundary = index < nodes.count ? ys[index] + gapBands[index] + 2 : lastBottom + 2
+            windowY = boundary
+        }
         let stretch = { (from: CGFloat, to: CGFloat) in Segment(y: from, height: max(0, to - from)) }
         let windowTrack: Segment
         let retainedTrack: Segment?
@@ -725,11 +741,11 @@ public enum StreamNavigator {
             windowTrack = stretch(trackTop, limit)
             retainedTrack = nil
         } else if oldestFirst {
-            let end = windowY ?? limit
+            let end = boundary ?? limit
             windowTrack = stretch(end, limit)
             retainedTrack = stretch(trackTop, end)
         } else {
-            let start = windowY ?? trackTop
+            let start = boundary ?? trackTop
             windowTrack = stretch(trackTop, start)
             retainedTrack = stretch(start, limit)
         }

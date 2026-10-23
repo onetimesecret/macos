@@ -164,6 +164,52 @@ final class StreamNavigatorTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(height - map - gap, 24, "the list lost its row at \(height)")
         }
         XCTAssertEqual(StreamNavigator.denseMapHeight(columnHeight: 10, row: 24), 0)
+        XCTAssertEqual(
+            StreamNavigator.denseMapHeight(columnHeight: 50, row: 30), 0, "a map too short to draw kept its room")
+        let checkpoints = threeDays(pagesPerDay: 2)
+        var undrawn: [String] = []
+        for height in stride(from: CGFloat(0), through: 200, by: 1) {
+            for row: CGFloat in [16, 24, 30, 38, 44] {
+                let map = StreamNavigator.denseMapHeight(columnHeight: height, row: row)
+                let drawn = StreamNavigator.layout(
+                    nodes: checkpoints, geometry: .unmeasured, height: map, width: 102, compact: true)
+                if map > 0, drawn.placed.isEmpty { undrawn.append("\(map) at \(height) for \(row)") }
+            }
+        }
+        XCTAssertEqual(undrawn, [], "maps given room that draw nothing")
+    }
+
+    /// The compact map's window tick stands on free track between the last live mark and the
+    /// first retained one, in either order, and is not drawn where no free point lies between.
+    func testTheCompactMapsWindowTickStandsBetweenTheMarks() throws {
+        let newestFirst = nodes([
+            slot(tab: 1, page: 11, day: 0),
+            slot(tab: 2, page: 22, day: -1),
+            slot(tab: 3, page: 33, day: -9),
+            slot(tab: 4, page: 44, day: -10),
+        ])
+        for ordered in [newestFirst, Array(newestFirst.reversed())] {
+            let geometry = RollGeometry(
+                extents: ordered.enumerated().map { extent($0.element, top: CGFloat($0.offset) * 1_000, height: 1_000) },
+                documentHeight: 4_000, viewportTop: 0, viewportHeight: 300)
+            let map = StreamNavigator.layout(nodes: ordered, geometry: geometry, height: 200, width: 102, compact: true)
+            let tick = try XCTUnwrap(map.windowY, "the control: no tick")
+            let boxes = map.placed.map { placed in
+                (placed.y, placed.y + StreamNavigator.Metrics.markerSize(firstOfDay: placed.node.firstOfDay))
+            }
+            for (index, box) in boxes.enumerated() {
+                XCTAssertFalse(
+                    max(box.0, tick) < min(box.1, tick + 1), "the tick meets mark \(index) at \(tick)")
+            }
+            let boundary = try XCTUnwrap(map.placed.firstIndex { $0.node.trailing != ordered[0].trailing })
+            XCTAssertGreaterThan(tick, map.placed[boundary - 1].y, "the tick is not after the last mark before it")
+            XCTAssertLessThan(tick, map.placed[boundary].y, "the tick is not before the first mark past it")
+        }
+
+        let crowded = StreamNavigator.layout(
+            nodes: newestFirst, geometry: .unmeasured, height: 72, width: 102, compact: true)
+        XCTAssertNil(crowded.windowY, "a tick was drawn over marks that meet")
+        XCTAssertNotNil(crowded.retainedTrack, "the crowded map lost its retained stretch")
     }
 
     func testDenseMapFitsMinimumHeightAndCoversLongDocumentInBothOrders() {

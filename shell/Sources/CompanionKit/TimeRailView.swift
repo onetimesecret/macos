@@ -47,6 +47,8 @@ public struct TimeRailView: View {
     /// band and no slivers, which is all a window with no roll mounted
     /// can honestly say about one.
     @StateObject private var unclaimedRoll = RollGeometryModel()
+    /// The tallest Files shelf row as drawn, nil until one has been measured.
+    @State private var fileRowHeight: CGFloat?
 
     public init(model: PageModel, readOnly: Bool) {
         self.model = model
@@ -139,10 +141,15 @@ public struct TimeRailView: View {
                                 selected: model.selectedFile == file.id && !model.showingLedger,
                                 model: model
                             )
+                            .background(GeometryReader { row in
+                                Color.clear.preference(key: FileShelfRowHeightKey.self, value: row.size.height)
+                            })
                         }
                     }
                 }
-                .frame(maxHeight: FileShelfRow.shelfHeight(rows: model.navigationFiles.count))
+                .onPreferenceChange(FileShelfRowHeightKey.self) { fileRowHeight = $0 > 0 ? $0 : nil }
+                .frame(maxHeight: FileShelfRow.shelfHeight(
+                    rows: model.navigationFiles.count, row: fileRowHeight ?? FileShelfRow.estimatedHeight))
             }
             padHeading(nodes: nodes)
             StreamNavigatorView(
@@ -294,9 +301,7 @@ public struct TimeRailView: View {
         guard let command = CommandID.allCases.first(where: { $0.selectsPageNumber == number })
         else { return nil }
         guard padsEnabled else { return keymap.hintKeystroke(for: command) }
-        return keymap.bindings.first {
-            $0.command == command && !switchesPads($0.keystroke, keymap: keymap)
-        }?.keystroke
+        return keymap.hintKeystroke(for: command, excluding: { switchesPads($0, keymap: keymap) })
     }
 
     /// Whether `stroke` is a ⌘0 to ⌘9 that `PadShortcutMonitor` turns into a pad switch.
@@ -340,14 +345,15 @@ struct StreamNavigatorView: View {
     @State private var hoverID: UInt64?
     @State private var layoutCache = StreamNavigatorLayoutCache()
     @State private var mapCache = StreamNavigatorLayoutCache()
-    /// The width the clip gives the drawing, less a legacy scroller when the system shows one.
-    @State private var clipWidth: CGFloat?
+    /// The width the full drawing's clip gives it, less a legacy scroller when the system shows one.
+    /// The dense branch, laid out at the proxy's width, clears it on entry.
+    @State private var drawingClipWidth: CGFloat?
 
     private typealias Metrics = StreamNavigator.Metrics
 
     var body: some View {
         GeometryReader { proxy in
-            let size = CGSize(width: clipWidth ?? proxy.size.width, height: proxy.size.height)
+            let size = CGSize(width: drawingClipWidth ?? proxy.size.width, height: proxy.size.height)
             let layout = layoutCache.layout(
                 nodes: nodes, geometry: roll.geometry, height: size.height, width: size.width)
             let nodeIDs = nodes.map(\.id)
@@ -361,12 +367,15 @@ struct StreamNavigatorView: View {
                 let map = mapCache.layout(
                     nodes: nodes, geometry: roll.geometry,
                     height: mapSize.height, width: mapSize.width, compact: true)
+                let listHeight = size.height - (mapSize.height > 0 ? mapSize.height + Metrics.mapGap : 0)
                 VStack(spacing: Metrics.mapGap) {
-                    stream(map, size: mapSize, nodeIDs: nodeIDs, compact: true)
-                        .frame(width: mapSize.width, height: mapSize.height)
-                    checkpointList(
-                        list, height: max(0, size.height - mapSize.height - Metrics.mapGap))
+                    if mapSize.height > 0 {
+                        stream(map, size: mapSize, nodeIDs: nodeIDs, compact: true)
+                            .frame(width: mapSize.width, height: mapSize.height)
+                    }
+                    checkpointList(list, height: max(0, listHeight))
                 }
+                .onAppear { drawingClipWidth = nil }
             } else {
                 // Rows that outrun the column lengthen the drawing, and the column scrolls to
                 // reach them inside its clip, with the overlay scroller a sidebar shows (#277).
@@ -377,7 +386,7 @@ struct StreamNavigatorView: View {
                             Color.clear.preference(key: ClipWidthKey.self, value: content.size.width)
                         })
                 }
-                .onPreferenceChange(ClipWidthKey.self) { clipWidth = $0 }
+                .onPreferenceChange(ClipWidthKey.self) { drawingClipWidth = $0 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -410,12 +419,7 @@ struct StreamNavigatorView: View {
                 maxWidth: .infinity, minHeight: max(height, list.contentHeight),
                 maxHeight: max(height, list.contentHeight), alignment: .topLeading)
             .background(RailReveal(request: reveal).accessibilityHidden(true))
-            // The rows fill the clip, so this is the clip's width, as the drawing's is in the other branch.
-            .background(GeometryReader { content in
-                Color.clear.preference(key: ClipWidthKey.self, value: content.size.width)
-            })
         }
-        .onPreferenceChange(ClipWidthKey.self) { clipWidth = $0 }
         .frame(height: height)
     }
 
@@ -444,7 +448,15 @@ struct StreamNavigatorView: View {
                     jump(toTrackY: point.y, layout: layout)
                 }
             track(layout)
-            if let windowY = layout.windowY {
+            if let windowY = layout.windowY, compact {
+                // The compact map says no words, so its window end is the tick alone.
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.4))
+                    .frame(width: 7, height: 1)
+                    .offset(x: Metrics.trackX - 3, y: windowY)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            } else if let windowY = layout.windowY {
                 windowMark(at: windowY)
             }
             ForEach(layout.placed) { placed in
@@ -526,7 +538,7 @@ struct StreamNavigatorView: View {
         .onChange(of: size.width) { _ in invalidateDrag() }
         .onChange(of: size.height) { _ in invalidateDrag() }
         .onChange(of: DocumentStamp(roll.geometry.document)) { _ in invalidateDrag() }
-        .onDisappear { scrollDrag = nil }
+        .onDisappear { scrollDrag = nil; dragInvalidated = false }
         .background(relays ? WheelRelay { event in roll.relay(wheel: event) }.accessibilityHidden(true) : nil)
         .background(RailReveal(request: reveal).accessibilityHidden(true))
     }
@@ -573,7 +585,7 @@ struct StreamNavigatorView: View {
                 .foregroundStyle(Color.secondaryInk)
         }
         .offset(x: Metrics.trackX - 3, y: y - 6)
-        .help("seven-day boundary; pages outside the window are retained because they hold content")
+        .help(CompanionL10n.string("pad.stream.window.help"))
         .accessibilityHidden(true)
     }
 
@@ -646,6 +658,7 @@ struct StreamNavigatorView: View {
         let target = node.target
         let first = node.firstOfDay
         let hovered = hoverID == node.id
+        let sortMenu = PadSortSection.checkpointMenu(of: node, in: model)
         return Button { jump(to: target, documentTop: placed.documentTop) } label: {
             HStack(alignment: .top, spacing: 8) {
                 marker(for: node)
@@ -703,11 +716,7 @@ struct StreamNavigatorView: View {
                 hoverID = nil
             }
         }
-        .contextMenu {
-            if model.pads.isEnabled {
-                PadSortPicker(section: .checkpoints(of: node, in: model), model: model)
-            }
-        }
+        .modifier(PadSortContextMenu(section: sortMenu, model: model))
         .help(StreamNavigator.help(for: node, chord: chords[node.id]))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
@@ -716,10 +725,9 @@ struct StreamNavigatorView: View {
         .accessibilityActivation(when: true) { jump(to: target, documentTop: placed.documentTop) }
         // The context menu's orders, by name, for VoiceOver (ADR-0060).
         .accessibilityActions {
-            if model.pads.isEnabled {
-                let section = PadSortSection.checkpoints(of: node, in: model)
+            if let sortMenu {
                 ForEach(PadSortCopy.orders, id: \.self) { order in
-                    Button(section.actionName(order)) { section.apply(order, to: model) }
+                    Button(sortMenu.actionName(order)) { sortMenu.apply(order, to: model) }
                 }
             }
         }
@@ -736,7 +744,7 @@ struct StreamNavigatorView: View {
     /// selection moving down the rail moves nothing else.
     @ViewBuilder
     private func marker(for node: StreamNavigator.Node) -> some View {
-        let size: CGFloat = node.firstOfDay ? 7 : 5
+        let size = Metrics.markerSize(firstOfDay: node.firstOfDay)
         if !node.hasPage {
             Circle()
                 .strokeBorder(
@@ -1147,6 +1155,11 @@ struct PadSortSection: Hashable {
             subject: CompanionL10n.format("pad.sort.checkpoints", node.spokenDay))
     }
 
+    /// A checkpoint row's sort menu and actions, or nil while pads are off and the row offers none.
+    @MainActor static func checkpointMenu(of node: StreamNavigator.Node, in model: PageModel) -> PadSortSection? {
+        model.pads.isEnabled ? .checkpoints(of: node, in: model) : nil
+    }
+
     @MainActor func apply(_ order: PadSortDirection, to model: PageModel) {
         switch scope {
         case .days: model.setDaySort(order)
@@ -1171,6 +1184,29 @@ struct PadSortPicker: View {
     }
 }
 
+/// The tallest Files shelf row as laid out, so the shelf counts in drawn rows.
+private struct FileShelfRowHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// A context menu with the section's picker, attached only when there is a section.
+struct PadSortContextMenu: ViewModifier {
+    let section: PadSortSection?
+    let model: PageModel
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let section {
+            content.contextMenu { PadSortPicker(section: section, model: model) }
+        } else {
+            content
+        }
+    }
+}
+
 /// One open file on the rail's Files shelf: the filename over the
 /// unsaved marker, in the shape a day row already has so the column
 /// reads as one column.
@@ -1188,16 +1224,16 @@ struct FileShelfRow: View {
     let selected: Bool
     @ObservedObject var model: PageModel
 
-    /// A row's height, the unit the shelf is measured in.
-    nonisolated static let height: CGFloat = 27
+    /// The shelf's unit before a row has been measured; the drawn row's height replaces it.
+    nonisolated static let estimatedHeight: CGFloat = 27
     /// The room between two rows on the shelf.
     nonisolated static let spacing: CGFloat = 2
 
-    /// The shelf's tallest: every row up to two, then two and a half, so a third row shows
-    /// there is more to scroll to.
-    nonisolated static func shelfHeight(rows: Int) -> CGFloat {
+    /// The shelf's tallest, in rows of height `row`: every row up to two, then two and a half,
+    /// so a third row shows there is more to scroll to.
+    nonisolated static func shelfHeight(rows: Int, row: CGFloat) -> CGFloat {
         let shown = min(CGFloat(max(0, rows)), 2.5)
-        return shown * height + max(0, shown.rounded(.up) - 1) * spacing
+        return shown * row + max(0, shown.rounded(.up) - 1) * spacing
     }
 
     var body: some View {
@@ -1219,7 +1255,7 @@ struct FileShelfRow: View {
             .padding(.horizontal, 3)
         }
         .padding(.vertical, 4)
-        .frame(maxWidth: .infinity, minHeight: Self.height)
+        .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 5)
                 .fill(selected ? Color.cellBackground : .clear)

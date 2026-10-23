@@ -209,6 +209,14 @@ public struct ResolvedKeymap: Sendable {
         bindings.first { $0.command == command }?.keystroke
     }
 
+    /// The chord a tooltip may name for a command, passing over the bindings `excluding` names,
+    /// such as a chord another layer takes before this command sees it.
+    public func hintKeystroke(
+        for command: CommandID, excluding: (Keystroke) -> Bool
+    ) -> Keystroke? {
+        bindings.first { $0.command == command && !excluding($0.keystroke) }?.keystroke
+    }
+
     /// The faults worth telling someone about.
     public var faults: [KeymapDiagnostic] { diagnostics.filter(\.isFault) }
 }

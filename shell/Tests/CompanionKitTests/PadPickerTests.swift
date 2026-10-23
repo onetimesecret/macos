@@ -304,11 +304,20 @@ final class PadPickerTests: XCTestCase {
         let keys = [
             "pad.heading", "pad.files.heading", "pad.page.new",
             "pad.stream", "pad.stream.position", "pad.stream.percent", "pad.sort.action",
+            "pad.stream.window.help", "pad.stream.retained", "pad.stream.emptyDay.one",
+            "pad.stream.emptyDay.many",
         ]
         for key in keys {
             XCTAssertNotEqual(CompanionL10n.string(key), key, "\(key) is missing from the strings")
         }
         XCTAssertEqual(CompanionL10n.format("pad.stream.percent", 42), "42 percent")
+        XCTAssertEqual(
+            CompanionL10n.string("pad.stream.window.help"),
+            "seven-day boundary; pages outside the window are retained because they hold content")
+        XCTAssertEqual(StreamNavigator.retainedLabel, "7d+ · retained")
+        XCTAssertEqual(
+            [0, 1, 2, 11].map(StreamNavigator.emptyDaysLabel),
+            ["0 empty days", "1 empty day", "2 empty days", "11 empty days"])
         XCTAssertEqual(CompanionL10n.format("pad.sort.action", "days", "Newest first"), "Sort days: Newest first")
     }
 

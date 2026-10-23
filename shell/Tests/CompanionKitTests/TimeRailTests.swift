@@ -115,7 +115,7 @@ final class TimeRailTests: XCTestCase {
         XCTAssertEqual(mounted(WheelRelayView.self).count, 0, "the File's rail drives the roll")
     }
 
-    /// A dense column too short for the map's 40 point floor still shows the active row whole.
+    /// A dense column too short for a map gives the list every point and shows the active row whole.
     func testAShortDenseColumnStillShowsTheActiveRow() throws {
         let model = try makeModel()
         for _ in 0..<30 { model.newPage() }
@@ -146,6 +146,8 @@ final class TimeRailTests: XCTestCase {
             XCTAssertTrue(
                 clip.bounds.contains(clip.convert(row.bounds, from: row)),
                 "the active row is cut short at \(height): \(clip.bounds)")
+            XCTAssertEqual(
+                clip.bounds.height, height, accuracy: 0.5, "a map too short to draw kept its room at \(height)")
         }
     }
 
@@ -358,6 +360,16 @@ final class TimeRailTests: XCTestCase {
         }
     }
 
+    /// A checkpoint row offers its sort menu and actions only while pads are on, so a right
+    /// click with pads off opens no empty menu.
+    func testACheckpointOffersASortMenuOnlyWithPads() throws {
+        let (model, _, active) = try padsModel()
+        let menu = try XCTUnwrap(PadSortSection.checkpointMenu(of: active, in: model), "pads on offered none")
+        XCTAssertEqual(menu, PadSortSection.checkpoints(of: active, in: model))
+        model.pads.isEnabled = false
+        XCTAssertNil(PadSortSection.checkpointMenu(of: active, in: model), "pads off offered a sort menu")
+    }
+
     /// With pads on, `PadShortcutMonitor` takes ⌘1 to ⌘9 for pads, so a node names no chord
     /// the monitor would take, and still names a binding that reaches its day.
     func testPadsLeaveOutTheDigitChordsThePadMonitorTakes() throws {
@@ -386,6 +398,14 @@ final class TimeRailTests: XCTestCase {
         XCTAssertEqual(
             TimeRailView.chord(forRowAt: 0, keymap: remapped, padsEnabled: true)?.displaySymbol, "⌘2",
             "a remapped digit the pads leave alone lost its hint")
+
+        // The keymap's own hint, asked to pass over a chord, and with nothing passed over.
+        XCTAssertEqual(
+            elsewhere.hintKeystroke(for: .pageSelect1, excluding: { _ in false }),
+            elsewhere.hintKeystroke(for: .pageSelect1))
+        XCTAssertNil(elsewhere.hintKeystroke(for: .pageSelect1, excluding: { _ in true }))
+        XCTAssertNil(model.keymap.hintKeystroke(
+            for: .pageSelect1, excluding: { TimeRailView.switchesPads($0, keymap: model.keymap) }))
     }
 
     /// VoiceOver hears a whole percent from 0 to 100, and 0 where nothing scrolls.
@@ -414,22 +434,56 @@ final class TimeRailTests: XCTestCase {
     /// The shelf fits up to two rows and then shows half a third, so a hidden row reads as
     /// one to scroll to; the row is drawn at the height the shelf counts in.
     func testTheFilesShelfShowsTwoRowsAndHalfOfTheNext() throws {
-        let row = FileShelfRow.height
-        let gap = FileShelfRow.spacing
-        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 0), 0)
-        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 1), row)
-        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 2), 2 * row + gap)
-        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 3), 2.5 * row + 2 * gap)
-        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 40), 2.5 * row + 2 * gap)
-
         let model = try makeModel()
-        for dirty in [false, true] {
+        let row = try [false, true].map { dirty in
             let file = FileSummary(
                 id: CompanionClient.fileIDTag | 1, name: "README.md", path: "/tmp/README.md",
                 isDirty: dirty, conflict: .none, lineEnding: .lf, hasBOM: false, lastEditedAt: 0,
                 restoredFromDraft: false, pendingHydration: false, accessRefused: false, notFound: false)
-            let host = NSHostingView(rootView: FileShelfRow(file: file, selected: false, model: model))
-            XCTAssertEqual(host.fittingSize.height, row, "the drawn row and the shelf's unit differ")
+            let height = NSHostingView(
+                rootView: FileShelfRow(file: file, selected: false, model: model)).fittingSize.height
+            return try XCTUnwrap(height > 0 ? height : nil, "the control: the row measured")
+        }.max() ?? 0
+        let gap = FileShelfRow.spacing
+        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 0, row: row), 0)
+        XCTAssertGreaterThanOrEqual(FileShelfRow.shelfHeight(rows: 1, row: row), row)
+        XCTAssertGreaterThanOrEqual(FileShelfRow.shelfHeight(rows: 2, row: row), 2 * row)
+        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 3, row: row), 2.5 * row + 2 * gap)
+        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 40, row: row), 2.5 * row + 2 * gap)
+
+        // The rail sizes its shelf from the row it drew, not from the estimate.
+        let host = NSHostingView(rootView: AnyView(
+            TimeRailView(model: model, readOnly: false).environment(\.presentationSurface, .panel)))
+        host.frame = NSRect(x: 0, y: 0, width: TimeRailView.width, height: 480)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        addTeardownBlock { window.close() }
+        func shelf() throws -> NSScrollView {
+            for _ in 0..<3 { host.layoutSubtreeIfNeeded(); drainMainQueue() }
+            func walk(_ view: NSView) -> [NSScrollView] {
+                ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(walk)
+            }
+            return try XCTUnwrap(walk(host).min { $0.frame.height < $1.frame.height }, "no shelf")
+        }
+        for count in 1...3 {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("time-rail-shelf-\(UUID().uuidString).txt")
+            addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+            try "file \(count)".write(to: url, atomically: true, encoding: .utf8)
+            model.openFile(at: url)
+            XCTAssertEqual(model.navigationFiles.count, count, "the control")
+            let scroll = try shelf()
+            let document = try XCTUnwrap(scroll.documentView).frame.height
+            XCTAssertEqual(
+                scroll.contentView.bounds.height, FileShelfRow.shelfHeight(rows: count, row: row),
+                accuracy: 0.5, "\(count) rows: the shelf is not in measured rows")
+            if count < 3 {
+                XCTAssertGreaterThanOrEqual(
+                    scroll.contentView.bounds.height + 0.5, document, "\(count) rows: a row is clipped")
+            } else {
+                XCTAssertLessThan(scroll.contentView.bounds.height, document, "the third row is all shown")
+            }
         }
     }
 }
