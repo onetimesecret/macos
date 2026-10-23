@@ -653,7 +653,10 @@ private final class MarkdownPreviewRenderer {
             components.query = nil
             components.fragment = nil
         } else {
-            guard let host = components.host, !host.isEmpty else { return nil }
+            // `https://docs.example.com@evil.example/` opens evil.example: userinfo refuses the link.
+            guard let host = components.host, !host.isEmpty,
+                  components.user == nil, components.password == nil
+            else { return nil }
         }
         return components.url
     }

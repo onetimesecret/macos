@@ -102,6 +102,19 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         }
     }
 
+    /// Userinfo before the host makes an address read as one site and open another, so a web
+    /// link with a user or a password opens nothing, written as Markdown or as HTML.
+    func testAWebAddressWithUserinfoIsNoLink() throws {
+        let rendered = render("""
+        [spoof](https://docs.example.com@evil.example/) [secret](https://u:p@example.com/) \
+        <a href="http://docs.example.com@evil.example/">html</a> [fine](https://example.com/@user)
+        """)
+        for label in ["spoof", "secret", "html"] {
+            XCTAssertNil(try link(label, in: rendered), label)
+        }
+        XCTAssertEqual(try link("fine", in: rendered)?.host, "example.com", "an @ in the path is no userinfo")
+    }
+
     /// A mailto link keeps the address and loses its query and fragment, which name headers,
     /// a body and attachments for the mail client; a web link keeps its query.
     func testAMailtoLinkKeepsTheAddressAndLosesItsQueryAndFragment() throws {
