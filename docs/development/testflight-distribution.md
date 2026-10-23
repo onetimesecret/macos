@@ -258,10 +258,10 @@ in CI, outside a git checkout, on an unborn branch, when the tree cannot be
 read, with uncommitted changes (untracked files git does not ignore count), and
 with index entries flagged assume-unchanged or skip-worktree, as a sparse
 checkout has. With `--build-number N`, it also refuses when the tag
-`build/app-store/<version>-N` already names another commit. If a file changes
-during the build, it stops before reserving a build number. If the reserved
-number's tag already names another commit, it stops before signing, and that
-number stays unused. It always runs cargo for the Rust core rather than reusing
+`build/app-store/<version>-N` already names another commit or cannot be
+created. If a file changes during the build, it stops before reserving a build
+number. If the reserved number's tag already names another commit or cannot be
+created, it stops before signing, and that number stays unused. It always runs cargo for the Rust core rather than reusing
 the cached xcframework. A successful run tags the commit
 `build/app-store/<version>-<build number>`, and `v<version>` when no tag of
 that name exists, then prints a `git push` command for those tags; it pushes

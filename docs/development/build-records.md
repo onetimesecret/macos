@@ -51,7 +51,8 @@ git checkout, on an unborn branch, or with a missing object), when the tree
 cannot be read, and when the build is dirty. It suggests committing the changes
 or `git stash -u`, which also takes untracked files. With `--build-number N`,
 it also refuses when the tag `build/app-store/<version>-N` already names
-another commit.
+another commit, or when git would refuse to create it, as when a tag named
+`build` exists.
 
 ### Writing the record
 
@@ -74,8 +75,8 @@ Each name is checked with `git check-ref-format` first. An invalid dev or local
 name means no snapshot and no record. For `--app-store`, an invalid
 `build/app-store` name stops the run before a build number is reserved. Right
 after reserving a number, the script checks its `build/app-store` tag. If that
-tag already names another commit, the run stops before stamping or signing, and
-the number stays unused.
+tag already names another commit, or git would refuse to create it, the run
+stops before stamping or signing, and the number stays unused.
 
 A record that already points at the same commit is reused and keeps its first
 annotation; the script says so. One that points at another commit is left as

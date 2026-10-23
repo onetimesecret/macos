@@ -459,15 +459,23 @@ create_build_tag() { # <name> <commit> <message> [--no-sign]
   return 1
 }
 
-# Fails when tag build/app-store/<version>-<number> is not a valid name or names a commit
-# other than SOURCE_HEAD; a tag on the same commit is fine.
+# Fails when tag build/app-store/<version>-<number> is not a valid name, names a commit
+# other than SOURCE_HEAD, or cannot be written; a tag on the same commit is fine.
 app_store_tag_free() { # <number>
-  local name="build/$BUILD_LANE/$VERSION-$1" existing
+  local name="build/$BUILD_LANE/$VERSION-$1" existing output
   ref_name_ok "refs/tags/$name" || return 1
-  existing="$(git rev-parse -q --verify "refs/tags/$name^{commit}" 2>/dev/null)" || return 0
-  [[ "$existing" != "$SOURCE_HEAD" ]] || return 0
-  echo "    error: tag $name already names ${existing:0:12}, not this build's commit." >&2
-  return 1
+  if existing="$(git rev-parse -q --verify "refs/tags/$name^{commit}" 2>/dev/null)"; then
+    [[ "$existing" != "$SOURCE_HEAD" ]] || return 0
+    echo "    error: tag $name already names ${existing:0:12}, not this build's commit." >&2
+    return 1
+  fi
+  # A transaction aborted after prepare finds a ref in the way, such as a tag named build.
+  if ! output="$(printf 'start\ncreate %s %s\nprepare\nabort\n' "refs/tags/$name" "$SOURCE_HEAD" \
+    | git update-ref --stdin 2>&1 >/dev/null)"; then
+    echo "    error: tag $name cannot be written:" >&2
+    printf '%s\n' "$output" | sed 's/^/    /' >&2
+    return 1
+  fi
 }
 
 # Points <ref> at a new annotated tag object for <commit>; the empty old value makes
