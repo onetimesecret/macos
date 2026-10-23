@@ -362,7 +362,7 @@ final class DayStackView: NSView {
     private var rows: [Row] = []
     private var rendered: Signature?
     private var expandedLayout = false
-    private var readingPlace: RollPlace?
+    private(set) var readingPlace: RollPlace?
     #if DEBUG
         /// The passes `relayout()` made, for the tests.
         private(set) var measurements = 0
@@ -1191,9 +1191,9 @@ final class DayStackView: NSView {
         setFrameSize(NSSize(width: documentWidth, height: max(y, clipHeight)))
         var restoredPlace: RollPlace?
         var summoned = false
-        // A travelling jump owns the clip, so the pass leaves it to the jump.
-        if !expansionChanged, pendingPlace == nil, activeJump == nil, let place = readingPlace,
-           restore(place: place) {
+        // A travelling jump or a waiting place or page outranks the reading place, as in `update`.
+        if !expansionChanged, pendingPlace == nil, pendingPage == nil, activeJump == nil,
+           let place = readingPlace, restore(place: place) {
             restoredPlace = place
         }
         constrainScrollOffset()

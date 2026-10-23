@@ -2389,6 +2389,63 @@ final class DayScrollTests: XCTestCase {
         XCTAssertTrue(roll.stack.jumpInFlight)
     }
 
+    /// A pass before a queued page settles leaves the clip and the reading place
+    /// where they were, rather than restoring the place the page replaces.
+    func testAPassBeforeAQueuedPageSettlesDoesNotRestoreTheOldPlace() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        model.wrapsLines = false
+        let ink = Array(repeating: longLine(repetitions: 12), count: 40).joined(separator: "\n")
+        _ = try page(in: model, saying: ink)
+        _ = try page(in: model, saying: ink)
+        let roll = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        let rows = pageRows(of: roll)
+        let upper = try XCTUnwrap(rows.first).page
+        roll.stack.scroll(toDocumentOffset: try XCTUnwrap(rows.last).top + 200, animated: false)
+        let old = try XCTUnwrap(roll.stack.readingPlace)
+        let start = roll.scroll.contentView.bounds.origin.y
+
+        roll.stack.open(onPage: upper)
+        model.wrapsLines = true
+        roll.stack.relayout()
+        XCTAssertGreaterThan(try XCTUnwrap(pageRows(of: roll).last).top, start, "the rows above grew")
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin.y, start, accuracy: 0.5)
+        XCTAssertNotEqual(roll.stack.readingPlace, old)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin.y,
+            try pickedOffset(of: upper, in: roll), accuracy: 1)
+    }
+
+    /// With pads on and days oldest first, a roll parked at origin 0 reads a
+    /// place on the oldest day, and a pad switch and back returns to it, not Today.
+    func testAnOldestFirstRollAtTheOriginReturnsToTheOldestDayAfterAPadSwitch() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        let scratch = PadCatalog.scratchID
+        let today = try page(in: model, saying: longPage(lines: 80))
+        _ = try page(in: model, saying: longPage(lines: 80))
+        let projected = spreadOverDays(model, selecting: today)
+        let oldestFirst = TimeUnitProjection(
+            units: Array(projected.units.reversed()), hiddenBlankPages: projected.hiddenBlankPages)
+        let roll = try mountRoll(model: model, height: 120)
+        roll.stack.update(projection: oldestFirst, selectedPage: today, readOnly: false)
+        let rows = pageRows(of: roll)
+        let oldest = try XCTUnwrap(rows.first).page
+        let todayTop = try XCTUnwrap(rows.first { $0.page == today }).top
+        XCTAssertNotEqual(oldest, today)
+        XCTAssertGreaterThan(todayTop, 0)
+        roll.stack.scroll(toDocumentOffset: 0, animated: false)
+        XCTAssertEqual(roll.stack.currentPlace?.page, oldest)
+
+        _ = try XCTUnwrap(model.createPad(named: "Other"))
+        roll.stack.update(projection: model.timeUnits, selectedPage: model.selectedPageID, readOnly: false)
+        model.activatePad(scratch)
+        roll.stack.update(projection: oldestFirst, selectedPage: today, readOnly: false)
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin.y, 0, accuracy: 1)
+        XCTAssertEqual(roll.stack.currentPlace?.page, oldest)
+    }
+
     /// Wait for the clip to stand at `offset`, asked on every bounds change.
     private func waitForClip(of roll: Roll, at offset: CGFloat, timeout: TimeInterval = 2) {
         let clip = roll.scroll.contentView
