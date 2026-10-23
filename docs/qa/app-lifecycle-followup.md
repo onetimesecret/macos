@@ -86,7 +86,28 @@ All seven workflow checks passed on `1abb03af` (CI run 39913125058; Claude run 3
 | Nit: companion activation context is only read by deferred activation | Retained with rationale | Explicit launch/reopen routes intentionally ignore another window's older activation request; deferred activation respects a newer companion request. Existing router tests cover that distinction. No comment-only change was made. |
 | Nit: curly apostrophe in README | Addressed | Use the surrounding ASCII spelling. |
 
+## Review and platform failure on 0cd77310
+
+The shell, release packaging, logic, ADR and secret-scan checks passed on `0cd77310`; platform run 39914544238 failed in `our_own_transient_write_is_not_offered`. Claude's completed review added six findings:
+
+| Feedback | Disposition | Implementation or rationale |
+| --- | --- | --- |
+| 1: Settings remains restorable | Addressed | Explicitly set isRestorable=false when constructing native Settings; assert it before and after close/reopen. The old redirect set this property, while the native controller omitted it. This does not substitute for session-restoration execution. |
+| 2: abandoned companion activation flags can discard a later summon | Addressed | Clear companion flags on resignation and whenever a newer explicit summon supersedes them. Resignation alone is insufficient if activation never arrived. Tests cover earlier Settings, About and Feedback requests, both with and without resignation, and a newer companion request still taking precedence over deferred editor presentation. |
+| 3: queued Finder early return depends on another method consuming initial intent | Addressed defensively | Consume initial opening at the nonempty-queue early return too. Current file filtering already made the sequence correct; this local assignment removes the implicit dependency. |
+| 4: guard message tells every lane to rerun tests | Addressed | Use command-neutral instructions. |
+| 5: any current-user inspection error stops the lane | Retained deliberately | Permission and inspection failures remain distinct from no running process. Existing regressions exercise this behavior; future runner failures require diagnosis rather than skipping uninspectable processes. |
+| 6: menu closures retain the delegate | Application lifetime retained; fixture omission fixed | Strong app captures suit the installed menu's lifetime. The lifecycle test helper now restores all four menu roles and the canonical Services menu parent. A regression verifies role identity and delegate/model release after the fixture ends. |
+
+The failing pasteboard fixture cleared the board and wrote a string without first declaring its type or checking the result. Apple's [setString(_:forType:) reference](https://developer.apple.com/documentation/appkit/nspasteboard/setstring(_:fortype:)) states: “The type must have been declared by a previous declareTypes(_:owner:) message.” The fixture now declares the type, checks clear/write results, and verifies readback. A repeated replacement regression checks marker removal and stale-clear rejection.
+
+This is a confirmed fixture defect, not a reproduced explanation of the intermittent CI mechanism: 10,000 local repetitions of the old sequence did not fail. The earlier foreign-exception abort remains independently unexplained. No retry, serialization, or removed coverage is used as the fix. Local Rust executions use uniquely named test boards and exclude the general-pasteboard-name test.
+
 ## Validation scope
+
+This round passed 391 native tests and 1,826 CompanionKit tests (2,217 total), 20 guard tests, and 21 isolated pasteboard tests. Twenty pasteboard stress runs passed 420 test executions and 2,000 replacement cycles. The full Swift run passed CompanionKit but initially crashed in the new native activation matrix: Zombies identified an over-release of AppKit's NSSystemInfoPanel during fixture cleanup. The fixture now hides panels rather than closing them and restores prior window visibility. The matrix passed with Zombies enabled, then all 391 native tests passed on rerun. ADR lint (52 records), Rust formatting, shell syntax and whitespace checks passed. No installed app was used as a fixture.
+
+Previous repeat-review validation:
 
 The repeat-review follow-up passed 388 native tests and 1,826 CompanionKit tests (2,214 total), plus 106 script tests. The full run passed CompanionKit; new native assertions initially omitted the deferred activation callback. After adding that callback to the fixtures, all native tests passed on rerun. The fixtures use temporary state and ephemeral credentials; the install tests use mocked application commands. ADR lint (52 records), shell syntax and whitespace checks passed. The pre-commit hook skipped because its configuration is absent; it is not counted as validation.
 
