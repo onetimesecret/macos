@@ -338,51 +338,51 @@ request, parser or AppKit result is supplied by enactment.
 ## Implementation baseline
 
 These are code observations, not additional product requirements. Bullets
-naming the composer describe the code after the R3 slice in the
-[delivery record](#delivery-record):
+naming the parser or the composer describe the code after the R1 slice in
+the [delivery record](#delivery-record):
 
-- [`MarkdownPreviewView.swift`](../../../shell/Sources/CompanionKit/MarkdownPreviewView.swift)
-  parses with `Document(parsing:options:)` and converts the resulting tree
-  into native AppKit attributed text. Every text leaf, code span, break,
-  Markdown trait, raw HTML leaf and image passes through one
-  `PreviewCompositionStream` per rendering
+- `MarkdownPreviewRenderer` in
+  [`MarkdownPreviewView.swift`](../../../shell/Sources/CompanionKit/MarkdownPreviewView.swift)
+  reads the page with `MarkdownParser.parse(_:objects:dialect:limits:)`
+  ([`MarkdownParser.swift`](../../../shell/Sources/CompanionKit/MarkdownParser.swift))
+  and converts the returned `MarkdownDocument` into native AppKit attributed
+  text. Every text run, code span and code block, break, Markdown trait,
+  link, raw HTML leaf and image passes through one `PreviewCompositionStream`
+  per rendering
   ([`PreviewComposer.swift`](../../../shell/Sources/CompanionKit/PreviewComposer.swift)).
-- [`Package.swift`](../../../shell/Package.swift) selects `swift-markdown`
-  from the 0.9 patch-release range. In the inspected dependency checkout,
-  `CommonMarkConverter.parseString` unconditionally attaches `table`,
-  `strikethrough`, and `tasklist`; `ParseOptions` exposes no dialect switch.
-  That path also does not attach the GFM extended-autolink extension.
-  [`Package.resolved`](../../../shell/Package.resolved) pins `swift-markdown`
-  0.9.0 at `25cb61d3482054b09ae76ca4f281b1bfe7fe5a43` and `swift-cmark`
-  0.9.0 at `08ddb528923cc1a6527e02b7a1aee9e516ca749a`.
-- At those revisions, `swift-cmark/src/inlines.c` recognizes Apple's
-  `^[…](…)` inline-attribute syntax without a dialect option. The converter
-  also enables `CMARK_OPT_TABLE_SPANS`. Disabling the three attached GFM
-  extensions therefore does not establish a CommonMark parser.
+- [`Package.swift`](../../../shell/Package.swift) has no remote dependency
+  and the package has no `Package.resolved`. Two C targets build vendored
+  sources: `CMarkCommonMark`, cmark 0.31.2 at
+  `eec0eeba6d31189fd828314576494566d539b1e3`, unmodified, and `CMarkGFM`,
+  cmark-gfm 0.29.0.gfm.13 at `587a12bb54d95ac37241377e6ddc93ea0e45439b`
+  with three patches, two to `extensions/autolink.c` and one to
+  `extensions/table.c` and `table.h`.
+  [`scripts/vendor-cmark.sh`](../../../scripts/vendor-cmark.sh) writes both
+  and `--check` verifies them offline. Each target force-includes a
+  generated `prefix.h` that renames every external symbol (`otscm_`,
+  `otsgfm_`), and Swift imports only each target's shim header.
+- The GFM shim attaches `table`, `strikethrough`, `autolink`, `tagfilter`
+  and `tasklist`; the CommonMark shim attaches nothing. Both parse with
+  `CMARK_OPT_DEFAULT`. Neither parser has Apple's `^[…](…)` inline
+  attribute syntax or table spans.
 - [`MarkdownPreviewRenderingTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownPreviewRenderingTests.swift)
-  currently expects `||` column spans and `^` row spans. Those expectations
-  differ from the published GFM table grammar; they are not a conformance
-  oracle. R1 replaces those expectations with fixtures for the selected
-  published dialect grammar and records the removal of nonstandard spans.
-- `InlineHTML` and `HTMLBlock` contain opaque HTML strings. The renderer
-  tokenizes each with
+  expects `||` to leave an empty cell and `^` to stay cell text, each cell
+  in its own column; the `||` and `^` span expectations are gone.
+- Raw HTML reaches the renderer as literal text with typed objects, in
+  `rawHTML` events and `html` blocks. The renderer tokenizes each with
   [`HTMLTokenizer`](../../../shell/Sources/CompanionKit/HTMLTokenizer.swift)
-  and composes it in the document's one element stack.
-  `swift-cmark/extensions/tagfilter.c` registers an HTML-output filter
-  callback, not an AST transformation; the composer applies the GFM filter
-  to native output instead.
-- `MarkdownPreviewRenderer.init` replaces each sealed object's `U+FFFC`
-  with an ASCII token (`OTSAttachment`, a per-render hex suffix, an index,
-  and `Z`) before parsing; `parts(_:addressOf:)` turns each token spelling
-  in a leaf into a typed object part, each token once, and an image address
-  assigns only tokens inside the image's own source, keeping any other
-  spelling as text so the composer refuses the address. `safeURL`
-  refuses a link destination containing the token, and objects with no
-  visible leaf are flushed as separate paragraphs. The parser therefore
-  sees each object as letters and digits; R1's typed atom does not exist yet.
-- A `Markdown.Image` composes as its alt text, the plain text of its inlines
+  and composes it in the document's one element stack. cmark-gfm's
+  `tagfilter` acts only in its HTML writer, which the app does not call;
+  the composer applies the GFM filter to native output instead.
+- `MarkdownParser` replaces each sealed object's `U+FFFC` with one plane 16
+  scalar before parsing and splits node text at those scalars into typed
+  object parts; `MarkdownDocument.atoms` gives each object's identity and
+  UTF-16 offset. The `OTSAttachment` token, `parts(_:addressOf:)` and
+  `flushAttachments` are gone, and `PreviewComposer.reservedPlaceholders`
+  lists only `U+FFFC`.
+- A Markdown image composes as its alt text, the plain text of its inlines
   as CommonMark's HTML writer gives it, in secondary color, followed by any
-  objects in its destination. Its destination is read only into a
+  objects in its destination and title. Its destination is read only into a
   `PreviewImageDescriptor` under `NSAttributedString.Key.previewImage`; no
   code reads that attribute yet.
 - The preview builds an explicit `NSLayoutManager` (TextKit 1) and uses
@@ -746,6 +746,197 @@ a sample page was inspected by eye; it is not evidence beyond that page.
 - The HTML5 named-reference table, numeric control remapping and an
   explicit empty-alt fallback and descriptor carrier (R5) are not
   implemented.
+
+### 2026-10-23: R1 parser integration in the rendered page preview
+
+**Integrated.** `MarkdownPreviewRenderer` reads each page with
+[`MarkdownParser`](../../../shell/Sources/CompanionKit/MarkdownParser.swift),
+a dialect adapter over two vendored C parsers, and feeds the composer from
+the [`MarkdownDocument`](../../../shell/Sources/CompanionKit/MarkdownDocument.swift)
+it returns: blocks of composer events, and each sealed object as a typed
+atom with its identity and its UTF-16 offset in the page. cmark 0.31.2 reads
+CommonMark pages and cmark-gfm 0.29.0.gfm.13 reads GFM pages. swift-markdown
+and swift-cmark are no longer dependencies, and `Document(parsing:)`, the
+`OTSAttachment` token, `parts(_:addressOf:)` and `flushAttachments` are gone.
+The composer gains `softBreak`, `hardBreak`, `markdownImage`, `enterLink`
+and `leaveLink` events. The ownership and placement rules below replace the
+flush and catch-up path that R3's open items name for objects in link
+destinations, titles and reference definitions.
+
+**Not integrated.** R2's preference: the view still composes every page as
+GFM, and CommonMark reaches the parser only from tests through
+`MarkdownPreviewView.render(_:dialect:limits:)`. R4 requests and R5 image
+controls, lifecycle and accessibility, as after R3.
+
+#### Pinned parsers
+
+| Dialect | Source | Revision | Local changes |
+| --- | --- | --- | --- |
+| CommonMark 0.31.2 | [commonmark/cmark](https://github.com/commonmark/cmark) tag `0.31.2` | `eec0eeba6d31189fd828314576494566d539b1e3` | None. |
+| GFM 0.29-gfm | [github/cmark-gfm](https://github.com/github/cmark-gfm) tag `0.29.0.gfm.13` | `587a12bb54d95ac37241377e6ddc93ea0e45439b` | Three patches. `0001`, to `extensions/autolink.c`, is upstream master commit `46829933c318b4c3108581e82469fe4474f744a9`, the fix for an unsigned pointer wrap in `validate_protocol`. `0002` and `0003` are the app's. `0002`, to `extensions/autolink.c`: a scalar in U+100000..U+10FFFD ends a `www` or `http` extended autolink as whitespace does, is not a host character, and is a left boundary for `www`. `0003`, to `extensions/table.c` and `table.h`: every table of a parse shares one cell budget, header rows and padding included, and a header or row past it is refused. |
+
+Each target keeps only the upstream files its shim needs, byte identical
+before patching. [`CMarkCommonMark/UPSTREAM.md`](../../../shell/Sources/CMarkCommonMark/UPSTREAM.md)
+and [`CMarkGFM/UPSTREAM.md`](../../../shell/Sources/CMarkGFM/UPSTREAM.md)
+list them with SHA-256 sums, and `scripts/vendor-cmark.sh --check` verifies
+the files, the patches and `prefix.h` offline. Without the prefix the two
+libraries share 131 external names, each a duplicate symbol at link.
+
+Not chosen: swift-cmark `08ddb528923cc1a6527e02b7a1aee9e516ca749a`, whose
+core inline parser reads Apple's `^[…](…)` with no option to turn it off;
+cmark-gfm `0.29.0.gfm.0`, which predates the security fixes released in
+gfm.1 to gfm.12.
+
+License review: both upstreams ship the same `COPYING` (SHA-256
+`c22e885f33b821bddb24cf007145e5540655b6c0f403e49e6c76a93c28e6d9a9`). It
+gives cmark's BSD 2 clause terms, MIT terms for the vendored houdini
+escapers, buffer code and utf8proc derived UTF-8 code, and terms for files
+not vendored (`normalize.py` and the specification text). A binary
+redistribution must reproduce the notice in its documentation or other
+materials. [`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md) now
+reproduces each `COPYING` verbatim with its revision and patches, in place
+of the swift-markdown and swift-cmark sections, and `scripts/package-app.sh`
+copies that file into the app's resources. The corpus files the tests read
+are CC BY-SA 4.0, keep their notice in
+[`CORPUS-NOTICE.md`](../../../tools/markdown-preview-lab/parser/CORPUS-NOTICE.md),
+and are not in the app.
+
+#### Atom contract as implemented
+
+| Area | Implemented behavior |
+| --- | --- |
+| Parsing | Both shims parse with `CMARK_OPT_DEFAULT` and render nothing; Swift reads the node tree, the reference map and block source positions. The GFM shim attaches `table`, `strikethrough`, `autolink`, `tagfilter` and `tasklist`, and parses under one process wide lock because cmark-gfm's special character table and patch `0003`'s cell budget are global. cmark-gfm frees its reference map when a parse finishes, so the GFM shim copies the map in a postprocess extension first. Each shim refuses input over 256 MiB. |
+| Input | Before parsing, CR and CRLF become LF, NUL becomes U+FFFD and a leading U+FEFF is dropped, as cmark treats each, so block columns count the bytes the parser reads. The composer's 1,000,000 scalar input limit applies first. |
+| Placeholders | Object k is the scalar base + k in U+100000..U+10FFFD. The base is the lowest whose window avoids every plane 16 scalar in the page and every terminated decimal or hexadecimal numeric reference value. The scalar is private use, neither punctuation nor whitespace in either dialect, so it flanks delimiter runs as a letter does. |
+| Atoms | Text, code, raw HTML, fence info, destinations and titles are split at placeholders into `HTMLPart.object` parts; no placeholder reaches the composer as text. `MarkdownDocument.atoms` lists each object's identity, its index, and its UTF-16 offset. |
+| Ownership | Text, code spans, code blocks, raw HTML and fence info emit their objects in place; fence info objects are part of `codeBlock(info:)`. A link's own destination or title object is emitted where the link opens and an image's after its alt text, unless the label or alt text already showed it. An object in a reference definition's label, destination or title stays at the definition, and every address that uses the definition has a U+FFFC stand-in, which the composer refuses. |
+| Placement | An object no node emitted, a definition's or one in a table cell cmark-gfm dropped, is placed by block source position: in the deepest block quote or list item whose span covers it, before the first block after it; before a covering leaf when it is a definition's; between two list items, in the earlier one; in a table body row, at the end of the row's last kept cell. cmark-gfm gives the paragraph it keeps above a table line 0; that paragraph takes the table's start. Inline source positions are not used. |
+| Links | `enterLink` and `leaveLink` bracket a Markdown link's label. Inside it the innermost Markdown link's address applies, accepted or refused, and no HTML link does. A title object does not refuse the address. |
+| Tables | One cell per header column, as cmark-gfm keeps them; no cell spans. All of a page's tables together may have 100,000 cells (`CompositionLimits.maximumTableCells`), header rows and padded cells included, since cmark-gfm pads a short row to the header's width and its own cap is per table. |
+| Failure | Parsing throws past the input, depth or table cell limit, with no placeholder window, or for an object emitted twice, and rendering fails when its output shows any object other than once. Either way the page renders as its plain source text with LF line endings, each object as its attachment in source order. |
+
+#### Ordinary text conformance
+
+[`MarkdownCorpusTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownCorpusTests.swift)
+reads the CommonMark 0.31.2 `spec.json` (SHA-256
+`d431b29d97b6f73e69d547109cf5081578fac931e72afe95639ebe766c1b2a20`) and the
+GFM 0.29-gfm specification page (SHA-256
+`b153d814fdfc8624bb6da7449162c1cd707a637f7d1c1b636eb44b9cf63fa220`) that the
+parser lab downloaded, checks both sums, extracts the 677 GFM examples from
+the page and compares them with the lab's extraction. Each example goes
+through `MarkdownParser` and the test only
+[`MarkdownHTMLSerializer.swift`](../../../shell/Tests/CompanionKitTests/MarkdownHTMLSerializer.swift),
+a port of cmark's `html.c` with cmark-gfm's table, strikethrough and
+tagfilter output, so the comparison covers the adapter as well as the
+parser. The serializer writes a task list checkbox as the GFM page does. A
+mismatch outside the table below fails the test, and so does a listed
+example that starts to match.
+
+CommonMark: 652 of 652 examples match. GFM: 662 of 677 match.
+
+| GFM examples | What the parser does instead |
+| --- | --- |
+| 140, 141, 142, 145, 147 | `tagfilter` escapes `<script` and `<style`; the examples show base syntax without the extension. |
+| 611, 615, 617, 620, 621 | The extended autolink links an address the examples show unlinked, inside angle brackets too. |
+| 324 | `&#87654321;` decodes to U+FFFD: `houdini_unescape_ent` accepts eight decimal digits, the specification seven. |
+| 634, 635 | The email autolink restarts at a second `@`, and the `xmpp:` autolink continues past every `/`. |
+| 649, 650 | cmark-gfm reads comments by the CommonMark 0.31 grammar: `--` inside a comment and `<!-->` are raw HTML; GFM 0.29 refuses both. |
+
+The lab's earlier run of swift-cmark `08ddb52` with its own HTML writer
+([`gfm-official-corpus-results.jsonl`](../../../tools/markdown-preview-lab/parser/results/gfm-official-corpus-results.jsonl))
+mismatched the same examples except 649 and 650, which matched there, and
+279, 280 and 633, which mismatched there.
+
+#### Object fixtures and native restrictions
+
+[`MarkdownSealedAtomTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownSealedAtomTests.swift)
+runs each case under both dialects through the parser and the rendered view
+and checks the blocks, the rendered text, object order, that no object takes
+a link, the link runs and the image descriptors.
+
+| Case | Result |
+| --- | --- |
+| P01 | `_` beside an object neither opens nor closes emphasis: the placeholder flanks as a letter. |
+| P02 | Asterisk runs take an object as a letter, inside a word too; tilde runs strike under GFM alone. |
+| P03 | Under GFM an extended autolink ends at an object as at whitespace, and an object before `www.` is a boundary; the object is never in a link's text or address. CommonMark links no bare address. |
+| P04 | An email autolink's local part and domain both end at an object. |
+| P05 | An object beside a pipe, an escaped pipe or an empty cell stays in its cell; an object in an excess cell ends its row's last kept cell, in a block quote and a list item too; an object in the delimiter row leaves no table. CommonMark keeps the lines as paragraph text. |
+| P06 | Label and alt text objects stay in their element and are never linked. An inline destination's object stands where the element opens and refuses the address; a title's stands there and leaves the address live. An object between `]` and `(` breaks the link, and GFM then autolinks the exposed URL. A definition's object stays at the definition and every use refuses the address. An angle autolink shows its object once and opens nothing. |
+| P07 | An object where a tag or attribute name continues leaves literal text. Attribute value and comment objects stand where their tag stands. An `img` source with an object is refused, and `srcset` and CSS addresses show only their objects. HTML block and `script` body objects show in place. |
+
+The same file covers the R1 row's ordinary text cases: single, double and
+triple tildes, extended autolink punctuation, email and protocol autolinks,
+`^[note](key)` as a caret and an ordinary link, `||` and `^` in tables,
+comments, `textarea` block boundaries and CommonMark example 354's currency
+symbols. Native restrictions are tested apart from both: only http, https
+and mailto autolinks open (`www.` as http); an image never takes a link,
+inside one too; table source becomes native cells only under GFM, one cell
+per column and row; `<!-->` and `<!--->` show as text; a `textarea` body
+composes as text in both dialects.
+
+#### Tests
+
+| File | Coverage |
+| --- | --- |
+| [`MarkdownParserTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownParserTests.swift) | The placeholder window, the input and depth limits, object offsets, line endings and atom offsets, definitions, inline destination and title objects, angle autolinks, fence info, excess table cells, a definition above the paragraph a table splits off, the table cell budget, every object once on pages that hide or copy one, flanking, and autolinks ending at an object. |
+| [`MarkdownCorpusTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownCorpusTests.swift) | Download checksums, example numbering, the GFM extraction against the lab's, and both corpora against the mismatch table. |
+| [`MarkdownSealedAtomTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownSealedAtomTests.swift) | Ordinary text conformance, P01 to P07 and native restrictions, as above. |
+| [`PreviewComposerTests.swift`](../../../shell/Tests/CompanionKitTests/PreviewComposerTests.swift) | The new events: breaks, a Markdown link over HTML links, a refused link shadowing them, destination and title objects at the link's opening, title objects leaving the address, empty and stand-in addresses, an image's title objects in its fallback, unbalanced link events and link events in raw text, and depth. |
+| [`MarkdownPreviewRenderingTests.swift`](../../../shell/Tests/CompanionKitTests/MarkdownPreviewRenderingTests.swift) | `testTableCellsNeverSpanSoEmptyAndCaretCellsKeepTheirOwnColumns` replaces the `\|\|` and `^` span expectations, and `testAnObjectInALinkDestinationStandsWhereTheLinkOpens` replaces the flush expectation. |
+
+Before this record, the agent writing the object fixtures and an adversarial
+review of the slice ran inputs against the parser and the renderer and
+found: an object in a table cell past the header's columns stood after the
+table, so it rendered and copied after the objects of later rows; a
+reference definition's object stood after the paragraph cmark-gfm splits off
+above a table, because that paragraph has no source position, so it rendered
+and copied out of order; and a header 2,000 columns wide with 262 short
+rows, 8.5 KB, asked for 526,000 padded cells and took the review's run 4.8 s
+to render, with each further table adding as many. Writing this record found
+that the composer still refused any address spelling the retired
+`OTSAttachment` token. Each is fixed above, with a fixture in
+`MarkdownSealedAtomTests`, `MarkdownParserTests` or `PreviewComposerTests`.
+The review also reported no unprefixed external symbol in debug and release
+builds of either target; no AddressSanitizer, UndefinedBehaviorSanitizer or
+ThreadSanitizer finding and no leak from a C harness that ran every official
+example and its own pages through both shims, on four threads for
+ThreadSanitizer; 400 concurrent Swift parses equal to serial ones; no
+placeholder forged by plane 16 text or numeric references; no object inside
+an autolink; and about 15 pathological inline patterns of 100 to 600 KB
+each parsing in under 0.5 s.
+Those are the review's own runs; this record repeats none of them.
+
+Run from `shell/` on 2026-10-23, macOS 27.2 on arm64, Apple Swift 6.4:
+`swift test --filter "HTMLTokenizerTests|PreviewComposerTests|MarkdownPreviewCompositionTests|MarkdownPreviewRenderingTests|CheckpointMarkdownPreviewTests|CheckpointInsertionTests|DayScrollPreviewRenderingTests|PageModelPreviewRenderingTests|MarkdownParserTests|MarkdownCorpusTests|MarkdownSealedAtomTests|LinkDetectionTests|LinkRenderingTests|FenceScannerTests|FenceRenderingTests|FenceRegionFoldTests|CodeSlabTests"`,
+324 tests, 0 failures; `scripts/vendor-cmark.sh --check` passes. Not run:
+the full shell suite (left to CI), a macOS 13 runtime, a manual interaction
+pass and VoiceOver.
+
+#### Open R1 items
+
+- R2 exposes CommonMark; until then the CommonMark adapter runs only in
+  tests. R3's open item on inline raw text tags under CommonMark
+  composition still applies.
+- cmark-gfm 0.29.0.gfm.13 departs from published GFM 0.29-gfm where the
+  tests show it: `textarea` opens an HTML block of the first kind, `ftp://`
+  gets an extended autolink (inert in the view), `www. x` links `www` to
+  `http://www`, and comments follow the CommonMark 0.31 grammar. Decide
+  whether the GFM dialect is published 0.29-gfm or this parser, and patch
+  or record each.
+- A title object leaves its address live (P06). ADR-0059's refusal names
+  destinations; confirm that titles are outside it.
+- A link's destination and title objects show before its label, where it
+  opens, and an image's after its alt text. In source order both come
+  after, so a link with objects in its label and its destination renders
+  and copies them out of source order. Choose one rule for both.
+- Placement by block source position is this slice's rule; no accepted
+  source fixes where an object no node emitted shows. Review it against
+  Law 0001.
+- A page with more than 65,534 sealed objects, or fewer when its own plane
+  16 scalars split the range, has no placeholder window and renders as
+  plain text.
+- Parse and render time on large pages is not recorded here; R6 benchmarks
+  it.
 
 ## Acceptance criteria
 
