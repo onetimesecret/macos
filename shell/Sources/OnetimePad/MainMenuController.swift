@@ -18,10 +18,11 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         makeEditMenu(in: main)
         makeViewMenu(in: main)
         let window = makeWindowMenu(in: main)
-        makeHelpMenu(in: main)
+        let help = makeHelpMenu(in: main)
         NSApp.mainMenu = main
         NSApp.servicesMenu = services
         NSApp.windowsMenu = window
+        NSApp.helpMenu = help
     }
 
     private func makeApplicationMenu(in main: NSMenu) -> NSMenu {
@@ -135,12 +136,15 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         return window
     }
 
-    private func makeHelpMenu(in main: NSMenu) {
+    private func makeHelpMenu(in main: NSMenu) -> NSMenu {
         let help = submenu("Help", in: main)
         help.addItem(action("Export Diagnostics…") { [app] in app.exportDiagnostics() })
         help.addItem(action("Copy Diagnostic Summary") { [app] in app.copyDiagnosticSummary() })
         help.addItem(.separator())
         help.addItem(action("Send Feedback…") { [app] in app.sendFeedback() })
+        BackdropAppDelegate.installHelpItem(in: help, productName: BackdropAppDelegate.productName,
+            keystroke: app.pages.keymap.menuKeystroke(for: .appHelp), target: app)
+        return help
     }
 
     private var onFile: () -> Bool {

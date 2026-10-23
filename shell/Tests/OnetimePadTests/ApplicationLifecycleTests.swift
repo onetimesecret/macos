@@ -283,6 +283,92 @@ final class ApplicationLifecycleTests: XCTestCase {
         }
     }
 
+    private final class ReopenPanel: NSPanel {
+        var reopenCount = 0
+        override var canBecomeMain: Bool { true }
+        override func makeKeyAndOrderFront(_ sender: Any?) {
+            reopenCount += 1
+            super.makeKeyAndOrderFront(sender)
+        }
+    }
+
+    func testPanelOnlyReopenOrdersFrontmostWindowInsteadOfCreationOrder() throws {
+        try withApplication { app, _ in
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+            let first = ReopenPanel(contentRect: NSRect(x: 10, y: 10, width: 100, height: 100),
+                                    styleMask: [.titled], backing: .buffered, defer: false)
+            let second = ReopenPanel(contentRect: NSRect(x: 20, y: 20, width: 100, height: 100),
+                                     styleMask: [.titled], backing: .buffered, defer: false)
+            first.isReleasedWhenClosed = false
+            second.isReleasedWhenClosed = false
+            first.hidesOnDeactivate = false
+            second.hidesOnDeactivate = false
+            defer { first.close(); second.close() }
+            first.orderFrontRegardless()
+            second.orderFrontRegardless()
+            first.orderFrontRegardless()
+            var orderedPanels: [NSWindow] = []
+            NSApp.enumerateWindows(options: [.orderedFrontToBack]) { window, _ in
+                if window === first || window === second { orderedPanels.append(window) }
+            }
+            XCTAssertEqual(orderedPanels.count, 2)
+            XCTAssertTrue(orderedPanels.first === first)
+
+            XCTAssertFalse(app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false))
+
+            XCTAssertEqual(first.reopenCount, 1)
+            XCTAssertEqual(second.reopenCount, 0)
+        }
+    }
+
+    func testSheetOnlyReopenOrdersItsParent() throws {
+        try withApplication { app, _ in
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+            let parent = ReopenPanel(contentRect: NSRect(x: 10, y: 10, width: 180, height: 180),
+                                     styleMask: [.titled], backing: .buffered, defer: false)
+            let sheet = ReopenPanel(contentRect: NSRect(x: 10, y: 10, width: 100, height: 100),
+                                    styleMask: [.titled], backing: .buffered, defer: false)
+            parent.isReleasedWhenClosed = false
+            sheet.isReleasedWhenClosed = false
+            parent.orderFront(nil)
+            parent.beginSheet(sheet)
+            defer { parent.endSheet(sheet); sheet.close(); parent.close() }
+            XCTAssertTrue(sheet.sheetParent === parent)
+            parent.reopenCount = 0
+            sheet.reopenCount = 0
+
+            XCTAssertFalse(app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false))
+
+            XCTAssertEqual(parent.reopenCount, 1)
+            XCTAssertEqual(sheet.reopenCount, 0)
+        }
+    }
+
+    func testWillFinishInstallsMenusBeforeStartupWithoutOpeningWindows() throws {
+        try withApplication { app, _ in
+            let oldMain = NSApp.mainMenu, oldWindows = NSApp.windowsMenu
+            let oldServices = NSApp.servicesMenu, oldHelp = NSApp.helpMenu
+            let oldServicesParent = oldServices?.supermenu?.items.first { $0.submenu === oldServices }
+            defer {
+                oldServices?.supermenu?.items.first { $0.submenu === oldServices }?.submenu = nil
+                oldServicesParent?.submenu = oldServices
+                NSApp.mainMenu = oldMain; NSApp.windowsMenu = oldWindows
+                NSApp.servicesMenu = oldServices; NSApp.helpMenu = oldHelp
+            }
+            let before = Set(NSApp.windows.map(ObjectIdentifier.init))
+            app.applicationWillFinishLaunching(Notification(name: NSApplication.willFinishLaunchingNotification))
+            var initialOpens = 0
+            app.selectInitialEditor = { initialOpens += 1 }
+            XCTAssertTrue(app.applicationOpenUntitledFile(NSApp))
+            XCTAssertEqual(initialOpens, 0)
+            XCTAssertNotNil(NSApp.mainMenu)
+            XCTAssertEqual(NSApp.helpMenu?.items.first?.action, #selector(BackdropAppDelegate.openHelp(_:)))
+            XCTAssertEqual(Set(NSApp.windows.map(ObjectIdentifier.init)), before)
+            XCTAssertNil(app.madeSettings)
+            XCTAssertTrue(app.applicationSupportsSecureRestorableState(NSApp))
+        }
+    }
+
     func testAboutOnlyReopenDoesNotPermitUntitledFallback() throws {
         try withApplication { app, model in
             app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
@@ -333,7 +419,7 @@ final class ApplicationLifecycleTests: XCTestCase {
             let menus = MainMenuController(app: app)
             menus.install()
             let main = try XCTUnwrap(NSApp.mainMenu)
-            XCTAssertEqual(main.items.map(\.title), [BackdropAppDelegate.productName, "File", "Edit", "View", "Window", "Help"])
+            XCTAssertEqual(main.items.map(\.title), [BackdropAppDelegate.productName, "File", "Edit", "View", "Window", "Help"].map(CompanionL10n.string))
             XCTAssertEqual(Set(NSApp.windows.map(ObjectIdentifier.init)), before)
             XCTAssertNil(app.madeSettings)
             let settings = try XCTUnwrap(main.items[0].submenu?.items.first { $0.title == "Settings…" })

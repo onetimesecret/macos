@@ -236,12 +236,16 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    func applicationWillFinishLaunching(_ notification: Notification) {
         let mainMenu = MainMenuController(app: self)
         self.mainMenu = mainMenu
         mainMenu.install()
+    }
+
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
         keyWindow.observe()
-        installHelpMenuItem()
 
         // The Dock and the ⌘Tab card draw from `applicationIconImage`.
         // Re-publish the bundled icon here rather than leaving AppKit to
@@ -601,13 +605,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         }
         pages.checkOpenFilesOnActivate()
         if ModalSession.isRunning || ModalSession.isBracketed { return false }
-        let visibleWindows = sender.windows.filter { window in
-            Self.isVisibleOrdinaryWindow(window, isAmbientWindow: controller?.owns(window) == true,
-                                         isCompanion: isCompanionWindow(window))
+        var frontmost: NSWindow?
+        sender.enumerateWindows(options: [.orderedFrontToBack]) { window, stop in
+            if Self.isVisibleOrdinaryWindow(window, isAmbientWindow: self.controller?.owns(window) == true,
+                                            isCompanion: self.isCompanionWindow(window)) {
+                frontmost = window.sheetParent ?? window
+                stop.pointee = true
+            }
         }
-        if !visibleWindows.isEmpty {
+        if let frontmost {
             // AppKit can report no visible windows when only an NSPanel remains.
-            if !flag { visibleWindows.first?.makeKeyAndOrderFront(nil) }
+            if !flag { frontmost.makeKeyAndOrderFront(nil) }
             return flag
         }
         applySummon(.reopen)
@@ -1009,27 +1017,14 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         model.pages.openExternal(Self.helpURL)
     }
 
-    /// Register the Help menu after installing the application's menus.
-    private func installHelpMenuItem() {
-        guard let menu = Self.installHelpItem(
-            in: NSApp.mainMenu, productName: Self.productName,
-            keystroke: model.pages.keymap.menuKeystroke(for: .appHelp), target: self)
-        else { return }
-        if NSApp.helpMenu !== menu { NSApp.helpMenu = menu }
-    }
-
-    /// Puts "<product> Help" above the app's own items in the Help menu
-    /// on the keymap's `app::Help` chord or none, and returns
-    /// that menu. Nil when there is no Help menu to find; a menu that
-    /// already has the item anywhere is returned as it is.
+    /// Inserts product help into the supplied menu, below view-backed system items.
     @discardableResult
-    static func installHelpItem(in mainMenu: NSMenu?, productName: String,
+    static func installHelpItem(in helpMenu: NSMenu?, productName: String,
                                 keystroke: Keystroke?,
                                 target: BackdropAppDelegate) -> NSMenu? {
-        guard let helpMenu = mainMenu?.items.first(where: { $0.title == "Help" })?.submenu
-        else { return nil }
+        guard let helpMenu else { return nil }
         if helpMenu.items.contains(where: { $0.action == #selector(openHelp(_:)) }) { return helpMenu }
-        let help = NSMenuItem(title: "\(productName) Help",
+        let help = NSMenuItem(title: CompanionL10n.format("%@ Help", productName),
                               action: #selector(openHelp(_:)),
                               keyEquivalent: keystroke?.menuKeyEquivalent ?? "")
         help.keyEquivalentModifierMask = keystroke?.menuModifierMask ?? []
