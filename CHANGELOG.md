@@ -15,7 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parser added Apple's syntax. Table cells no longer span: `||` leaves an
   empty cell and `^` is a cell's text. `^[text](key)` is a caret and an
   ordinary link. A bare `www.`, `https://` or email address is a link, and
-  an address ends where a sealed object starts. Where cmark-gfm and the
+  an address ends where a sealed object starts. A web link whose address
+  has a user or password before the host, Markdown or HTML, opens nothing,
+  since `https://docs.example.com@evil.example/` would open evil.example.
+  Where cmark-gfm and the
   published GFM 0.29 page differ, the preview follows cmark-gfm. A sealed
   object is never part of an address, and it shows in source order: one in
   a link's address or title follows the link's text, as one in an image's
