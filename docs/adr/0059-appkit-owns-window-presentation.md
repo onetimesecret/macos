@@ -20,7 +20,7 @@ Apple describes [applicationOpenUntitledFile](https://developer.apple.com/docume
 
 AppKit owns the application lifecycle, main menu, status item and window presentation. The application declares no placeholder SwiftUI scene. SwiftUI continues to render content inside AppKit windows.
 
-- An initial foreground untitled-open event selects the editor, with the existing launch anchor on today. An event received before model startup waits for startup to finish. An explicit nondefault launch notification suppresses untitled requests; Finder file opens and explicit reopens retain their own intent. A queued reopen never becomes a launch-anchor request.
+- An initial foreground untitled-open event selects the editor, with the existing launch anchor on today. An event received before model startup waits for startup to finish. An explicit nondefault launch notification suppresses the initial untitled request; later untitled callbacks use the reopen route. Finder file opens and explicit reopens retain their own intent. A queued reopen never becomes a launch-anchor request.
 - A background launch starts the configured ambient presentation. Ordinary activation creates no editor and does not change the selected presentation or anchor.
 - Cmd-Tab leaves focus and window ordering to AppKit, including a return to Settings, About, Send Feedback or a minimized editor.
 - A reopen with a visible ordinary window delegates ordering to AppKit. If only a companion panel remains, the application orders it directly and suppresses the native untitled fallback. With no visible ordinary window, reopen opens or deminiaturizes the editor, preserving the current page and scroll position. The ambient panel does not count as an ordinary window for this decision.

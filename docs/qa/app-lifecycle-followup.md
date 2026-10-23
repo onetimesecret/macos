@@ -10,7 +10,7 @@ Date: 2026-10-22. Implementation: [ADR-0059](../adr/0059-appkit-owns-window-pres
 | L2: Every application activation selects the editor | Material: interrupts returns to Settings and other windows | Addressed in implementation | Ordinary activation returns no presentation action. Reopen delegates visible ordinary windows and companion panels to AppKit. Router and lifecycle tests cover these decisions. |
 | L3: Launch is classified by a two-second timer | Material: timing-dependent presentation | Addressed | Native untitled-open events select the initial editor; background activation does not. The launch timer and its classifier were removed. |
 | L4: Unknown or unbundled app identity can resolve a production fallback | Material: unintended store selection during testing | Addressed at executable startup | The entry point rejects identities outside the three packaged app identifiers before constructing its delegate. Unit tests cover absent, unknown, prefix-like and recognized identifiers. This does not identify every possible misuse of a known development identity. |
-| L5: The test lane can rebuild a live executable from its build directory | Material: disrupts ongoing development sessions | Addressed for supported build lanes | The test, development and packaging lanes share resolved executable-path inspection and stop before building. Script tests cover absolute and relative executable launches, symlinked paths, exited processes and inspection failures. Direct invocations of build tools remain outside these checks. |
+| L5: The test lane can rebuild a live executable from its build directory | Material: disrupts ongoing development sessions | Addressed for supported script lanes | The test, development and packaging lanes share resolved executable-path inspection and stop before building. Installation uses the shared query before quitting or replacing a bundle. Script tests cover absolute and relative executable launches, symlinked paths, exited processes and inspection failures. Direct invocations of build tools remain outside these checks. |
 | D1: ADR and specifications describe superseded activation behavior | Material: contradictory guidance | Addressed | ADR-0059 partially supersedes ADR-0033; current editor/background specifications and the current QA matrix describe the replacement. ADR lint and changed-document local-link checks pass. |
 | D2: Old hardware results could be mistaken for verification of the replacement | Material: overstates validation | Addressed | The QA procedure identifies the replaced route expectations as historical and leaves replacement hardware checks unchecked. |
 
@@ -69,7 +69,28 @@ The review on commit `50825193` added these findings. Its [updated comment](http
 
 The separate platform failure in run 39878137339 occurred in companion-pasteboard: a text read failed and an Objective-C exception aborted the test process. Twenty isolated pasteboard tests passed locally, and 50 repetitions passed (1,000 executions); the general-pasteboard-name test was excluded. No Rust behavior change is justified by that evidence. The platform job passed on rerun at the same commit; the original exception remains unexplained. Subsequent runs expose uncaptured test output and Rust backtraces for diagnosis if it repeats.
 
+## Repeat review on 1abb03af
+
+All seven workflow checks passed on `1abb03af` (CI run 39913125058; Claude run 39913125075). The next completed Claude review added the following distinct suggestions:
+
+| Feedback | Disposition | Implementation or rationale |
+| --- | --- | --- |
+| 1: install.sh shadows the shared process guard with pgrep | Addressed | Remove the local override so installation uses resolved executable paths and stops on inspection errors. Isolated install tests use disposable fixture bundles and mocked commands; no installed application is modified or quit. This finding does not establish the mechanism of Local's reported content loss. |
+| 2: an ambient-panel sheet can order the ambient parent outside model routing | Addressed | Apply the ambient exclusion to the sheet parent before selecting a reopen target. Retain ordinary Settings-parent sheet handling; cover the ambient-parent case separately. |
+| 3: nondefault launch metadata suppresses later callbacks for the whole process | Addressed | Limit suppression to the initial opening and consume that opening. Later untitled callbacks can follow the reopen route without selecting today's page. Finder queues retain precedence. |
+| 4: menu localization happens twice | Addressed | Localize titles in one layer and avoid looking up formatted output as another localization key. |
+| 5: Python minimum, mapping error errno, and guard exit codes | Addressed | State the Python minimum, use an explicit mapping-inspection error, and distinguish inspection failure from a detected running executable. |
+| 6: Jump to Selection | Addressed | Add Command-J with the native centerSelectionInVisibleArea responder action and shortcut coverage. |
+| Nit: empty login-launch MARK | Addressed | Remove the obsolete section marker; the delegate lifecycle tests cover background startup. |
+| Nit: test-only panel identity assertion is tautological | Addressed | Remove the dead runner-identity assertions against the archived panel fixture; production resolver and backdrop assertions remain. |
+| Nit: companion activation context is only read by deferred activation | Retained with rationale | Explicit launch/reopen routes intentionally ignore another window's older activation request; deferred activation respects a newer companion request. Existing router tests cover that distinction. No comment-only change was made. |
+| Nit: curly apostrophe in README | Addressed | Use the surrounding ASCII spelling. |
+
 ## Validation scope
+
+The repeat-review follow-up passed 388 native tests and 1,826 CompanionKit tests (2,214 total), plus 106 script tests. The full run passed CompanionKit; new native assertions initially omitted the deferred activation callback. After adding that callback to the fixtures, all native tests passed on rerun. The fixtures use temporary state and ephemeral credentials; the install tests use mocked application commands. ADR lint (52 records), shell syntax and whitespace checks passed. The pre-commit hook skipped because its configuration is absent; it is not counted as validation.
+
+Previous updated-review validation:
 
 The updated-review follow-up passed all 385 native tests and all 1,826 CompanionKit tests (2,211 total), plus 101 script tests. A targeted lifecycle run also passed all 21 tests. The new panel-order fixture initially hid on XCTest deactivation; it now stays onscreen and verifies enumeration order before calling the delegate. SDK-backed front-to-back enumeration includes panels that the scripting orderedWindows list omits. ADR lint (52 records), shell syntax, whitespace checks and a direct current-user guard invocation passed. No installed application was launched, quit or used as a fixture.
 
