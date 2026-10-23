@@ -501,15 +501,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **One Timeline navigator for every pad, and each pad keeps its place**
   (app 0.42.0; [ADR-0060](docs/adr/0060-shared-pad-timeline-navigation.md),
   PR #327). With pads on or off, the Timeline layout draws the same
-  navigator down the side. Day order and each day's checkpoint order
-  can run newest or oldest first; the checkpoint order for the selected
-  day is in the pad heading's menu, in each checkpoint's context menu,
-  and among its VoiceOver actions. When the checkpoint rows cannot fit
-  stacked in the column, the navigator draws a small map of the whole
+  navigator down the side. With pads on, day order and each day's
+  checkpoint order can run newest or oldest first; the checkpoint order
+  for the selected day is in the pad heading's menu, in each
+  checkpoint's context menu, and among its VoiceOver actions. When the
+  checkpoint rows cannot fit stacked in the column, the navigator draws
+  a small map of the whole
   roll above a scrolling list of checkpoints; rows that only run past
-  the foot still scroll in one column. Switching pads, or leaving for a
-  file or the Ledger and coming back, returns each pad to the page and
-  line it was on, for the running session only; nothing new is saved.
+  the foot still scroll in one column. The Files list above the
+  navigator shows two files, and half of a third when there are more,
+  before it scrolls. Switching pads, or leaving for a file or the
+  Ledger and coming back, returns each pad to the page and line it was
+  on, for the running session only; nothing new is saved.
   A checkpoint picked, a page created or a summon to Today while a file
   or the Ledger shows decides where the roll opens, the latest one
   winning. A click on a checkpoint that starts a scroll is no longer
