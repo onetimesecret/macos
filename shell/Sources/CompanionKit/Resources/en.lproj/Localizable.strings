@@ -62,16 +62,19 @@
 "pad.catalog.unreadable" = "Pad metadata could not be read. The saved catalog has been preserved.";
 "pad.switch.pendingClose" = "Finish the file close decision before switching pads.";
 
-/* Timeline sort menus: explicit choices and the current order. */
+/* Timeline sort menus: titles and orders in title case, tooltips in lower case sentences (ADR-0055 rule 1). */
 "pad.timeline.heading" = "Timeline";
 "pad.sort.days" = "days";
-"pad.sort.checkpoints" = "%@ checkpoints";
-"pad.sort.label" = "%@ sort order";
-"pad.sort.natural" = "Natural order";
-"pad.sort.oldest" = "Oldest first";
-"pad.sort.newest" = "Newest first";
+"pad.sort.days.title" = "Days";
+"pad.sort.checkpoints" = "checkpoints from %@";
+"pad.sort.checkpoints.title" = "Checkpoints from %@";
+"pad.sort.title" = "Sort %@";
+"pad.sort.label" = "sort %@";
+"pad.sort.natural" = "Natural Order";
+"pad.sort.oldest" = "Oldest First";
+"pad.sort.newest" = "Newest First";
 "pad.sort.help" = "%@: %@";
-"pad.sort.action" = "Sort %1$@: %2$@";
+"pad.sort.action" = "%1$@: %2$@";
 "pad.page.new" = "New page";
 "pad.files.heading" = "Files";
 "pad.heading" = "Pad";

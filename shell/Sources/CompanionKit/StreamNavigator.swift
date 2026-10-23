@@ -489,8 +489,23 @@ public enum StreamNavigator {
         layout.packedHeight > columnHeight
     }
 
-    /// The dense rail's map height: two fifths of the column, at least 40 points, short enough for
-    /// the list to show a `row` points tall row whole, and 0 where a compact `layout` draws nothing.
+    /// A node's drawn row: the words for its day and minute, the gauge under it while it is the
+    /// active page inside the window, and the retained words past the window.
+    public static func rowHeight(of node: Node, active: Bool) -> CGFloat {
+        var height = node.firstOfDay ? Metrics.firstRow : Metrics.row
+        if active, !node.trailing, node.hasPage { height += Metrics.gaugeReserve }
+        if node.trailing { height += Metrics.trailingReserve }
+        return height
+    }
+
+    /// The room the dense list keeps for its active row whichever node that is: the tallest row
+    /// any node would draw as the active one, so moving the selection never moves the split.
+    public static func activeRowRoom(_ nodes: [Node]) -> CGFloat {
+        nodes.map { rowHeight(of: $0, active: true) }.max() ?? Metrics.firstRow
+    }
+
+    /// The dense rail's map height: two fifths of the column and 40 points at least, unless the
+    /// list's `row` needs the room, which outranks that floor; 0 where a compact map draws nothing.
     public static func denseMapHeight(columnHeight: CGFloat, row: CGFloat) -> CGFloat {
         let height = min(max(40, columnHeight * 0.4), columnHeight - Metrics.mapGap - row)
         return height > Metrics.top + Metrics.bottom ? height : 0
@@ -666,12 +681,9 @@ public enum StreamNavigator {
             let gapBand = node.emptyDays > 0
                 ? (atWindow ? Metrics.gapBandAtWindow : Metrics.gapBand) : 0
             let reserve = compact ? 0 : gapBand + (atWindow ? Metrics.windowReserve : 0)
-            var rowHeight = node.firstOfDay ? Metrics.firstRow : Metrics.row
-            if node.active, !node.trailing, node.hasPage { rowHeight += Metrics.gaugeReserve }
-            if node.trailing { rowHeight += Metrics.trailingReserve }
             gapBands.append(gapBand)
             reserves.append(reserve)
-            heights.append(compact ? 0 : rowHeight + reserve)
+            heights.append(compact ? 0 : rowHeight(of: node, active: node.active) + reserve)
         }
         // A row drawn higher than the one above it (`Metrics.rowLift`) needs that difference,
         // less its own reserve, between the two.

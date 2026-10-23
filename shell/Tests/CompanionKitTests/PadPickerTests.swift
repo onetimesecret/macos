@@ -318,7 +318,7 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(
             [0, 1, 2, 11].map(StreamNavigator.emptyDaysLabel),
             ["0 empty days", "1 empty day", "2 empty days", "11 empty days"])
-        XCTAssertEqual(CompanionL10n.format("pad.sort.action", "days", "Newest first"), "Sort days: Newest first")
+        XCTAssertEqual(CompanionL10n.format("pad.sort.action", "Sort Days", "Newest First"), "Sort Days: Newest First")
     }
 
     /// One list, each app once: the running ones in order, checked when
@@ -374,16 +374,18 @@ final class PadPickerTests: XCTestCase {
 
     func testSortMenuOffersExplicitOrdersAndDescribesTheCurrentValue() {
         XCTAssertEqual(PadSortCopy.orders, [.natural, .chronological, .reverseChronological])
-        let labels = ["Natural order", "Oldest first", "Newest first"]
+        let labels = ["Natural Order", "Oldest First", "Newest First"]
         for (direction, label) in zip(PadSortCopy.orders, labels) {
-            let copy = PadSortCopy(direction: direction, subject: "days")
-            XCTAssertEqual(copy.label, "days sort order")
+            let copy = PadSortCopy(direction: direction, subject: "days", title: "Days")
+            XCTAssertEqual(copy.menuTitle, "Sort Days")
+            XCTAssertEqual(copy.label, "sort days")
             XCTAssertEqual(copy.currentOrder, label)
-            XCTAssertEqual(copy.help, "days sort order: \(label)")
+            XCTAssertEqual(copy.help, "sort days: \(label)")
         }
-        let checkpoints = PadSortCopy(direction: .reverseChronological, subject: "today checkpoints")
-        XCTAssertEqual(checkpoints.label, "today checkpoints sort order")
-        XCTAssertEqual(checkpoints.help, "today checkpoints sort order: Newest first")
+        let checkpoints = PadSortCopy(
+            direction: .reverseChronological, subject: "checkpoints from today", title: "Checkpoints from Today")
+        XCTAssertEqual(checkpoints.menuTitle, "Sort Checkpoints from Today")
+        XCTAssertEqual(checkpoints.help, "sort checkpoints from today: Newest First")
     }
 
     func testExperimentalRailWidthAndLayoutDisclosureUseSameMeasure() {

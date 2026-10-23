@@ -151,6 +151,45 @@ final class TimeRailTests: XCTestCase {
         }
     }
 
+    /// In a short dense column the split between map and list stays put as the selection moves
+    /// across rows of every height, and the list shows each active row whole.
+    func testTheDenseSplitStaysPutWhicheverCheckpointIsActive() throws {
+        let model = try makeModel()
+        // Today, yesterday and a retained day, eight pages each.
+        let days = [0, -1, -9]
+        let tabs: [TabSummary] = (1...24).map { (index: Int) -> TabSummary in
+            slot(tab: UInt64(index), page: UInt64(index + 100), day: days[(index - 1) / 8])
+        }
+        var listHeights: [UInt64: CGFloat] = [:]
+        for selection: UInt64 in [1, 2, 9, 17, 24] {
+            let checkpoints = StreamNavigator.nodes(projection: project(tabs), tabs: tabs, selection: selection)
+            let host = NSHostingView(rootView: StreamNavigatorView(
+                model: model, roll: RollGeometryModel(), drivesRoll: false, readOnly: false,
+                nodes: checkpoints, chords: [:]))
+            host.frame = NSRect(x: 0, y: 0, width: TimeRailView.width, height: 80)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            addTeardownBlock { window.close() }
+            host.layoutSubtreeIfNeeded()
+            drainMainQueue()
+            host.layoutSubtreeIfNeeded()
+
+            func targets(_ view: NSView) -> [TabDropTarget] {
+                ((view as? TabDropTarget).map { [$0] } ?? []) + view.subviews.flatMap(targets)
+            }
+            let row = try XCTUnwrap(targets(host).first { $0.slot == selection }, "no target for \(selection)")
+            let clip = try XCTUnwrap(
+                sequence(first: row as NSView, next: { $0.superview }).first { $0 is NSClipView } as? NSClipView,
+                "the rail is not dense with \(selection) selected")
+            XCTAssertTrue(
+                clip.bounds.contains(clip.convert(row.bounds, from: row)),
+                "the active row \(selection) is cut short: \(clip.bounds)")
+            listHeights[selection] = clip.bounds.height
+        }
+        XCTAssertEqual(Set(listHeights.values).count, 1, "the split moved with the selection: \(listHeights)")
+    }
+
     // MARK: The rows, and where they send a click
 
     /// The rail draws the projection's days in the projection's order,
@@ -345,19 +384,75 @@ final class TimeRailTests: XCTestCase {
     func testACheckpointNamesItsThreeOrdersAsActions() throws {
         let (model, _, active) = try padsModel()
         let section = PadSortSection.checkpoints(of: active, in: model)
-        let subject = CompanionL10n.format("pad.sort.checkpoints", active.spokenDay)
-        XCTAssertEqual(
-            PadSortCopy.orders.map(section.actionName),
-            PadSortCopy.orders.map {
-                CompanionL10n.format(
-                    "pad.sort.action", subject, PadSortCopy(direction: $0, subject: subject).currentOrder)
-            })
-        XCTAssertEqual(section.actionName(.chronological), "Sort today checkpoints: Oldest first")
+        XCTAssertEqual(PadSortCopy.orders.map(section.actionName), [
+            "Sort Checkpoints from Today: Natural Order",
+            "Sort Checkpoints from Today: Oldest First",
+            "Sort Checkpoints from Today: Newest First",
+        ])
         let date = model.dateKey(forDayBucket: active.bucket)
         for order in PadSortCopy.orders.reversed() {
             section.apply(order, to: model)
             XCTAssertEqual(model.pads.checkpointSortDirection(for: model.pads.activeID, onDate: date), order)
         }
+    }
+
+    /// Whether `text` is title case as ADR-0055 rule 1 words it: every word capitalised but
+    /// articles, coordinating conjunctions and prepositions of four letters or fewer, unless first or last.
+    private func isTitleCase(_ text: String) -> Bool {
+        let small: Set<String> = [
+            "a", "an", "the", "and", "but", "or", "nor", "for", "so", "yet",
+            "as", "at", "by", "from", "in", "into", "of", "off", "on", "onto", "over", "to", "up", "upon", "with",
+        ]
+        let words = text.split(whereSeparator: { $0 == " " || $0 == ":" }).map(String.init)
+        return words.indices.allSatisfy { index in
+            let word = words[index]
+            let edge = index == words.startIndex || index == words.index(before: words.endIndex)
+            if !edge && small.contains(word.lowercased()) { return word == word.lowercased() }
+            return word.first.map { $0.isUppercase || $0.isNumber } ?? true
+        }
+    }
+
+    /// The sort words for today, yesterday and older days: menu titles, order names and
+    /// action names in title case, tooltips in lower case sentences (ADR-0055 rule 1).
+    func testTheSortWordsFollowTheMenuCaseRule() throws {
+        let (model, _, _) = try padsModel()
+        let nodes = StreamNavigator.nodes(
+            projection: project([
+                slot(tab: 1, page: 11, day: 0), slot(tab: 2, page: 22, day: -1),
+                slot(tab: 3, page: 33, day: -3), slot(tab: 4, page: 44, day: -10),
+            ]),
+            tabs: [], selection: 1)
+        let sections = [PadSortSection.days(in: model)] + nodes.map { PadSortSection.checkpoints(of: $0, in: model) }
+
+        XCTAssertEqual(sections.map(\.copy.menuTitle), [
+            "Sort Days", "Sort Checkpoints from Today", "Sort Checkpoints from Yesterday",
+            "Sort Checkpoints from 3 Days Ago", "Sort Checkpoints from 10 Days Ago",
+        ])
+        XCTAssertEqual(sections.map(\.copy.help), [
+            "sort days: \(sections[0].copy.currentOrder)",
+            "sort checkpoints from today: Natural Order",
+            "sort checkpoints from yesterday: Natural Order",
+            "sort checkpoints from 3 days ago: Natural Order",
+            "sort checkpoints from 10 days ago: Natural Order",
+        ])
+        XCTAssertEqual(PadSortCopy.orders.map { sections[3].copy($0).currentOrder },
+                       ["Natural Order", "Oldest First", "Newest First"])
+        XCTAssertEqual(sections[3].actionName(.reverseChronological),
+                       "Sort Checkpoints from 3 Days Ago: Newest First")
+        XCTAssertEqual(
+            CompanionL10n.format("pad.sort.title", CompanionL10n.string("pad.timeline.heading")),
+            "Sort Timeline", "the heading menu's VoiceOver label")
+
+        for section in sections {
+            let titled = [section.copy.menuTitle] + PadSortCopy.orders.flatMap {
+                [section.copy($0).currentOrder, section.actionName($0)]
+            }
+            for title in titled { XCTAssertTrue(isTitleCase(title), "not title case: \(title)") }
+            let tooltip = section.copy.help
+            XCTAssertEqual(tooltip.first.map(String.init), tooltip.first?.lowercased(), "not lower case: \(tooltip)")
+        }
+        XCTAssertFalse(isTitleCase("Sort today checkpoints"), "the control: the check refuses a sentence")
+        XCTAssertFalse(isTitleCase("Natural order"), "the control")
     }
 
     /// A checkpoint row offers its sort menu and actions only while pads are on, so a right

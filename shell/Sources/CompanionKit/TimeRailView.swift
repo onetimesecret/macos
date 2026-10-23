@@ -194,7 +194,7 @@ public struct TimeRailView: View {
         let helps = sections.map(\.copy.help)
         return Menu {
             ForEach(sections, id: \.scope) { section in
-                Section(section.copy.label) {
+                Section(section.copy.menuTitle) {
                     PadSortPicker(section: section, model: model)
                         .pickerStyle(.inline)
                         .labelsHidden()
@@ -212,7 +212,7 @@ public struct TimeRailView: View {
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
         .help(helps.joined(separator: "\n"))
         .accessibilityLabel(CompanionL10n.format(
-            "pad.sort.label", CompanionL10n.string("pad.timeline.heading")))
+            "pad.sort.title", CompanionL10n.string("pad.timeline.heading")))
         .accessibilityValue(helps.joined(separator: ", "))
     }
 
@@ -359,11 +359,10 @@ struct StreamNavigatorView: View {
             let nodeIDs = nodes.map(\.id)
             if StreamNavigator.isDense(layout, columnHeight: size.height) {
                 let list = StreamNavigator.checkpointList(layout.placed)
-                // The list keeps room for the active row, or the first when none is active.
-                let row = (list.active ?? list.rows.first)?.placed.rowHeight ?? Metrics.firstRow
                 let mapSize = CGSize(
                     width: proxy.size.width,
-                    height: StreamNavigator.denseMapHeight(columnHeight: size.height, row: row))
+                    height: StreamNavigator.denseMapHeight(
+                        columnHeight: size.height, row: StreamNavigator.activeRowRoom(nodes)))
                 let map = mapCache.layout(
                     nodes: nodes, geometry: roll.geometry,
                     height: mapSize.height, width: mapSize.width, compact: true)
@@ -659,7 +658,9 @@ struct StreamNavigatorView: View {
         let first = node.firstOfDay
         let hovered = hoverID == node.id
         let sortMenu = PadSortSection.checkpointMenu(of: node, in: model)
-        return Button { jump(to: target, documentTop: placed.documentTop) } label: {
+        // One press for the click and VoiceOver's activation, which `.ignore` does not inherit.
+        let press = { jump(to: target, documentTop: placed.documentTop) }
+        return Button { press() } label: {
             HStack(alignment: .top, spacing: 8) {
                 marker(for: node)
                     .padding(.top, 4)
@@ -722,7 +723,7 @@ struct StreamNavigatorView: View {
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
         .accessibilityValue(Text(node.spokenRemaining))
         .accessibilityAddTraits(RowAccessibility.traits(selected: node.active))
-        .accessibilityActivation(when: true) { jump(to: target, documentTop: placed.documentTop) }
+        .accessibilityActivation(when: true) { press() }
         // The context menu's orders, by name, for VoiceOver (ADR-0060).
         .accessibilityActions {
             if let sortMenu {
@@ -1108,9 +1109,15 @@ final class WheelRelayView: NSView {
 /// The menu's order choices and current value share their localized labels.
 struct PadSortCopy {
     let direction: PadSortDirection
+    /// What is sorted, mid sentence: "checkpoints from today".
     let subject: String
+    /// What is sorted, in a menu title: "Checkpoints from Today".
+    let title: String
     static let orders: [PadSortDirection] = [.natural, .chronological, .reverseChronological]
 
+    /// The section or submenu title, title case as menu items are (ADR-0055 rule 1).
+    var menuTitle: String { CompanionL10n.format("pad.sort.title", title) }
+    /// The tooltip's lower case sentence, which names the order as the menu titles it.
     var label: String { CompanionL10n.format("pad.sort.label", subject) }
     var currentOrder: String {
         switch direction {
@@ -1132,27 +1139,35 @@ struct PadSortSection: Hashable {
     let scope: Scope
     let direction: PadSortDirection
     let subject: String
+    let title: String
 
-    var copy: PadSortCopy { PadSortCopy(direction: direction, subject: subject) }
+    var copy: PadSortCopy { copy(direction) }
 
-    /// The VoiceOver action that chooses `order`.
+    func copy(_ order: PadSortDirection) -> PadSortCopy {
+        PadSortCopy(direction: order, subject: subject, title: title)
+    }
+
+    /// The VoiceOver action that chooses `order`, worded as the menu titles it.
     func actionName(_ order: PadSortDirection) -> String {
-        CompanionL10n.format(
-            "pad.sort.action", subject, PadSortCopy(direction: order, subject: subject).currentOrder)
+        CompanionL10n.format("pad.sort.action", copy(order).menuTitle, copy(order).currentOrder)
     }
 
     @MainActor static func days(in model: PageModel) -> PadSortSection {
         PadSortSection(
             scope: .days, direction: model.pads.daySortDirection(for: model.pads.activeID),
-            subject: CompanionL10n.string("pad.sort.days"))
+            subject: CompanionL10n.string("pad.sort.days"),
+            title: CompanionL10n.string("pad.sort.days.title"))
     }
 
+    /// The day in the title is the spoken phrase with every word raised: "3 Days Ago".
     @MainActor static func checkpoints(of node: StreamNavigator.Node, in model: PageModel) -> PadSortSection {
         PadSortSection(
             scope: .checkpoints(dayBucket: node.bucket),
             direction: model.pads.checkpointSortDirection(
                 for: model.pads.activeID, onDate: model.dateKey(forDayBucket: node.bucket)),
-            subject: CompanionL10n.format("pad.sort.checkpoints", node.spokenDay))
+            subject: CompanionL10n.format("pad.sort.checkpoints", node.spokenDay),
+            title: CompanionL10n.format(
+                "pad.sort.checkpoints.title", node.spokenDay.capitalized(with: Locale.current)))
     }
 
     /// A checkpoint row's sort menu and actions, or nil while pads are off and the row offers none.
@@ -1175,10 +1190,10 @@ struct PadSortPicker: View {
 
     var body: some View {
         // A closure literal: a function value for `set` crashed Xcode 26.6's IRGen (see PR 261).
-        Picker(section.copy.label, selection: Binding(
+        Picker(section.copy.menuTitle, selection: Binding(
             get: { section.direction }, set: { section.apply($0, to: model) })) {
             ForEach(PadSortCopy.orders, id: \.self) { order in
-                Text(PadSortCopy(direction: order, subject: section.subject).currentOrder).tag(order)
+                Text(section.copy(order).currentOrder).tag(order)
             }
         }
     }

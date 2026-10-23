@@ -158,6 +158,8 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertEqual(StreamNavigator.denseMapHeight(columnHeight: 400, row: 38), 160)
         XCTAssertEqual(StreamNavigator.denseMapHeight(columnHeight: 120, row: 38), 48)
         XCTAssertEqual(StreamNavigator.denseMapHeight(columnHeight: 90, row: 38), 40)
+        XCTAssertEqual(
+            StreamNavigator.denseMapHeight(columnHeight: 70, row: 38), 28, "the 40 point floor outranked the list's row")
         for height: CGFloat in [30, 44, 60, 82] {
             let map = StreamNavigator.denseMapHeight(columnHeight: height, row: 24)
             XCTAssertGreaterThanOrEqual(map, 0, "a negative map at \(height)")
@@ -177,6 +179,29 @@ final class StreamNavigatorTests: XCTestCase {
             }
         }
         XCTAssertEqual(undrawn, [], "maps given room that draw nothing")
+    }
+
+    /// The room the list keeps is the same whichever node is active, and fits the active row the
+    /// layout draws for each of them, the tallest exactly.
+    func testTheActiveRowRoomIsTheSameWhicheverNodeIsActive() throws {
+        let tabs = [
+            slot(tab: 1, page: 11, day: 0), slot(tab: 2, page: 22, day: 0, createdMs: born + 60_000),
+            slot(tab: 3, page: 33, day: -1), slot(tab: 4, page: 44, day: -9),
+            slot(tab: 5, page: 55, day: -9, createdMs: born + 60_000),
+        ]
+        var rooms: Set<CGFloat> = []
+        var activeRows: [CGFloat] = []
+        for tab in tabs.map(\.id) {
+            let selected = nodes(tabs, selecting: tab)
+            rooms.insert(StreamNavigator.activeRowRoom(selected))
+            let layout = StreamNavigator.layout(nodes: selected, geometry: .unmeasured, height: 120, width: 102)
+            let active = try XCTUnwrap(layout.placed.first { $0.node.active }, "the control: tab \(tab)")
+            XCTAssertEqual(active.rowHeight, StreamNavigator.rowHeight(of: active.node, active: true))
+            activeRows.append(active.rowHeight)
+        }
+        XCTAssertEqual(rooms.count, 1, "the room moved with the selection: \(rooms)")
+        XCTAssertEqual(rooms.first, activeRows.max())
+        XCTAssertEqual(Set(activeRows).count, 4, "the control: the active rows are not of four heights")
     }
 
     /// The compact map's window tick stands on free track between the last live mark and the
