@@ -96,7 +96,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place is approximate. Turning the preview on and off again without
   scrolling comes back to the same line.
 
-
 - **A drag between pages moves its objects** (app 0.36.0;
   `companion-core` 0.32.0, `companion-ffi` 0.40.0; Law 0001's drag
   row, issue #170). A selection dragged from one page onto another leaves
