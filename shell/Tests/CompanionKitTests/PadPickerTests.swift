@@ -299,6 +299,19 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(CompanionL10n.string("pad.app.remove"), "pad.app.remove", "the remove items became checkmarks")
     }
 
+    /// Every key the rail reads is in the table, since a missing key reads back as itself.
+    func testTheRailsKeysAreInTheStrings() {
+        let keys = [
+            "pad.heading", "pad.files.heading", "pad.page.new",
+            "pad.stream", "pad.stream.position", "pad.stream.percent", "pad.sort.action",
+        ]
+        for key in keys {
+            XCTAssertNotEqual(CompanionL10n.string(key), key, "\(key) is missing from the strings")
+        }
+        XCTAssertEqual(CompanionL10n.format("pad.stream.percent", 42), "42 percent")
+        XCTAssertEqual(CompanionL10n.format("pad.sort.action", "days", "Newest first"), "Sort days: Newest first")
+    }
+
     /// One list, each app once: the running ones in order, checked when
     /// associated, then an associated app that is not running, checked,
     /// so it can still be unchecked.

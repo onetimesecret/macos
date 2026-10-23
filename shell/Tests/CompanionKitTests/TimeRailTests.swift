@@ -58,23 +58,61 @@ final class TimeRailTests: XCTestCase {
         return isolatedModel(defaults: defaults)
     }
 
-    func testDenseNavigatorHostsAtMinimumWindowHeightWithoutDrivingFileOrLedger() throws {
+    /// Under a File or the Ledger a dense rail keeps every checkpoint's target and installs no
+    /// wheel relay, so it drives no roll (ADR-0060); the roll showing is the control.
+    func testADenseRailKeepsItsCheckpointsAndDrivesNoRollUnderAFileOrTheLedger() throws {
         let model = try makeModel()
-        let tabs = (1...60).map { slot(tab: UInt64($0), page: UInt64($0 + 100)) }
-        let checkpoints = StreamNavigator.nodes(
-            projection: project(tabs), tabs: tabs, selection: nil, surfaceShowsRoll: false)
-        let host = NSHostingView(rootView: StreamNavigatorView(
-            model: model, roll: RollGeometryModel(), drivesRoll: false, readOnly: false,
-            nodes: checkpoints, chords: [:]))
-        host.frame = NSRect(x: 0, y: 0, width: 142, height: 180)
-        host.layoutSubtreeIfNeeded()
-        XCTAssertEqual(host.frame.height, 180)
-        XCTAssertTrue(StreamNavigator.requiredHeight(nodes: checkpoints) > host.frame.height)
-        let layout = StreamNavigator.layout(nodes: checkpoints, geometry: RollGeometry(extents: [], documentHeight: 0, viewportTop: 0, viewportHeight: 0),
-                                           height: 72, width: 142, compact: true)
-        XCTAssertNil(layout.band)
-        XCTAssertTrue(layout.slivers.isEmpty)
-        XCTAssertEqual(layout.placed.count, 60, "file and ledger still expose checkpoint navigation")
+        for _ in 0..<24 { model.newPage() }
+        let pages = model.tabs.count
+        XCTAssertEqual(pages, 24, "the control")
+        let host = NSHostingView(rootView: AnyView(
+            TimeRailView(model: model, readOnly: false).environment(\.presentationSurface, .panel)))
+        host.frame = NSRect(x: 0, y: 0, width: TimeRailView.width, height: 180)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        addTeardownBlock { window.close() }
+
+        /// The views of `type` under the host once it has laid out.
+        func mounted<Kind: NSView>(_ type: Kind.Type) -> [Kind] {
+            host.layoutSubtreeIfNeeded()
+            drainMainQueue()
+            host.layoutSubtreeIfNeeded()
+            func walk(_ view: NSView) -> [Kind] {
+                ((view as? Kind).map { [$0] } ?? []) + view.subviews.flatMap(walk)
+            }
+            return walk(host)
+        }
+        /// Whether the clip around a target leaves none of it in view: a row past the column's foot.
+        func clipped(_ target: TabDropTarget) -> Bool {
+            guard let clip = sequence(first: target as NSView, next: { $0.superview })
+                .first(where: { $0 is NSClipView }) else { return false }
+            return !clip.bounds.intersects(clip.convert(target.bounds, from: target))
+        }
+
+        let rolling = mounted(TabDropTarget.self)
+        XCTAssertEqual(rolling.count, pages, "the roll showing")
+        XCTAssertTrue(rolling.contains(where: clipped), "the control: the column fits every row")
+        XCTAssertEqual(mounted(WheelRelayView.self).count, 1, "the control: the roll's rail relays no wheel")
+
+        model.showLedger()
+        XCTAssertTrue(model.showingLedger, "the control")
+        let ledger = mounted(TabDropTarget.self)
+        XCTAssertEqual(ledger.count, pages, "the Ledger hid a checkpoint")
+        XCTAssertTrue(ledger.contains(where: clipped), "the control: the column fits every row")
+        XCTAssertEqual(mounted(WheelRelayView.self).count, 0, "the Ledger's rail drives the roll")
+
+        model.showingLedger = false
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("time-rail-\(UUID().uuidString).txt")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        try "a file".write(to: url, atomically: true, encoding: .utf8)
+        model.openFile(at: url)
+        XCTAssertNotNil(model.selectedFile, "the control")
+        let file = mounted(TabDropTarget.self)
+        XCTAssertEqual(file.count, pages, "the File hid a checkpoint")
+        XCTAssertTrue(file.contains(where: clipped), "the control: the column fits every row")
+        XCTAssertEqual(mounted(WheelRelayView.self).count, 0, "the File's rail drives the roll")
     }
 
     // MARK: The rows, and where they send a click
@@ -223,5 +261,141 @@ final class TimeRailTests: XCTestCase {
         XCTAssertEqual(
             projection.units.map(\.spokenRemaining), ["one hour", "one hour", "one hour"])
         XCTAssertEqual(project([]).units.map(\.spokenRemaining), [""])
+    }
+
+    // MARK: Pads
+
+    /// The active page on a pads rail, with the nodes the rail draws for it.
+    private func padsModel() throws -> (PageModel, [StreamNavigator.Node], StreamNavigator.Node) {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        model.newPage()
+        let nodes = StreamNavigator.nodes(
+            projection: model.timeUnits, tabs: model.navigationTabs, selection: model.selection)
+        let active = try XCTUnwrap(nodes.first(where: \.active), "the control: a page is selected")
+        XCTAssertFalse(model.dateKey(forDayBucket: active.bucket).isEmpty, "the control: a stable roster date")
+        return (model, nodes, active)
+    }
+
+    /// The heading menu offers the days' order and the active checkpoint's day order, outside
+    /// the navigator's viewport (ADR-0060), and each picker sets the order it names.
+    func testTheHeadingMenuSortsTheDaysAndTheActiveCheckpointsDay() throws {
+        let (model, nodes, active) = try padsModel()
+        let sections = TimeRailView.sortSections(model: model, nodes: nodes)
+        XCTAssertEqual(sections.map(\.scope), [.days, .checkpoints(dayBucket: active.bucket)])
+        XCTAssertEqual(sections.map(\.subject), [
+            CompanionL10n.string("pad.sort.days"),
+            CompanionL10n.format("pad.sort.checkpoints", active.spokenDay),
+        ])
+
+        let pad = model.pads.activeID
+        let date = model.dateKey(forDayBucket: active.bucket)
+        for order in PadSortCopy.orders {
+            sections[1].apply(order, to: model)
+            XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: date), order)
+            sections[0].apply(order, to: model)
+            XCTAssertEqual(model.pads.daySortDirection(for: pad), order)
+        }
+
+        let ledger = StreamNavigator.nodes(
+            projection: model.timeUnits, tabs: model.navigationTabs, selection: nil,
+            surfaceShowsRoll: false)
+        XCTAssertEqual(
+            TimeRailView.sortSections(model: model, nodes: ledger).map(\.scope), [.days],
+            "a menu offered a checkpoint order with no checkpoint selected")
+    }
+
+    /// A node names the context menu's three orders as actions VoiceOver can reach.
+    func testACheckpointNamesItsThreeOrdersAsActions() throws {
+        let (model, _, active) = try padsModel()
+        let section = PadSortSection.checkpoints(of: active, in: model)
+        let subject = CompanionL10n.format("pad.sort.checkpoints", active.spokenDay)
+        XCTAssertEqual(
+            PadSortCopy.orders.map(section.actionName),
+            PadSortCopy.orders.map {
+                CompanionL10n.format(
+                    "pad.sort.action", subject, PadSortCopy(direction: $0, subject: subject).currentOrder)
+            })
+        XCTAssertEqual(section.actionName(.chronological), "Sort today checkpoints: Oldest first")
+        let date = model.dateKey(forDayBucket: active.bucket)
+        for order in PadSortCopy.orders.reversed() {
+            section.apply(order, to: model)
+            XCTAssertEqual(model.pads.checkpointSortDirection(for: model.pads.activeID, onDate: date), order)
+        }
+    }
+
+    /// With pads on, `PadShortcutMonitor` takes ⌘1 to ⌘9 for pads, so a node names no chord
+    /// the monitor would take, and still names a binding that reaches its day.
+    func testPadsLeaveOutTheDigitChordsThePadMonitorTakes() throws {
+        let model = try makeModel()
+        for row in 0..<9 {
+            XCTAssertEqual(
+                TimeRailView.chord(forRowAt: row, keymap: model.keymap, padsEnabled: false)?.displaySymbol,
+                "⌘\(row + 1)", "the control: pads off")
+            XCTAssertNil(
+                TimeRailView.chord(forRowAt: row, keymap: model.keymap, padsEnabled: true),
+                "row \(row) named a chord that switches pads")
+        }
+
+        let defaults = """
+            [{"context":"Editor","bindings":{"cmd-1":"page::Select1","cmd-2":"page::Select2"}}]
+            """
+        let elsewhere = Keymap.resolve(defaultText: defaults, overrideText: """
+            [{"context":"Editor","bindings":{"cmd-1":null,"ctrl-1":"page::Select1"}}]
+            """)
+        XCTAssertEqual(
+            TimeRailView.chord(forRowAt: 0, keymap: elsewhere, padsEnabled: true)?.displaySymbol, "⌃1")
+        let remapped = Keymap.resolve(defaultText: defaults, overrideText: """
+            [{"context":"Editor","bindings":{"cmd-2":"page::Select1"}}]
+            """)
+        XCTAssertFalse(PadShortcutMonitor.allows(number: 2, keymap: remapped), "the control")
+        XCTAssertEqual(
+            TimeRailView.chord(forRowAt: 0, keymap: remapped, padsEnabled: true)?.displaySymbol, "⌘2",
+            "a remapped digit the pads leave alone lost its hint")
+    }
+
+    /// VoiceOver hears a whole percent from 0 to 100, and 0 where nothing scrolls.
+    func testTheReadingPositionIsAPercentFromZeroToAHundred() {
+        func percent(_ top: CGFloat, _ document: CGFloat, _ viewport: CGFloat) -> Int {
+            StreamNavigatorView.readingPercent(
+                viewportTop: top, documentHeight: document, viewportHeight: viewport)
+        }
+        XCTAssertEqual(percent(0, 1000, 200), 0)
+        XCTAssertEqual(percent(400, 1000, 200), 50)
+        XCTAssertEqual(percent(800, 1000, 200), 100)
+        XCTAssertEqual(percent(900, 1000, 200), 100, "scrolled past the end")
+        XCTAssertEqual(percent(-40, 1000, 200), 0, "scrolled above the top")
+        XCTAssertEqual(percent(30, 100, 200), 0, "a document shorter than its viewport")
+        XCTAssertEqual(percent(0, 200, 200), 0, "a document exactly its viewport")
+        XCTAssertEqual(percent(0.4, 200.5, 200), 80, "a range under a point")
+        XCTAssertEqual(percent(.nan, 1000, 200), 0)
+        XCTAssertEqual(percent(.infinity, 1000, 200), 0)
+        XCTAssertEqual(percent(10, .infinity, 200), 0)
+        XCTAssertEqual(percent(10, .nan, 200), 0)
+        XCTAssertEqual(percent(10, 1000, .nan), 0)
+    }
+
+    // MARK: The Files shelf
+
+    /// The shelf fits up to two rows and then shows half a third, so a hidden row reads as
+    /// one to scroll to; the row is drawn at the height the shelf counts in.
+    func testTheFilesShelfShowsTwoRowsAndHalfOfTheNext() throws {
+        let row = FileShelfRow.height
+        let gap = FileShelfRow.spacing
+        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 0), 0)
+        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 1), row)
+        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 2), 2 * row + gap)
+        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 3), 2.5 * row + 2 * gap)
+        XCTAssertEqual(FileShelfRow.shelfHeight(rows: 40), 2.5 * row + 2 * gap)
+
+        let model = try makeModel()
+        for dirty in [false, true] {
+            let file = FileSummary(
+                id: CompanionClient.fileIDTag | 1, name: "README.md", path: "/tmp/README.md",
+                isDirty: dirty, conflict: .none, lineEnding: .lf, hasBOM: false, lastEditedAt: 0,
+                restoredFromDraft: false, pendingHydration: false, accessRefused: false, notFound: false)
+            let host = NSHostingView(rootView: FileShelfRow(file: file, selected: false, model: model))
+            XCTAssertEqual(host.fittingSize.height, row, "the drawn row and the shelf's unit differ")
+        }
     }
 }

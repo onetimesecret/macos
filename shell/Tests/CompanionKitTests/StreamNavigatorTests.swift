@@ -86,6 +86,69 @@ final class StreamNavigatorTests: XCTestCase {
         let boundary = try XCTUnwrap(layout.windowY)
         XCTAssertGreaterThan(boundary, layout.placed[0].y)
         XCTAssertLessThan(boundary, layout.placed[1].y)
+        XCTAssertEqual(layout.retainedTrack, .init(y: layout.trackTop, height: boundary - layout.trackTop))
+        XCTAssertEqual(layout.windowTrack, .init(y: boundary, height: layout.trackBottom - boundary))
+    }
+
+    /// With every day retained, the mark stands above the first node newest first and past the
+    /// last node oldest first, the dashed stretch on its far side; no retained day dashes nothing.
+    func testTheRetainedStretchFollowsTheOrderWhenEveryDayIsRetained() throws {
+        let newestFirst = nodes([
+            slot(tab: 1, page: 11, day: -8),
+            slot(tab: 2, page: 22, day: -9),
+            slot(tab: 3, page: 33, day: -12),
+        ]).filter(\.hasPage)
+        XCTAssertEqual(newestFirst.map(\.bucket), [-8, -9, -12], "the control")
+        XCTAssertTrue(newestFirst.allSatisfy(\.trailing), "the control")
+        XCTAssertFalse(StreamNavigator.runsOldestFirst(newestFirst))
+
+        let layout = StreamNavigator.layout(
+            nodes: newestFirst, geometry: .unmeasured, height: 400, width: 102)
+        let mark = try XCTUnwrap(layout.windowY, "the seven day mark vanished")
+        XCTAssertLessThan(mark, try XCTUnwrap(layout.placed.first).y)
+        XCTAssertEqual(layout.windowTrack, .init(y: layout.trackTop, height: mark - layout.trackTop))
+        XCTAssertEqual(layout.retainedTrack, .init(y: mark, height: layout.trackBottom - mark))
+
+        let oldestFirst = Array(newestFirst.reversed())
+        XCTAssertTrue(StreamNavigator.runsOldestFirst(oldestFirst))
+        for height: CGFloat in [400, 60] {
+            let reversed = StreamNavigator.layout(
+                nodes: oldestFirst, geometry: .unmeasured, height: height, width: 102)
+            let last = try XCTUnwrap(reversed.placed.last)
+            let end = try XCTUnwrap(reversed.windowY, "the seven day mark vanished at \(height)")
+            XCTAssertGreaterThan(end, last.rowBottom, "the mark met the last row at \(height)")
+            XCTAssertLessThan(end, reversed.trackBottom, "the mark passed the foot at \(height)")
+            XCTAssertEqual(reversed.retainedTrack, .init(y: reversed.trackTop, height: end - reversed.trackTop))
+            XCTAssertEqual(reversed.windowTrack, .init(y: end, height: reversed.trackBottom - end))
+        }
+        let tight = StreamNavigator.layout(nodes: oldestFirst, geometry: .unmeasured, height: 60, width: 102)
+        XCTAssertEqual(tight.contentHeight, tight.packedHeight, "the mark's room is outside the packed height")
+
+        let live = nodes([slot(tab: 1, page: 11, day: -1), slot(tab: 2, page: 22, day: -3)])
+        for ordered in [live, Array(live.reversed())] {
+            let fits = StreamNavigator.layout(nodes: ordered, geometry: .unmeasured, height: 400, width: 102)
+            XCTAssertNil(fits.windowY)
+            XCTAssertNil(fits.retainedTrack, "a rail with no retained day drew a dashed stretch")
+            XCTAssertEqual(fits.windowTrack, .init(y: fits.trackTop, height: fits.trackBottom - fits.trackTop))
+        }
+    }
+
+    /// A short last page puts its row past the column's foot, which the column scrolls to (#277);
+    /// only rows that outrun the column packed tight make the rail dense (ADR-0060).
+    func testOrdinaryOverflowScrollsAndOnlyPackedOverflowIsDense() {
+        let pair = nodes([slot(tab: 1, page: 11, day: 0), slot(tab: 2, page: 22, day: -1)])
+        let geometry = RollGeometry(
+            extents: [extent(pair[0], top: 0, height: 5_000), extent(pair[1], top: 5_000, height: 100)],
+            documentHeight: 5_100, viewportTop: 0, viewportHeight: 300)
+        for height: CGFloat in [300, 500, 700] {
+            let layout = StreamNavigator.layout(nodes: pair, geometry: geometry, height: height, width: 102)
+            XCTAssertGreaterThan(layout.contentHeight, height, "the control: the last row fits at \(height)")
+            XCTAssertFalse(StreamNavigator.isDense(layout, columnHeight: height), "two rows went dense at \(height)")
+        }
+        let dense = StreamNavigator.layout(
+            nodes: threeDays(pagesPerDay: 12), geometry: .unmeasured, height: 480, width: 102)
+        XCTAssertTrue(StreamNavigator.isDense(dense, columnHeight: 480), "36 rows fit a 480 point column")
+        XCTAssertEqual(dense.packedHeight, dense.contentHeight, "the packed rows and the packed drawing differ")
     }
 
     func testDenseMapFitsMinimumHeightAndCoversLongDocumentInBothOrders() {
@@ -97,7 +160,11 @@ final class StreamNavigatorTests: XCTestCase {
             let geometry = RollGeometry(extents: ordered.enumerated().map {
                 extent($0.element, top: CGFloat($0.offset) * 5000, height: 5000)
             }, documentHeight: 300000, viewportTop: 140000, viewportHeight: 180)
-            XCTAssertGreaterThan(StreamNavigator.requiredHeight(nodes: ordered), 180)
+            XCTAssertTrue(
+                StreamNavigator.isDense(
+                    StreamNavigator.layout(nodes: ordered, geometry: geometry, height: 180, width: 142),
+                    columnHeight: 180),
+                "the control: a 180 point column fits every row")
             let layout = StreamNavigator.layout(nodes: ordered, geometry: geometry,
                                                  height: 72, width: 142, compact: true)
             XCTAssertEqual(layout.placed.count, 60)
@@ -916,6 +983,56 @@ final class StreamNavigatorTests: XCTestCase {
                 StreamNavigator.layout(nodes: nodes, geometry: geometry, height: 400, width: 102),
                 "a viewport update at \(geometry.viewportTop) drew something a fresh layout would not")
         }
+    }
+
+    /// The dense rail's compact map is prepared once per document revision, as the drawing
+    /// is: a viewport only publication reuses it and draws what a fresh map would.
+    func testAViewportOnlyChangeReusesTheCachedCompactMap() {
+        let nodes = threeDays(pagesPerDay: 12)
+        let document = RollGeometry.Document(
+            extents: nodes.enumerated().map { index, node in
+                extent(node, top: CGFloat(index) * 500, height: 500, lines: [
+                    RollGeometry.LineMark(y: CGFloat(index) * 500 + 40, width: 0.6),
+                ])
+            },
+            height: 18_000, identity: UUID(), revision: 4)
+        let resting = RollGeometry(document: document, viewportTop: 0, viewportHeight: 300)
+        let scrolled = RollGeometry(document: document, viewportTop: 9_000, viewportHeight: 300)
+        let cache = StreamNavigatorLayoutCache()
+
+        let first = cache.layout(nodes: nodes, geometry: resting, height: 72, width: 102, compact: true)
+        let moved = cache.layout(nodes: nodes, geometry: scrolled, height: 72, width: 102, compact: true)
+        XCTAssertEqual(cache.builds, 1, "a viewport only publication rebuilt the compact map")
+        XCTAssertNotEqual(moved.band, first.band, "the control: the band did not move")
+        XCTAssertEqual(
+            moved, StreamNavigator.layout(nodes: nodes, geometry: scrolled, height: 72, width: 102, compact: true))
+
+        let revised = RollGeometry(
+            document: RollGeometry.Document(
+                extents: document.extents, height: document.height,
+                identity: document.identity, revision: 5),
+            viewportTop: 9_000, viewportHeight: 300)
+        _ = cache.layout(nodes: nodes, geometry: revised, height: 72, width: 102, compact: true)
+        XCTAssertEqual(cache.builds, 2, "a new revision reused the old map")
+        _ = cache.layout(nodes: nodes, geometry: revised, height: 72, width: 102)
+        XCTAssertEqual(cache.builds, 3, "the full drawing was answered from the compact map")
+    }
+
+    /// The dense rail's list stacks every row under the one before, `listSpacing` apart from
+    /// the list's top, and names the active row for the reveal.
+    func testTheCheckpointListStacksEveryRowAndNamesTheActiveOne() throws {
+        let layout = StreamNavigator.layout(
+            nodes: threeDays(pagesPerDay: 12), geometry: .unmeasured, height: 480, width: 102)
+        let list = StreamNavigator.checkpointList(layout.placed)
+        XCTAssertEqual(list.rows.map(\.placed), layout.placed)
+        XCTAssertEqual(list.rows.first?.top, 0)
+        for (upper, lower) in zip(list.rows, list.rows.dropFirst()) {
+            XCTAssertEqual(lower.top, upper.bottom + StreamNavigator.Metrics.listSpacing)
+        }
+        XCTAssertEqual(list.contentHeight, try XCTUnwrap(list.rows.last).bottom)
+        XCTAssertEqual(list.active?.id, layout.placed.first { $0.node.active }?.id)
+        XCTAssertNotNil(list.active, "the control: no node is active")
+        XCTAssertEqual(StreamNavigator.checkpointList([]).contentHeight, 0)
     }
 
     /// A roll with no height puts every node at document zero and lets

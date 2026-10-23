@@ -55,9 +55,11 @@ final class EditorFactoryTests: XCTestCase {
             model: model, sheetID: page, coordinator: coordinator
         ))
 
-        XCTAssertEqual(textView.accessibilityLabel(), "Editor content")
+        let label = CompanionL10n.string("editor.content")
+        XCTAssertNotEqual(label, "editor.content", "the key is missing from the strings")
+        XCTAssertEqual(textView.accessibilityLabel(), label)
         model.storage(for: page).replaceCharacters(in: NSRange(location: 0, length: 0), with: "A page")
-        XCTAssertEqual(textView.accessibilityLabel(), "Editor content")
+        XCTAssertEqual(textView.accessibilityLabel(), label)
     }
 
     func testTheBuiltEditorCarriesTheFlagsThePageRestsOn() throws {

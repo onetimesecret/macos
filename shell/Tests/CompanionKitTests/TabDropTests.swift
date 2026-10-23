@@ -596,7 +596,6 @@ final class TabDropTests: XCTestCase {
             let targets = nodeTargets(in: host, on: model)
             XCTAssertEqual(targets.map(\.slot), slots, rail)
             assertTheTargetsStack(targets, in: host, footInside: false, rail)
-            if pads { continue }
 
             let bounds = host.convert(host.bounds, to: nil)
             let first = try XCTUnwrap(targets.first, rail)
