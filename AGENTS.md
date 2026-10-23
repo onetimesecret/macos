@@ -18,3 +18,19 @@ For normative claims concerning security, privacy, compatibility, persistence, o
 2. Distinguish quotations, paraphrases, interpretations, and proposals.
 3. Do not use material created or modified during the current task to validate that task’s claims.
 4. If no authoritative wording exists, report the claim as unsupported.
+
+## Comments
+
+Keep code comments to one or two lines. Do not write a comment that asserts a guarantee; write the test or tighten the type, and cite the ADR or spec row if the reasoning matters. Do not answer a review finding by adding or rewording prose in a comment; change the code, the test, or the ADR.
+
+## Terms and phrases to avoid
+
+Do not use any of the following terms or phrases or sentence structures:
+- holds, claims, lands, carries
+- "A isn't only B, but also C"
+
+## Runtime testing
+
+Automated UI tests and probes use both an injected temporary state directory and an in-memory credential client. Use `PageModel.Seams(stateDirectory:client:)` with the test-util ephemeral client; changing a bundle identifier alone is insufficient isolation.
+
+Do not launch, replace, quit, or reset a person's running app to validate a change. Do not modify production identity constants to run a probe. A Keychain access prompt during automated testing is a reason to stop and audit the test setup, rather than authorize the prompt and continue.

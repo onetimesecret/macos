@@ -44,4 +44,32 @@ public enum TabRename {
         let name = Self.name(from: draft)
         return name == current ? .keep : .rename(name)
     }
+
+    /// A SwiftUI rename field's state from opening to ending, so a test
+    /// drives the code the strip runs (Law 0007).
+    public struct Field: Equatable, Sendable {
+        /// The text the field shows, bound to it.
+        public var draft = ""
+        /// What the seat showed when the field opened, or nil while shut.
+        public private(set) var opened: String?
+
+        public init() {}
+
+        public var isOpen: Bool { opened != nil }
+
+        /// Opens on the seat's current text; an open field stays as it is.
+        public mutating func open(on title: String) {
+            guard opened == nil else { return }
+            opened = title
+            draft = title
+        }
+
+        /// Shuts the field and judges the draft against what it opened on.
+        /// Nil when it was already shut, as the focus loss after a Return is.
+        public mutating func end(committed: Bool) -> Outcome? {
+            guard let opened else { return nil }
+            self.opened = nil
+            return TabRename.outcome(draft: draft, current: opened, committed: committed)
+        }
+    }
 }

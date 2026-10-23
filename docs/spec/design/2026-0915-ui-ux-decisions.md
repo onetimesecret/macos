@@ -4,13 +4,13 @@ title: UI/UX decisions for the background surface
 status: accepted     # draft → accepted → superseded
 dated: 2026-09-15
 supersedes: docs/spec/design/2026-0914-ui-ux-decisions.md; docs/design-brief.md (Tokens and parameters)
-superseded-by: docs/adr/0040-shared-pad-timeline-navigation.md, on fixed newest-first day ordering in Timeline only
+superseded-by: docs/adr/0060-shared-pad-timeline-navigation.md, on fixed newest-first day ordering in Timeline only
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface)
 sources:
-  - docs/spec/design/03-design-principles.md
-  - docs/spec/design/04-interaction-model.md
-  - docs/spec/design/05-technical-direction.md
+  - docs/spec/design/2026-0707-design-principles.md
+  - docs/spec/design/2026-0707-interaction-model.md
+  - docs/spec/design/2026-0707-technical-direction.md
   - docs/spec/feature/background-surface/README.md
   - docs/spec/feature/sealed-content/sealed-content.md
   - docs/adr/0009-chip-deletion-deliberate-final.md
@@ -28,7 +28,7 @@ sources:
   - shell/Sources/CompanionKit/Theme.swift
 ---
 
-> Scoped successor, 2026-10-03: [ADR-0040](../../adr/0040-shared-pad-timeline-navigation.md)
+> Scoped successor, 2026-10-03: [ADR-0060](../../adr/0060-shared-pad-timeline-navigation.md)
 > replaces fixed newest-first day ordering in Timeline. Its shared navigator, selectable day/checkpoint
 > ordering, density handling, and session reading-position rules are approved
 > design requirements, not an implementation verification report.
@@ -43,9 +43,14 @@ What the shipping surface looks like, what each visible decision is, and
 what a build has to satisfy before the decision counts as honoured. The
 illustrated companion (mockups with callouts) is the committed bundle
 `docs/spec/design/UI-UX Decision Record - Sealed Content.html` beside this
-record; it covers D-01 to D-33 despite its filename. The shipping surface
-sets `sharingType = .none` and cannot be screenshotted, so every visual is
-a recreation from this source tree.
+record; it covers D-01 to D-33 despite its filename. Every visual is a
+recreation from this source tree.
+
+*Publication clarification, 2026-10-14:* this record specifies
+`sharingType = .none`; that setting is not evidence that every screenshot
+or screen-sharing mechanism excludes the surface. The earlier absolute
+capture claim is withdrawn. This is a documentation correction, not a new
+interaction decision.
 
 ## 0 · Pipeline and status
 
@@ -102,9 +107,14 @@ chrome.
   *Acceptance:* greyscale the surface and read every state (keyline
   present or absent, hatch, dot beside a word); ember text clears 4.5:1
   on page and card, light and dark.
+  *Amended 2026-10-14:* the system's `.secondary` reads 3.95:1 on white,
+  under section 9's row 5, so the quieter words wear a `secondaryInk`
+  token beside `emberText`: black at 60% under light, the system's
+  secondary label under dark and Increase Contrast. No text wears
+  `.tertiary`. `ThemeContrastTests` measures both.
 - **D-04 (open)** Is the resting card opaque or translucent? Today both
   stances share one material: `.ultraThinMaterial` in `BackdropRootView`
-  (`BackdropRootView.swift:221`); the resting look is that material
+  (`BackdropRootView.swift:222`); the resting look is that material
   with contents at 0.72. The background-surface spec says transparent
   for both stances; the working copy's "resting: opaque fill" callout
   is a mockup artefact, not a decision. Whichever way this closes,
@@ -308,6 +318,13 @@ and the block reveals an actions glyph on hover that opens this menu;
 see [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md)
 D-40 and D-41.
 
+*Amended 2026-10-13:* a named object's menu gains *Copy name* and *Copy
+name=value, decrypted*, and every object's gains *Name…* or *Rename…*
+and *Note…* or *Edit note…*
+([Law 0001](../../law/0001-sealed-object.md)'s 2026-10-13 name and note
+amendment; the order is the
+[sealed row spec](../feature/sealed-content/sealed-row-note-and-handles.md)'s).
+
 After a decrypted copy, one line confirms the boundary crossing with the
 core's interval: `copied decrypted contents — small. the clipboard
 clears in 60 seconds.` The interval is one core constant,
@@ -393,6 +410,13 @@ in plain; the fragment adds order, not payload exposure.
   is never seeded from the page's remaining time; failure is inline text
   and the button becomes Retry; the local copy is offered up to burn and
   never burned automatically.
+  *Amended 2026-10-14:* the sheet stays inline. Its title takes the
+  menu's verb, `create a one-time link from this sealed content`; its
+  buttons are title case (*Create Link*, *Burn Local Copy*, *Keep It*);
+  a *Cancel* left of the default button answers Escape and waits out a
+  request in flight; each field has a label of its own; and the guest
+  line ends in a *Connection Settings…* link that opens that tab
+  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-10 (fixed)** Hover reveals affordances, never content, and the
   affordance keeps its seat whether visible or not (~120 ms opacity,
   0 ms under Reduce Motion): revealing it never nudges the ink or
@@ -407,6 +431,11 @@ in plain; the fragment adds order, not payload exposure.
   *Amended 2026-09-15:* the click also opens the object's menu, and
   Return or Space over the selected object opens it too; see
   [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-40.
+  *Amended 2026-10-13:* a named block's bottom row carries three copy
+  zones, each also in the object's menu, and a click on one copies;
+  outside the bottom row a click still only selects
+  ([Law 0001](../../law/0001-sealed-object.md)'s 2026-10-13 name and
+  note amendment and its zone rows).
 - **D-27 (fixed)** Sealed content is a full-measure block, not an inline
   pill: 8px radius, hairline border, a tracked `SEALED CONTENT` label
   with a lock over the mechanical excerpt, the size class right-aligned
@@ -420,6 +449,11 @@ in plain; the fragment adds order, not payload exposure.
   component to follow; the only `SealedChip` in the tree is the Rust
   type. Tracked as "Sealed block: full-measure attachment replaces
   SealedBlockCell (D-27)" (issue 169).
+  *Amended 2026-10-13:* a named block's bottom row reads
+  `NAME=excerpt`, and its three copy zones show a pill and their
+  consequence under the pointer before a click
+  (the [sealed row spec](../feature/sealed-content/sealed-row-note-and-handles.md)'s
+  named row).
 - **D-28 (fixed)** A sealed item is one object in the document and its
   plaintext is not part of the document's ambient text. Structural
   operations act on the whole object; the caret never lands inside it
@@ -491,7 +525,7 @@ in plain; the fragment adds order, not payload exposure.
   *Review correction 2026-09-15:* the earlier contract and amendment-history
   wording said an unpasted chip died by “its own TTL.” That wording is
   withdrawn. The page owns the clock for attached and detached objects; no
-  chip timer exists (`sheet.rs` :292, doc 04 :155), following the maintainer's
+  chip timer exists (`sheet.rs` :292, [Interaction model](2026-0707-interaction-model.md) :155), following the maintainer's
   2026-08-07 decision.
 
 ### Amended since the first draft
@@ -596,7 +630,7 @@ read as a page an instant from death rather than a slot standing ready.
   where the default is headed; the default does not flip before D-26's
   two settings exist, or Days + side would ship as the only
   alternative. There is no page cap to design for: the core has had
-  none since issue #158 (`PageModel.swift:3720`), so no refusal is
+  none since issue #158 (`PageModel.swift:5334`), so no refusal is
   drawn. What remains open is when the prototype label comes off and
   the default flips.
   *Amended 2026-10-01:* D-26's two settings will not exist, so the gate
@@ -651,6 +685,10 @@ in draw order: content-restore failure · ledger failure · cancelled quit
   *Banned:* "3 items expiring soon", "Are you sure?" on expiry,
   onboarding or celebratory copy, "your secrets are safe with us", and
   any label implying content can be revealed.
+  *Amended 2026-10-14:* the register is the sentences'; a button in a
+  status line is a button and is title case, *Quit Anyway (⌘Q)*,
+  *Seal It (⇧⌘V)*
+  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-16 (fixed)** The empty state is one calm sentence ("No page here
   yet.") over a hint naming the gesture that works on this surface and
   stance. No illustration, no onboarding flow.
@@ -693,6 +731,13 @@ blocked while they stand (status lines stay 12 × 4).
   encoded with the file or its draft.
   *Acceptance:* a render-mode change leaves the bytes identical; the
   suggestion banner never edits text storage.
+  *Amendment proposed 2026-10-21, not ratified:* the decision reads
+  “Two "saved" words never show at once: a file's word replaces the
+  session's.” The header's drafts not kept shows on a file surface
+  beside the file's unsaved while that file's edits are held in memory,
+  because the drafts file would not open, on the reading that it is not
+  a saved word (issue #296, PR 304). The build behaves so from app
+  0.40.9.
 - **D-19 (fixed)** No save sheet on quit; the draft's age in the header
   is what the app owes instead, so a person can judge how old the typing
   is before pressing the save chord. The build's Quit Anyway / Cancel
@@ -705,6 +750,17 @@ blocked while they stand (status lines stay 12 × 4).
   a standing line names the loss with a "quit anyway (⌘Q)" button, the
   inline confirmation D-14 allows; the second ⌘Q, or the button, quits.
   Quit is never inert.
+  *Amendment proposed 2026-10-21, not ratified:* this departs from the
+  acceptance above (issue #296, PR 304). It reads “quitting with dirty
+  files asks nothing. A refused or unsavable state flush is the one
+  case quit does not simply proceed”; with the drafts licence withheld
+  because the drafts file would not open, quitting with dirty files
+  asks, since their edits are in memory only, and that is a second case
+  where quit does not simply proceed. And when a second ⌘Q's flush, or
+  the button's, comes to a different outcome than the standing line
+  names, a refusal superseding the drafts line for one, the line is
+  restated with the new outcome and the quit cancelled, so no quit goes
+  over a loss no line named. The build behaves so from app 0.40.9.
 
 ## 7 · The sync surface
 
@@ -762,6 +818,12 @@ half is the kind of setting a user flips once and then distrusts.
 General and Code save on each flip; Connection holds fields in draft
 until Save, because a half-typed server URL is not a setting anyone
 wants applied.
+
+*Amended 2026-10-14:* a fifth form, Pads, stands after Code while the
+pads experiment exists: its switch, moved from General, and the pads with
+their folders and apps, saved on each change
+([ADR-0039](../../adr/0039-pad-selection-and-associations.md) Amendment 1,
+proposed).
 
 Copy the forms carry:
 
@@ -895,3 +957,8 @@ moved a decision.
   issue 169), the fragment and lifecycle model (D-29, D-31, D-33, issue 170), the
   split Days setting (D-26, issue 171) and the four dialogs (D-14,
   D-19, issue 172, resolved 2026-09-16).
+- 2026-10-14, D-30's *Owed* clause: met under issue 170. A chip the
+  page stops showing is detached, not zeroized
+  ([ADR-0046](../../adr/0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md)
+  point 1, accepted), so ⌘Z stands the same object again; Law 0001's
+  two backspace rows cite the tests. The clause stays as written.

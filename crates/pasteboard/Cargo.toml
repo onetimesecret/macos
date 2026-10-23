@@ -1,6 +1,6 @@
 [package]
 name = "companion-pasteboard"
-version = "0.3.0"
+version = "0.5.0"
 description = "Pasteboard adapter for the Onetime Secret macOS companion: NSPasteboard on macOS, plus the hygiene vocabulary (ConcealedType, transient, clear-after-copy) shared by every implementation."
 publish = false
 edition.workspace = true
@@ -27,8 +27,13 @@ objc2 = "0.6"
 # and to keep the unsafe surface auditable.
 objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSPasteboard",
+  # A decrypted drag's payload is written into the drag's item
+  # (ADR-0045 point 5).
+  "NSPasteboardItem",
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
   "NSArray",
+  # A string's UTF-8 is converted straight into a wiping buffer (C17).
+  "NSRange",
   "NSString",
 ] }

@@ -14,6 +14,30 @@ ADR if it is a decision, DOGFOOD.md if it is operational guidance other
 people need, an issue if it should be fixed.
 
 
+---
+
+2026-10-16:
+
+Large mixed rewrites can still use a bounded-search fallback that resets the reading anchor; insertion-only and deletion-only updates avoid that limit. It means there is still a case where **the view can jump away from the sentence you were reading**.
+
+For example:
+1. You are reading an older day.
+2. A sync update adds some text and removes other text in that day.
+3. The app tries to locate your original reading position in the updated text.
+4. If that comparison takes too much work, it stops searching and uses a fallback position—sometimes the beginning of the page.
+
+“Reading anchor” means the text position near the top of your viewport, **not your caret or selection**.
+
+Updates that only add text, or only remove text, now have a separate method without that search limit. Updates combining additions and removals can still reach it.
+
+My wording also overstated “very large”: a mixed update involving roughly 1,000 changed characters can reach one limit. **This remains an unresolved scroll-position defect**, not a completed part of the recommendation.
+
+Tracked as [#283](https://github.com/onetimesecret/macos/issues/283) (2026-10-21).
+
+2026-10-21: addendum (additive; the entry above remains the record of the day)
+
+The fallback position is fixed in app 0.40.3, [#283](https://github.com/onetimesecret/macos/issues/283). When the bounded search gives up on a mixed update, the reading anchor now keeps the reader's share of the rewritten stretch instead of going to its start: an anchor halfway into the old stretch goes halfway into the new one. An anchor in the unchanged text before or after the stretch still maps exactly, and a stretch deleted to nothing sends the anchor to the point where it stood. The search's bound is unchanged. The share is a proportion, not a match, so the view stays near where the reader was rather than on the same sentence.
+
 
 ---
 
@@ -40,7 +64,7 @@ Quick check: sample the rendered edge with Digital Colour Meter in "sRGB IEC6196
 
   Thought for 42s, searched for 4 patterns
 
-Confirmed: it IS ember, but not drawn honestly. shell/Sources/OnetimePad/Views/BackdropRootView.swift:231-232:
+Confirmed: it IS ember, but not drawn honestly. shell/Sources/OnetimePad/Views/BackdropRootView.swift:232-233:
 
 RoundedRectangle(cornerRadius: 12)
     .strokeBorder(Color.ember.opacity(pages.holdsKeys ? 0.8 : 0), lineWidth: 1.5)

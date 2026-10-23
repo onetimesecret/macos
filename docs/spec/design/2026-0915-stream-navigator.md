@@ -8,7 +8,7 @@ superseded-by: docs/spec/design/2026-0916-clipboard-clear-interval.md
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface), Days + side
 sources:
-  - claude.ai/design project ec4e1925-a907-418a-8020-270fb6353d23, "Stream Navigator (Sol feedback).html" and stream-navigator-sol.jsx (the maintainer's interactive design)
+  - the maintainer's interactive design, "Stream Navigator (Sol feedback).html" and stream-navigator-sol.jsx
   - docs/spec/design/2026-0915-ui-ux-decisions.md
   - docs/law/0001-sealed-object.md
   - shell/Sources/CompanionKit/StreamNavigator.swift
@@ -21,6 +21,9 @@ sources:
 ---
 
 # The stream navigator and the sealed capsule's actions
+
+*Publication cleanup, 2026-10-14:* the source attribution omits the private
+AI project identifier; the artifact names and decision history are retained.
 
 The maintainer's interactive design of 2026-09-15 ("Stream Navigator,
 Sol feedback") redraws the Days + side presentation as one track of
@@ -65,6 +68,25 @@ draws only a typed name (D-46 amends the gutter paragraph).
   a day's first page, the minute on every page, the packing, the map's
   round trip and the band; `DayScrollTests` pins one extent per page,
   read off the roll's own frames.
+  *Amended 2026-10-21 (issue #277):* the packing never moves a row back
+  up. The build had pulled the rows up from the foot so the last one
+  stayed on the rail, which put a dense rail's first rows above the
+  column, over the Pad heading. Now rows that outrun the column
+  lengthen the drawing past it and the column scrolls inside its clip,
+  as the Finder sidebar does; the heading, its plus and the Files shelf
+  stay outside the scrolling part, and a selection change scrolls the
+  active node into view, with the note or the window mark above it;
+  ⌘-number or a click on the page already showing scrolls nothing,
+  a choice for this issue and open to revisit. The viewport band, the
+  active stretch and the
+  slivers stay level with the nodes, in the drawing's own coordinates,
+  so they scroll with the rows and the band can be out of the clip on a
+  rail scrolled away from it. The box the slivers keep clear of covers
+  every whole point the drawn row paints and the one above it.
+  `StreamNavigatorTests.testADenseRailGrowsPastTheColumnRatherThanAboveIt`,
+  `testASliverNeverCrossesARowsLastPointAndMayStandJustAboveIt`,
+  `testAtAFractionalTopNoSliverCrossesAPointTheRowPaints`,
+  `TabDropTests.testADenseTimelinesNodeTargetsStackInNodeOrderWithoutMeeting`.
 - **D-35 (fixed)** Geometry, never glyphs. The roll hands the rail each
   page's span and each laid-out line as a rectangle (where it begins,
   what share of the wrap width it used) and nothing else. The slivers
@@ -96,6 +118,11 @@ draws only a typed name (D-46 amends the gutter paragraph).
   chord when one is bound, and the page's title on a second line, the
   one line the gutter already shows. A floating card was not built;
   the tooltip carries the same facts without a second surface.
+  *Amended 2026-10-21 (issue #277):* a wheel over a rail whose rows
+  outrun its column scrolls the rail, as it does over any sidebar; over
+  a rail that fits its column it scrolls the roll as before, so on a
+  borderline rail the gauge reserve a selection adds to its row can
+  change what the wheel scrolls between two clicks.
 - **D-39 (fixed)** The plus sits on the PAD heading, in ember text, and
   not on today's node. A page is minted with the clock's reading of
   now whatever the rail is showing, and a plus beside a day would
@@ -148,6 +175,12 @@ the mechanical excerpt and the size class on the row under them.
   `SealedBlockCell.actionsRect(in:)` is the one seat the drawing reads;
   `Coordinator.openChipMenu(at:from:in:)` is the one menu all three
   routes open.
+  *Amended 2026-10-13:* a named block's bottom row carries three copy
+  zones, name, `=` and value, which act on the first click; a plain
+  click outside the bottom row still only selects, and an unnamed block
+  keeps this decision whole
+  ([Law 0001](../../law/0001-sealed-object.md)'s 2026-10-13 name and
+  note amendment and its zone rows).
 - **D-41 (fixed)** The menu, in the design's words and order:
 
   ```text
@@ -169,6 +202,15 @@ the mechanical excerpt and the size class on the row under them.
   *Acceptance:* `DocumentOpsTests.testTheChipMenuOffersPlaintextByName`,
   `SealedCapsuleTests.testTheMenuExposesTheNamedActionsAndAdvertisesTheCopyChord`,
   `BundledKeymapTests`.
+  *Amended 2026-10-13:* the menu gains *Copy name*, *Copy name=value,
+  decrypted*, *Name…* or *Rename…* and *Note…* or *Edit note…*, in the
+  order and with the unnamed variants that the
+  [sealed row spec](../feature/sealed-content/sealed-row-note-and-handles.md)
+  records under The object's menu. The chord stays on *Copy decrypted contents*.
+  *Amended 2026-10-14:* the items are title case, *Name* and *Rename*
+  edit in place and carry no ellipsis, and the removal reads *Remove
+  Sealed Content*
+  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-42 (fixed)** The lines, in the design's words:
 
   - after a decrypted copy: `copied decrypted contents — small. the
@@ -188,6 +230,9 @@ the mechanical excerpt and the size class on the row under them.
     reports stays four.
   *Acceptance:* `SealedCapsuleTests.testTheLinesReadAsTheDesignWroteThem`,
   `PasteboardOfferTests.testACopyOutArmsTheClearAndFlashesTheInterval`.
+  *Amended 2026-10-14:* the removal line reads `sealed content removed.`,
+  one noun for the object
+  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-43 (fixed)** The clear after copy is **90 seconds**, the interval
   the design names. It stays one core constant,
   `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi/src/lib.rs`, read by the

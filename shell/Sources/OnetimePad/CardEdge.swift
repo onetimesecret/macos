@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 
 /// Which edge or corner of the card a resize drag is pulling, and what
@@ -5,12 +6,42 @@ import CoreGraphics
 /// card like a window means eight grips, and eight ways one translation
 /// turns into a new geometry.
 ///
-/// Pure, like `BackdropGeometry.clamped(to:)` beside it: the decision is
-/// tested directly rather than by driving AppKit. The clamp still has
-/// the last word; this only says what the user asked for.
+/// The resize decision is pure, like `BackdropGeometry.clamped(to:)`
+/// beside it, and tested directly; the cursor each grip names is the
+/// one AppKit fact kept here so the mapping is tested the same way. The
+/// clamp still has the last word; this only says what the user asked for.
 enum CardEdge: CaseIterable {
     case top, bottom, leading, trailing
     case topLeading, topTrailing, bottomLeading, bottomTrailing
+
+    /// The pointer a window shows over this margin: macOS 15's frame
+    /// cursors on every grip, and before 15 the axis arrows on edges
+    /// with the plain arrow on corners, as windows showed then.
+    var resizeCursor: NSCursor? {
+        if #available(macOS 15, *) {
+            return .frameResize(position: frameResizePosition, directions: .all)
+        }
+        switch self {
+        case .leading, .trailing: return .resizeLeftRight
+        case .top, .bottom: return .resizeUpDown
+        case .topLeading, .topTrailing, .bottomLeading, .bottomTrailing: return nil
+        }
+    }
+
+    /// The frame position this grip's cursor names.
+    @available(macOS 15, *)
+    var frameResizePosition: NSCursor.FrameResizePosition {
+        switch self {
+        case .top: return .top
+        case .bottom: return .bottom
+        case .leading: return .left
+        case .trailing: return .right
+        case .topLeading: return .topLeft
+        case .topTrailing: return .topRight
+        case .bottomLeading: return .bottomLeft
+        case .bottomTrailing: return .bottomRight
+        }
+    }
 
     /// Whether this grip moves the card's leading edge, which changes
     /// the origin as well as the width.

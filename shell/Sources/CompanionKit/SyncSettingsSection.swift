@@ -10,6 +10,11 @@ struct SyncSettingsSection: View {
 
     @State private var confirmingSignout = false
 
+    /// What signing out leaves alone. The token is the API token in the
+    /// reader's words (ADR-0055 rule 3, issue #295).
+    nonisolated static let signOutMessage =
+        "Sync stops until you sign in again. Pages, sealed chips and the API token are untouched."
+
     var body: some View {
         Section {
             Toggle("Sync between your devices", isOn: $sync.enabled)
@@ -18,21 +23,19 @@ struct SyncSettingsSection: View {
                     Text(line)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(
-                            sync.settingsLineIsTrouble ? Color.emberText : Color.secondary)
+                            sync.settingsLineIsTrouble ? Color.emberText : Color.secondaryInk)
                 }
                 if sync.status?.signedIn == true {
-                    Button("Sign out of sync") { confirmingSignout = true }
+                    Button("Sign Out of Sync") { confirmingSignout = true }
                         .confirmationDialog(
                             "Sign out of sync?",
                             isPresented: $confirmingSignout,
                             titleVisibility: .visible
                         ) {
-                            Button("Sign out", role: .destructive) { sync.signOut() }
+                            Button("Sign Out", role: .destructive) { sync.signOut() }
                             Button("Cancel", role: .cancel) {}
                         } message: {
-                            Text(
-                                "Sync stops until you sign in again. Pages, sealed chips and the conceal token are untouched."
-                            )
+                            Text(Self.signOutMessage)
                         }
                 } else if SyncController.showsGiveUpSignin(
                     gate: sync.status?.gate, signinPending: sync.status?.signinPending == true)
@@ -40,23 +43,24 @@ struct SyncSettingsSection: View {
                     // The way out of a browser trip, drawn only while
                     // there is a trip to end and gone the moment there
                     // is not. That is the ledger clear button's shape, and the
-                    // "way to give up" ADR-0027 §5 owes this state. The
+                    // "way to give up" the account-auth decision
+                    // background §5 owes this state. The
                     // core ends the wait; this is not a button that
                     // merely stops listening.
                     HStack {
                         ProgressView().controlSize(.small)
                         Text("waiting on the browser…")
                             .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.secondaryInk)
                         Spacer()
-                        Button("Give up") { sync.giveUpSignin() }
+                        Button("Give Up") { sync.giveUpSignin() }
                             .controlSize(.small)
                             .help(
                                 "Stops waiting for the browser. Nothing is stored and signing in again starts over."
                             )
                     }
                 } else {
-                    Button("Sign in…") { sync.signIn() }
+                    Button("Sign In…") { sync.signIn() }
                         // The one state the row above returns false
                         // for while a trip still exists: a gate that
                         // names something other than signing in with a
@@ -69,14 +73,14 @@ struct SyncSettingsSection: View {
         } header: {
             Text(syncCaption)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
         }
         if sync.enabled, sync.status?.signedIn == true {
             Section {
                 if sync.devices.isEmpty {
                     Text("no devices yet")
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondaryInk)
                 }
                 ForEach(sync.devices) { device in
                     SyncDeviceRow(device: device, sync: sync)
@@ -85,14 +89,14 @@ struct SyncSettingsSection: View {
                     SyncPairingStatus(stage: stage, sync: sync)
                 } else {
                     HStack {
-                        Button("Invite a device…") { sync.beginInvite() }
-                        Button("Join from here…") { sync.beginJoin() }
+                        Button("Invite a Device…") { sync.beginInvite() }
+                        Button("Join from Here…") { sync.beginJoin() }
                     }
                 }
             } header: {
                 Text(devicesCaption)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
             }
         }
     }
@@ -127,18 +131,18 @@ private struct SyncDeviceRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(String(device.fingerprint.prefix(8)))
+            Text(SyncPairingStatus.spelledDigits(fingerprintHead))
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
             Text(title)
                 .font(.caption)
             Text(seen)
                 .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.secondaryInk)
             Spacer()
             Text(badge)
                 .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(device.verified ? Color.secondary : Color.emberText)
+                .foregroundStyle(device.verified ? Color.secondaryInk : Color.emberText)
             if !device.thisDevice, device.verified {
                 Button("Revoke", role: .destructive) { confirmingRevoke = true }
                     .controlSize(.small)
@@ -158,9 +162,15 @@ private struct SyncDeviceRow: View {
                     }
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("\(title), \(seen), \(badge)"))
+        // `.contain`, not `.ignore`: the words are read in their order,
+        // the fingerprint first, and Revoke stays a focusable button for
+        // the keyboard as well as an action VoiceOver can reach.
+        .accessibilityElement(children: .contain)
     }
+
+    /// The head of the fingerprint, drawn and spoken alike, which is
+    /// what tells two unlabelled peers apart.
+    private var fingerprintHead: String { String(device.fingerprint.prefix(8)) }
 
     private var title: String {
         if device.thisDevice { return "this Mac" }
@@ -197,10 +207,17 @@ private struct SyncDeviceRow: View {
 /// The pairing flow inline: a spinner while messages cross, the six
 /// digits large when both sides settle, and the two verdicts — with
 /// the failing one always offered, because a comparison that cannot
-/// fail verifies nothing (ADR-0021 §3).
+/// fail verifies nothing (relay decision background §3).
 private struct SyncPairingStatus: View {
     let stage: SyncPairingStage
     @ObservedObject var sync: SyncController
+
+    /// A code or a fingerprint head read character by character.
+    static func spelledDigits(_ digits: String) -> AttributedString {
+        var spelled = AttributedString(digits)
+        spelled.accessibilitySpeechSpellsOutCharacters = true
+        return spelled
+    }
 
     var body: some View {
         switch stage.stage {
@@ -208,13 +225,16 @@ private struct SyncPairingStatus: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Compare with the other device's screen. Continue only on a match.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(stage.sas ?? "")
+                    .foregroundStyle(Color.secondaryInk)
+                // Digit by digit: a code compared by ear against another
+                // screen is not a number; the name stays a name.
+                Text(Self.spelledDigits(stage.sas ?? ""))
                     .font(.system(.title2, design: .monospaced))
-                    .accessibilityLabel(Text("Verification digits \(stage.sas ?? "")"))
+                    .accessibilityLabel(Text("Verification digits"))
+                    .accessibilityValue(Text(Self.spelledDigits(stage.sas ?? "")))
                 HStack {
-                    Button("They match") { sync.confirmPairing(matched: true) }
-                    Button("They don't match", role: .destructive) {
+                    Button("They Match") { sync.confirmPairing(matched: true) }
+                    Button("They Don’t Match", role: .destructive) {
                         sync.confirmPairing(matched: false)
                     }
                 }
@@ -232,7 +252,7 @@ private struct SyncPairingStatus: View {
             HStack {
                 Text(SyncController.pairingSentence(stage: stage.stage, reason: nil))
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                 Spacer()
                 Button("Done") { sync.cancelPairing() }
                     .controlSize(.small)
@@ -242,7 +262,7 @@ private struct SyncPairingStatus: View {
                 ProgressView().controlSize(.small)
                 Text(SyncController.pairingSentence(stage: stage.stage, reason: nil))
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                 Spacer()
                 Button("Cancel") { sync.cancelPairing() }
                     .controlSize(.small)

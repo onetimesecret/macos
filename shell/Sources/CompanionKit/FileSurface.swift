@@ -12,7 +12,7 @@ public enum FileRenderMode: Equatable, Hashable, Sendable {
         switch self {
         case .plainText: return "Plain Text"
         case .markdown: return "Markdown"
-        case .source(let language): return "Source (\(language.capitalized))"
+        case .source(let language): return "Source (\(CodeLanguageName.display(language)))"
         }
     }
 }
@@ -168,19 +168,19 @@ public struct FileRenderSuggestionBanner: View {
 
     public var body: some View {
         HStack(spacing: 8) {
-            Text("render as \(suggestion.language)?")
+            Text("render as \(suggestion.languageName)?")
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-            Button("Use \(suggestion.language)") {
+                .foregroundStyle(Color.secondaryInk)
+            Button("Use \(suggestion.languageName)") {
                 model.selectFileRenderMode(suggestion.mode, for: suggestion.fileID)
             }
             .font(.system(.caption, design: .monospaced))
             .controlSize(.small)
-            .accessibilityLabel(Text("Use \(suggestion.language) rendering"))
+            .accessibilityLabel(Text("Use \(suggestion.languageName) rendering"))
             Button("Keep Plain Text") { model.keepFilePlainText(suggestion.fileID) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
-            Menu("Choose Language…") {
+            Menu("Choose Language") {
                 Button("Plain Text") { model.selectFileRenderMode(.plainText, for: suggestion.fileID) }
                 Button("Markdown") { model.selectFileRenderMode(.markdown, for: suggestion.fileID) }
                 if let contentHint = model.fileContentRenderHint(for: suggestion.fileID),
@@ -193,7 +193,7 @@ public struct FileRenderSuggestionBanner: View {
                 }
                 Divider()
                 ForEach(InkEditorView.Coordinator.manualLanguages, id: \.self) { language in
-                    Button(language.capitalized) {
+                    Button(CodeLanguageName.display(language)) {
                         model.selectFileRenderMode(.source(language), for: suggestion.fileID)
                     }
                 }
@@ -208,8 +208,9 @@ public struct FileRenderSuggestionBanner: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Contained, with no label of its own: the question and the
+        // buttons read in order, as the sync device row does.
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("Rendering suggestion: \(suggestion.language)"))
     }
 }
 
@@ -428,19 +429,19 @@ public struct FileConflictBanner: View {
         case .locate:
             FileLocateButton { resolve(.locate) }
         case .keepMine:
-            Button("Keep mine") { resolve(.keepMine) }
+            Button("Keep Mine") { resolve(.keepMine) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
                 .help("Write this copy over the file on disk on the next save")
                 .accessibilityLabel(Text("Keep my copy and overwrite the file"))
         case .takeTheirs:
-            Button("Take theirs") { resolve(.takeTheirs) }
+            Button("Take Theirs") { resolve(.takeTheirs) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
                 .help("Replace this copy with the file on disk. Undo restores this copy.")
                 .accessibilityLabel(Text("Take the copy on disk; Undo restores my copy"))
         case .saveAs:
-            Button("Save As") { resolve(.saveAs) }
+            Button("Save As…") { resolve(.saveAs) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
                 .help("Write this copy somewhere else and leave the file on disk alone")

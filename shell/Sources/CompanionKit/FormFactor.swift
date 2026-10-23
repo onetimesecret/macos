@@ -130,8 +130,8 @@ public struct FormFactor: Sendable {
     /// boot session, and what replaces it fires when the pad empties,
     /// which may be never. A generation captured before that moment,
     /// together with a captured pair of key halves, stays readable
-    /// (ADR-0016 section 8), which is exactly why the copies are worth
-    /// keeping out of the backup in the first place.
+    /// (persistence decision background section 8), which is exactly why
+    /// the copies are worth keeping out of the backup in the first place.
     ///
     /// The ledger rests in this same directory, so it inherits both
     /// without a second preparation path.
@@ -196,57 +196,25 @@ public struct FormFactor: Sendable {
     /// holds the two together.
     public static let devBundleIdentifier = "dev.onetimesecret.pad.debug"
 
-    /// The identifier this build actually runs under, or `fallback` when
-    /// the running process is not one of ours.
-    ///
-    /// The guard is load bearing, not a formality. A bare `swift run`
-    /// binary has no bundle identifier at all, and `swift test` runs
-    /// under the xctest tool's identifier, so an unguarded
-    /// `Bundle.main.bundleIdentifier` would point the panel's state
-    /// directory and Keychain items at another process's name.
-    ///
-    /// Accepted: `fallback` itself, and for the backdrop the local and
-    /// dev lane identifiers, which is what `package-app.sh` writes. The
-    /// rule names its identifiers rather than counting dots, so a
-    /// sibling form factor's id can never read as a configuration of
-    /// this one; a new lane is a new name here, and nowhere else.
-    public static func resolvedBundleIdentifier(fallback: String) -> String {
-        resolvedBundleIdentifier(running: Bundle.main.bundleIdentifier, fallback: fallback)
+    /// Configuration lookup for packaged and XCTest hosts.
+    static func resolvedBundleIdentifier(fallback: String) -> String {
+        if let identifier = resolvedBundleIdentifier(running: Bundle.main.bundleIdentifier, fallback: fallback) {
+            return identifier
+        }
+        if runningUnderTests { return fallback }
+        preconditionFailure("Unrecognized bundle identifier: \(Bundle.main.bundleIdentifier ?? "none"). Inject an explicit FormFactor for a custom host.")
     }
 
-    /// The rule itself, over the identifier the process is running
-    /// under rather than over `Bundle.main`. Same visibility as the
-    /// suite that drives it and no wider: under xctest `Bundle.main` is
-    /// the test runner, which takes the early return above, so every
-    /// guard that follows it is unreachable through the shipping entry
-    /// point. Those guards are what keeps a dev rebuild off the local
-    /// install's `state.sealed` and Keychain items, so they are worth
-    /// reaching (`FormFactorTests`).
-    static func resolvedBundleIdentifier(running: String?, fallback: String) -> String {
-        guard let running else { return fallback }
+    /// Packaged identifier selection for the runtime wrapper.
+    static func resolvedBundleIdentifier(running: String?, fallback: String) -> String? {
+        guard let running else { return nil }
         if running == fallback { return running }
         if fallback == backdropBundleIdentifier,
             running == localBundleIdentifier || running == devBundleIdentifier
         {
             return running
         }
-        return fallback
-    }
-
-    /// The summoned panel (docs/spec/04): accessory posture.
-    ///
-    /// Computed rather than stored, because the identifier it derives
-    /// everything from is a property of the running build: a dev copy
-    /// and an installed release copy are two apps to LaunchServices
-    /// and must be two stores here, or two processes on one debounce
-    /// clobber one another's `state.sealed`.
-    public static var panel: FormFactor {
-        let id = resolvedBundleIdentifier(fallback: panelBundleIdentifier)
-        return FormFactor(
-            credentialService: id,
-            stateDirectory: "\(id).noindex",
-            loggerSubsystem: id
-        )
+        return nil
     }
 
     /// The background surface (docs/spec/feature/background-surface):
@@ -273,10 +241,8 @@ extension FormFactor {
     /// shipping state directory and Keychain service has to be refused
     /// rather than performed.
     ///
-    /// The hazard is a consequence of `resolvedBundleIdentifier` doing
-    /// its job. Under the runner `Bundle.main` is not ours, so both form
-    /// factors take their fallbacks, and the fallbacks are the shipped
-    /// identifiers: a test that constructs a model without seams gets
+    /// Under XCTest, both form factors use their configuration fallbacks.
+    /// Those fallbacks are the shipped identifiers: a test that constructs a model without seams gets
     /// the installed app's `state.sealed`, its `ledger.sealed`, and its
     /// Keychain items, and any route that erases a file by path erases
     /// the user's. That is not hypothetical. A suite added for issue #48

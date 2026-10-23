@@ -1,6 +1,6 @@
 # Shared pad timeline verification
 
-Required behavior is recorded in [ADR-0040](../adr/0040-shared-pad-timeline-navigation.md).
+Required behavior is recorded in [ADR-0060](../adr/0060-shared-pad-timeline-navigation.md).
 This is a procedure, not evidence of completion. Record the build, macOS version,
 window dimensions, fixture, result, and any deviations for each manual run.
 
@@ -110,3 +110,22 @@ removed or expired in the manual fixture.
 
 Existing Scratch content was not edited. The QA pads, text fixture, and
 Timeline/multiple-pad preferences remain available for continuing the run.
+
+## Main integration — 2026-10-23
+
+Merged `origin/main` at `b1efb2de`. The focused regression run passed
+386 CompanionKit tests and one OnetimePad menu test with zero failures.
+The run used `scripts/test-shell.sh --disable-sandbox` with the earlier
+filter plus EditorFactoryTests and UndoMenuRoutingTests. A final 51-test
+navigator/sidebar rerun also passed after updating the dense-list active-row
+reveal trigger for File/Ledger return.
+
+The merge uses main's newer menu/Help implementation, preview-aware semantic
+reading anchors, row geometry, drop targets, and wheel routing. The separate
+Help controller and Undo menu watcher from the October 3 implementation were
+removed because main superseded them. The timeline decision is now ADR-0060;
+main already assigned ADR-0040 to core diagnostics.
+
+The October 3–4 manual observations describe the older build only. Native
+visual, pointer, minimum-height, and VoiceOver checks have not been repeated
+on the merged build.

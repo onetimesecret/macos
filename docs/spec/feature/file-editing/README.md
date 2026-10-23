@@ -1,19 +1,20 @@
 # Feature: file backed documents on the pad
 
-Status: **landed** on `feature/regular-text-files`, decision still
-proposed · 2026-09-05
+Status: **built**, on `main` since PR 153 (82972fb1, 2026-09-05);
+the decision, ADR-0028, still proposed · 2026-09-05, status updated
+2026-10-21
 Scope: an additional content class, a peer to pages, with both first
 class features of the pad. The pad can open a plain
 text or Markdown file from disk, edit it in the same editor a page
 uses, and save it back on an explicit request. Pages, their TTLs, the
 strip, the day roll and the sealed page format are untouched.
 Governs against:
-[`../../design/03-design-principles.md`](../../design/03-design-principles.md)
+[`../../design/2026-0707-design-principles.md`](../../design/2026-0707-design-principles.md)
 (§1 comfortable being temporary, §3 content plays second fiddle, §4
 frugal),
-[`../../design/04-interaction-model.md`](../../design/04-interaction-model.md)
+[`../../design/2026-0707-interaction-model.md`](../../design/2026-0707-interaction-model.md)
 (Markdown: styled, never rewritten, and the keyboard map),
-[`../../design/05-technical-direction.md`](../../design/05-technical-direction.md)
+[`../../design/2026-0707-technical-direction.md`](../../design/2026-0707-technical-direction.md)
 (the accessibility commitments),
 [ADR-0001](../../../adr/0001-rust-core-thin-shell.md) (a Rust core
 under a thin shell),
@@ -106,16 +107,31 @@ are looking at can be one of your files.
 
 ## Opening
 
-Three ways in, all of them explicit.
+Four ways in, all of them explicit.
 
-- **Open panel.** File > Open raises the standard macOS open panel,
-  filtered to plain text and Markdown. The panel is the shell's job.
+- **Open panel.** File > Open raises the standard macOS open panel for
+  a single file. It sets no type filter, so any file can be chosen; its
+  message asks for a UTF-8 text file. The panel is the shell's job.
 - **Drag onto the pad.** Dropping a file onto the pad opens it. A drop
   of several files opens each in its own tab. A drop of a file type the
   pad does not open is refused with a notice naming the type, and
   nothing is inserted into the page under the cursor. This matters:
   dropping a file must never silently turn into pasting its bytes into
   a staged page.
+- **Open from the Finder.** The bundle declares plain text with the
+  Editor role and the Alternate rank, so Open With lists the pad, and
+  the pad is not preferred as the default app for those files. A file
+  opened this way, or dropped on the Dock icon, takes the drop's path
+  and selects the editor window. At launch it waits until the open
+  files are restored, while an open or save panel is up it waits until
+  the panel returns, and while a dirty file's close decision is showing
+  under the multiple pads experiment it waits until the decision is
+  answered. Known limits: macOS types some text files as plain data
+  rather than text, among them dotfiles such as `.gitignore` and
+  `.zshrc` and names such as `Dockerfile`, and Open With does not offer
+  the pad for those; File > Open and a drop still take them.
+  Every installed build registers the same declaration, so a debug
+  build beside the installed app is a second entry under Open With.
 - **Reopening on relaunch.** The pad remembers which files were open,
   in what order, with what selection, and reopens them at launch. It
   remembers them by URL bookmark, so a file that moved or was renamed
@@ -189,9 +205,9 @@ Saving is explicit. There is no autosave to the file.
   was not saved. Choose Locate to find it, or Save As to write it
   somewhere." With unsaved edits the tab stands in the missing conflict
   described under External changes, and the refusal names Locate, Keep
-  mine and Save As. Keep mine is the one answer that lets a save write
+  Mine and Save As. Keep Mine is the one answer that lets a save write
   at the empty path, once, and only when it was chosen while the path
-  was empty: a Keep mine chosen over a file that changed does not carry
+  was empty: a Keep Mine chosen over a file that changed does not carry
   over to that file being deleted afterwards, and one chosen over an
   empty path does not carry over to a file that has since appeared
   there. Either question is asked again. A file that is back at its
@@ -217,7 +233,7 @@ Saving is explicit. There is no autosave to the file.
   reopens the file with the draft restored and the unsaved dot still
   showing. The file on disk is not written. A refused or unsavable flush
   cancels the first quit without presenting a dialog and puts one
-  standing line under the page naming the loss, with a quit anyway
+  standing line under the page naming the loss, with a Quit Anyway
   button; the existing inline save or recovery state remains above it.
   The second quit request, ⌘Q again or the button, exits.
 
@@ -294,7 +310,7 @@ looks changed, against what was read.
 - **The tab is dirty** (unsaved edits) and the file changed on disk:
   the tab enters a conflict state. Editing is not blocked, but the
   header says the file changed on disk and offers three actions:
-  - **Keep mine.** Write the buffer over the file, discarding the disk
+  - **Keep Mine.** Write the buffer over the file, discarding the disk
     version. Choosing it takes a fresh reading of the file being
     overwritten and licenses exactly one save. The check the pad makes
     before every write does not undo the choice, and the save spends
@@ -303,11 +319,11 @@ looks changed, against what was read.
     typed back to what it was before the edit: that text is the copy
     the disk no longer holds, and the tab is not what is on disk until
     it is written.
-  - **Take theirs.** Replace the buffer with the file immediately,
+  - **Take Theirs.** Replace the buffer with the file immediately,
     without confirmation. The replacement enters the file's edit
     history, so Undo restores the prior buffer and Redo reapplies the
     disk copy.
-  - **Save As.** Write the buffer somewhere else and leave both the
+  - **Save As….** Write the buffer somewhere else and leave both the
     original file and its new content intact. This is the safe exit and
     is the default focus.
 
@@ -322,13 +338,13 @@ looks changed, against what was read.
   find, while open: the tab keeps its buffer and says so, in a banner
   that stays until the file is found. With no unsaved edits the banner
   offers **Locate** and Close. With unsaved edits the tab stands in a
-  conflict that offers Locate, Keep mine and Save As, and not Take
-  theirs, since there is no copy to take. The pad does not recreate a
+  conflict that offers Locate, Keep Mine and Save As…, and not Take
+  Theirs, since there is no copy to take. The pad does not recreate a
   file at a path a person deleted. A save asked of such a tab is
   refused, as Saving describes.
 - **The file cannot be read** where it is, because the system refuses:
   the tab says so and offers Locate. With unsaved edits the conflict
-  offers Locate, Keep mine and Save As, and not Take theirs, since
+  offers Locate, Keep Mine and Save As…, and not Take Theirs, since
   there is no copy the pad can take. That conflict stands, and saving
   stays refused, for as long as the file cannot be read, until one of
   the three is chosen.
@@ -369,7 +385,7 @@ launch and settles each tab into one of these states.
 | dirty | unchanged | draft kept, last edit time preserved, and the disk copy learned so that undoing back to it reads as saved again |
 | dirty | changed | draft kept, tab opens in conflict |
 | dirty | missing | draft kept, tab opens in conflict, Locate offered |
-| dirty | there, and the system refuses the read | draft kept, tab opens in conflict saying the file cannot be read, with Locate, Keep mine and Save As |
+| dirty | there, and the system refuses the read | draft kept, tab opens in conflict saying the file cannot be read, with Locate, Keep Mine and Save As… |
 
 A tab kept with no text takes no typing and refuses a save until the
 file is located or can be read again, which the pad checks each time
@@ -379,6 +395,16 @@ file is in the tab to be saved or unsaved.
 One unreadable file never fails the whole restore. Each record is
 settled on its own, so a file on an unmounted volume affects its own
 tab and no other.
+
+*Amended 2026-10-21:* a drafts file that does not open is left where it
+is, and the session writes no drafts over it (issue #296). A standing
+line under the page says so, with one action that deletes the
+unreadable file and keeps this session's drafts from there; the discard
+of an unreadable state file does the same. A quit with unsaved changes
+to an open file while the line stands is an unsavable flush, as Quit
+with unsaved changes describes. A second ⌘Q, or the Quit Anyway
+button, quits over what the line shows; a flush that comes to a
+different outcome restates the line with it instead.
 
 ## Closing a tab
 
@@ -408,7 +434,7 @@ with its undo history intact; a further Cmd W then closes the clean tab
 at once, as it does for any clean file. Closing a tab is the one step
 in the file surface that cannot be undone, since it takes the draft and
 its undo and redo history with it, so only an explicit answer may take
-it. A Take theirs that promises "Undo restores this copy" must keep that
+it. A Take Theirs that promises "Undo restores this copy" must keep that
 promise, and an Undo that reaches the saved text must leave Redo alive.
 
 A draft therefore lives exactly as long as its tab. It is destroyed by
@@ -556,6 +582,15 @@ Close File, and reading each chord from the keymap rather than spelling
 it in the menu code. Save, Save As and Close File are inert when the
 active tab is a page rather than a file.
 
+Note, 2026-10-21 (issue #201): the close item follows the key window.
+While the owner's window is key it reads Close File on a file and Close
+Page on a page, enabled, since ⌘W closes the page there; while the ledger
+is showing over a page it reads Close Ledger. While Settings,
+About or Send Feedback has the keyboard it reads Close Window, enabled
+when that window can close, and ⌘W sends `performClose:` to it. While a
+sheet, a save panel or an alert has the keyboard, or no window does, it
+reads Close Window, dimmed.
+
 ## Accessibility
 
 - Every file tab and shelf row exposes a label that names the file and
@@ -565,7 +600,7 @@ active tab is a page rather than a file.
   in the same label.
 - The conflict state is announced when it appears, and its actions are
   reachable in the keyboard order they are read in: three for a file
-  that changed on disk, and Locate, Keep mine and Save As for one that
+  that changed on disk, and Locate, Keep Mine and Save As… for one that
   is gone or cannot be read. The banner for a file that cannot be
   reached with no conflict standing carries its sentence as its label,
   with Locate and Close.

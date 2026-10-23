@@ -17,6 +17,12 @@ over the editor). Sibling spec:
 [background-surface](../background-surface/README.md), which now
 describes the ambient panel only.
 
+## Application launch and return
+
+[ADR-0059](../../../adr/0059-appkit-owns-window-presentation.md) replaces ADR-0033's unconditional editor selection. An initial foreground open selects the editor. A background launch does not. Cmd-Tab preserves AppKit's focus and window ordering, including a return to Settings or another ordinary window. A Dock reopen uses a visible ordinary window when available; otherwise it opens or deminiaturizes the editor without moving the current page or scroll position. The ambient panel does not prevent this reopen.
+
+Settings opens only through an explicit Settings action. AppKit owns the application lifecycle and menus; SwiftUI renders content within its windows.
+
 ## Summary
 
 OnetimePad has two window roles over one in-process document model.
@@ -54,7 +60,9 @@ storages, or nothing (ADR-0006, ADR-0020).
   title or page content appears there (ADR-0033 Restoration).
 - **Traffic light buttons.** Standard. The green button enters full
   screen; the yellow minimises to the Dock; the red closes the window
-  (⌘W stays `page::Close`, so ⇧⌘W closes the window; see Commands).
+  (⇧⌘W closes the window; ⌘W is `page::Close` here and closes the
+  window only in Settings, Send Feedback and About, which show no page;
+  see Commands).
 - **Minimize.** A miniaturized editor window is open for ownership and
   not on screen for the keyboard (`BackdropModel.editorWindowOpen`,
   `editorWindowOnScreen`). It keeps the page while the panel rests, so
@@ -123,14 +131,7 @@ The person does not name a window as they type. They type into the
 window with the keyboard, and where the keyboard is decides where the
 hand off has already run. Concretely:
 
-- **From panel to editor.** Bring the editor window forward: ⌘Tab, the
-  Dock icon or a person's launch opens it or brings it forward, and a
-  click on an editor window already on screen keys it. With the
-  ambient panel off, the hotkey and the status item open it too. No
-  menu item opens it. The panel rests if it was up; the editor window
-  becomes key and takes the keys. The page the panel had is the page
-  the editor shows, at the caret and scroll the panel left it on,
-  because the model carries both.
+- **From panel to editor.** Use Open in Window, the header's expand control, or a Dock reopen when no ordinary window is visible. A person's initial foreground open also selects the editor. With the ambient panel off, the hotkey and status item select it. Cmd-Tab leaves focus to AppKit and does not change presentation. The explicit switch closes the panel's editing presentation before the editor takes the keyboard (ADR-0036). The editor shows the same page at the caret and scroll position left in the panel; both presentations use the model's existing page and view state.
 - **From editor to panel.** Summon the panel (⌃⌥Space, the status
   item, a click on the resting card). The editor window drops out of
   key without closing; the panel takes the keys. Typing lands in the
@@ -203,6 +204,14 @@ reading and not something the ADR says.
   the owner, which is today's behaviour with one window.
 - **⌘W stays `page::Close`.** The page strip is a tab strip, and
   Safari and Terminal close the tab on ⌘W.
+  Note, 2026-10-21 (issue #201): ⌘W closes what the key window shows.
+  While the panel, its key relay or the editor window is key it stays
+  `page::Close`. While Settings, About or Send Feedback is key there is
+  no page target, and the chord sends `performClose:` to that window;
+  before, it beeped with a page showing and closed the file behind that
+  window with a file showing. While a sheet, a save panel or an alert is
+  key, or no window is, the File menu's item dims and the chord closes
+  nothing, so for this item enablement does not read the owner.
 - **⇧⌘W closes the window** (`window::Close`). ADR-0033 recorded
   that the default keymap left ⇧⌘W free; B5 bound it there
   (`"cmd-shift-w": "window::Close"` in
@@ -212,22 +221,24 @@ reading and not something the ADR says.
   shortcut.
 - **The Window menu.** The editor window participates. The panel does
   not appear in the Window menu.
+- **The Help menu.** The product's help item sits above the diagnostics
+  items, first among the app's own (`app::Help`, issue #294), titled
+  with the product name, on ⌘? from the keymap
+  (`"cmd-?": "app::Help"`). It opens
+  https://docs.onetimesecret.dev/macos in the browser through the
+  model's external link route. A keymap override that unbinds the chord
+  leaves the item without a shortcut. AppKit registers the Help menu
+  when installing the application menus.
 
 ## Activation routing
 
-A single activation routing table decides which window an activation
-opens (B4, ADR-0033). The table is a pure function tested as a
-decision; the runtime carries no last used state.
+[ADR-0059](../../../adr/0059-appkit-owns-window-presentation.md) governs these routes:
 
-- **A person's launch** (the app appears in the Dock and activates
-  moments after `applicationDidFinishLaunching`): opens the editor
-  window as a summon, anchoring the roll on today.
-- **A late activation or a reopen** (⌘Tab or a Dock click more than
-  two seconds after launch, and any reopen): opens the editor window
-  as an activation, without anchoring the roll.
-- **A login launch, or any launch the system performs without
-  activating the app**: opens no editor window and shows the panel
-  resting only.
+- **Initial foreground open:** AppKit's untitled-open event selects the editor as a summon, anchoring on today. It waits for model startup when necessary.
+- **Ordinary activation and Cmd-Tab:** leave focus and window ordering to AppKit, without selecting a presentation or moving the roll.
+- **Dock reopen:** delegates to AppKit when an ordinary window is visible. Otherwise it opens or deminiaturizes the editor without anchoring on today. The ambient panel is excluded from the visible-window check.
+- **Background launch:** starts the configured ambient presentation without opening an editor.
+- **Settings:** explicit commands open one AppKit Settings window. There is no SwiftUI Settings scene or window-attachment redirect.
 - **A modal return and a cancelled quit** go back to the owner. A
   cancelled quit asks the routing table every time. A modal return is
   judged twice, and both readings agree: `modalSessionEnded` routes

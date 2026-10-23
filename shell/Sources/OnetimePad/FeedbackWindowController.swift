@@ -98,16 +98,14 @@ final class FeedbackDraft: ObservableObject {
 
 @MainActor
 final class FeedbackWindowController: NSObject {
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
     private var draft: FeedbackDraft?
-    private let levelFollower: CompanionLevelFollower
     private let serverURL: () -> String
     private let makeReport: () -> DiagnosticsReport
 
     init(model: BackdropModel, makeReport: @escaping () -> DiagnosticsReport) {
         serverURL = { [weak model] in model?.pages.connection?.serverUrl ?? "https://eu.onetimesecret.com" }
         self.makeReport = makeReport
-        levelFollower = CompanionLevelFollower(model: model)
         super.init()
     }
 
@@ -140,7 +138,6 @@ final class FeedbackWindowController: NSObject {
             self.window = window
         }
         draft?.prepareForPresentation()
-        if let window { levelFollower.follow(window) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
@@ -171,9 +168,9 @@ private struct FeedbackView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Send Feedback").font(.title2.bold())
-                        Text("Describe what happened and what you expected.").foregroundStyle(.secondary)
+                        Text("Describe what happened and what you expected.").foregroundStyle(Color.secondaryInk)
                         Text("Send to: \(draft.destination)\nTime zone: \(TimeZone.current.identifier)")
-                            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            .font(.caption).foregroundStyle(Color.secondaryInk).textSelection(.enabled)
                         TextField("Contact (optional)", text: $draft.contact,
                                   prompt: Text("Email or another way to reach you"))
                         VStack(alignment: .leading, spacing: 5) {
@@ -186,7 +183,7 @@ private struct FeedbackView: View {
                         }
                         Toggle("Include diagnostics", isOn: $draft.includeDiagnostics)
                         Text("Review the snapshot below. Your message, contact, time zone and selected diagnostics are submitted when you choose Send.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(Color.secondaryInk)
                         ScrollView {
                             Text(draft.report.details)
                                 .font(.system(.caption, design: .monospaced))
@@ -207,13 +204,13 @@ private struct FeedbackView: View {
                             }
                         }
                         if let exportResult {
-                            Text(exportResult).font(.caption).foregroundStyle(.secondary)
+                            Text(exportResult).font(.caption).foregroundStyle(Color.secondaryInk)
                         }
                         if let error = draft.error {
                             Text("Could not confirm feedback was received: \(error)")
                                 .foregroundStyle(.red).font(.callout).textSelection(.enabled)
                             Text("Your draft is still here. A retry may send a duplicate if the earlier request arrived. You can also export diagnostics to share separately.")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(.caption).foregroundStyle(Color.secondaryInk)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -227,7 +224,7 @@ private struct FeedbackView: View {
                     Spacer()
                     if draft.sending {
                         ProgressView().controlSize(.small)
-                        Text("Sending…").foregroundStyle(.secondary)
+                        Text("Sending…").foregroundStyle(Color.secondaryInk)
                     }
                     Button(draft.error == nil ? "Send" : "Try Again") { draft.send() }
                         .keyboardShortcut(.defaultAction)
@@ -268,7 +265,9 @@ enum DiagnosticsActions {
 
     private static func savePanel() -> NSSavePanel {
         let panel = NSSavePanel()
-        panel.title = "Export Diagnostics"
+        // `message` is the text a save panel draws above its fields: a
+        // notice, in D-15's lower case (ADR-0055 rule 1).
+        panel.message = "export the diagnostics as a text file"
         panel.nameFieldStringValue = "OnetimePad-Diagnostics.txt"
         panel.allowedContentTypes = [.plainText]
         panel.canCreateDirectories = true

@@ -56,12 +56,14 @@ final class ClipboardClearTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("companion-clipboard-clear-\(UUID().uuidString)", isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let client = CompanionClient.ephemeral(tag: "clipboard-clear-\(UUID().uuidString)")
+        XCTAssertTrue(client.useMemoryPasteboardForTests())
         return PageModel(
             formFactor: .backdrop,
             defaults: defaults,
             seams: .init(
                 stateDirectory: directory,
-                client: .ephemeral(tag: "clipboard-clear-\(UUID().uuidString)"),
+                client: client,
                 clipboardClearDebounce: 0.05
             )
         )

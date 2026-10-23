@@ -43,13 +43,13 @@ documentation tree. Start at
 
 | Doc | Contents |
 | --- | --- |
-| [01-problem-space](docs/spec/design/01-problem-space.md) | The problem restated, the cache analogy taken seriously, anti-goals |
-| [02-overlooked-opportunities](docs/spec/design/02-overlooked-opportunities.md) | The landscape of neighbouring apps and the gaps they leave |
-| [03-design-principles](docs/spec/design/03-design-principles.md) | Six principles and the arguments they settle |
-| [04-interaction-model](docs/spec/design/04-interaction-model.md) | SleeperCell anatomy, TTL ladder, panel behaviour |
-| [05-technical-direction](docs/spec/design/05-technical-direction.md) | Shell survey, security posture, a11y, frugality budget |
-| [06-open-questions](docs/spec/design/06-open-questions.md) | Everything unresolved, honestly |
-| [07-repo-skeleton](docs/spec/design/07-repo-skeleton.md) | The prescription this repository was initialized from |
+| [2026-0707-problem-space](docs/spec/design/2026-0707-problem-space.md) | The problem restated, the cache analogy taken seriously, anti-goals |
+| [2026-0707-overlooked-opportunities](docs/spec/design/2026-0707-overlooked-opportunities.md) | The landscape of neighbouring apps and the gaps they leave |
+| [2026-0707-design-principles](docs/spec/design/2026-0707-design-principles.md) | Six principles and the arguments they settle |
+| [2026-0707-interaction-model](docs/spec/design/2026-0707-interaction-model.md) | SleeperCell anatomy, TTL ladder, panel behaviour |
+| [2026-0707-technical-direction](docs/spec/design/2026-0707-technical-direction.md) | Shell survey, security posture, a11y, frugality budget |
+| [2026-0707-open-questions](docs/spec/design/2026-0707-open-questions.md) | Everything unresolved, honestly |
+| [2026-0707-repo-skeleton](docs/spec/design/2026-0707-repo-skeleton.md) | The prescription this repository was initialized from |
 | [feature/byoe](docs/spec/feature/byoe/README.md) | Bring Your Own Encryption on the conceal path (draft feature spec) |
 | [feature/background-surface](docs/spec/feature/background-surface/README.md) | The background-surface form factor, and the macOS research behind it (exploration) |
 
@@ -103,17 +103,33 @@ with Xcode's `actool` and bundles both `Assets.car` and the generated `.icns`.
 The document enables refractivity; Apple's
 [Xcode 27 release notes](https://developer.apple.com/documentation/xcode-release-notes/xcode-27-release-notes)
 introduce Icon Composer 2.0 with “support for refractivity”. Release packaging
-requires Xcode 27 or later; set `DEVELOPER_DIR` or `xcode-select` to select it.
+and every `build-icons.sh` mode that compiles or exports the document require
+Xcode 27 or later; set `DEVELOPER_DIR` or `xcode-select` to select it.
 Edit the document in Icon Composer, then run
 `scripts/build-icons.sh --glass` to compile just the icon, or use the release
-commands above to package it. To regenerate the saved S foreground, matching
-cast shadow, and glass preview from the Swift renderer, run
+commands above to package it. To regenerate the saved S foreground and its
+matching cast shadow from the Swift renderer, run
 `scripts/build-icons.sh --update-glass-artwork`, then `--glass` to compile.
 This keeps the material and appearance settings in `icon.json`.
 Debug builds keep the black development icon.
 Ad-hoc icons rendered with `build-icons.sh` no longer select the release icon.
-See the [exported glass icon preview](artwork/OnetimePad-Glass-CastShadow.png)
+See the [exported glass icon](artwork/web/onetimepad-icon.png)
 for the current composition.
+
+Browsers cannot draw a `.icon` document, so the websites use
+[artwork/web](artwork/web): Icon Composer's light and dark renderings as
+1024 pixel, 8 bit sRGB PNGs, and a flat SVG of each: the icon shape in one
+shade under the white mark, with no glass, gradient or cast shadow, for sizes
+and places where a raster would blur. The light SVG takes the document's fill
+shade; the document has no dark fill, so the dark SVG takes the plate shade
+sampled from the Dark rendering. That plate is a near black grey with no brand
+hue, as Icon Composer draws it, so on a dark page the icon's outline all but
+disappears and the white mark is what reads; a page that needs the outline
+should set the icon on a lighter surface. `scripts/build-icons.sh --web`
+writes all four, and `--update-glass-artwork` refreshes them too. After
+editing the document in Icon Composer, run `--web` and commit the result. A
+website keeps its own copy and resizes it in its build, rather than linking to
+this repository.
 
 Signing values stay outside the checkout, one environment directory per lane,
 so every worktree reads the same ones: `dev/.env` for the dev lane,
@@ -152,22 +168,28 @@ shape, `scripts/install.sh` rebuilds the release shape, and each lane
 rebuilds the other's leftovers automatically; the release packaging
 path additionally refuses to ship a binary that exports a test seam.
 
-Prefer a bundle over `swift run` whenever
-Keychain behavior or permission prompts matter:
+Launch a packaged app with `scripts/dev.sh`. The executable refuses startup
+without a recognized shipping, local or development bundle identifier; a bare
+`swift run OnetimePad` is no longer a supported UI-development route.
 
-- Keychain ACLs key off the app's identity. The bundle carries a bundle
-  id and a signature; a bare `swift run` binary has no
-  CFBundleIdentifier, so prompts and grants behave differently (and
-  less representatively) than what a real user would see.
-- TCC grants and per-app pickers can't address a bundle-less binary.
-- The rebuild hazard: `swift build` SIGKILLs a live instance running
-  from `.build/` (in-place re-sign), and a SIGKILL skips
-  `applicationWillTerminate`, meaning no state save. Running from
-  `dist/` or `/Applications` keeps the live instance decoupled from
-  builds.
+Automated tests and probes inject both a temporary state directory and an
+in-memory credential client. A new bundle identifier alone still creates a
+persistent store and can use the login Keychain. Do not rebuild a probe over a
+previous run's persistent identity or authorize Keychain prompts to keep an
+automated test going. See the runtime-testing rules in [AGENTS.md](AGENTS.md).
 
-`swift run OnetimePad` remains fine for quick UI iteration where
-none of that matters (layout, tab drag, notices).
+Do not rebuild an executable while it is running from `shell/.build/`.
+The build scripts require Python 3.9 or later. The shared build-lane check
+inspects this user's resolved executable paths before test, development and
+packaging builds and stops if a live build executable is
+found; it does not terminate it. Unlinked executables are checked through `lsof`
+text mappings, including dylibs, so a mapped library from the output directory
+can also stop a build. The scripts check the fixed `shell/.build/` output; custom
+Swift `--scratch-path` and `--build-path` locations are outside this check. Use
+the default output with these scripts, or separately check a custom output with
+`python3 scripts/check-live-build.py DIRECTORY` before building. A packaged app in `dist/` or `/Applications` uses
+a separate executable, but its existing content still makes it unsuitable as
+an automated-test fixture.
 
 ### Force close
 

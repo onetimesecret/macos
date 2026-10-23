@@ -1,29 +1,6 @@
-//! Open files: the content class that is a peer to pages.
-//!
-//! A file on disk is the artifact. A file is never a page, never a Tab,
-//! never on the strip, never in the day roll and never synced. Sync
-//! exclusion is structural rather than a rule:
-//! [`crate::store::SheetStore::export_document_updates`] is the only
-//! function that turns store state into relay payload, and nothing in
-//! this module is reachable from it.
-//!
-//! Files live in their own [`FileStore`], addressed by a tagged
-//! [`FileId`]. They reuse the same Loro backed document the pages use,
-//! so undo, the operation vocabulary and the UTF-16 discipline come for
-//! free. What does not come with it is provenance: a file's change
-//! timestamps mean nothing, so the block stamp path is gated off for
-//! file ids in the shell rather than left to produce dull values.
-//!
-//! Platform IO stays out of this crate. The whole platform surface is
-//! the [`FileIo`] trait, implemented in `crates/ffi`. Paths cross the
-//! FFI, bytes never do.
-//!
-//! Dirtiness is answered by comparing the buffer against the text last
-//! read from or written to disk, held here in full rather than as a
-//! digest. The buffer is already bounded by [`FILE_SIZE_LIMIT`], so the
-//! second copy is bounded too, and an exact comparison can never report
-//! an edited file clean. Typing a word and deleting it again therefore
-//! returns the file to clean, which a monotonic dirty flag would not.
+//! Open files, a content class peer to pages (ADR-0028): never a tab, never
+//! synced. Platform IO is the [`FileIo`] trait; paths cross the FFI, bytes
+//! do not. Dirty means the buffer differs from the last disk text.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -31,48 +8,24 @@ use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
 use crate::document::{DocRun, EditIntent, EditSelection, SheetDocument, TextSelection};
+use crate::ink::{self, StepOutcome, document_holding, text_of};
 use crate::store::{EditOp, inferred_intent};
 
-/// The high bit, set on every [`FileId`] and on no page id.
-///
-/// Defined once here and mirrored once in Swift as
-/// `CompanionClient.fileIDTag`, with a comment on both sides pointing
-/// at the other. Two stores addressed by one `u64` is a correctness
-/// hazard, so the tag is not a convention: every `companion_sheet_*`
-/// entry point refuses a tagged id by returning its failure value, and
-/// a test in `crates/ffi` passes one to each.
+/// The high bit: set on every [`FileId`], on no page id. Mirrored in Swift as
+/// `CompanionClient.fileIDTag`; every `companion_sheet_*` call refuses it.
 pub const FILE_ID_TAG: u64 = 1 << 63;
 
-/// The largest file this build opens, in bytes. A refusal names the
-/// limit so the notice can state it rather than guess it.
+/// The largest file this build opens, in bytes.
 pub const FILE_SIZE_LIMIT: usize = 4 * 1024 * 1024;
 
-/// The largest draft snapshot the drafts file will carry, in bytes.
-///
-/// A draft is an operation log, not the file's text, so it grows with
-/// how much editing has happened rather than with how big the file is.
-/// Four times [`FILE_SIZE_LIMIT`] is generous for any session a person
-/// would recognise as one sitting, and it is what stops `drafts.sealed`
-/// from growing without bound behind an app that is never quit.
-///
-/// **This bound can fire, and the file size limit does not prevent it.**
-/// A 4 MiB file edited for long enough produces a snapshot larger than
-/// 16 MiB, because every operation ever committed is in it until a
-/// compaction, and files get no compaction ceremony. So the refusal is
-/// a real path rather than a defensive constant: a draft over the bound
-/// is left out of the drafts file, the file's record is written as
-/// identity only, and the restore turns that into a
-/// [`DroppedReason::DraftTooLarge`] notice naming the file. Losing one
-/// oversized draft and saying so is the better answer than a sealed
-/// file that grows until the disk complains.
+/// The largest draft snapshot staged, in bytes. Reachable: a draft is the
+/// op log, not the text; over it the record is identity only (ADR-0028).
 pub const DRAFT_SNAPSHOT_LIMIT: usize = 4 * FILE_SIZE_LIMIT;
 
-/// The UTF-8 byte order mark, stripped at open and put back at save for
-/// a file that arrived with one.
+/// Stripped at open, restored at save.
 const UTF8_BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
 
-/// UTF-16 and UTF-32 byte order marks. These identify non-UTF-8 encodings
-/// before the content classifier can mistake their zero bytes for binary.
+/// UTF-16/32 BOMs, checked before the binary classifier sees their zeros.
 const NON_UTF8_BOMS: &[&[u8]] = &[
     &[0xFF, 0xFE, 0x00, 0x00],
     &[0x00, 0x00, 0xFE, 0xFF],
@@ -80,25 +33,17 @@ const NON_UTF8_BOMS: &[&[u8]] = &[
     &[0xFE, 0xFF],
 ];
 
-/// Why a file that was in the drafts file is not in the roster, or came
-/// back with less than it was staged with.
+/// Why a drafts record left the roster, or came back with less.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DroppedReason {
-    /// Nothing is at the file's last known path any more. Only a clean
-    /// file is dropped for this: a dirty one keeps its draft and stands
-    /// in a [`FileConflict::Missing`] conflict instead.
+    /// Nothing at the path. Only a clean file is dropped; a dirty one stands
+    /// in [`FileConflict::Missing`].
     Missing,
-    /// Something is at the path, but this build will not open it: not
-    /// UTF-8, binary-like or past [`FILE_SIZE_LIMIT`]. A read the
-    /// platform refused outright does not drop a file; see
-    /// [`HydrationFate::Held`]. That state is the file's access refused
-    /// mark ([`OpenFile::access_refused`]), and this word is never used
-    /// for it.
+    /// Reached, but not UTF-8, binary-like or too large. Not the same as
+    /// [`OpenFile::access_refused`].
     Unreadable,
-    /// The file's draft was larger than [`DRAFT_SNAPSHOT_LIMIT`] when
-    /// the drafts file was written, so it was left out. The file itself
-    /// came back, filled from disk and clean; what is gone is the
-    /// unsaved editing that had been staged behind it.
+    /// The draft exceeded [`DRAFT_SNAPSHOT_LIMIT`]; the file came back clean
+    /// from disk, the unsaved edits did not.
     DraftTooLarge,
 }
 
@@ -114,10 +59,7 @@ impl DroppedReason {
     }
 }
 
-/// One thing the shell has to tell the user about after a drafts save
-/// or a drafts restore. Carries the file's name and path so a notice
-/// can name it, and nothing else: this is not an error type and there
-/// is nothing here to recover from.
+/// Something to tell the user after a drafts save or restore.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileNotice {
     /// The file's display name.
@@ -133,8 +75,7 @@ pub struct FileNotice {
 pub struct FileId(pub u64);
 
 impl FileId {
-    /// Whether a raw id off the wire addresses a file rather than a
-    /// page. The one question every `companion_sheet_*` guard asks.
+    /// Whether a raw id addresses a file rather than a page.
     #[must_use]
     pub fn is_tagged(raw: u64) -> bool {
         raw & FILE_ID_TAG != 0
@@ -147,19 +88,11 @@ impl FileId {
     }
 }
 
-/// Which line ending the file arrived with, and therefore which one it
-/// is written back with.
-///
-/// The first line ending in the file decides it, and the decision is
-/// taken at open and never revisited until a reload. A file with mixed
-/// endings is normalised to a single newline in the buffer and written
-/// back entirely in the style the first line used, so saving such a
-/// file makes it uniform. That is a visible change to a file the user
-/// did not ask for, and it is the honest reading: the buffer holds one
-/// style, so a save can only write one style.
+/// The file's line ending, decided by its first line at open. A mixed
+/// file is written back uniform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineEnding {
-    /// A single newline, the reading a file with no CRLF pair takes.
+    /// A single newline.
     Lf,
     /// A carriage return and a newline.
     Crlf,
@@ -202,16 +135,12 @@ impl LineEnding {
     }
 }
 
-/// What the filesystem said about the file the last time this store
-/// read it or wrote it. Compared against a fresh stat to answer
-/// [`FileStore::check`]. Never leaves Rust.
+/// The filesystem's answer at the last read or write, for [`FileStore::check`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileWitness {
     /// The device the file sits on.
     pub dev: u64,
-    /// The inode. Together with `dev` it names the file itself rather
-    /// than the path, so a replaced file reads as changed even when its
-    /// size and its stamp match.
+    /// The inode; with `dev`, catches a replaced file of equal size and stamp.
     pub ino: u64,
     /// Size in bytes.
     pub size: u64,
@@ -219,10 +148,7 @@ pub struct FileWitness {
     pub mtime_ns: i128,
 }
 
-/// Where a file stands against the copy on disk, as the roster reports
-/// it. Distinct from [`ExternalState`] because they answer different
-/// questions: a clean file whose bytes changed on disk reloads without
-/// asking and never enters a conflict at all.
+/// A buffer's conflict with the disk copy. A clean file never enters one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FileConflict {
     /// Nothing to resolve. Saving is allowed.
@@ -246,44 +172,33 @@ impl FileConflict {
     }
 }
 
-/// The whole platform surface a file needs. Keeps this crate free of
-/// platform IO and headless testable; the real implementation lives in
-/// `crates/ffi`, modelled on `write_private` but preserving the target
-/// file's mode rather than forcing 0600.
+/// The whole platform surface a file needs; implemented in `crates/ffi`.
 pub trait FileIo {
-    /// Read the whole file.
+    /// Read the file. May stop one byte past [`FILE_SIZE_LIMIT`], so callers
+    /// check the length.
     ///
     /// # Errors
     /// Whatever the platform said about the read.
     fn read(&self, path: &Path) -> io::Result<Vec<u8>>;
-    /// Probe a regular file's readability without reading its full contents.
-    /// Implementations must use bounded storage and read at most one byte;
-    /// an empty regular file also succeeds. This does not validate content
-    /// or establish that every later read will succeed.
+    /// Probe readability, reading at most one byte.
     ///
     /// # Errors
     /// Whatever the platform said about opening or probing the file.
     fn probe_readable(&self, path: &Path) -> io::Result<()>;
-    /// Write the whole file at once, atomically, preserving the mode of
-    /// the file already at the path when there is one.
+    /// Write atomically, preserving the existing mode. The witness comes from
+    /// the writing descriptor, never a later stat of the path.
     ///
     /// # Errors
     /// Whatever the platform said about the write.
-    fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<()>;
+    fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness>;
     /// Take a witness of whatever is at the path right now.
     ///
     /// # Errors
     /// Whatever the platform said about the stat.
     fn stat(&self, path: &Path) -> io::Result<FileWitness>;
 
-    /// Resolve `path` to the real file it names, following every
-    /// symlink on the way. Called once at open, so that a save lands on
-    /// the file rather than on the link that pointed at it: a person
-    /// who opens a dotfile that links into a repository expects the
-    /// repository's copy to change and the link to stay a link.
-    ///
-    /// The default is the identity, which is what a headless test wants
-    /// and what a platform with no such notion would answer.
+    /// Resolve every symlink, once at open, so a save lands on the real file.
+    /// Defaults to the identity.
     ///
     /// # Errors
     /// Whatever the platform said about the resolution.
@@ -295,14 +210,11 @@ pub trait FileIo {
 /// Why an open, or a reload, refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenRefusal {
-    /// The bytes are not UTF-8. A flat refusal: nothing opens read
-    /// only, and nothing opens with replacement characters standing in
-    /// for a person's text.
+    /// The bytes are not UTF-8.
     NotUtf8,
     /// The bytes decode as UTF-8 with binary-like control content.
     Binary,
-    /// The file is larger than [`FILE_SIZE_LIMIT`], which travels with
-    /// the refusal so the notice can state it.
+    /// Larger than [`FILE_SIZE_LIMIT`].
     TooLarge {
         /// The limit that was exceeded, in bytes.
         limit: usize,
@@ -314,29 +226,16 @@ pub enum OpenRefusal {
 /// Why a save refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveError {
-    /// The file changed under a dirty buffer and no resolution has been
-    /// chosen yet. Save stays refused until one is.
+    /// The file changed under a dirty buffer; refused until resolved.
     Conflict,
     /// No file with that id is open.
     UnknownFile,
-    /// The target path is already open under another id. Two buffers
-    /// over one file race each other on save, which is the reason
-    /// [`FileStore::open`] deduplicates by path, and a save as that
-    /// adopted an open path would arrange exactly that.
+    /// The target path is open under another id.
     PathInUse,
-    /// The file came back from a drafts record and nothing has looked
-    /// at the disk for it yet. Its saved text and its conflict are
-    /// unknown until [`FileStore::hydrate_one`] settles them, and a
-    /// write before that could put an empty buffer over a person's
-    /// file, so the save waits.
+    /// Not yet hydrated; a write could put an empty buffer over the file.
     PendingHydration,
-    /// Nothing is at the file's path, and no keep mine stands. A save
-    /// writes a file back and never makes one where a person deleted or
-    /// moved theirs, so nothing was written. The file is left marked
-    /// not found, and in [`FileConflict::Missing`] when it holds a
-    /// draft. The ways out are [`FileStore::relocate`],
-    /// [`FileStore::save_as`] and, for a draft,
-    /// [`FileStore::resolve_keep_mine`].
+    /// Nothing at the path and no keep mine: a save never recreates a deleted
+    /// file. The ways out are relocate, save as, or keep mine.
     NotFound,
     /// The write itself failed. The file on disk is untouched.
     Io(io::ErrorKind),
@@ -347,26 +246,17 @@ pub enum SaveError {
 pub enum HydrationFate {
     /// No file is open under that id.
     UnknownFile,
-    /// The file is open and was not waiting on a hydration, so nothing
-    /// was read and nothing moved. Asking twice is harmless.
+    /// Not pending; nothing was read. Asking twice is harmless.
     NotPending,
     /// The file stands in the roster, ready to draw.
     Kept,
-    /// Nothing was read and the file is still pending. The resolved
-    /// path is the recorded path of another file that has not been
-    /// hydrated yet, and that file may be about to move off it, so the
-    /// question is put again once the other one has settled.
+    /// Still pending: the resolved path is another pending file's recorded
+    /// path, so ask again once that one settles.
     Deferred,
-    /// The file could not be reopened and held no draft worth keeping,
-    /// so it left the roster. The outcome's notice names it.
+    /// Could not reopen and held no draft, so it left the roster.
     Dropped,
-    /// Something is at the path and the platform would not let it be
-    /// read, and the record held no draft. The file stays in the
-    /// roster, still pending and marked access refused, with nothing in its
-    /// buffer: it is not dropped, because the person may know where
-    /// the file is and [`FileStore::relocate`] is how they say so, and
-    /// it is not filled, because nothing was read. Asking again later
-    /// is allowed and is how a grant that came back is noticed.
+    /// Access refused and no draft: kept, pending and empty, so the person can
+    /// relocate it. Asking again later is allowed.
     Held,
 }
 
@@ -375,13 +265,9 @@ pub enum HydrationFate {
 pub enum RelocateRefusal {
     /// No file with that id is open.
     UnknownFile,
-    /// The chosen path is already open under another id. Two buffers
-    /// over one file race each other on save, which is the reason
-    /// [`FileStore::open`] deduplicates and [`FileStore::save_as`]
-    /// refuses the same thing.
+    /// The chosen path is open under another id.
     PathInUse,
-    /// The file at the chosen path would not open, for any of the
-    /// reasons an ordinary open refuses.
+    /// The chosen file would not open.
     Open(OpenRefusal),
 }
 
@@ -392,11 +278,7 @@ pub enum PathRebind {
     Unmoved,
     /// The file now answers to the resolved path.
     Rebound,
-    /// Another open file, itself settled, already holds the resolved
-    /// path, so the recorded path was kept. Two buffers over one file
-    /// race each other on save, which is the reason
-    /// [`FileStore::open`] deduplicates and [`FileStore::save_as`]
-    /// refuses the same thing.
+    /// Another settled file holds the resolved path; the recorded one stays.
     Refused,
 }
 
@@ -407,9 +289,7 @@ pub struct HydrationOutcome {
     pub fate: HydrationFate,
     /// What became of the resolved path, when one was given.
     pub rebind: PathRebind,
-    /// What the shell owes the person about this file, if anything: the
-    /// reason it was dropped, or a draft that was too large to stage
-    /// behind a file that did come back.
+    /// What the shell owes the person: a drop, or a draft too large to stage.
     pub notice: Option<FileNotice>,
 }
 
@@ -446,123 +326,52 @@ impl ExternalState {
     }
 }
 
-/// What one undo or redo did: whether it moved anything, and where the
-/// caret belongs afterwards in UTF-16 code units. The two answers the
-/// page routes give in two calls, given here in one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StepOutcome {
-    /// Whether the step moved anything.
-    pub applied: bool,
-    /// Where the caret belongs, or `None` for a step that carried no
-    /// position.
-    pub caret_u16: Option<u32>,
-    /// The complete selection restored by the step.
-    pub selection_u16: Option<TextSelection>,
-}
-
 /// One open file.
 pub struct OpenFile {
     id: FileId,
     path: PathBuf,
     /// The same document type a page uses, with one peer and no remote.
     document: SheetDocument,
-    /// The text last read from or written to disk, normalised the way
-    /// the buffer holds it. `None` only while this store has not seen
-    /// the disk copy: a draft restored beside a file that changed under
-    /// it, where the persisted dirty flag is the only answer there is,
-    /// and a draft kept over a copy that changed, from the keep mine
-    /// until the save it licenses.
-    ///
-    /// This is the one baseline for opened, restored, and Take theirs
-    /// buffers. Mixed line endings are normalised at read time, so their
-    /// eventual uniform save output does not make an otherwise equal
-    /// draft dirty merely because it crossed a launch boundary.
+    /// Last disk text, normalized as the buffer holds it: the one dirtiness
+    /// baseline. `None` while the disk copy is unknown (ADR-0031).
     saved_text: Option<Zeroizing<String>>,
     witness: Option<FileWitness>,
     line_ending: LineEnding,
     has_bom: bool,
     dirty: bool,
     conflict: FileConflict,
-    /// Wall clock of the last accepted op batch, Unix milliseconds, or
-    /// zero for a file nothing has typed into.
+    /// Unix ms of the last accepted batch; zero if never edited.
     last_edited_ms: u64,
     /// Whether this buffer came back from `drafts.sealed`.
     restored_from_draft: bool,
-    /// Whether the buffer was filled from a disk copy that had changed
-    /// since the draft was written. A clean file reloads without
-    /// asking, and this is what lets the shell post the notice for it
-    /// afterwards. Sticky until [`FileStore::clear_reload_notice`].
+    /// Filled from a disk copy changed since the draft; sticky until
+    /// [`FileStore::clear_reload_notice`].
     externally_reloaded: bool,
-    /// Whether a keep mine is standing: the person has looked at a
-    /// divergence and said their buffer wins. Set by
-    /// [`FileStore::resolve_keep_mine`] and cleared by the save it
-    /// licenses, so one choice buys one save. It is also withdrawn when
-    /// the buffer settles clean, since a buffer with nothing unsaved
-    /// has nothing to win with, and when the path stops being in the
-    /// state the choice was made over, which the next field records.
+    /// A standing keep mine. Spent by one save; withdrawn when the buffer
+    /// settles clean or the path changes state.
     overwrite_next_save: bool,
-    /// What the standing keep mine was given over: true when nothing
-    /// was at the path, false when a copy was there, or when the
-    /// platform would not say. The consent answers that question and
-    /// no other. One given over a copy that changed does not license
-    /// making a file again after somebody deleted it, and one given
-    /// over an empty path does not license overwriting a file that has
-    /// since appeared there and that nobody was shown. Written by every
-    /// [`FileStore::resolve_keep_mine`] and read only while the consent
-    /// stands, so it is never reset on its own.
+    /// Whether the keep mine was given over an empty path; it licenses only
+    /// the state it was given over.
     keep_mine_over_absence: bool,
-    /// The Take theirs generation whose undo marker may currently govern
-    /// dirty state. Cleared whenever a save establishes a newer baseline.
+    /// The Take theirs generation that may govern dirty state; a save clears it.
     active_take_theirs_generation: Option<i64>,
-    /// The last file-local generation minted into undo metadata. It stays
-    /// monotonic while this document and its historical markers live.
+    /// Last minted generation; monotonic while its markers live.
     next_take_theirs_generation: i64,
-    /// Whether the active Take theirs structural action is currently
-    /// undone. While it is, the pre-resolution draft generation remains
-    /// dirty even when its normalized text equals `saved_text`.
+    /// The active Take theirs is undone, so the prior draft reads dirty.
     take_theirs_undone: bool,
-    /// Whether the drafts file carried this record dirty but without a
-    /// snapshot, which happens only when the snapshot was over
-    /// [`DRAFT_SNAPSHOT_LIMIT`] at the save. Set at restore and read
-    /// once by the hydration, which turns it into a notice.
+    /// Dirty with no snapshot in the drafts file (over
+    /// [`DRAFT_SNAPSHOT_LIMIT`]); hydration turns it into a notice.
     draft_dropped: bool,
-    /// Whether this buffer is a drafts record nothing has reconciled
-    /// against the disk yet. Set at restore and cleared by the
-    /// [`FileStore::hydrate_one`] or the [`FileStore::relocate`] that
-    /// settles it. While it stands the buffer is not a
-    /// truthful picture of the file: a clean record's buffer is empty
-    /// and a dirty one has no saved text to measure against. So every
-    /// route that edits, writes or re-reads refuses a pending file, and
-    /// the only things it accepts are a hydration, a relocation, a
-    /// bookmark and a close.
+    /// A drafts record not yet reconciled with disk. Edits, writes and
+    /// re-reads refuse it; hydrate, relocate, bookmark and close accept it.
     pending_hydration: bool,
-    /// Whether the platform refused the last attempt to reach the disk
-    /// copy for a reason other than its absence: a read or a stat that
-    /// was denied, which is what a sandbox answers for a file whose
-    /// grant is gone. Absence is the other state and has its own
-    /// conflict. Cleared by the next read that succeeds, and by a save,
-    /// after which the disk copy is the one this buffer wrote. Never
-    /// persisted: the next launch finds out for itself.
-    ///
-    /// This is not [`DroppedReason::Unreadable`], and the two words
-    /// never stand for each other. Access refused is a standing mark on
-    /// an open file the platform would not let this process reach.
-    /// Unreadable is the reason on a notice for a record that was
-    /// dropped because its bytes were reached and will not open as
-    /// text.
+    /// The platform denied the last read or stat (not absence). Cleared by a
+    /// successful read or a save; never persisted.
     access_refused: bool,
-    /// Whether the last look at the path found nothing there. A dirty
-    /// buffer in that state also stands in [`FileConflict::Missing`],
-    /// unless a keep mine has answered it. A clean buffer never enters
-    /// a conflict, so for a clean file this is the only thing that says
-    /// its disk copy is gone, and it is what lets the shell offer to
-    /// locate the file rather than only mention it. Set by a check or a
-    /// read that answered not found, cleared by the next stat or read
-    /// that finds something and by a save. Never persisted, for the
-    /// reason `access_refused` is not.
+    /// The last look found nothing at the path; for a clean file, the only
+    /// sign it is gone. Never persisted.
     not_found: bool,
-    /// The shell's bookmark for this file, opaque here. Empty until the
-    /// shell attaches one.
+    /// The shell's bookmark, opaque here.
     bookmark: Vec<u8>,
 }
 
@@ -612,9 +421,7 @@ impl OpenFile {
         self.has_bom
     }
 
-    /// Wall clock of the last accepted op batch, Unix seconds, or zero
-    /// for a file nothing has typed into. The header of a restored
-    /// dirty file states this so a person can see the draft's age.
+    /// Unix seconds of the last accepted batch, or zero.
     #[must_use]
     pub fn last_edited_at(&self) -> u64 {
         self.last_edited_ms / 1000
@@ -626,38 +433,26 @@ impl OpenFile {
         self.restored_from_draft
     }
 
-    /// Whether the buffer was filled from a disk copy that had changed
-    /// since the draft was written, which is the one reload a person
-    /// gets without being asked. Stays true until the shell says it has
-    /// posted the notice, so a roster read is a plain read and reading
-    /// it twice loses nothing.
+    /// Filled from a changed disk copy; true until the shell posts the notice.
     #[must_use]
     pub fn externally_reloaded(&self) -> bool {
         self.externally_reloaded
     }
 
-    /// Whether this file came back from a drafts record and is still
-    /// waiting on [`FileStore::hydrate_one`]. A pending file is in the
-    /// roster so the shell can find it and resolve its bookmark, and it
-    /// is not yet fit to draw, edit or save.
+    /// Waiting on [`FileStore::hydrate_one`]: in the roster, but not fit to
+    /// draw, edit or save.
     #[must_use]
     pub fn pending_hydration(&self) -> bool {
         self.pending_hydration
     }
 
-    /// Whether the platform refused the last attempt to reach the disk
-    /// copy for a reason other than its absence. While it stands the
-    /// shell offers to locate the file and does not offer to take the
-    /// disk copy, which nothing here can read.
+    /// The platform refused the last attempt to reach the disk copy.
     #[must_use]
     pub fn access_refused(&self) -> bool {
         self.access_refused
     }
 
-    /// Whether the last look at the path found nothing there. For a
-    /// clean file, which never enters a conflict, this is the whole of
-    /// what says the file is gone, and while it stands the shell offers
-    /// to locate it.
+    /// The last look at the path found nothing there.
     #[must_use]
     pub fn not_found(&self) -> bool {
         self.not_found
@@ -669,25 +464,21 @@ impl OpenFile {
         &self.bookmark
     }
 
-    /// The buffer as text: newlines only, no byte order mark. What the
-    /// editor draws and what a draft's snapshot replays to.
+    /// The buffer as text: newlines only, no BOM.
     #[must_use]
-    pub fn text(&self) -> String {
+    pub fn text(&self) -> Zeroizing<String> {
         text_of(&self.document)
     }
 
-    /// The bytes a save would write: the buffer in the file's own line
-    /// ending style, behind the byte order mark it arrived with.
+    /// The bytes a save would write, in the file's own line endings and BOM.
     #[must_use]
     pub fn bytes_to_write(&self) -> Vec<u8> {
         self.bytes_to_write_zeroizing().to_vec()
     }
 
-    /// Build the save bytes for core-owned transient use. The public
-    /// accessor above must return an ordinary vector for its callers,
-    /// but save paths must not retain another plaintext allocation.
+    /// The save bytes, zeroized after use.
     fn bytes_to_write_zeroizing(&self) -> Zeroizing<Vec<u8>> {
-        let text = Zeroizing::new(text_of(&self.document));
+        let text = text_of(&self.document);
         let extra_crs = usize::from(self.line_ending == LineEnding::Crlf)
             * text.bytes().filter(|byte| *byte == b'\n').count();
         let mut bytes = Zeroizing::new(Vec::with_capacity(
@@ -705,33 +496,21 @@ impl OpenFile {
         bytes
     }
 
-    /// Recompute the dirty flag against the active normalized-text
-    /// baseline. A file whose baseline is unknown keeps its persisted
-    /// flag. Compare runs directly so accepted edit batches do not
-    /// reconstruct or re-normalize the whole save output.
+    /// Recompute `dirty` against the baseline; an unknown baseline keeps the flag.
     fn resettle_dirty(&mut self) {
         if self.take_theirs_undone {
             self.dirty = true;
         } else if let Some(saved) = &self.saved_text {
             self.dirty = !document_matches_text(&self.document, saved);
         }
-        // A keep mine says an unsaved buffer wins. Once the buffer is
-        // back at its saved text there is nothing unsaved to win with,
-        // and a consent left standing would let a later save of this
-        // clean file make it again at a path it has been deleted from.
+        // Nothing unsaved is left to win with, so the keep mine lapses.
         if !self.dirty {
             self.overwrite_next_save = false;
         }
     }
 
-    /// Withdraw a standing keep mine that was given over a different
-    /// question from the one the path now poses, and say whether one
-    /// was withdrawn.
-    ///
-    /// A consent given while a copy was at the path is withdrawn when
-    /// nothing is there, and one given over an empty path is withdrawn
-    /// when something is. A stat the platform refused is no answer
-    /// about either, so the consent stands through it.
+    /// Withdraw a keep mine whose path state (absent or present) has changed.
+    /// A refused stat is no answer, so the consent stands.
     fn withdraw_stale_consent(&mut self, stat: &io::Result<FileWitness>) -> bool {
         if !self.overwrite_next_save {
             return false;
@@ -748,13 +527,8 @@ impl OpenFile {
         true
     }
 
-    /// Adopt the text now on disk as both the buffer and the saved
-    /// copy, discarding whatever the buffer held.
-    ///
-    /// Deliberately does not touch `restored_from_draft`: a reload
-    /// clears it because the buffer is no longer a draft's, and the
-    /// hydration keeps it because the tab still came back from one.
-    /// The two callers say which they mean.
+    /// Take the disk text as buffer and baseline. `restored_from_draft` is the
+    /// caller's to set.
     fn adopt(&mut self, read: ReadFile) {
         self.document = document_holding(&read.text);
         self.saved_text = Some(read.text);
@@ -770,33 +544,10 @@ impl OpenFile {
         self.take_theirs_undone = false;
     }
 
-    /// Settle this file around a read of its disk copy that succeeded:
-    /// the one table a hydration and a relocation share, so a file the
-    /// person pointed at is judged exactly as a file the launch found.
-    ///
-    /// A buffer holding no draft adopts the disk copy, and owes a
-    /// reload notice when that copy is not the one it was last measured
-    /// against. The one exception is a live file, already read in this
-    /// process, whose disk copy holds the very text it holds: that
-    /// buffer is kept as it is, because adopting builds a fresh
-    /// document, and a file that was merely moved would lose its undo
-    /// history to a rebind that changed no word of it. After a take
-    /// theirs that history is the only road back to the draft that was
-    /// set aside. A draft stands. It stands with no conflict when the
-    /// disk copy is the generation it was measured against, told by the
-    /// witness or, where the saved text is known, by the text itself:
-    /// a file that was copied somewhere new has a new witness and the
-    /// same words. Otherwise there are two texts and no way to
-    /// reconcile them, so the draft stands in a
-    /// [`FileConflict::Changed`] and the person chooses, with the disk
-    /// copy now one that can be taken.
-    ///
-    /// Returns the notice owed for a draft that was too large to stage,
-    /// which waits for this moment so a file that is also gone gets one
-    /// notice about that and not two about one thing.
+    /// Settle after a successful read, for hydration and relocation alike. A
+    /// live clean buffer over the same text keeps its document and undo; a
+    /// draft over a changed copy conflicts. Returns any draft-too-large notice.
     fn settle_over(&mut self, read: ReadFile) -> Option<FileNotice> {
-        // A draft that was left out of the drafts file is not a draft
-        // any more.
         let dropped_draft = self.draft_dropped;
         if dropped_draft {
             self.dirty = false;
@@ -809,11 +560,7 @@ impl OpenFile {
                 .saved_text
                 .as_ref()
                 .is_some_and(|saved| **saved == *read.text);
-        // A live clean buffer over the very text the disk copy holds.
-        // Asked of the text and not of the witness, because what is
-        // being kept is the document, and the document is only the
-        // file's if the words agree. A pending record has no history to
-        // keep and an empty buffer, so it never takes this arm.
+        // By text, not witness: the document is kept only if the words agree.
         let same_text_live = !self.dirty
             && !self.pending_hydration
             && self
@@ -821,9 +568,6 @@ impl OpenFile {
                 .as_ref()
                 .is_some_and(|saved| **saved == *read.text);
         if same_text_live {
-            // The document stands, with its undo history and the take
-            // theirs markers that history may hold. What is refreshed
-            // is everything that describes the disk copy.
             self.line_ending = read.line_ending;
             self.has_bom = read.has_bom;
             self.witness = Some(read.witness);
@@ -833,8 +577,6 @@ impl OpenFile {
             self.adopt(read);
             self.externally_reloaded = !unchanged;
         } else if unchanged {
-            // The draft stands. What it gains is the same
-            // normalized-text baseline every live file uses.
             self.line_ending = read.line_ending;
             self.has_bom = read.has_bom;
             self.witness = Some(read.witness);
@@ -842,36 +584,26 @@ impl OpenFile {
             self.conflict = FileConflict::None;
             self.resettle_dirty();
         } else {
-            // Two texts and no way to reconcile them. The draft stands
-            // and the person chooses. The witness and the saved text
-            // are left describing the generation the draft was measured
-            // against, so the next check still reads this copy as
-            // changed.
+            // Witness and saved text stay on the draft's generation, so the next
+            // check still reads changed.
             self.conflict = FileConflict::Changed;
         }
         self.pending_hydration = false;
         self.access_refused = false;
         self.not_found = false;
-        // A keep mine was consent to overwrite one particular
-        // divergence, and this settlement has just asked the question
-        // afresh.
+        // A keep mine answered one divergence; this settlement re-asked it.
         self.overwrite_next_save = false;
         notice
     }
 
-    /// Record what a refused read says about reaching the disk copy:
-    /// that the platform would not let it be reached, that nothing is
-    /// there, or neither, for bytes that were reached and will not
-    /// open.
+    /// Record whether a refused read means unreachable, absent, or neither.
     fn note_refused_read(&mut self, refusal: OpenRefusal) {
         self.access_refused = refusal_is_unreachable(refusal);
         self.not_found = refusal == OpenRefusal::Io(io::ErrorKind::NotFound);
     }
 
-    /// Mint a marker that cannot alias another Take theirs item still in
-    /// this document's undo history. Exhaustion is unreachable in
-    /// practice; if reached, dropping history is safer than aliasing an
-    /// old baseline marker.
+    /// Mint a generation no live marker uses; at exhaustion, drop history
+    /// rather than alias.
     fn mint_take_theirs_generation(&mut self) -> i64 {
         if self.next_take_theirs_generation == i64::MAX {
             self.document.forget_undo();
@@ -893,8 +625,7 @@ impl OpenFile {
     }
 }
 
-/// Every open file. No clock, no TTL, no place on the strip: none of
-/// the three means anything to a file.
+/// Every open file.
 #[derive(Default)]
 pub struct FileStore {
     files: Vec<OpenFile>,
@@ -908,12 +639,7 @@ impl FileStore {
         Self::default()
     }
 
-    /// Read the file at `path` and open a buffer over it.
-    ///
-    /// A file already open at the same path is handed back rather than
-    /// opened twice: two buffers over one file would race each other on
-    /// save, and the shell's answer to a second open is to raise the
-    /// tab that is already there.
+    /// Read `path` and open a buffer, or return the file already open there.
     ///
     /// # Errors
     ///
@@ -922,22 +648,12 @@ impl FileStore {
     /// [`OpenRefusal::TooLarge`] above [`FILE_SIZE_LIMIT`], and
     /// [`OpenRefusal::Io`] for a read the platform refused.
     pub fn open(&mut self, io: &dyn FileIo, path: &Path) -> Result<FileId, OpenRefusal> {
-        // Resolved once, here, and every later stat, read and write
-        // uses the answer. Two files that reach the same bytes through
-        // different links are one file, so the deduplication below is
-        // asked after the resolution rather than before it, and a save
-        // lands on the file rather than replacing the link with a copy
-        // of it. A path that will not resolve is refused before
-        // anything else looks at it.
+        // Resolved once; deduplication and every later IO use the resolved path.
         let path = &io
             .canonicalize(path)
             .map_err(|e| OpenRefusal::Io(e.kind()))?;
         if let Some(open) = self.files.iter().find(|file| file.path == *path) {
-            // A pending row is not a buffer over this file yet, so it
-            // is not one to hand back: the shell would raise a tab
-            // whose text nobody has read. The shell hydrates the row
-            // first and asks again, and one that forgot is told the
-            // file is busy rather than given an id it would then draw.
+            // A pending row has no text read yet; the shell hydrates it first.
             if open.pending_hydration {
                 return Err(OpenRefusal::Io(io::ErrorKind::ResourceBusy));
             }
@@ -973,10 +689,8 @@ impl FileStore {
         Ok(id)
     }
 
-    /// Drop the buffer. The draft dies with it: a draft never outlives
-    /// its tab, so reopening the file later never resurrects old edits.
-    /// Whether a dirty buffer may be closed at all is the shell's
-    /// review prompt, not this call.
+    /// Drop the buffer and its draft. Whether a dirty buffer may close is the
+    /// shell's decision.
     pub fn close(&mut self, id: FileId) -> bool {
         let Some(at) = self.files.iter().position(|file| file.id == id) else {
             return false;
@@ -995,11 +709,9 @@ impl FileStore {
         self.files.iter_mut().find(|file| file.id == id)
     }
 
-    /// The file's body as text, which is the whole of what a file's
-    /// runs can be: a file holds no chips, so nothing here can be
-    /// anything but ink.
+    /// The file's body as text; a file holds no chips.
     #[must_use]
-    pub fn text(&self, id: FileId) -> Option<String> {
+    pub fn text(&self, id: FileId) -> Option<Zeroizing<String>> {
         self.file(id).map(OpenFile::text)
     }
 
@@ -1009,9 +721,7 @@ impl FileStore {
         self.file(id).is_some_and(OpenFile::is_dirty)
     }
 
-    /// Attach the shell's bookmark for this file. The blob is opaque
-    /// here: this crate never resolves it and never inspects it, it
-    /// only carries it into `drafts.sealed` and back.
+    /// Attach the shell's bookmark; carried, never inspected.
     pub fn set_bookmark(&mut self, id: FileId, bookmark: Vec<u8>) -> bool {
         let Some(file) = self.file_mut(id) else {
             return false;
@@ -1020,9 +730,7 @@ impl FileStore {
         true
     }
 
-    /// Apply an ordered edit batch to the file's body, or refuse it
-    /// whole. `wall_ms` stamps the file's last edit when the batch is
-    /// accepted.
+    /// Apply an edit batch whole or refuse it; `wall_ms` stamps an accepted one.
     pub fn apply_ops(&mut self, id: FileId, ops: &[EditOp], wall_ms: u64) -> bool {
         self.apply_batch(id, ops, wall_ms, inferred_intent(ops), None)
     }
@@ -1067,68 +775,21 @@ impl FileStore {
         let Some(file) = self.file_mut(id) else {
             return false;
         };
-        // A pending buffer is not the file's text yet. Typing into a
-        // clean record's empty buffer would make an edit against
-        // nothing, and the hydration that followed would either throw
-        // it away or mistake it for a draft.
+        // A pending buffer is not the file's text yet.
         if file.pending_hydration {
             return false;
-        }
-        // Phase one: the whole batch against a simulation in exact code
-        // units, so a refusal is atomic and a boundary inside a
-        // surrogate pair is policed as strictly as the document would.
-        let mut sim: Vec<u16> = file.text().encode_utf16().collect();
-        for op in ops {
-            if !sim_admit(&mut sim, op) {
-                return false;
-            }
         }
         if ops.is_empty() {
             return true;
         }
-        let before_selection =
-            selection.and_then(|selection| file.document.snapshot_selection(selection.before));
-        // Phase two: the document. Every offset was validated against
-        // exact post-op state, so these cannot refuse; a refusal anyway
-        // stops the walk and returns false, which tells the shell to
-        // restate the file from its runs.
-        let mut clean = true;
-        for op in ops {
-            let outcome = match op {
-                EditOp::Insert { pos_u16, text } => file.document.insert(*pos_u16 as usize, text),
-                EditOp::Delete { pos_u16, len_u16 } => {
-                    file.document.delete(*pos_u16 as usize, *len_u16 as usize)
-                }
-                // Phase one refuses every chip op, so this arm is
-                // unreachable. It stays a refusal rather than a panic.
-                EditOp::InsertChip { .. } => Err(crate::document::InvalidRange),
-            };
-            if outcome.is_err() {
-                clean = false;
-                break;
-            }
-        }
-        // The transaction closes either way: whatever did land is a
-        // change, and leaving it open would fold it into the next one.
-        if let (Some(before), Some(selection)) = (before_selection, selection) {
-            file.document
-                .commit_edit_with_selection(intent, None, before, selection.after);
-        } else {
-            file.document.commit_edit(intent, None);
-        }
-        // The stamp is only taken for a batch that applied whole. A
-        // caller told its batch was refused must not then find the file
-        // claiming an edit at that moment.
+        // False from a validated batch tells the shell to restate the file.
+        let Some(clean) = ink::apply_batch(&mut file.document, ops, intent, selection) else {
+            return false;
+        };
         if clean {
             file.last_edited_ms = wall_ms;
         }
-        // A local commit drops the redo stack, so the Take theirs
-        // generation an undone marker speaks for stops being reachable:
-        // no Redo can return to the disk generation, and no Undo can
-        // explain why the file still reads unsaved. ADR-0031 refuses the
-        // same orphaned marker at the relaunch boundary, and the live
-        // session owes the person the same honesty. The baseline
-        // comparison below then answers on its own.
+        // A local commit drops redo, orphaning an undone Take theirs (ADR-0031).
         if file.take_theirs_undone && !file.document.can_redo() {
             file.take_theirs_undone = false;
             file.active_take_theirs_generation = None;
@@ -1155,11 +816,7 @@ impl FileStore {
         true
     }
 
-    /// Whether the file has a step waiting to be taken back. False for
-    /// an unknown file, the same answer
-    /// [`crate::store::SheetStore::can_undo`] gives for an unknown
-    /// page: this is what a menu item's enabled state reads, and a
-    /// question that cannot be answered is not a step that exists.
+    /// Whether the file has an undo step; false for an unknown file.
     #[must_use]
     pub fn can_undo(&self, id: FileId) -> bool {
         self.file(id).is_some_and(|file| file.document.can_undo())
@@ -1193,56 +850,30 @@ impl FileStore {
 
     fn step(&mut self, id: FileId, back: bool) -> Option<StepOutcome> {
         let file = self.file_mut(id)?;
-        // A restored buffer carries no undo history, so there is no
-        // step to take either way. Said outright rather than left to
-        // that coincidence, since a pending buffer must not move.
-        let applied = if file.pending_hydration {
-            false
-        } else if back {
-            file.document.undo()
+        // A pending buffer must not move.
+        let outcome = if file.pending_hydration {
+            StepOutcome::NONE
         } else {
-            file.document.redo()
+            ink::step(&mut file.document, back)
         };
-        let caret_u16 = if applied {
-            file.document
-                .restored_caret()
-                .and_then(|c| u32::try_from(c).ok())
-        } else {
-            None
-        };
-        let selection_u16 = applied
-            .then(|| file.document.restored_selection())
-            .flatten();
-        if applied {
+        if outcome.applied {
             if let Some(generation) = file.document.popped_take_theirs()
                 && file.active_take_theirs_generation == Some(generation)
             {
-                // Historical markers survive save and Redo, but only the
-                // marker bound to the current saved baseline may govern
-                // generation-level dirtiness.
+                // Only the marker bound to the current baseline governs dirtiness.
                 file.take_theirs_undone = back;
             }
             file.resettle_dirty();
         }
-        Some(StepOutcome {
-            applied,
-            caret_u16,
-            selection_u16,
-        })
+        Some(outcome)
     }
 
-    /// Write the buffer back to its own path, preserving the BOM and
-    /// the line ending style the file arrived with.
+    /// Write the buffer back to its own path, in its own BOM and line endings.
     ///
     /// # Errors
-    ///
-    /// [`SaveError::Conflict`] while a conflict is unresolved,
-    /// [`SaveError::UnknownFile`] for an id nothing is open under,
-    /// [`SaveError::PendingHydration`] for a restored file nothing has
-    /// reconciled against the disk yet, [`SaveError::NotFound`] when
-    /// nothing is at the file's path and no keep mine stands, and
-    /// [`SaveError::Io`] for a write the platform refused, which leaves
-    /// the file on disk untouched.
+    /// [`SaveError::Conflict`], [`SaveError::UnknownFile`],
+    /// [`SaveError::PendingHydration`], [`SaveError::NotFound`] (nothing at the
+    /// path and no keep mine), or [`SaveError::Io`] (the file is untouched).
     pub fn save(&mut self, io: &dyn FileIo, id: FileId) -> Result<(), SaveError> {
         let file = self.file_mut(id).ok_or(SaveError::UnknownFile)?;
         if file.pending_hydration {
@@ -1252,37 +883,21 @@ impl FileStore {
             return Err(SaveError::Conflict);
         }
         let path = file.path.clone();
-        // A save writes a file back. It does not make one where there
-        // is none: a path with nothing at it is a file somebody deleted
-        // or moved, and putting a new one there would undo that for
-        // them. The path is looked at here, and not only the mark a
-        // check left, so a caller that skipped the check is refused the
-        // same way. A keep mine given over the empty path is the one
-        // thing that licenses it, because the person was shown that the
-        // file is gone and said their buffer wins. A keep mine given
-        // while a copy was there answered a different question, and is
-        // withdrawn here rather than spent on a deletion nobody was
-        // shown. A stat the platform refused is not an answer about
-        // absence, so the write goes ahead and reports for itself.
+        // Stat here too, so a caller that skipped the check cannot recreate a
+        // deleted file. Only a keep mine given over the empty path licenses it.
         let stat = io.stat(&path);
         let withdrawn = file.withdraw_stale_consent(&stat);
         match &stat {
             Err(error) if error.kind() == io::ErrorKind::NotFound && !file.overwrite_next_save => {
                 file.access_refused = false;
                 file.not_found = true;
-                // A draft over a missing file is the missing conflict,
-                // as a check would have set it, so the banner offers
-                // the ways out and the next save is refused for the
-                // standing reason.
+                // A draft enters the missing conflict, as a check would set it.
                 if file.dirty {
                     file.conflict = FileConflict::Missing;
                 }
                 return Err(SaveError::NotFound);
             }
-            // The other direction: the consent was to write where
-            // nothing was, and a file is there now that nobody has been
-            // shown. That is a changed disk copy under a draft, and it
-            // is asked about as one.
+            // The consent was over an empty path; a file nobody was shown is there now.
             Ok(_) if withdrawn && file.dirty => {
                 file.not_found = false;
                 file.conflict = FileConflict::Changed;
@@ -1293,38 +908,20 @@ impl FileStore {
         write_and_settle(io, file, &path)
     }
 
-    /// Write the buffer to a new path and adopt it. This is also one of
-    /// the three conflict resolutions, so it is allowed while a
-    /// conflict stands: writing somewhere else cannot overwrite the
-    /// change that caused the conflict.
-    ///
-    /// A target another file is already open on is refused rather than
-    /// adopted. [`FileStore::open`] deduplicates by path because two
-    /// buffers over one file race each other on save, and a save as is
-    /// not entitled to arrange what an open is not allowed to. The
-    /// shell's answer is to tell the person the file is already open,
-    /// not to close their other tab for them.
+    /// Write the buffer to a new path and adopt it. Allowed during a conflict,
+    /// since it cannot overwrite the change that caused it.
     ///
     /// # Errors
-    ///
-    /// [`SaveError::PathInUse`] for a target another open file holds,
-    /// [`SaveError::UnknownFile`] for an id nothing is open under,
-    /// [`SaveError::PendingHydration`] for a restored file nothing has
-    /// reconciled against the disk yet, and [`SaveError::Io`] for a
-    /// write the platform refused.
+    /// [`SaveError::PathInUse`] (another open file holds the target),
+    /// [`SaveError::UnknownFile`], [`SaveError::PendingHydration`], or
+    /// [`SaveError::Io`].
     pub fn save_as(&mut self, io: &dyn FileIo, id: FileId, path: &Path) -> Result<(), SaveError> {
-        // Asked before the path is looked at, so a pending file is told
-        // the true reason. A clean record's buffer is empty until it is
-        // hydrated, and writing that anywhere would be writing nothing
-        // under the file's name.
+        // A pending clean record's buffer is empty; refuse before the path.
         if self.file(id).is_some_and(|file| file.pending_hydration) {
             return Err(SaveError::PendingHydration);
         }
-        // Resolved the way an open resolves, so the comparison below
-        // and the path adopted afterwards are in the same terms as
-        // every other path in the store. The target need not exist yet,
-        // so it is the directory that gets resolved and the name that
-        // gets joined back on.
+        // Resolved like an open; a target that does not exist yet resolves by its
+        // directory.
         let path = &resolve_target(io, path);
         if self.files.iter().any(|f| f.id != id && f.path == *path) {
             return Err(SaveError::PathInUse);
@@ -1335,15 +932,8 @@ impl FileStore {
         Ok(())
     }
 
-    /// Stat the path and compare it against the witness taken at the
-    /// last read or write. Asks nothing of the buffer and changes
-    /// nothing: [`FileStore::refresh_conflict`] is the call that acts
-    /// on the answer.
-    ///
-    /// A stat that fails for any reason other than absence reads as
-    /// [`ExternalState::Changed`]. That is the conservative direction:
-    /// an unreadable path must not license a save over whatever is
-    /// actually there.
+    /// Stat and compare against the last witness; changes nothing. Any stat
+    /// failure but absence reads as [`ExternalState::Changed`].
     #[must_use]
     pub fn check(&self, io: &dyn FileIo, id: FileId) -> ExternalState {
         let Some(file) = self.file(id) else {
@@ -1352,44 +942,16 @@ impl FileStore {
         external_state(&io.stat(&file.path), file.witness)
     }
 
-    /// [`FileStore::check`], and then set the file's conflict from the
-    /// answer. A clean buffer never enters a conflict: the shell
-    /// reloads it without asking and posts a notice. A dirty buffer
-    /// does, and stays there until one of the three resolutions is
-    /// taken.
-    /// Returns the state it found, which is the true answer either way:
-    /// a caller that wants to know whether the file moved is told, even
-    /// while a keep mine stands.
-    ///
-    /// The check is also where the access refused mark is kept honest. A
-    /// stat the platform refused sets it. A path with nothing at it
-    /// clears it, since absence is the other state. Every successful
-    /// stat is followed by a bounded readability probe, detecting both
-    /// newly refused access and access that has returned:
-    /// a sandbox lets an ungranted path be statted and not read, so the
-    /// stat alone proves nothing, and without the read a grant that
-    /// came back would never be noticed for a file holding a draft.
-    ///
-    /// A draft over a disk copy that still cannot be read stays in, or
-    /// enters, [`FileConflict::Changed`], whatever the stat said. The
-    /// hydration puts such a file in that conflict, and a stat that
-    /// matches the witness must not quietly take it out again: the stat
-    /// says the path holds what it held, and says nothing about whether
-    /// this process can reach it. Only a successful readability probe,
-    /// a keep mine, a save as or a relocation ends it, so a launch and the
-    /// activation after it agree about the same disk.
-    ///
-    /// The check keeps the not found mark honest the same way: a path
-    /// with nothing at it sets it, for a clean file as for a dirty one,
-    /// and any other answer clears it.
+    /// [`FileStore::check`], then set the conflict and the access refused and
+    /// not found marks. A keep mine holds the conflict off; a draft whose disk
+    /// copy cannot be read stays in [`FileConflict::Changed`].
     pub fn refresh_conflict(&mut self, io: &dyn FileIo, id: FileId) -> ExternalState {
         let Some(file) = self.file_mut(id) else {
             return ExternalState::Missing;
         };
         let stat = io.stat(&file.path);
         let mut state = external_state(&stat, file.witness);
-        // A pending file's conflict is the hydration's to decide, from
-        // a read rather than a stat. The state found is still answered.
+        // A pending file's conflict is the hydration's to decide.
         if !file.pending_hydration {
             match &stat {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -1405,15 +967,12 @@ impl FileStore {
                     match io.probe_readable(&file.path) {
                         Ok(()) => file.access_refused = false,
                         Err(error) if error.kind() == io::ErrorKind::Interrupted => {
-                            // An inconclusive probe neither restores access
-                            // nor licenses a draft save on a matching stat.
+                            // Inconclusive: neither restores access nor licenses a save.
                             state = ExternalState::Changed;
                         }
                         Err(error) => {
                             file.note_refused_read(OpenRefusal::Io(error.kind()));
-                            // The return value still describes the witness,
-                            // not access. Absence found after stat is newer
-                            // evidence; other probe failures keep that answer.
+                            // Absence found after the stat is newer evidence.
                             if file.not_found {
                                 state = ExternalState::Missing;
                             }
@@ -1421,24 +980,13 @@ impl FileStore {
                     }
                 }
             }
-            // A keep mine answers the question it was given over. When
-            // the path has since gone from holding a copy to holding
-            // nothing, or the other way, the question is a new one and
-            // is asked below like any other.
+            // A keep mine over a path that has changed state is asked afresh.
             file.withdraw_stale_consent(&stat);
             file.conflict = match (state, file.dirty) {
                 (_, false) => FileConflict::None,
-                // A person who chose keep mine has answered this
-                // question already. Without this arm the shell's own
-                // documented flow defeats the choice: it checks before
-                // every save, the check re-enters the conflict, and the
-                // save it was checking for is refused. Keep mine would
-                // be a button that does nothing.
+                // Keep mine answered this; the shell checks before every save.
                 _ if file.overwrite_next_save => FileConflict::None,
-                // The stat matches and the read is still refused. The
-                // draft may not be saved over a copy nothing here can
-                // read, so the conflict stands until a read succeeds
-                // or the person answers it.
+                // No saving a draft over a copy nothing here can read.
                 (ExternalState::Unchanged, true) if file.access_refused => FileConflict::Changed,
                 (ExternalState::Unchanged, true) => FileConflict::None,
                 (ExternalState::Changed, true) => FileConflict::Changed,
@@ -1448,50 +996,14 @@ impl FileStore {
         state
     }
 
-    /// Keep mine: the first of the three conflict resolutions. The
-    /// buffer stands and the next save overwrites whatever is on disk.
-    /// Take theirs is [`FileStore::take_theirs`] and the third is
-    /// [`FileStore::save_as`].
-    ///
-    /// Two things happen, and both are needed. The witness is refreshed
-    /// from the disk copy the person has just decided to overwrite, so
-    /// it describes what is actually there rather than a generation
-    /// that is gone. And a consent flag is set that survives until the
-    /// save it was given for, because a file that is missing has no
-    /// witness to take and because the disk copy may change again
-    /// between the choice and the keystroke. The save it licenses
-    /// spends it, so exactly one save is licensed by exactly one
-    /// choice.
-    ///
-    /// The consent is bound to what it answered. It records whether the
-    /// path held a copy or nothing when it was given, and it is
-    /// withdrawn, and the question asked again, when a check or a save
-    /// finds the path in the other state: a copy that changed and was
-    /// then deleted, or an empty path a file has since appeared at. It
-    /// is withdrawn too when the buffer settles clean.
-    ///
-    /// A keep mine over a copy that changed also gives up the saved
-    /// text. That text is the generation the disk no longer holds, and
-    /// a buffer undone back to it is not what is on disk, so measuring
-    /// against it would call the file saved while the disk held the
-    /// other copy and the refreshed witness answered unchanged. With no
-    /// saved text the file stays dirty, whatever the buffer is edited
-    /// or undone to, until the save the consent was given for. A keep
-    /// mine over a missing file keeps its saved text: nothing is on
-    /// disk to disagree with it, and a buffer back at that text has no
-    /// edit left to put anywhere.
-    ///
-    /// A keep mine chosen on a missing conflict whose file is back at
-    /// its path is refused for the same reason. The person answered a
-    /// banner that said the file was gone, and it is not, so the file
-    /// is put in the state a check would find and false is returned
-    /// when that state is a conflict they have not yet been shown.
+    /// Keep mine: license exactly one save over the disk copy (ADR-0028). Over
+    /// a changed copy the baseline is dropped, so the file stays dirty until
+    /// then. Returns false when a missing file is back and changed.
     pub fn resolve_keep_mine(&mut self, io: &dyn FileIo, id: FileId) -> bool {
         let Some(file) = self.file_mut(id) else {
             return false;
         };
-        // Nobody has been shown a divergence on a pending file, so
-        // there is no choice here to record.
+        // Nobody has been shown a divergence on a pending file.
         if file.pending_hydration {
             return false;
         }
@@ -1506,8 +1018,7 @@ impl FileStore {
             };
             return !changed;
         }
-        // Asked before the witness is refreshed, while it still
-        // describes the generation the buffer was measured against.
+        // Asked while the witness still describes the measured generation.
         let diverged = external_state(&stat, file.witness) == ExternalState::Changed;
         file.conflict = FileConflict::None;
         file.overwrite_next_save = true;
@@ -1515,39 +1026,25 @@ impl FileStore {
             matches!(&stat, Err(error) if error.kind() == io::ErrorKind::NotFound);
         file.witness = stat.ok();
         if diverged {
-            // The saved text is the generation that is gone from the
-            // disk, and the witness no longer vouches for it. Nothing
-            // here has read the copy that replaced it, so the baseline
-            // is unknown, exactly as it is for a draft restored beside
-            // a file that changed under it, and the file is dirty on
-            // the person's own word until the save writes a baseline
-            // this buffer made.
+            // The saved generation is gone from disk and its replacement is unread,
+            // so the baseline is unknown.
             file.saved_text = None;
             file.dirty = true;
         }
         true
     }
 
-    /// Re-read the file from disk, discarding whatever the buffer held
-    /// and its undo history. This is the non-interactive reload primitive
-    /// used when a clean file changes; an explicit conflict resolution
-    /// uses [`FileStore::take_theirs`] so the discarded draft can be
-    /// recovered with Undo.
+    /// Re-read the file, discarding the buffer and its undo history: the
+    /// clean-file reload. Conflicts use [`FileStore::take_theirs`].
     ///
     /// # Errors
-    ///
-    /// The same refusals [`FileStore::open`] gives. A refused reload
-    /// leaves the buffer exactly as it was. A file still waiting on its
-    /// hydration is refused as busy: a reload would discard a restored
-    /// draft that nobody has been asked about.
+    /// As [`FileStore::open`], and busy for a pending file. A refused reload
+    /// leaves the buffer as it was.
     pub fn reload(&mut self, io: &dyn FileIo, id: FileId) -> Result<(), OpenRefusal> {
         let path = self.path_for_reread(id)?;
         let read = self.read_for(io, id, &path)?;
         if let Some(file) = self.file_mut(id) {
             file.adopt(read);
-            // The buffer is the file's own text now, not a draft's, and
-            // the reload notice it may have been carrying is answered
-            // by the reload itself.
             file.restored_from_draft = false;
             file.externally_reloaded = false;
             file.overwrite_next_save = false;
@@ -1555,31 +1052,19 @@ impl FileStore {
         Ok(())
     }
 
-    /// Adopt the disk copy as an explicit, undoable conflict resolution.
-    /// The replacement is one structural edit step. Its disk text becomes
-    /// the saved baseline immediately, so Undo restores the former draft
-    /// as dirty and Redo returns to the adopted disk text as clean.
-    ///
-    /// The witness, line ending, and BOM all describe the adopted disk
-    /// generation on both sides of the undo step. A refused read leaves
-    /// the buffer and its history exactly as they were.
+    /// Adopt the disk copy as one undoable step: Undo restores the draft as
+    /// dirty, Redo the disk text as clean (ADR-0028).
     ///
     /// # Errors
-    ///
-    /// The same refusals [`FileStore::open`] gives, and the busy
-    /// refusal [`FileStore::reload`] gives a pending file.
+    /// As [`FileStore::reload`]. A refused read leaves buffer and history as
+    /// they were.
     pub fn take_theirs(&mut self, io: &dyn FileIo, id: FileId) -> Result<(), OpenRefusal> {
         let path = self.path_for_reread(id)?;
         let read = self.read_for(io, id, &path)?;
         if let Some(file) = self.file_mut(id) {
             let generation = file.mint_take_theirs_generation();
             let len = file.document.utf16_len();
-            // An empty buffer over an empty disk copy writes no
-            // operations, so the undo manager gets no item and Undo
-            // stays unavailable. That is the honest answer: an enabled
-            // Undo that changes nothing when pressed is worse than a
-            // step the person is told does not exist, and there is no
-            // former generation here that any press could show them.
+            // Empty over empty pushes no step, so Undo stays unavailable.
             file.document
                 .delete(0, len)
                 .expect("the document's full UTF-16 range is valid");
@@ -1595,8 +1080,7 @@ impl FileStore {
             file.conflict = FileConflict::None;
             file.access_refused = false;
             file.not_found = false;
-            // Armed only behind an undo item: a generation no Undo can
-            // reach is the orphaned marker ADR-0031 refuses elsewhere.
+            // Armed only behind an undo item (ADR-0031).
             file.active_take_theirs_generation = stepped.then_some(generation);
             file.take_theirs_undone = false;
             file.restored_from_draft = false;
@@ -1606,9 +1090,7 @@ impl FileStore {
         Ok(())
     }
 
-    /// Read the disk copy on behalf of an open file, and leave the file
-    /// knowing whether the read could reach it. A refusal changes
-    /// nothing else about the file.
+    /// Read the disk copy for an open file, noting whether it was reachable.
     fn read_for(
         &mut self,
         io: &dyn FileIo,
@@ -1622,9 +1104,7 @@ impl FileStore {
         outcome
     }
 
-    /// The path a reload or a take theirs is about to read, or the
-    /// reason neither may run: nothing open under the id, or a file
-    /// that is still waiting on its hydration.
+    /// The path a reload or take theirs reads; refused if unknown or pending.
     fn path_for_reread(&self, id: FileId) -> Result<PathBuf, OpenRefusal> {
         let file = self
             .file(id)
@@ -1635,11 +1115,8 @@ impl FileStore {
         Ok(file.path.clone())
     }
 
-    /// Say that the shell has posted the reload notice for this file,
-    /// so the roster stops reporting one. The roster itself is a plain
-    /// read: nothing there clears on being looked at, because a shell
-    /// redraws its strip more than once and a notice that vanished on
-    /// the first read would be a notice nobody ever saw.
+    /// The shell posted the reload notice. Roster reads never clear it, since
+    /// the strip redraws.
     pub fn clear_reload_notice(&mut self, id: FileId) -> bool {
         let Some(file) = self.file_mut(id) else {
             return false;
@@ -1648,40 +1125,21 @@ impl FileStore {
         true
     }
 
-    /// Every open file, in open order. The roster the strip draws and
-    /// the roster the drafts file records.
+    /// Every open file, in open order.
     #[must_use]
     pub fn files(&self) -> &[OpenFile] {
         &self.files
     }
 
-    /// Forget every open file. The drafts restore path calls this
-    /// before it fills the store, so a restore is a replacement rather
-    /// than an append.
+    /// Forget every open file, before a drafts restore fills the store.
     pub(crate) fn clear(&mut self) {
         self.files.clear();
-        // The counter is deliberately not reset. Only launch calls this
-        // today, but a restore in a live session would otherwise hand
-        // out an id the shell is still holding for a file it closed,
-        // and a stale id that resolves to the wrong buffer is the one
-        // failure this module's tagging exists to prevent.
+        // The id counter is not reset, so a stale shell id never names a new buffer.
     }
 
-    /// Put back one file from a drafts record. Everything a restore
-    /// knows arrives here at once, because a half built buffer has no
-    /// valid state to sit in.
-    ///
-    /// `snapshot` is the buffer's Loro snapshot for a dirty file and
-    /// `None` for a clean one, whose text is on disk. A record that is
-    /// dirty and carries no snapshot is the one case that is neither:
-    /// the draft was over [`DRAFT_SNAPSHOT_LIMIT`] when the file was
-    /// written, so it was left out. That is remembered here and turned
-    /// into a notice by [`FileStore::hydrate_one`].
-    ///
-    /// The buffer this leaves is not yet ready to draw: nothing has
-    /// looked at the disk. It is marked pending, and
-    /// [`FileStore::hydrate_one`] is the second half of a restore that
-    /// every caller owes each file.
+    /// Put back one file from a drafts record, pending until
+    /// [`FileStore::hydrate_one`]. Dirty with no snapshot means the draft was
+    /// over [`DRAFT_SNAPSHOT_LIMIT`].
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn adopt_restored(
         &mut self,
@@ -1692,22 +1150,16 @@ impl FileStore {
         has_bom: bool,
         dirty: bool,
         last_edited_ms: u64,
-        snapshot: Option<&[u8]>,
-    ) -> Result<FileId, crate::persist::RestoreError> {
-        let document = SheetDocument::new();
-        if let Some(snapshot) = snapshot {
-            document.import_snapshot(snapshot)?;
-            document.forget_undo();
-        }
+        document: SheetDocument,
+        has_snapshot: bool,
+    ) -> FileId {
         self.next_id += 1;
         let id = FileId(FILE_ID_TAG | self.next_id);
         self.files.push(OpenFile {
             id,
             path,
             document,
-            // The disk copy was never read in this process, so nothing
-            // here can recompute dirtiness. The persisted flag is the
-            // only answer there is until a save or a reload.
+            // The disk copy is unread; the persisted flag is the only answer.
             saved_text: None,
             witness,
             line_ending,
@@ -1721,27 +1173,19 @@ impl FileStore {
             keep_mine_over_absence: false,
             active_take_theirs_generation: None,
             next_take_theirs_generation: 0,
-            // Undo history does not cross launch, so no restored boolean
-            // can stand in for the absent Take theirs generation marker.
-            // Hydration derives dirtiness from the draft and disk texts.
+            // Undo history does not cross launch, so no marker stands (ADR-0031).
             take_theirs_undone: false,
-            draft_dropped: dirty && snapshot.is_none(),
+            draft_dropped: dirty && !has_snapshot,
             pending_hydration: true,
             access_refused: false,
             not_found: false,
             bookmark,
         });
-        Ok(id)
+        id
     }
 
-    /// The second half of a drafts restore, for every file at once:
-    /// [`FileStore::hydrate_one`] over each pending file at the path
-    /// its record carried, with the notices gathered.
-    ///
-    /// This is the whole restore for a caller that has no bookmarks to
-    /// resolve, which is every headless one. A shell that holds
-    /// bookmarks asks per file instead, because under a sandbox each
-    /// file can only be read while its own grant is open.
+    /// [`FileStore::hydrate_one`] for every pending file at its recorded path,
+    /// gathering the notices. Shells with bookmarks hydrate per file instead.
     pub fn hydrate_restored(&mut self, io: &dyn FileIo) -> Vec<FileNotice> {
         let pending: Vec<FileId> = self
             .files
@@ -1755,82 +1199,10 @@ impl FileStore {
             .collect()
     }
 
-    /// The second half of a drafts restore, for one file: look at the
-    /// disk, and leave the file in a state the shell can draw without
-    /// asking anything further.
-    ///
-    /// One record at a time, and never a whole-restore failure. A file
-    /// that cannot be reopened is dropped from the roster or left
-    /// standing in a conflict, and the files beside it are not touched
-    /// at all. A launch that loses every open tab because one of them
-    /// was on an unmounted volume would be the worse answer by a
-    /// distance.
-    ///
-    /// `resolved_path` is where the shell's bookmark says the file is
-    /// now, when it has one and it resolved. A file that was moved
-    /// while the app was closed is rebound to that path, in the same
-    /// resolved terms every other path in the store is held in, before
-    /// anything is read. `None` reads the recorded path.
-    ///
-    /// The resolved path may be one another open file holds, and what
-    /// happens then turns on whether that file has been hydrated:
-    ///
-    ///  - A settled holder is where it says it is. The rebind is
-    ///    refused and the recorded path kept: the hydration runs
-    ///    against the recorded path and the table below decides what
-    ///    that means.
-    ///  - A pending holder has only the path its record carried, which
-    ///    nothing has checked. If it was itself moved away, the path is
-    ///    free and only looks taken. So nothing is decided: the answer
-    ///    is [`HydrationFate::Deferred`], the file stays pending, and
-    ///    the caller asks again after the holder has been hydrated. A
-    ///    refusal here instead would make the outcome turn on roster
-    ///    order, and would drop a clean file its bookmark had found.
-    ///
-    /// A caller that defers owes every file an answer in the end. Two
-    /// files that were swapped each wait on the other, so a pass that
-    /// settles nothing is ended by hydrating one of them with `None`,
-    /// which never defers. No settled file ever holds a pending file's
-    /// path, so no two buffers come to share one.
-    ///
-    /// The cases, which are the whole of this function:
-    ///
-    /// | record | on disk | outcome |
-    /// | --- | --- | --- |
-    /// | clean | unchanged | filled from disk, clean |
-    /// | clean | changed | filled from disk, clean, reload notice set |
-    /// | clean | missing, or will not open | dropped, notice |
-    /// | clean | the platform refused the read | held: still pending, marked access refused |
-    /// | dirty | unchanged | draft kept, saved text learned from disk |
-    /// | dirty | changed | draft kept, [`FileConflict::Changed`] |
-    /// | dirty | missing | draft kept, [`FileConflict::Missing`] |
-    /// | dirty | the platform refused the read | draft kept, [`FileConflict::Changed`], marked access refused |
-    ///
-    /// A dirty record whose draft was over
-    /// [`DRAFT_SNAPSHOT_LIMIT`] has no draft to keep, so it takes the
-    /// clean path and leaves a [`DroppedReason::DraftTooLarge`] notice.
-    ///
-    /// The dirty and unchanged case is the one worth reading twice. The
-    /// draft's own text stands, and the disk copy becomes the saved
-    /// text, so dirtiness is computed truthfully from here on and
-    /// stepping the draft back to what the file holds reads as clean.
-    /// The persisted last edit stamp survives, because the header of a
-    /// restored dirty file states the draft's age and re-stamping it at
-    /// launch would make every draft look new.
-    ///
-    /// Two different things stop a file being read, and they are kept
-    /// apart. Bytes this build will not open, which is text that is not
-    /// UTF-8, content that looks binary or a file past the size limit,
-    /// were reached and refused: a clean record is dropped and named as
-    /// unreadable. A read the platform refused, which is what a sandbox
-    /// answers for a file whose grant is gone, reached nothing: the
-    /// person may well know where the file is, so a clean record is
-    /// held in the roster for [`FileStore::relocate`] rather than
-    /// dropped, with an empty buffer that every editing and writing
-    /// route refuses. A held file may be hydrated again, which is how a
-    /// grant that came back is noticed. Either way a dirty record
-    /// stands in a conflict with its draft intact, so nothing unsaved
-    /// is lost to a permission.
+    /// Settle one restored file against the disk, touching no other.
+    /// `resolved_path` rebinds it first: refused onto a settled holder's path,
+    /// deferred onto a pending one's. Outcomes are ADR-0028's restore states;
+    /// a clean record the platform refused to read is held (ADR-0035).
     pub fn hydrate_one(
         &mut self,
         io: &dyn FileIo,
@@ -1847,18 +1219,14 @@ impl FileStore {
         let rebind = match resolved_path {
             None => PathRebind::Unmoved,
             Some(resolved) => {
-                // Resolved the way a save as resolves its target, so a
-                // path the platform will not resolve is still adopted
-                // as given and the read below is what reports on it.
+                // Resolved like a save-as target; an unresolvable path is read as given.
                 let target = resolve_target(io, resolved);
                 if target == self.files[at].path {
                     PathRebind::Unmoved
                 } else if let Some(holder) =
                     self.files.iter().find(|f| f.id != id && f.path == target)
                 {
-                    // A held file has been asked and is staying where
-                    // it is, so it is a holder like any settled one.
-                    // Waiting on it would be waiting on nothing.
+                    // A held file is staying put, so it holds its path like a settled one.
                     if holder.pending_hydration && !holder.access_refused {
                         return HydrationOutcome::untouched(HydrationFate::Deferred);
                     }
@@ -1871,12 +1239,8 @@ impl FileStore {
         };
 
         let file = &mut self.files[at];
-        // A draft that was left out of the drafts file is not a draft
-        // any more, so such a record takes the clean path. The notice
-        // for it waits until the file is known to be coming back: a
-        // file that is also gone from disk gets one notice about that
-        // and not two about one thing, since "your draft was too large"
-        // is no use to somebody whose file is not there either.
+        // A dropped draft takes the clean path; its notice waits, so a missing
+        // file gets one notice, not two.
         let staged = file.dirty && !file.draft_dropped;
         let mut notice = None;
         let fate = match read_file(io, &file.path) {
@@ -1887,16 +1251,10 @@ impl FileStore {
             Err(refusal) if staged => {
                 file.pending_hydration = false;
                 if refusal == OpenRefusal::Io(io::ErrorKind::NotFound) {
-                    // The witness is kept. It still describes the
-                    // generation the draft was measured against, which
-                    // is what lets a relocation recognise that same
-                    // file where the person says it now is.
+                    // The witness stays, so a relocation can recognise the same file.
                     file.conflict = FileConflict::Missing;
                 } else {
-                    // Something is there and this build cannot take it,
-                    // so take theirs has nothing to take. The conflict
-                    // is what refuses the save until the person picks
-                    // keep mine or save as, or says where the file is.
+                    // Something unreadable is there; the conflict refuses the save.
                     file.conflict = FileConflict::Changed;
                     file.saved_text = None;
                 }
@@ -1904,28 +1262,14 @@ impl FileStore {
                 HydrationFate::Kept
             }
             Err(refusal) if refusal_is_unreachable(refusal) => {
-                // Nothing to keep and nothing read, and yet something
-                // is there. The record stays as it came, still pending,
-                // so every route that would edit or write its empty
-                // buffer goes on refusing.
+                // Still pending, so every edit or write route keeps refusing.
                 file.access_refused = true;
-                // Held implies no conflict: this arm has no retained draft,
-                // and hydrate_one has not settled the pending buffer. The
-                // draft-retaining arm above instead settles Changed.
                 debug_assert_eq!(file.conflict, FileConflict::None);
                 HydrationFate::Held
             }
             Err(refusal) => {
-                // Only a read the platform refused holds a clean
-                // record, and this arm is every other refusal. A hold
-                // exists so a person can say where a file is or let it
-                // be read again, and neither would change these: bytes
-                // that were read in full and are not UTF-8, look binary
-                // or are past the size limit would be refused again
-                // wherever the file was pointed at, and a path with
-                // nothing at it has no file to hold a tab for. The
-                // record held no draft, so dropping it loses nothing
-                // but the tab, and the notice names it.
+                // Reached but unopenable, or absent: relocating would not help, and no
+                // draft is lost.
                 let reason = if refusal == OpenRefusal::Io(io::ErrorKind::NotFound) {
                     DroppedReason::Missing
                 } else {
@@ -1943,37 +1287,12 @@ impl FileStore {
         }
     }
 
-    /// Bind an open file to the path a person says it is at now, read
-    /// the disk copy there, and settle the file around it.
-    ///
-    /// This is the way back for a file whose disk copy cannot be
-    /// reached: one that is no longer at its path, or one the platform
-    /// will not let this process read. The person knows where the file
-    /// is, the shell asks them, and the path they choose arrives here
-    /// inside the access their choice granted. It is also what the
-    /// shell calls, with no panel, when a check finds the file gone and
-    /// its bookmark has followed it somewhere else.
-    ///
-    /// The read settles exactly as a hydration's does. A file holding
-    /// no draft adopts the disk copy, except that a live file whose
-    /// disk copy holds the text it already holds keeps its buffer and
-    /// with it its undo history: a file that was only moved is the same
-    /// document somewhere else. A draft stands, with no conflict
-    /// when the disk copy is the generation it was measured against and
-    /// in a [`FileConflict::Changed`] when it is not, and in that
-    /// conflict the disk copy is now one that can be taken. A file that
-    /// was held pending is settled by this and is pending no longer.
-    ///
-    /// The answer is the notice owed for a draft that was too large to
-    /// stage, which only a record that was still pending can carry.
+    /// Bind an open file to the path the person chose, read it there, and
+    /// settle as a hydration does (ADR-0035). Returns any draft-too-large notice.
     ///
     /// # Errors
-    ///
-    /// [`RelocateRefusal::UnknownFile`] for an id nothing is open
-    /// under, [`RelocateRefusal::PathInUse`] for a path another open
-    /// file holds, and [`RelocateRefusal::Open`] for a file that will
-    /// not open. Every refusal leaves the file exactly as it was: its
-    /// path, its buffer, its conflict and its access refused mark.
+    /// [`RelocateRefusal::UnknownFile`], [`RelocateRefusal::PathInUse`], or
+    /// [`RelocateRefusal::Open`]; every refusal leaves the file as it was.
     pub fn relocate(
         &mut self,
         io: &dyn FileIo,
@@ -1985,24 +1304,20 @@ impl FileStore {
             .iter()
             .position(|file| file.id == id)
             .ok_or(RelocateRefusal::UnknownFile)?;
-        // Resolved the way an open resolves, so the comparison below
-        // and the path adopted afterwards are in the same terms as
-        // every other path in the store.
+        // Resolved like an open.
         let target = resolve_target(io, path);
         if self.files.iter().any(|f| f.id != id && f.path == target) {
             return Err(RelocateRefusal::PathInUse);
         }
-        // Read before anything moves, so a file that will not open
-        // costs the record nothing.
+        // Read before anything moves, so a refusal costs nothing.
         let read = read_file(io, &target).map_err(RelocateRefusal::Open)?;
         let file = &mut self.files[at];
         file.path = target;
         Ok(file.settle_over(read))
     }
 
-    /// What the drafts record for this file carries in its snapshot
-    /// slot. Exported once, because a snapshot is the largest thing
-    /// this module allocates and a second copy would have to be wiped.
+    /// The drafts record's snapshot slot, exported once so no second copy
+    /// needs wiping.
     pub(crate) fn draft_body(&self, id: FileId) -> DraftBody {
         let Some(file) = self.file(id) else {
             return DraftBody::None;
@@ -2010,11 +1325,8 @@ impl FileStore {
         if !file.dirty {
             return DraftBody::None;
         }
-        // A record that arrived dirty and without its snapshot, and
-        // that nothing has hydrated yet. Its buffer is empty, and
-        // exporting that would turn "the draft was too large to stage"
-        // into "the draft is an empty file" at the next launch. The
-        // record goes back out exactly as it came in.
+        // Dropped and not yet hydrated: the buffer is empty, so the record goes
+        // back out as it came, not as an empty draft.
         if file.draft_dropped {
             return DraftBody::AlreadyDropped;
         }
@@ -2037,13 +1349,9 @@ pub(crate) enum DraftBody {
     None,
     /// A dirty file's buffer.
     Snapshot(Zeroizing<Vec<u8>>),
-    /// A dirty file whose buffer is over [`DRAFT_SNAPSHOT_LIMIT`]. The
-    /// record is written without it, and the restore says so.
+    /// Over [`DRAFT_SNAPSHOT_LIMIT`]; written without it.
     Oversized,
-    /// A dirty record whose draft an earlier save already left out, in
-    /// a file still waiting on its hydration. Written without a
-    /// snapshot like an oversized one, and with no second notice: the
-    /// hydration owes the one there is.
+    /// Left out by an earlier save and not yet hydrated; no second notice.
     AlreadyDropped,
 }
 
@@ -2076,59 +1384,46 @@ pub(crate) fn line_ending_from_code(code: u8) -> Option<LineEnding> {
     LineEnding::from_code(code)
 }
 
-/// What one read of a file settled: normalised text and everything the
-/// buffer has to remember to write it back.
+/// One settled read: normalized text and what a save needs back.
 struct ReadFile {
-    /// The text is retained as the saved baseline, so it must scrub when
-    /// a rejected read or replaced baseline drops it.
+    /// The saved baseline; zeroized when dropped.
     text: Zeroizing<String>,
     witness: FileWitness,
     line_ending: LineEnding,
     has_bom: bool,
 }
 
-/// Read, refuse, strip and normalise. The one place bytes become a
-/// buffer.
+/// Read, refuse, strip and normalize: where bytes become a buffer.
 fn read_file(io: &dyn FileIo, path: &Path) -> Result<ReadFile, OpenRefusal> {
     for _ in 0..READ_ATTEMPTS {
         match read_once(io, path)? {
             Some(read) => return Ok(read),
-            // Somebody wrote the file while this read was in progress,
-            // so the bytes and the witness describe different
-            // generations. Read it again rather than keep a pair that
-            // does not go together.
+            // Written mid-read: bytes and witness disagree, so read again.
             None => continue,
         }
     }
-    // Something is rewriting the file faster than it can be read. The
-    // one thing that must not happen is opening it anyway: the witness
-    // would describe a generation the buffer does not hold, `check`
-    // would answer `Unchanged` forever, and the next save would
-    // overwrite the other writer without a word.
+    // Rewritten faster than it reads: refuse rather than mismatch the witness.
     Err(OpenRefusal::Io(io::ErrorKind::Interrupted))
 }
 
-/// How many times a read is retried against a file that is being
-/// written underneath it before the open is refused.
+/// Reads tried against a file being rewritten before refusing.
 const READ_ATTEMPTS: usize = 3;
 
-/// One read bracketed by two stats. `None` means the two stats
-/// disagreed, so the bytes and the witness are from different
-/// generations and the pair must be thrown away.
-///
-/// The stat before matters as much as the stat after: it is what
-/// answers a path that is not a regular file before any byte of it is
-/// read, and on a real filesystem a read of a pipe or a device is not
-/// something to start and then reconsider.
+/// One read between two stats; `None` when they disagree. The first stat
+/// refuses oversize files before any read.
 fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefusal> {
     let before = io.stat(path).map_err(|e| OpenRefusal::Io(e.kind()))?;
+    if before.size > FILE_SIZE_LIMIT as u64 {
+        return Err(OpenRefusal::TooLarge {
+            limit: FILE_SIZE_LIMIT,
+        });
+    }
     let bytes = Zeroizing::new(io.read(path).map_err(|e| OpenRefusal::Io(e.kind()))?);
     let after = io.stat(path).map_err(|e| OpenRefusal::Io(e.kind()))?;
     if before != after {
         return Ok(None);
     }
-    // The size is answered before the UTF-8 decode, so an enormous file
-    // is refused for its size rather than after a decode of it.
+    // A reader may return one byte past the limit.
     if bytes.len() > FILE_SIZE_LIMIT {
         return Err(OpenRefusal::TooLarge {
             limit: FILE_SIZE_LIMIT,
@@ -2148,7 +1443,7 @@ fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefus
         return Err(OpenRefusal::Binary);
     }
     let line_ending = LineEnding::detect(text);
-    let text = Zeroizing::new(text.replace("\r\n", "\n"));
+    let text = normalize_newlines(text);
     Ok(Some(ReadFile {
         text,
         witness: after,
@@ -2157,11 +1452,20 @@ fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefus
     }))
 }
 
-/// Whether valid UTF-8 is conservatively binary-like.
-///
-/// Any NUL is binary. Otherwise, tab, line feed, carriage return and form
-/// feed are accepted; other Unicode control scalars cause refusal only when
-/// there are at least two and they exceed ten percent of all scalars.
+fn normalize_newlines(text: &str) -> Zeroizing<String> {
+    let len = text.len() - text.match_indices("\r\n").count();
+    let mut out = Zeroizing::new(String::with_capacity(len));
+    let mut start = 0;
+    for (at, _) in text.match_indices("\r\n") {
+        out.push_str(&text[start..at]);
+        out.push('\n');
+        start = at + 2;
+    }
+    out.push_str(&text[start..]);
+    out
+}
+
+/// Any NUL, or two or more disallowed controls over ten percent of scalars.
 fn looks_binary(text: &str) -> bool {
     let mut scalar_count = 0;
     let mut disallowed_controls = 0;
@@ -2179,12 +1483,8 @@ fn looks_binary(text: &str) -> bool {
     disallowed_controls >= 2 && disallowed_controls * 10 > scalar_count
 }
 
-/// What a fresh stat says against the witness a buffer holds.
-///
-/// A stat that fails for any reason other than absence reads as
-/// changed, beside a witness that no longer matches. That is the
-/// conservative direction: a path that cannot be looked at must not
-/// license a save over whatever is actually there.
+/// A fresh stat against the witness. Any failure but absence is `Changed`,
+/// so an unreadable path never licenses a save.
 fn external_state(stat: &io::Result<FileWitness>, witness: Option<FileWitness>) -> ExternalState {
     match stat {
         Err(error) if error.kind() == io::ErrorKind::NotFound => ExternalState::Missing,
@@ -2193,20 +1493,9 @@ fn external_state(stat: &io::Result<FileWitness>, witness: Option<FileWitness>) 
     }
 }
 
-/// Whether a refused read means the disk copy could not be reached at
-/// all, as against one that was reached and will not open, or one that
-/// is not there.
-///
-/// Absence has its own state. A file rewritten faster than it reads was
-/// reached every time. Bytes this build will not open were read in
-/// full. What is left is the platform saying no: a denied read, which
-/// is what a sandbox answers for a file whose grant is gone, and a path
-/// that holds something other than a regular file.
-// Deliberately broader than PermissionDenied: an unclassified read IO
-// failure or non-regular replacement must preserve a restorable record,
-// not drop it as if its contents had been inspected. Interrupted is the
-// exhausted read/witness retry case; NotFound has its own missing state.
-// This conservative read policy is not a classifier for write failures.
+/// Whether a refused read never reached the disk copy: any IO error but
+/// `NotFound` (absent) and `Interrupted` (retries exhausted). Deliberately
+/// broader than permission denial, so the record is held, not dropped.
 fn refusal_is_unreachable(refusal: OpenRefusal) -> bool {
     matches!(
         refusal,
@@ -2215,13 +1504,8 @@ fn refusal_is_unreachable(refusal: OpenRefusal) -> bool {
     )
 }
 
-/// A save target, in the same terms as every path the store holds.
-///
-/// A file that does not exist yet cannot be resolved, so its directory
-/// is resolved instead and the name joined back on. Anything that will
-/// not resolve at all is used as it was given: a save that is going to
-/// fail should fail on the write, where the reason is the platform's,
-/// rather than here.
+/// A save target resolved like any stored path. A missing file resolves by
+/// its directory; an unresolvable path is used as given.
 fn resolve_target(io: &dyn FileIo, path: &Path) -> PathBuf {
     if let Ok(resolved) = io.canonicalize(path) {
         return resolved;
@@ -2234,44 +1518,13 @@ fn resolve_target(io: &dyn FileIo, path: &Path) -> PathBuf {
     }
 }
 
-/// A fresh document holding exactly `text`, with an empty undo stack:
-/// the insert that filled it is the file arriving, not a step anyone
-/// may take back.
-fn document_holding(text: &str) -> SheetDocument {
-    let document = SheetDocument::new();
-    if !text.is_empty() {
-        document
-            .insert(0, text)
-            .expect("an insert at zero into an empty body");
-    }
-    document.commit(None);
-    document.forget_undo();
-    document
-}
-
-/// The document's text. A file holds no chips, so a sentinel could only
-/// arrive through a chip op, and phase one refuses every one of those.
-/// A sentinel that somehow stood anyway would be written out as the
-/// replacement character it is rather than silently dropped.
-fn text_of(document: &SheetDocument) -> String {
-    let mut text = String::new();
-    for run in document.runs() {
-        match run {
-            DocRun::Ink(ink) => text.push_str(&ink),
-            DocRun::Chip(_) => text.push('\u{FFFC}'),
-        }
-    }
-    text
-}
-
-/// Whether the document contains exactly `expected`, without allocating
-/// another complete text copy just to settle dirty state.
+/// Whether the document holds exactly `expected`, without a full copy.
 fn document_matches_text(document: &SheetDocument, expected: &str) -> bool {
     let mut remaining = expected;
     for run in document.runs() {
         match run {
             DocRun::Ink(ink) => {
-                let Some(after) = remaining.strip_prefix(&ink) else {
+                let Some(after) = remaining.strip_prefix(ink.as_str()) else {
                     return false;
                 };
                 remaining = after;
@@ -2290,79 +1543,27 @@ fn document_matches_text(document: &SheetDocument, expected: &str) -> bool {
 /// Write the buffer to `path` and settle the file around what landed.
 fn write_and_settle(io: &dyn FileIo, file: &mut OpenFile, path: &Path) -> Result<(), SaveError> {
     let bytes = file.bytes_to_write_zeroizing();
-    if let Err(error) = io.write_atomic(path, &bytes) {
-        // Only denial at the file's current path informs its access mark.
-        // A failed Save As elsewhere says nothing about the original, and
-        // disk full, EXDEV, etc. are not evidence of missing access.
-        if path == file.path && error.kind() == io::ErrorKind::PermissionDenied {
-            file.access_refused = true;
+    let witness = match io.write_atomic(path, &bytes) {
+        Ok(witness) => witness,
+        Err(error) => {
+            // Only denial at the current path marks access refused.
+            if path == file.path && error.kind() == io::ErrorKind::PermissionDenied {
+                file.access_refused = true;
+            }
+            return Err(SaveError::Io(error.kind()));
         }
-        return Err(SaveError::Io(error.kind()));
-    }
-    // The witness has to describe what is on disk now, so it is taken
-    // after the write rather than predicted from the bytes. A stat that
-    // will not answer leaves the file with no witness, which reads as
-    // changed on the next check: conservative, and it costs one prompt
-    // rather than a silent overwrite.
-    file.witness = io.stat(path).ok();
-    file.saved_text = Some(Zeroizing::new(text_of(&file.document)));
+    };
+    file.witness = Some(witness);
+    file.saved_text = Some(text_of(&file.document));
     file.dirty = false;
     file.conflict = FileConflict::None;
-    // What is on disk now is what this buffer just put there, so there
-    // is no copy left that it has not seen, and the path is not empty.
     file.access_refused = false;
     file.not_found = false;
     file.restored_from_draft = false;
     file.active_take_theirs_generation = None;
     file.take_theirs_undone = false;
-    // The consent was for this save. The next divergence asks again.
     file.overwrite_next_save = false;
     Ok(())
-}
-
-/// One op against the simulated body, in exact UTF-16 code units.
-/// Returns whether it applied; a false leaves the batch refused whole.
-fn sim_admit(sim: &mut Vec<u16>, op: &EditOp) -> bool {
-    match op {
-        EditOp::Insert { pos_u16, text } => {
-            let at = *pos_u16 as usize;
-            if !boundary(sim, at) {
-                return false;
-            }
-            let units: Vec<u16> = text.encode_utf16().collect();
-            sim.splice(at..at, units);
-            true
-        }
-        EditOp::Delete { pos_u16, len_u16 } => {
-            let at = *pos_u16 as usize;
-            let Some(end) = at.checked_add(*len_u16 as usize) else {
-                return false;
-            };
-            if end > sim.len() || !boundary(sim, at) || !boundary(sim, end) {
-                return false;
-            }
-            sim.drain(at..end);
-            true
-        }
-        // A file holds no chips. There is no roster to own one and no
-        // sealed byte for it to stand for, so the op is refused rather
-        // than given a meaning here.
-        EditOp::InsertChip { .. } => false,
-    }
-}
-
-/// Whether `at` names a position the body recognizes: in bounds, and
-/// not between the two halves of a surrogate pair.
-fn boundary(sim: &[u16], at: usize) -> bool {
-    if at > sim.len() {
-        return false;
-    }
-    if at == 0 || at == sim.len() {
-        return true;
-    }
-    let before = sim[at - 1];
-    let after = sim[at];
-    !((0xD800..=0xDBFF).contains(&before) && (0xDC00..=0xDFFF).contains(&after))
 }
 
 #[cfg(test)]
@@ -2372,17 +1573,14 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
 
-    /// An in-memory filesystem: enough of one to exercise every path
-    /// through this module without touching a real disk.
+    /// An in-memory filesystem.
     #[derive(Default)]
     struct MemoryIo {
         files: Mutex<HashMap<PathBuf, Vec<u8>>>,
-        /// Bumped on every write so two writes of the same bytes still
-        /// produce different witnesses, the way a real mtime would.
+        /// Bumped per write, like a real mtime.
         tick: Mutex<i128>,
         stamps: Mutex<HashMap<PathBuf, i128>>,
-        /// Link name to target, resolved by `canonicalize` the way the
-        /// real implementation resolves a symlink.
+        /// Symlinks, resolved by `canonicalize`.
         links: Mutex<HashMap<PathBuf, PathBuf>>,
     }
 
@@ -2436,9 +1634,9 @@ mod tests {
                 .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
         }
 
-        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness> {
             self.put(&path.to_string_lossy(), bytes);
-            Ok(())
+            self.stat(path)
         }
 
         fn stat(&self, path: &Path) -> io::Result<FileWitness> {
@@ -2465,9 +1663,7 @@ mod tests {
         }
     }
 
-    /// A filesystem whose file is rewritten underneath every read: the
-    /// window between the read and the stat, made reliable. `shifts` is
-    /// how many times it moves before it settles.
+    /// Rewritten under every read, `shifts` times before it settles.
     struct ShiftingIo {
         settled: Vec<u8>,
         moving: Vec<u8>,
@@ -2502,8 +1698,8 @@ mod tests {
             Ok(self.moving.clone())
         }
 
-        fn write_atomic(&self, _path: &Path, _bytes: &[u8]) -> io::Result<()> {
-            Ok(())
+        fn write_atomic(&self, path: &Path, _bytes: &[u8]) -> io::Result<FileWitness> {
+            self.stat(path)
         }
 
         fn stat(&self, _path: &Path) -> io::Result<FileWitness> {
@@ -2516,8 +1712,7 @@ mod tests {
         }
     }
 
-    /// A path the platform reports as non-regular. Its read records whether
-    /// the core incorrectly continued after the rejecting stat.
+    /// A non-regular path; records whether it was read anyway.
     #[derive(Default)]
     struct NonRegularIo {
         read_called: Cell<bool>,
@@ -2533,8 +1728,8 @@ mod tests {
             Ok(Vec::new())
         }
 
-        fn write_atomic(&self, _path: &Path, _bytes: &[u8]) -> io::Result<()> {
-            Ok(())
+        fn write_atomic(&self, path: &Path, _bytes: &[u8]) -> io::Result<FileWitness> {
+            self.stat(path)
         }
 
         fn stat(&self, _path: &Path) -> io::Result<FileWitness> {
@@ -2574,7 +1769,7 @@ mod tests {
                 None => self.inner.probe_readable(path),
             }
         }
-        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness> {
             match self.write_error.get() {
                 Some(kind) => Err(io::Error::from(kind)),
                 None => self.inner.write_atomic(path, bytes),
@@ -2583,6 +1778,147 @@ mod tests {
         fn stat(&self, path: &Path) -> io::Result<FileWitness> {
             self.inner.stat(path)
         }
+    }
+
+    /// Stat claims more than the limit; records whether it was read anyway.
+    #[derive(Default)]
+    struct HugeIo {
+        read_called: Cell<bool>,
+    }
+
+    impl FileIo for HugeIo {
+        fn probe_readable(&self, _path: &Path) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn read(&self, _path: &Path) -> io::Result<Vec<u8>> {
+            self.read_called.set(true);
+            Ok(Vec::new())
+        }
+
+        fn write_atomic(&self, path: &Path, _bytes: &[u8]) -> io::Result<FileWitness> {
+            self.stat(path)
+        }
+
+        fn stat(&self, _path: &Path) -> io::Result<FileWitness> {
+            Ok(FileWitness {
+                dev: 1,
+                ino: 1,
+                size: FILE_SIZE_LIMIT as u64 + 1,
+                mtime_ns: 0,
+            })
+        }
+    }
+
+    #[test]
+    fn an_oversized_file_is_refused_before_a_byte_of_it_is_read() {
+        let io = HugeIo::default();
+        let mut store = FileStore::new();
+        assert_eq!(
+            store.open(&io, Path::new("/huge.bin")),
+            Err(OpenRefusal::TooLarge {
+                limit: FILE_SIZE_LIMIT
+            })
+        );
+        assert!(
+            !io.read_called.get(),
+            "the stat already knew the size, so nothing was read"
+        );
+    }
+
+    /// Another writer renames over the file right after ours lands.
+    struct ReplacedAfterWriteIo {
+        inner: MemoryIo,
+    }
+
+    impl FileIo for ReplacedAfterWriteIo {
+        fn probe_readable(&self, path: &Path) -> io::Result<()> {
+            self.inner.probe_readable(path)
+        }
+
+        fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+            self.inner.read(path)
+        }
+
+        fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness> {
+            let ours = self.inner.write_atomic(path, bytes)?;
+            self.inner
+                .put(&path.to_string_lossy(), b"theirs, a moment later");
+            Ok(ours)
+        }
+
+        fn stat(&self, path: &Path) -> io::Result<FileWitness> {
+            self.inner.stat(path)
+        }
+    }
+
+    #[test]
+    fn normalization_and_file_projections_are_exact_zeroizing_text() {
+        use zeroize::{Zeroize, ZeroizeOnDrop};
+
+        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
+
+        for input in [
+            "",
+            "\r",
+            "\r\r\n",
+            "🙂\r\n尾\r\n",
+            "a\nb\r\nc\rd",
+            "a\r\r\nb\n",
+        ] {
+            let mut text = normalize_newlines(input);
+            wiping_owner(&text);
+            assert_eq!(text.as_str(), input.replace("\r\n", "\n"));
+            assert_eq!(text.capacity(), text.len());
+            let pointer = text.as_ptr();
+            text.as_mut_str().zeroize();
+            assert!(text.as_bytes().iter().all(|byte| *byte == 0));
+            assert_eq!(text.as_ptr(), pointer);
+        }
+        let body = "🙂\r\n尾\n終\r";
+        let original = format!("\u{FEFF}{body}");
+        let io = MemoryIo::with("/unicode.txt", original.as_bytes());
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/unicode.txt")).unwrap();
+        let file = store.file(id).unwrap();
+        assert!(file.has_bom());
+        let from_file: Zeroizing<String> = file.text();
+        let mut from_store: Zeroizing<String> = store.text(id).unwrap();
+        for text in [&from_file, &from_store] {
+            wiping_owner(text);
+            assert_eq!(text.as_str(), body.replace("\r\n", "\n"));
+            assert_eq!(text.capacity(), text.len());
+        }
+        assert_ne!(from_file.as_ptr(), from_store.as_ptr());
+        from_store.as_mut_str().zeroize();
+        assert!(from_store.as_bytes().iter().all(|byte| *byte == 0));
+        assert_eq!(from_file.as_str(), "🙂\n尾\n終\r");
+        assert!(store.text(FileId(u64::MAX)).is_none());
+    }
+
+    #[test]
+    fn a_file_keeps_the_chip_sentinel_as_its_own_text() {
+        let io = MemoryIo::with("/note.txt", "a\u{FFFC}b".as_bytes());
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/note.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(1, "\u{FFFC}")], 1));
+        assert_eq!(store.text(id).unwrap().as_str(), "a\u{FFFC}\u{FFFC}b");
+    }
+
+    #[test]
+    fn a_save_takes_its_witness_from_the_write_and_not_from_the_path_afterwards() {
+        let io = ReplacedAfterWriteIo {
+            inner: MemoryIo::with("/note.txt", b"body"),
+        };
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/note.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(0, "mine ")], 1));
+        store.save(&io, id).unwrap();
+        assert_eq!(
+            store.refresh_conflict(&io, id),
+            ExternalState::Changed,
+            "the other writer's copy reads as a change"
+        );
     }
 
     #[test]
@@ -2759,7 +2095,7 @@ mod tests {
         let file = store.file(id).unwrap();
         assert!(file.has_bom());
         assert_eq!(file.line_ending(), LineEnding::Crlf);
-        assert_eq!(file.text(), "alpha\nbeta\n");
+        assert_eq!(file.text().as_str(), "alpha\nbeta\n");
         store.save(&io, id).unwrap();
         assert_eq!(io.bytes("/w.txt"), original);
     }
@@ -2951,7 +2287,7 @@ mod tests {
         assert!(store.is_dirty(id));
         let outcome = store.undo(id).unwrap();
         assert!(outcome.applied);
-        assert_eq!(store.text(id).unwrap(), "hello");
+        assert_eq!(store.text(id).unwrap().as_str(), "hello");
         assert!(!store.is_dirty(id), "back at the saved text is clean");
     }
 
@@ -2960,8 +2296,6 @@ mod tests {
         let io = MemoryIo::with("/u.txt", b"hello");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/u.txt")).unwrap();
-        // The insert that filled the buffer is the file arriving, not a
-        // step anyone may take back.
         assert!(!store.can_undo(id));
         assert!(!store.can_redo(id));
 
@@ -2977,7 +2311,6 @@ mod tests {
         assert!(store.can_undo(id));
         assert!(!store.can_redo(id));
 
-        // An id nothing is open under answers no, not a panic.
         assert!(!store.can_undo(FileId(FILE_ID_TAG | 404)));
         assert!(!store.can_redo(FileId(FILE_ID_TAG | 404)));
         assert!(!store.can_undo(FileId(1)));
@@ -2995,13 +2328,13 @@ mod tests {
 
         assert_eq!(store.undo_action_name(id), Some("Typing"));
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "ab");
+        assert_eq!(store.text(id).unwrap().as_str(), "ab");
         assert_eq!(store.undo_action_name(id), Some("Paste"));
         assert_eq!(store.redo_action_name(id), Some("Typing"));
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "a");
+        assert_eq!(store.text(id).unwrap().as_str(), "a");
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "");
+        assert_eq!(store.text(id).unwrap().as_str(), "");
     }
 
     #[test]
@@ -3063,7 +2396,6 @@ mod tests {
         assert_eq!(store.file(id).unwrap().last_edited_at(), 0);
         assert!(store.apply_ops(id, &[ins(1, "b")], 7_000));
         assert_eq!(store.file(id).unwrap().last_edited_at(), 7);
-        // A refused batch stamps nothing.
         assert!(!store.apply_ops(id, &[ins(99, "c")], 9_000));
         assert_eq!(store.file(id).unwrap().last_edited_at(), 7);
     }
@@ -3081,7 +2413,11 @@ mod tests {
             },
         ];
         assert!(!store.apply_ops(id, &ops, 1));
-        assert_eq!(store.text(id).unwrap(), "abc", "the batch moved nothing");
+        assert_eq!(
+            store.text(id).unwrap().as_str(),
+            "abc",
+            "the batch moved nothing"
+        );
     }
 
     #[test]
@@ -3129,7 +2465,7 @@ mod tests {
         io.put("/r.txt", b"theirs");
         assert!(store.is_dirty(id));
         store.reload(&io, id).unwrap();
-        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs");
         assert!(!store.is_dirty(id));
         assert_eq!(store.check(&io, id), ExternalState::Unchanged);
         assert!(!store.can_undo(id), "an automatic reload is not an edit");
@@ -3177,7 +2513,7 @@ mod tests {
 
         store.take_theirs(&io, id).unwrap();
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "theirs\n");
+        assert_eq!(file.text().as_str(), "theirs\n");
         assert!(!file.is_dirty());
         assert_eq!(file.conflict(), FileConflict::None);
         assert_eq!(file.line_ending(), LineEnding::Crlf);
@@ -3188,7 +2524,11 @@ mod tests {
 
         assert!(store.undo(id).unwrap().applied);
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "one mine\n", "Undo restores the draft");
+        assert_eq!(
+            file.text().as_str(),
+            "one mine\n",
+            "Undo restores the draft"
+        );
         assert!(file.is_dirty(), "the draft differs from the disk baseline");
         assert_eq!(file.conflict(), FileConflict::None);
         assert_eq!(file.line_ending(), LineEnding::Crlf);
@@ -3202,7 +2542,7 @@ mod tests {
 
         assert!(store.redo(id).unwrap().applied);
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "theirs\n");
+        assert_eq!(file.text().as_str(), "theirs\n");
         assert!(!file.is_dirty());
         assert_eq!(file.conflict(), FileConflict::None);
         assert_eq!(store.check(&io, id), ExternalState::Unchanged);
@@ -3218,12 +2558,12 @@ mod tests {
         assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
 
         store.take_theirs(&io, id).unwrap();
-        assert_eq!(store.text(id).unwrap(), "theirs\nsecond\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs\nsecond\n");
         assert!(!store.is_dirty(id));
         assert!(store.undo(id).unwrap().applied);
         assert!(store.is_dirty(id));
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs\nsecond\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs\nsecond\n");
         assert!(
             !store.is_dirty(id),
             "Redo returns to the adopted disk generation even when its endings were mixed"
@@ -3236,14 +2576,14 @@ mod tests {
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/equal.txt")).unwrap();
         assert!(store.apply_ops(id, &[del(0, 3), ins(0, "same")], 4_000));
-        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same\n");
         assert!(store.is_dirty(id));
 
         io.put("/equal.txt", &[UTF8_BOM, b"same\r\n"].concat());
         assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
         store.take_theirs(&io, id).unwrap();
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "same\n");
+        assert_eq!(file.text().as_str(), "same\n");
         assert!(!file.is_dirty());
         assert_eq!(file.line_ending(), LineEnding::Crlf);
         assert!(file.has_bom());
@@ -3251,7 +2591,7 @@ mod tests {
 
         assert!(store.undo(id).unwrap().applied);
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "same\n");
+        assert_eq!(file.text().as_str(), "same\n");
         assert!(
             file.is_dirty(),
             "Undo restores the former draft generation even when text is equal"
@@ -3262,39 +2602,34 @@ mod tests {
         assert_eq!(store.check(&io, id), ExternalState::Unchanged);
 
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same\n");
         assert!(!store.is_dirty(id));
         assert_eq!(store.check(&io, id), ExternalState::Unchanged);
 
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same\n");
         assert!(
             store.is_dirty(id),
             "the structural marker survives a Redo/Undo cycle"
         );
 
-        // Typing branches from the pre-resolution draft and invalidates
-        // Redo of Take theirs, which retires the generation marker with
-        // it. Undoing that typing reaches the saved output again, and
-        // with nothing left to steer by the file reads saved.
+        // Typing after the undo retires the Take theirs marker.
         assert!(store.apply_ops(id, &[ins(4, "!")], 5_000));
-        assert_eq!(store.text(id).unwrap(), "same!\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same!\n");
         assert!(store.is_dirty(id));
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same\n");
         assert!(
             !store.is_dirty(id),
             "an unreachable generation marker stops pinning the file dirty"
         );
 
-        // The only remaining redo is the branched typing step; the old
-        // Take theirs redo was invalidated when that branch was authored.
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "same!\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same!\n");
         assert!(store.is_dirty(id));
         assert!(!store.can_redo(id));
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "same\n");
         assert!(!store.is_dirty(id));
 
         store.save(&io, id).unwrap();
@@ -3352,20 +2687,16 @@ mod tests {
 
         store.take_theirs(&io, id).unwrap();
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "mine\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "mine\n");
         assert!(store.is_dirty(id));
         assert!(store.can_redo(id));
 
-        // The local commit drops the redo stack, so the disk generation
-        // becomes unreachable and the marker loses its authority.
         assert!(store.apply_ops(id, &[ins(4, "!")], 2));
         assert!(!store.can_redo(id));
         assert!(store.is_dirty(id), "the typing itself is a real edit");
 
-        // Editing back to the disk text now reads saved, because no Undo
-        // or Redo remains that could explain an unsaved file.
         assert!(store.apply_ops_as_new_step(id, &[del(0, 5), ins(0, "theirs")], 3));
-        assert_eq!(store.text(id).unwrap(), "theirs\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs\n");
         assert!(
             !store.is_dirty(id),
             "an orphaned generation marker cannot pin the file dirty"
@@ -3381,11 +2712,11 @@ mod tests {
         let io = MemoryIo::with("/empty.txt", b"");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/empty.txt")).unwrap();
-        assert_eq!(store.text(id).unwrap(), "");
+        assert_eq!(store.text(id).unwrap().as_str(), "");
         assert!(!store.can_undo(id));
 
         store.take_theirs(&io, id).unwrap();
-        assert_eq!(store.text(id).unwrap(), "");
+        assert_eq!(store.text(id).unwrap().as_str(), "");
         assert!(!store.is_dirty(id));
         assert_eq!(store.check(&io, id), ExternalState::Unchanged);
         assert!(
@@ -3399,18 +2730,14 @@ mod tests {
             "no undo item exists, so no generation may govern dirty state"
         );
 
-        // Pressing Undo anyway is a step that did not happen, and the
-        // file is left exactly where the adoption put it.
         assert!(!store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "");
+        assert_eq!(store.text(id).unwrap().as_str(), "");
         assert!(!store.is_dirty(id));
 
-        // A later adoption over a disk copy with words in it is an
-        // ordinary structural step again.
         io.put("/empty.txt", b"theirs\n");
         assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
         store.take_theirs(&io, id).unwrap();
-        assert_eq!(store.text(id).unwrap(), "theirs\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs\n");
         assert!(store.can_undo(id));
         assert!(
             store
@@ -3421,10 +2748,10 @@ mod tests {
             "an undo item exists, so its generation is armed"
         );
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "");
+        assert_eq!(store.text(id).unwrap().as_str(), "");
         assert!(store.is_dirty(id));
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs\n");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs\n");
         assert!(!store.is_dirty(id));
     }
 
@@ -3437,7 +2764,7 @@ mod tests {
         io.put("/saved.txt", b"theirs");
         store.take_theirs(&io, id).unwrap();
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "mine");
+        assert_eq!(store.text(id).unwrap().as_str(), "mine");
         assert!(store.is_dirty(id));
 
         store.save(&io, id).unwrap();
@@ -3445,13 +2772,13 @@ mod tests {
         assert_eq!(io.bytes("/saved.txt"), b"mine");
 
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs");
         assert!(
             store.is_dirty(id),
             "the historical disk text differs from the newer saved baseline"
         );
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "mine");
+        assert_eq!(store.text(id).unwrap().as_str(), "mine");
         assert!(
             !store.is_dirty(id),
             "the stale marker cannot reactivate generation dirtiness"
@@ -3473,10 +2800,10 @@ mod tests {
         assert!(!store.is_dirty(id));
 
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs");
         assert!(store.is_dirty(id));
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "mine");
+        assert_eq!(store.text(id).unwrap().as_str(), "mine");
         assert!(!store.is_dirty(id));
     }
 
@@ -3491,11 +2818,11 @@ mod tests {
         store.take_theirs(&io, id).unwrap();
 
         assert!(store.apply_ops(id, &[ins(6, "!")], 2_000));
-        assert_eq!(store.text(id).unwrap(), "theirs!");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs!");
         assert!(store.is_dirty(id));
 
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs");
         assert!(!store.is_dirty(id));
         assert!(
             store.can_undo(id),
@@ -3503,14 +2830,14 @@ mod tests {
         );
 
         assert!(store.undo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "one mine");
+        assert_eq!(store.text(id).unwrap().as_str(), "one mine");
         assert!(store.is_dirty(id));
 
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs");
         assert!(!store.is_dirty(id));
         assert!(store.redo(id).unwrap().applied);
-        assert_eq!(store.text(id).unwrap(), "theirs!");
+        assert_eq!(store.text(id).unwrap().as_str(), "theirs!");
         assert!(store.is_dirty(id));
     }
 
@@ -3527,7 +2854,7 @@ mod tests {
             store.take_theirs(&io, id),
             Err(OpenRefusal::Io(io::ErrorKind::NotFound))
         );
-        assert_eq!(store.text(id).unwrap(), "one mine");
+        assert_eq!(store.text(id).unwrap().as_str(), "one mine");
         assert!(store.is_dirty(id));
         assert_eq!(store.file(id).unwrap().conflict(), FileConflict::Missing);
         assert!(store.can_undo(id));
@@ -3549,9 +2876,7 @@ mod tests {
 
     #[test]
     fn keep_mine_survives_the_check_the_shell_makes_before_every_save() {
-        // The documented flow: check on activate, check again before
-        // the save. Without the standing consent the second check puts
-        // the conflict back and keep mine never writes anything.
+        // Check on activate, then again before the save.
         let io = MemoryIo::with("/k2.txt", b"one");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/k2.txt")).unwrap();
@@ -3560,7 +2885,6 @@ mod tests {
         assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
         assert!(store.resolve_keep_mine(&io, id));
 
-        // The shell checks again, as the header tells it to.
         let state = store.refresh_conflict(&io, id);
         assert_eq!(state, ExternalState::Unchanged, "the fresh witness matches");
         assert_eq!(store.file(id).unwrap().conflict(), FileConflict::None);
@@ -3570,8 +2894,6 @@ mod tests {
 
     #[test]
     fn keep_mine_over_a_missing_file_still_saves() {
-        // There is no witness to take here, so the consent flag is the
-        // only thing carrying the choice through the pre save check.
         let io = MemoryIo::with("/k3.txt", b"one");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/k3.txt")).unwrap();
@@ -3601,8 +2923,6 @@ mod tests {
         assert!(store.resolve_keep_mine(&io, id));
         store.save(&io, id).unwrap();
 
-        // A second divergence asks again rather than riding the first
-        // answer.
         assert!(store.apply_ops(id, &[ins(0, "more ")], 2));
         io.put("/k4.txt", b"and again");
         assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
@@ -3624,8 +2944,6 @@ mod tests {
         assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
         assert!(store.resolve_keep_mine(&io, id));
 
-        // The consent was to overwrite a copy. Nobody was asked about a
-        // deletion, and the save finds it with no check before it.
         io.remove("/k5.txt");
         assert_eq!(store.save(&io, id), Err(SaveError::NotFound));
         assert!(!is_at(&io, "/k5.txt"), "nothing was recreated");
@@ -3636,7 +2954,6 @@ mod tests {
         assert_eq!(store.save(&io, id), Err(SaveError::Conflict));
         assert!(!is_at(&io, "/k5.txt"));
 
-        // Asked now, over the empty path, keep mine does license it.
         assert!(store.resolve_keep_mine(&io, id));
         store
             .save(&io, id)
@@ -3646,9 +2963,6 @@ mod tests {
 
     #[test]
     fn a_check_withdraws_a_keep_mine_given_before_the_file_was_deleted() {
-        // The shell's route: it checks before it saves, and the check
-        // has to raise the missing conflict rather than let the old
-        // consent hide it.
         let io = MemoryIo::with("/k6.txt", b"one");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/k6.txt")).unwrap();
@@ -3666,9 +2980,6 @@ mod tests {
 
     #[test]
     fn keep_mine_over_a_changed_copy_stays_dirty_when_undone_to_the_old_text() {
-        // The text the buffer goes back to is the generation the disk
-        // no longer holds. Calling that saved would be untrue, and the
-        // refreshed witness would keep every check from saying so.
         let io = MemoryIo::with("/k7.txt", b"one");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/k7.txt")).unwrap();
@@ -3679,18 +2990,17 @@ mod tests {
 
         assert!(store.undo(id).unwrap().applied);
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "one");
+        assert_eq!(file.text().as_str(), "one");
         assert!(file.is_dirty(), "the disk holds the other copy");
         assert_eq!(store.refresh_conflict(&io, id), ExternalState::Unchanged);
         assert!(store.file(id).unwrap().is_dirty());
         assert_eq!(store.file(id).unwrap().conflict(), FileConflict::None);
         assert_eq!(io.bytes("/k7.txt"), b"theirs");
 
-        // Typed back to the old text rather than undone, the answer is
-        // the same one.
+        // Typed back rather than undone.
         assert!(store.redo(id).unwrap().applied);
         assert!(store.apply_ops(id, &[del(3, 5)], 2));
-        assert_eq!(store.file(id).unwrap().text(), "one");
+        assert_eq!(store.file(id).unwrap().text().as_str(), "one");
         assert!(store.file(id).unwrap().is_dirty());
     }
 
@@ -3705,8 +3015,6 @@ mod tests {
         assert!(store.resolve_keep_mine(&io, id));
         assert!(store.undo(id).unwrap().applied);
 
-        // The consent stands, because the buffer never settled clean,
-        // and the save it was given for puts the old text back.
         store.refresh_conflict(&io, id);
         store.save(&io, id).expect("the consent was for this save");
         assert_eq!(io.bytes("/k13.txt"), b"one");
@@ -3714,8 +3022,6 @@ mod tests {
         assert!(!file.is_dirty(), "the disk holds what the buffer holds");
         assert_eq!(file.conflict(), FileConflict::None);
 
-        // The baseline is the written text from here on: an edit
-        // dirties and its undo is clean again.
         assert!(store.apply_ops(id, &[ins(3, "!")], 3));
         assert!(store.file(id).unwrap().is_dirty());
         assert!(store.undo(id).unwrap().applied);
@@ -3733,9 +3039,6 @@ mod tests {
         assert!(store.resolve_keep_mine(&io, id));
         assert!(store.undo(id).unwrap().applied);
 
-        // The consent was to overwrite a copy, and the copy is gone.
-        // The buffer is still a draft, so the refusal leaves it in the
-        // missing conflict for the person to answer.
         io.remove("/k14.txt");
         assert_eq!(store.save(&io, id), Err(SaveError::NotFound));
         assert!(!is_at(&io, "/k14.txt"), "nothing was recreated");
@@ -3749,9 +3052,7 @@ mod tests {
 
     #[test]
     fn keep_mine_over_a_changed_copy_stays_dirty_across_a_take_theirs_marker() {
-        // Take theirs, undo it, and the disk moves again. Redo lands on
-        // the text that was taken, which is no longer what the disk
-        // holds, so the marker's clean side must not be believed.
+        // Redo lands on text the disk no longer holds.
         let io = MemoryIo::with("/k15.txt", b"one");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/k15.txt")).unwrap();
@@ -3767,7 +3068,7 @@ mod tests {
         assert!(store.resolve_keep_mine(&io, id));
         assert!(store.redo(id).unwrap().applied);
         let file = store.file(id).unwrap();
-        assert_eq!(file.text(), "theirs");
+        assert_eq!(file.text().as_str(), "theirs");
         assert!(file.is_dirty(), "the disk holds a third copy");
 
         store.save(&io, id).unwrap();
@@ -3777,8 +3078,6 @@ mod tests {
 
     #[test]
     fn keep_mine_with_the_witness_still_matching_keeps_the_saved_text() {
-        // No divergence was found, so the saved text is still what the
-        // disk holds and the buffer is measured against it as ever.
         let io = MemoryIo::with("/k16.txt", b"one");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/k16.txt")).unwrap();
@@ -3790,9 +3089,6 @@ mod tests {
 
     #[test]
     fn a_keep_mine_over_a_missing_file_is_withdrawn_when_the_buffer_is_undone_back_to_clean() {
-        // The consent here was given over the empty path, so nothing
-        // about the path withdraws it. The buffer settling clean does:
-        // a file with no unsaved edits is never made again.
         let io = MemoryIo::with("/k11.txt", b"one");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/k11.txt")).unwrap();
@@ -3806,8 +3102,7 @@ mod tests {
         assert_eq!(store.save(&io, id), Err(SaveError::NotFound));
         assert!(!is_at(&io, "/k11.txt"), "nothing was recreated");
 
-        // Typed back to clean rather than undone, the answer is the
-        // same one.
+        // Typed back rather than undone.
         let io = MemoryIo::with("/k12.txt", b"one");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/k12.txt")).unwrap();
@@ -3831,7 +3126,6 @@ mod tests {
         store.refresh_conflict(&io, id);
         assert!(store.resolve_keep_mine(&io, id));
 
-        // A file nobody was shown is at the path when the save comes.
         io.put("/k8.txt", b"somebody else's");
         assert_eq!(store.save(&io, id), Err(SaveError::Conflict));
         assert_eq!(io.bytes("/k8.txt"), b"somebody else's");
@@ -3839,7 +3133,6 @@ mod tests {
         assert!(!file.not_found());
         assert_eq!(file.conflict(), FileConflict::Changed);
 
-        // Shown it, the person may still say their buffer wins.
         assert!(store.resolve_keep_mine(&io, id));
         store.save(&io, id).unwrap();
         assert_eq!(io.bytes("/k8.txt"), b"one mine");
@@ -3855,7 +3148,6 @@ mod tests {
         store.refresh_conflict(&io, id);
         assert_eq!(store.file(id).unwrap().conflict(), FileConflict::Missing);
 
-        // Rewritten by another tool while the banner still says gone.
         io.put("/k9.txt", b"rewritten");
         assert!(
             !store.resolve_keep_mine(&io, id),
@@ -3867,8 +3159,6 @@ mod tests {
         assert_eq!(store.save(&io, id), Err(SaveError::Conflict));
         assert_eq!(io.bytes("/k9.txt"), b"rewritten");
 
-        // The same file put back exactly as it left is no conflict at
-        // all, and the save is an ordinary one.
         let io = MemoryIo::with("/k10.txt", b"one");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/k10.txt")).unwrap();
@@ -3906,14 +3196,11 @@ mod tests {
 
     #[test]
     fn a_write_between_the_read_and_the_stat_is_never_invisible() {
-        // A filesystem that rewrites the file once, underneath the
-        // read. The pair of stats disagree, so the read is taken again
-        // rather than kept with a witness from the wrong generation.
         let io = ShiftingIo::new(b"one", 1);
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/s.txt")).unwrap();
         assert_eq!(
-            store.text(id).unwrap(),
+            store.text(id).unwrap().as_str(),
             "settled",
             "the buffer holds the generation its witness describes"
         );
@@ -3926,9 +3213,6 @@ mod tests {
 
     #[test]
     fn a_file_rewritten_faster_than_it_reads_is_refused_rather_than_opened() {
-        // Never opened with a mismatched pair: that would make `check`
-        // answer Unchanged forever and the next save would overwrite
-        // the other writer without a word.
         let io = ShiftingIo::new(b"one", 99);
         let mut store = FileStore::new();
         assert_eq!(
@@ -3940,9 +3224,6 @@ mod tests {
 
     #[test]
     fn a_symlink_is_resolved_once_at_open() {
-        // The seam's own resolution, which the real one implements with
-        // `std::fs::canonicalize`: the store keeps the resolved path,
-        // so a save lands on the file rather than on the link.
         let io = MemoryIo::with("/real.txt", b"body");
         io.link("/link.txt", "/real.txt");
         let mut store = FileStore::new();
@@ -3950,7 +3231,6 @@ mod tests {
         assert_eq!(store.file(id).unwrap().path(), Path::new("/real.txt"));
         assert_eq!(store.file(id).unwrap().name(), "real.txt");
 
-        // And the two paths are one open file, not two buffers racing.
         assert_eq!(store.open(&io, Path::new("/real.txt")).unwrap(), id);
         assert_eq!(store.files().len(), 1);
     }
@@ -3978,6 +3258,35 @@ mod tests {
         assert!(store.close(id));
         assert!(!store.close(id));
         assert!(store.files().is_empty());
+    }
+
+    #[test]
+    fn a_closed_files_draft_does_not_come_back_when_it_is_reopened() {
+        let io = MemoryIo::with("/c3.txt", b"body");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/c3.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(0, "draft ")], 1));
+        assert!(store.close(id));
+        let again = store.open(&io, Path::new("/c3.txt")).unwrap();
+        let file = store.file(again).unwrap();
+        assert_eq!(file.text().as_str(), "body");
+        assert!(!file.is_dirty());
+        assert_eq!(io.bytes("/c3.txt"), b"body");
+    }
+
+    #[test]
+    fn a_refused_reload_keeps_a_dirty_buffers_draft() {
+        let io = MemoryIo::with("/r3.txt", b"body");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/r3.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(0, "draft ")], 1));
+        io.put("/r3.txt", &[0x66, 0xFF, 0xFE]);
+        assert_eq!(store.reload(&io, id), Err(OpenRefusal::NotUtf8));
+        io.remove("/r3.txt");
+        assert!(store.reload(&io, id).is_err());
+        let file = store.file(id).unwrap();
+        assert_eq!(file.text().as_str(), "draft body");
+        assert!(file.is_dirty());
     }
 
     #[test]

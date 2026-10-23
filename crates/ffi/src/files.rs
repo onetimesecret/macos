@@ -1,31 +1,7 @@
-//! The C seam for open files.
-//!
-//! Paths in, never bytes. That is not a preference: no byte buffer has
-//! ever crossed this ABI, and the header says so deliberately. Doing
-//! the IO in Swift would mean inventing a buffer convention for a plain
-//! text file in a library that refused to invent one for sealed
-//! secrets, so the file IO lives in Rust and Swift passes it paths.
-//!
-//! Everything else follows the conventions in `lib.rs`: strings in are
-//! borrowed `*const c_char` read through `cstr`, strings out are owned
-//! and freed with `companion_string_free`, structure travels as JSON in
-//! a C string, `bool` is accept and reject, and null is the error value
-//! for a string return. `FileWitness` never leaves Rust.
-//!
-//! Every id here is tagged with `FILE_ID_TAG`. The inverse guard lives
-//! in `lib.rs`: every `companion_sheet_*` entry point refuses a tagged
-//! id, so a file id can never address page zero.
-//!
-//! The one blob that has to cross is the shell's bookmark, and it
-//! crosses as base64 in a C string rather than as a pointer and a
-//! length, for the same reason everything else here does.
-//!
-//! Drafts are sealed under the same content key as the state file and
-//! under an envelope magic of their own, so a drafts file presented as
-//! a state file fails authentication rather than misparsing. Rotating
-//! the content halves therefore discards drafts unless the rotation
-//! rewrites them, which [`crate::companion_persist_rotate_and_save`]
-//! does through [`reseal_drafts_beside`].
+//! The C seam for open files: paths in, never bytes, on the conventions of
+//! `lib.rs`. File ids carry `FILE_ID_TAG`, which every `companion_sheet_*`
+//! entry point refuses. Drafts are sealed under the content key with their
+//! own magic.
 
 use std::ffi::c_char;
 use std::io;
@@ -43,25 +19,14 @@ use zeroize::Zeroizing;
 use crate::diagnostics::diag_fault;
 use crate::{
     Companion, CompanionHandle, cstr, edit_intent, edit_selection, into_c_string, parse_ops,
-    persist, wall_now_ms,
+    persist, step_outcome_json, wall_now_ms,
 };
 
-/// Magic and version prefix of the sealed drafts file. Its own byte
-/// string, and its own AEAD associated data, so the three sealed files
-/// this app writes cannot be swapped for each other even by a caller
-/// holding both keys.
+/// The drafts envelope magic, also its associated data.
 const DRAFTS_MAGIC: &[u8; 8] = b"OTSDRFE1";
 
-/// The drafts file's default name.
-///
-/// **The shell owns the name.** Every `companion_drafts_*` entry point
-/// takes its path from the caller and never consults this, exactly as
-/// `companion_persist_save` does, so `FormFactor` is free to put the
-/// file where it likes. This constant exists for the one caller that
-/// has no path to be given: a key rotation is handed the state file and
-/// has to find the drafts file beside it. That is the same coupling
-/// `persist::STATE_FILE_NAME` already carries, and if the shell renames
-/// the file the rotation stops finding it.
+/// The drafts file's name beside the state file, for the rotation only; every
+/// `companion_drafts_*` entry point takes its path from the shell.
 pub(crate) const DRAFTS_FILE_NAME: &str = "drafts.sealed";
 
 /// The drafts file that sits beside `state_path`.
@@ -73,40 +38,22 @@ pub(crate) fn drafts_path_beside(state_path: &Path) -> Option<PathBuf> {
 // The platform surface the core asked for
 // ---------------------------------------------------------------------------
 
-/// The real file IO, and the whole of what `crates/core` knows about a
-/// filesystem.
-///
-/// The write is modelled on [`persist::write_private`] and differs from
-/// it in exactly one way: the temp file takes the mode of the file
-/// already at the target rather than 0600, because this is the user's
-/// own document and a save must not quietly make it owner only. A
-/// target that is not there yet gets 0644, which is what an editor
-/// creating a file is expected to leave behind.
-///
-/// **Where the temp file goes is the caller's to say.** Beside the
-/// target is the ordinary answer and needs nothing from anyone. It is
-/// also the one answer a sandboxed process cannot use: a grant on a
-/// document covers that document and not the directory it sits in, so
-/// creating anything beside it is refused. A shell that has been given
-/// a directory on the target's volume which it may write in hands it
-/// over as the staging directory, the temp file is made there instead,
-/// and the rename onto the target is the one step that needs the grant.
+/// The core's file IO. A write keeps the target's mode (0644 when new) and
+/// stages its temp file in `staging_dir`, or beside the target when `None`,
+/// since a sandboxed shell cannot create beside a granted document.
 pub(crate) struct RealFileIo<'a> {
     staging_dir: Option<&'a Path>,
 }
 
 impl RealFileIo<'static> {
-    /// File IO whose writes stage beside their target. Every caller
-    /// that only reads or stats takes this one too, since the staging
-    /// directory means nothing to a read.
+    /// Writes stage beside their target.
     pub(crate) const fn new() -> Self {
         Self { staging_dir: None }
     }
 }
 
 impl<'a> RealFileIo<'a> {
-    /// File IO whose writes stage in `staging_dir` when one is given,
-    /// and beside their target when it is `None`.
+    /// Writes stage in `staging_dir`, or beside their target when `None`.
     pub(crate) const fn staging_in(staging_dir: Option<&'a Path>) -> Self {
         Self { staging_dir }
     }
@@ -127,20 +74,18 @@ impl FileIo for RealFileIo<'_> {
     }
 
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
-        read_regular_file(path)
+        // One byte past the limit, so the core's length check sees an oversize file.
+        read_regular(path, companion_core::FILE_SIZE_LIMIT as u64 + 1)
     }
 
-    fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+    fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<FileWitness> {
         write_atomic_preserving_mode(path, bytes, self.staging_dir)
     }
 
     fn stat(&self, path: &Path) -> io::Result<FileWitness> {
         let metadata = std::fs::metadata(path)?;
         if !metadata.file_type().is_file() {
-            // A directory, a pipe, a socket or a device is not a text
-            // file, and answering a witness for one would let the store
-            // go on to read it. The core turns this into an `io`
-            // refusal the shell can name.
+            // Not a text file; the core turns this into an `io` refusal.
             return Err(io::Error::from(io::ErrorKind::InvalidInput));
         }
         witness_of(&metadata)
@@ -151,31 +96,26 @@ impl FileIo for RealFileIo<'_> {
     }
 }
 
-/// Read a whole file, having first established that it is one.
-///
-/// **A bare `std::fs::read` is not safe here.** The path comes from a
-/// person, or from a drafts record written before whatever is at the
-/// path now. If it is a named pipe with no writer, the `open` inside
-/// `std::fs::read` blocks and never returns, and both callers hold the
-/// handle mutex across it, so the whole app stops answering with no
-/// error and nothing to see. Two things prevent it, because either one
-/// alone has a race in it:
-///
-///  - the stat first, which refuses everything that is not a regular
-///    file, and
-///  - `O_NONBLOCK` on the open, so a pipe that was substituted in the
-///    window between the stat and the open fails `ENXIO` instead of
-///    parking forever. On a regular file the flag is inert.
-///
-/// `O_NOFOLLOW` is deliberately not set: symlinks are followed on
-/// purpose, once, at open, and the path held from then on is the
-/// resolved one.
-fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
+/// Read a whole regular file, following symlinks. Stats first and opens
+/// `O_NONBLOCK`, so a FIFO never parks a caller holding the handle mutex.
+pub(crate) fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
+    read_regular(path, u64::MAX)
+}
+
+/// The defended read, taking at most `limit` bytes.
+fn read_regular(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
     use std::io::Read as _;
 
-    let mut file = open_regular_file(path)?;
+    let file = open_regular_file(path)?;
+    // Presized as a hint only; a failed stat or allocation just grows.
+    let len = file
+        .metadata()
+        .ok()
+        .and_then(|metadata| usize::try_from(metadata.len().min(limit)).ok())
+        .unwrap_or(0);
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)?;
+    let _ = bytes.try_reserve_exact(len);
+    file.take(limit).read_to_end(&mut bytes)?;
     Ok(bytes)
 }
 
@@ -193,8 +133,7 @@ fn open_regular_file(path: &Path) -> io::Result<std::fs::File> {
         options.custom_flags(persist::O_NONBLOCK);
     }
     let file = options.open(path)?;
-    // Asked again through the open file itself, which no substitution
-    // at the name can change afterwards.
+    // Asked again through the descriptor, which the name cannot change.
     if !file.metadata()?.file_type().is_file() {
         return Err(io::Error::from(io::ErrorKind::InvalidInput));
     }
@@ -208,8 +147,6 @@ fn witness_of(metadata: &std::fs::Metadata) -> io::Result<FileWitness> {
         dev: metadata.dev(),
         ino: metadata.ino(),
         size: metadata.size(),
-        // Seconds and nanoseconds separately, because the two together
-        // are wider than the platform's own `mtime_nsec` field.
         mtime_ns: i128::from(metadata.mtime()) * 1_000_000_000 + i128::from(metadata.mtime_nsec()),
     })
 }
@@ -228,25 +165,14 @@ fn witness_of(metadata: &std::fs::Metadata) -> io::Result<FileWitness> {
     })
 }
 
-/// A temp file, opened create-new so nothing planted at the name is
-/// followed or truncated, written, fsynced, renamed onto the target,
-/// then the target's directory fsynced. Either the whole new text is at
-/// the path or the old one still is.
-///
-/// The temp file is made in `staging_dir` when there is one and beside
-/// the target when there is not. Nothing else differs between the two:
-/// the same name shape, the same mode, the same rename. A staging
-/// directory that is missing, not writable, or on another volume fails
-/// the save with the platform's own error, and there is deliberately no
-/// falling back to the sibling from here. A caller that was given a
-/// staging directory is one for whom the sibling is refused anyway, and
-/// a save that quietly took a different route than the one it was told
-/// to take is harder to reason about than one that says it failed.
+/// Create-new temp, write, fsync, rename, fsync the directory. The witness is
+/// the temp file's, read before the rename. A staging directory that will not
+/// serve fails the save; there is no fallback to a sibling.
 fn write_atomic_preserving_mode(
     path: &Path,
     bytes: &[u8],
     staging_dir: Option<&Path>,
-) -> io::Result<()> {
+) -> io::Result<FileWitness> {
     use std::io::Write as _;
 
     let dir = persist::containing_dir(path)
@@ -258,18 +184,13 @@ fn write_atomic_preserving_mode(
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt as _;
-        // Fail before staging any content. Rename cannot cross filesystems;
-        // only the shell can obtain an authorized replacement directory on
-        // the destination filesystem. Never turn this into a copying save.
+        // Rename cannot cross filesystems; never turn this into a copying save.
         if std::fs::metadata(tmp_dir)?.dev() != std::fs::metadata(dir)?.dev() {
             return Err(io::Error::from(io::ErrorKind::CrossesDevices));
         }
     }
 
-    // What is already at the target, asked once. Its mode and its group
-    // are what the new file has to end up with, because the rename
-    // replaces the file and everything the old one carried goes with
-    // it unless it is put back here.
+    // The rename drops the old file's mode and group unless they are carried.
     let existing = std::fs::metadata(path).ok();
 
     let mut options = std::fs::OpenOptions::new();
@@ -277,17 +198,11 @@ fn write_atomic_preserving_mode(
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _};
-        // The mode of what is already there, so a save leaves the
-        // file's own permissions where the user put them. Nothing yet
-        // at the path takes 0644.
         let mode = existing.as_ref().map_or(0o644, |meta| meta.mode() & 0o777);
         options.mode(mode);
     }
 
-    // Every attempt gets its own random suffix, so two savers never
-    // meet at one temp name and a leftover from a crash is never
-    // reopened. The shape matches `persist::write_private`'s, which is
-    // what makes a stranded one sweepable at launch.
+    // The `persist::write_private` temp shape, so a stranded one is swept at launch.
     let mut last = io::Error::from(io::ErrorKind::AlreadyExists);
     for _ in 0..8 {
         let mut suffix = [0u8; 8];
@@ -307,59 +222,34 @@ fn write_atomic_preserving_mode(
         };
         let landed = carry_identity(&file, existing.as_ref(), dir)
             .and_then(|()| file.write_all(bytes))
-            .and_then(|()| file.sync_all());
+            .and_then(|()| file.sync_all())
+            .and_then(|()| file.metadata())
+            .and_then(|metadata| witness_of(&metadata));
         drop(file);
-        if let Err(error) = landed {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(error);
-        }
-        // The one step that touches the target. A staging directory on
-        // another volume fails here, as does a target the process holds
-        // no grant on, and either way the temp file is taken back so
-        // nothing of the person's text is left lying in a directory
-        // they never look in.
+        let witness = match landed {
+            Ok(witness) => witness,
+            Err(error) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(error);
+            }
+        };
+        // A failed rename takes the temp file back.
         if let Err(error) = std::fs::rename(&tmp, path) {
             let _ = std::fs::remove_file(&tmp);
             return Err(error);
         }
-        // Best effort, exactly as the sealed write treats it: the
-        // bytes are durable either way, and a parent that will not sync
-        // must never unwrite the save.
+        // Best effort, as in `persist::write_private`.
         if let Ok(handle) = std::fs::File::open(dir) {
             let _ = handle.sync_all();
         }
-        return Ok(());
+        return Ok(witness);
     }
     Err(last)
 }
 
-/// Give the temp file the mode and the group of the file it is about to
-/// replace, through the open descriptor so no name is consulted twice.
-/// On POSIX, write permission is checked when opening the descriptor, so
-/// carrying a read-only mode before `write_all` does not revoke its write access.
-///
-/// The mode asked for at open is cut down by the process umask, so a
-/// file the user had made group writable would come back from a save
-/// without the bit. Setting it again on the descriptor is not subject
-/// to the umask, and a mode that will not set fails the save: writing a
-/// person's file back more widely or more narrowly readable than they
-/// left it is not a save they asked for.
-///
-/// The group is a different matter and is best effort. A new file takes
-/// the group of the directory it was created in, which for a staged
-/// write is the staging directory's and not the document's, so the
-/// group is put back when it differs. A user who is not a member of the
-/// group the file carried cannot give it back, and that is no reason to
-/// refuse to save their text.
-///
-/// Nothing at the target yet means no mode to carry: the file keeps the
-/// 0644, less the umask, that it was opened with. There is still a
-/// group to get right. A file made beside its target would have taken
-/// whatever group that directory hands a new file, and a staged one
-/// took the staging directory's instead, so a first save into a shared
-/// directory would land outside the group everything around it is in.
-/// The target's directory is asked, and its answer is given to the temp
-/// file on the same best effort terms.
+/// Give the temp file the target's mode (set past the umask; a failure fails
+/// the save) and, best effort, its group; a new file takes the group its
+/// target directory would give. Write access was already checked at open.
 #[cfg(unix)]
 fn carry_identity(
     file: &std::fs::File,
@@ -389,13 +279,8 @@ fn carry_identity(
     Ok(())
 }
 
-/// The group a file created in `dir` would be given, when that is the
-/// directory's to decide.
-///
-/// On macOS and the other BSD descended systems a new file always takes
-/// its directory's group. Linux gives it the creating process's group
-/// unless the directory carries the set group id bit, so without the
-/// bit there is nothing to restore and the answer is none.
+/// The group a new file in `dir` takes: the directory's on macOS, and on
+/// Linux only with the set group id bit.
 #[cfg(unix)]
 fn group_a_new_file_takes(dir: &std::fs::Metadata) -> Option<u32> {
     use std::os::unix::fs::MetadataExt as _;
@@ -425,14 +310,9 @@ fn getrandom_bytes(out: &mut [u8]) -> Result<(), ()> {
 // Files
 // ---------------------------------------------------------------------------
 
-/// Open the file at `path`, returning its tagged id, or 0 when the open
-/// refused. Ask [`companion_file_open_error_json`] why.
-///
-/// A path that is already open hands back the id it is open under. The
-/// one exception is a row that is still `pendingHydration`: its buffer
-/// is not the file's text yet, so the open refuses with an `io` error
-/// rather than hand back an id the shell would then draw. The shell
-/// hydrates such a row first and asks again.
+/// Open `path` and return its tagged id, or 0 on refusal
+/// ([`companion_file_open_error_json`] says why). An open path returns its
+/// existing id unless it is still `pendingHydration`.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid C string.
@@ -487,8 +367,7 @@ pub unsafe extern "C" fn companion_file_open_error_json(
         OpenRefusal::TooLarge { limit } => {
             serde_json::json!({ "error": "tooLarge", "limit": limit as u64 })
         }
-        // The kind's own name, which is a fixed English label from the
-        // standard library and carries no part of the path.
+        // A fixed standard library label, carrying no part of the path.
         OpenRefusal::Io(kind) => {
             serde_json::json!({ "error": "io", "detail": format!("{kind}") })
         }
@@ -499,9 +378,7 @@ pub unsafe extern "C" fn companion_file_open_error_json(
     }
 }
 
-/// Close the file and drop its buffer. The draft goes with it: a draft
-/// never outlives its tab. Any dirty-close decision is settled in the
-/// shell before this call.
+/// Close the file and drop its buffer and its draft.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -516,12 +393,8 @@ pub unsafe extern "C" fn companion_file_close(handle: *mut CompanionHandle, file
     guard.files.close(FileId(file))
 }
 
-/// The file's body as document runs, the same JSON shape
-/// `companion_sheet_document_json` returns. Null for an unknown file.
-/// Free with `companion_string_free`.
-///
-/// A file holds no chips, so in practice the array is one ink run, or
-/// none at all for an empty file.
+/// The file's body as document runs (one ink run, or none). Null for an
+/// unknown file. Free with `companion_string_free`.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -539,15 +412,7 @@ pub unsafe extern "C" fn companion_file_runs_json(
     let Some(text) = guard.files.text(FileId(file)) else {
         return ptr::null_mut();
     };
-    let runs: Vec<serde_json::Value> = if text.is_empty() {
-        Vec::new()
-    } else {
-        vec![serde_json::json!({ "ink": text })]
-    };
-    match serde_json::to_string(&runs) {
-        Ok(json) => into_c_string(json),
-        Err(_) => ptr::null_mut(),
-    }
+    crate::content_json::to_c_json(&crate::content_json::InkRuns(&text))
 }
 
 /// Apply an ordered edit batch to the file's body. False means the
@@ -621,9 +486,7 @@ unsafe fn apply(
     let Some(ops) = parse_ops(json) else {
         return false;
     };
-    // A batch with no readable clock is still applied: the stamp is a
-    // convenience for the restored draft's header, and refusing a
-    // person's keystroke over it would be the wrong trade.
+    // A missing clock stamps 0 rather than refuse a keystroke.
     let wall_ms = wall_now_ms().unwrap_or(0);
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
@@ -671,14 +534,8 @@ pub unsafe extern "C" fn companion_file_finish_editing_group(
     }
 }
 
-/// Whether the file has a step waiting to be taken back. False for an
-/// unknown file, and false whenever the answer cannot be had, which is
-/// what `companion_sheet_can_undo` answers for a page.
-///
-/// The pair exists because the page route refuses a tagged id by
-/// design, so a shell asking it about a file is told no rather than
-/// told the truth, and the undo menu item stays grey over a file with a
-/// full stack.
+/// Whether the file has an undo step; false for an unknown file. The page
+/// route refuses file ids, hence this pair.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -790,46 +647,13 @@ unsafe fn step(handle: *mut CompanionHandle, file: u64, back: bool) -> *mut c_ch
     } else {
         guard.files.redo(id)
     };
-    let Some(outcome) = outcome else {
-        return ptr::null_mut();
-    };
-    let value = serde_json::json!({
-        "applied": outcome.applied,
-        "caretUTF16": outcome.caret_u16.map_or(-1, i64::from),
-        "selectionLocationUTF16": outcome.selection_u16.map_or(-1, |value| i64::from(value.location_u16)),
-        "selectionLengthUTF16": outcome.selection_u16.map_or(-1, |value| i64::from(value.length_u16)),
-    });
-    match serde_json::to_string(&value) {
-        Ok(json) => into_c_string(json),
-        Err(_) => ptr::null_mut(),
-    }
+    outcome.map_or(ptr::null_mut(), step_outcome_json)
 }
 
-/// Write the buffer back to the file's own path, preserving the BOM and
-/// the line ending style it arrived with. False when the write refused,
-/// which includes a file standing in a conflict nobody has resolved and
-/// a restored file [`companion_file_hydrate`] has not settled yet. Ask
-/// [`companion_file_save_error_json`] which refusal it was.
-///
-/// **A save never makes a file where there is none.** When nothing is
-/// at the file's path the answer is false and nothing is written: the
-/// person deleted or moved that file, and a save that put a new one
-/// there would undo it for them. The path is looked at here, whether or
-/// not [`companion_file_check`] was asked first. The row is left with
-/// `notFound` set, and a row holding unsaved edits also enters the
-/// `missing` conflict. The ways out are [`companion_file_relocate`] and
-/// [`companion_file_save_as`]. The one save that does write to an empty
-/// path is the one a [`companion_file_resolve_keep_mine`] licensed while
-/// the path was already empty. A keep mine given while a copy was there
-/// does not license it: that consent is withdrawn and the save refused
-/// as above. Nor does one survive the buffer settling back to clean.
-///
-/// `staging_dir` is where the temp file is made before it is renamed
-/// onto the target, or null to make it beside the target. It has to be
-/// a directory on the target's volume that this process may create
-/// files in. A sandboxed shell cannot create anything beside a granted
-/// document, so it passes one; see [`RealFileIo`]. A staging directory
-/// that will not serve fails the save rather than falling back.
+/// Save the buffer to the file's path. False on refusal, including nothing at
+/// the path unless keep mine licensed recreating it;
+/// [`companion_file_save_error_json`] says which. `staging_dir` is null for
+/// beside the target, else a writable directory on the target's volume.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `staging_dir` a valid C string or
@@ -846,9 +670,7 @@ pub unsafe extern "C" fn companion_file_save(
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    // Forgotten before anything can refuse, so an argument that could
-    // not be read is never explained with the reason an earlier save
-    // left behind.
+    // Cleared first, so an unreadable argument never reports an older reason.
     guard.last_save_refusal = None;
     let Ok(staging_dir) = (unsafe { optional_path(staging_dir) }) else {
         return false;
@@ -880,7 +702,6 @@ pub unsafe extern "C" fn companion_file_save_as(
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    // As the save above: no earlier reason outlives this call.
     guard.last_save_refusal = None;
     let Some(path) = (unsafe { cstr(path) }) else {
         return false;
@@ -897,17 +718,8 @@ pub unsafe extern "C" fn companion_file_save_as(
     report_save(outcome)
 }
 
-/// Why the last [`companion_file_save`] or [`companion_file_save_as`]
-/// on this handle refused, as the JSON described in the header. Null
-/// when the last save wrote, when no save has been asked for, and when
-/// the last one was refused for an argument that could not be read,
-/// which never reached the file. Free with `companion_string_free`.
-///
-/// The bool a save answers cannot say which of its refusals it was, and
-/// the roster row afterwards does not say either: a file marked not
-/// found whose write the platform then refused looks exactly like one
-/// refused for being not found. The shell owes the person the true
-/// sentence, so the reason is kept and asked for here.
+/// Why the last save refused, as JSON; null after a write, before any save,
+/// or after an unreadable argument. Free with `companion_string_free`.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -930,8 +742,7 @@ pub unsafe extern "C" fn companion_file_save_error_json(
         SaveError::NotFound => serde_json::json!({ "error": "notFound" }),
         SaveError::PathInUse => serde_json::json!({ "error": "pathInUse" }),
         SaveError::UnknownFile => serde_json::json!({ "error": "unknownFile" }),
-        // The kind's own name, which is a fixed English label from the
-        // standard library and carries no part of the path.
+        // A fixed standard library label, carrying no part of the path.
         SaveError::Io(kind) => {
             serde_json::json!({ "error": "write", "detail": format!("{kind}") })
         }
@@ -942,15 +753,8 @@ pub unsafe extern "C" fn companion_file_save_error_json(
     }
 }
 
-/// A path argument that may be null. `Ok(None)` is the null the caller
-/// meant; `Err` is a pointer that was given and does not hold a path,
-/// which is text that is not UTF-8 or is empty.
-///
-/// The two are kept apart because they must not be answered alike. A
-/// caller that passed something unreadable asked for a particular
-/// directory or a particular file, and quietly treating that as "none
-/// given" would send a save or a hydration down the route it was trying
-/// to avoid. So the entry point refuses instead.
+/// `Ok(None)` for null; `Err` for a pointer that is not a non-empty UTF-8
+/// path, which the caller refuses rather than read as none.
 ///
 /// # Safety
 /// `p` must be null or a valid C string that outlives `'a`.
@@ -964,10 +768,7 @@ unsafe fn optional_path<'a>(p: *const c_char) -> Result<Option<&'a Path>, ()> {
     }
 }
 
-/// A refused save names itself in the diagnostic channel as well as to
-/// the shell, which asks [`companion_file_save_error_json`]. The
-/// refusals have one visible symptom, a file that did not write, and
-/// the log is where a report of one can be told from another.
+/// Log a save refusal, so reports of one can be told from another.
 fn report_save(outcome: Result<(), SaveError>) -> bool {
     match outcome {
         Ok(()) => true,
@@ -1014,16 +815,9 @@ fn report_save(outcome: Result<(), SaveError>) -> bool {
     }
 }
 
-/// Stat the file and say whether anything else has written it, as the
-/// `{state, path}` JSON described in the header. Null for an unknown
+/// Stat the file and report its conflict state as `{state, path}` JSON; this
+/// is the call that moves a dirty file into a conflict. Null for an unknown
 /// file. Free with `companion_string_free`.
-///
-/// This is the call that puts a dirty file into a conflict, so the
-/// shell asks it on activate and before every save. It also keeps the
-/// row's `accessRefused` and `notFound` honest, and a dirty row whose disk
-/// copy still cannot be read stays in the `changed` conflict whatever
-/// the state answered, so the conflict a hydration set for a refused
-/// read is not undone by a stat that happens to match.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1055,9 +849,7 @@ pub unsafe extern "C" fn companion_file_check(
     }
 }
 
-/// Re-read the file from disk, discarding whatever the buffer held and
-/// its undo history. This is the non-interactive reload primitive; an
-/// explicit Take theirs uses [`companion_file_resolve_take_theirs`].
+/// Re-read from disk, discarding the buffer and its undo history.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1072,9 +864,7 @@ pub unsafe extern "C" fn companion_file_reload(handle: *mut CompanionHandle, fil
     guard.files.reload(&RealFileIo::new(), FileId(file)).is_ok()
 }
 
-/// Take theirs: adopt the disk copy as one undoable structural change.
-/// Undo restores the former draft as dirty against that adopted disk
-/// baseline; Redo reapplies the disk copy.
+/// Take theirs: adopt the disk copy as one undoable change.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1095,25 +885,9 @@ pub unsafe extern "C" fn companion_file_resolve_take_theirs(
         .is_ok()
 }
 
-/// Keep mine: the first of the three conflict resolutions, and the only
-/// one with no other entry point. Take theirs is
-/// [`companion_file_resolve_take_theirs`] and the third is
-/// [`companion_file_save_as`]. Clears the conflict and lets the next
-/// save overwrite whatever is on disk.
-///
-/// The consent answers the state the path was in when it was given: a
-/// copy there, or nothing there. A check or a save that finds the path
-/// in the other state withdraws it and raises the conflict for what is
-/// true now, and the buffer settling clean withdraws it too. Asked on a
-/// `missing` conflict whose file is back at its path, nothing is
-/// consented to: the row is put in the state a check would find, and
-/// the answer is false when that is a `changed` conflict the person has
-/// not been shown.
-///
-/// Given over a copy that changed, the row reads `isDirty` from then
-/// until the save the consent was given for, whatever the buffer is
-/// edited or undone to: the text it was last saved as is the copy the
-/// disk no longer holds.
+/// Keep mine: clear the conflict and license the next save to overwrite. The
+/// consent lapses when the path changes state or the buffer settles clean
+/// (`companion_ffi.h`).
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1133,44 +907,9 @@ pub unsafe extern "C" fn companion_file_resolve_keep_mine(
         .resolve_keep_mine(&RealFileIo::new(), FileId(file))
 }
 
-/// Bind an open file to `path`, which is where a person has said the
-/// file is now, read the disk copy there and settle the file around
-/// it. True when the file now answers to that path.
-///
-/// This is the way back for a file whose roster row reads `missing`,
-/// `notFound` or `accessRefused`, and the shell also calls it with no
-/// panel when a check finds a file gone and its bookmark has followed
-/// it somewhere else. The read settles as [`companion_file_hydrate`]
-/// settles one:
-///
-///   - A file holding no draft adopts the disk copy. When that copy is
-///     not the one the file was last measured against, its row carries
-///     `externallyReloaded` until
-///     [`companion_file_clear_reload_notice`] answers it. A live file
-///     whose disk copy holds the text it already holds keeps its
-///     buffer, and with it its undo history: a file that was only
-///     moved is the same document somewhere else.
-///   - A draft stands. When the disk copy is the generation the draft
-///     was measured against, told by the file's identity and stamp or
-///     by its text, there is no conflict and dirtiness is truthful from
-///     here on. Otherwise the file stands in a `changed` conflict, and
-///     the disk copy is now one [`companion_file_resolve_take_theirs`]
-///     can take.
-///   - A row that was still `pendingHydration` is settled and is
-///     pending no longer. If its draft had been too large to stage,
-///     that is named in [`companion_drafts_notices_json`].
-///
-/// False leaves the file exactly as it was: its path, its buffer, its
-/// conflict and its `accessRefused` mark. It is false for an id nothing is
-/// open under, for a path another open file already holds, and for a
-/// file that will not open, which is anything an ordinary open refuses.
-/// The last of those is explained by [`companion_file_open_error_json`]
-/// in the same words an open uses; after the other two that call
-/// answers null.
-///
-/// The shell calls this inside the access the person's choice granted,
-/// so the read happens while that grant is open, and makes a fresh
-/// bookmark before the grant closes.
+/// Rebind the file to `path` and settle it against the disk copy there, as
+/// [`companion_file_hydrate`] does. False leaves the file unchanged; an open
+/// refusal is explained by [`companion_file_open_error_json`].
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid C string.
@@ -1307,14 +1046,7 @@ pub unsafe extern "C" fn companion_file_roster_json(handle: *mut CompanionHandle
     }
 }
 
-/// Say that the shell has posted the reload notice for a file, so the
-/// roster stops reporting one.
-///
-/// The roster is a plain read and clears nothing: a shell redraws its
-/// strip more than once, and a flag that vanished on the first read
-/// would be a notice nobody ever saw. This is the acknowledgement, and
-/// it is the only thing that turns `externallyReloaded` off short of a
-/// reload.
+/// Acknowledge the reload notice; reading the roster clears nothing.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1336,14 +1068,8 @@ pub unsafe extern "C" fn companion_file_clear_reload_notice(
 // Drafts: the third sealed file
 // ---------------------------------------------------------------------------
 
-/// Seal the open file roster and every dirty file's draft to `path`,
-/// under the same content key as the state file and under an envelope
-/// magic of its own.
-///
-/// A draft larger than `DRAFT_SNAPSHOT_LIMIT` is left out and the file
-/// is recorded as identity only, which leaves a `draftTooLarge` entry
-/// in [`companion_drafts_notices_json`]. The save still succeeds: one
-/// oversized draft must not cost the person every other open file.
+/// Seal the roster and the dirty drafts to `path`. An oversized draft is left
+/// out and noted in [`companion_drafts_notices_json`]; the save still succeeds.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid C string.
@@ -1370,16 +1096,8 @@ pub unsafe extern "C" fn companion_drafts_save(
     }
 }
 
-/// Seal the roster as it stands and write it to `path`, minting the
-/// content key halves if this is the first write under them. Shared
-/// with the rotation, which has to do the identical write after it has
-/// taken the old halves away.
-///
-/// `None` is a write that did not land. `Some` carries the drafts that
-/// were too large to go in, which the caller turns into notices; an
-/// empty vector is the ordinary answer.
-///
-/// The caller holds the lock.
+/// Seal and write the roster, minting key halves if needed. `None` when the
+/// write did not land, else the oversized drafts. The caller holds the lock.
 pub(crate) fn seal_drafts_to(
     state: &Companion,
     path: &Path,
@@ -1387,9 +1105,8 @@ pub(crate) fn seal_drafts_to(
     let wall_ms = wall_now_ms()?;
     let key = persist::ensure_state_key(state.credentials.as_ref(), path)?;
     let emitted = file_persist::emit(&state.files, wall_ms);
-    // The buffer holds a person's unsaved typing, so it is wiped on the
-    // way out whatever happens to the write.
-    let plaintext = Zeroizing::new(emitted.bytes);
+    // Zeroizing from the core, so wiped whatever happens to the write.
+    let plaintext = emitted.bytes;
     let sealed = persist::seal_body(&key, DRAFTS_MAGIC, &plaintext)?;
     let mut file = Vec::with_capacity(DRAFTS_MAGIC.len() + sealed.len());
     file.extend_from_slice(DRAFTS_MAGIC);
@@ -1397,32 +1114,9 @@ pub(crate) fn seal_drafts_to(
     persist::write_private(path, &file).then_some(emitted.oversized)
 }
 
-/// Restore the roster and the drafts at launch. False covers a fresh
-/// start with no file as much as a refused one.
-///
-/// **A draft record is never taken for a page.** The two files carry
-/// different envelope magics, each of which is its own associated data,
-/// and different plaintext magics inside them, so a drafts file handed
-/// to the state restore fails authentication and a state file handed
-/// here fails it too. Nothing about a record's shape decides which
-/// store it lands in: `file_persist::restore` writes only into the file
-/// store and cannot reach the sheet store at all.
-///
-/// **The roster this returns is not ready to draw.** This call opens
-/// the drafts file and puts its records back, and it reads no file of
-/// the person's. Every row comes back with `pendingHydration` set, and
-/// the shell owes each one a [`companion_file_hydrate`] before it
-/// draws, edits or saves it. The core refuses an edit, a save, a
-/// reload and a conflict resolution on a pending file, so a shell that
-/// forgets is told no rather than allowed to write an unfilled buffer
-/// over somebody's document.
-///
-/// The read is a separate call because under a sandbox a file can only
-/// be read while its own grant is open, and only the shell can open
-/// one. Reading every file from here would read them all before any
-/// bookmark had been resolved.
-///
-/// False here means the drafts file itself did not open.
+/// Restore the roster and drafts without reading any of the person's files:
+/// every row comes back `pendingHydration` and needs [`companion_file_hydrate`].
+/// False when the drafts file did not open.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid C string.
@@ -1441,7 +1135,8 @@ pub unsafe extern "C" fn companion_drafts_restore(
         return false;
     };
     let path = Path::new(path);
-    let Ok(file) = std::fs::read(path) else {
+    // The defended read: a planted FIFO fails rather than blocks.
+    let Ok(file) = read_regular_file(path) else {
         return false;
     };
     if !file.starts_with(DRAFTS_MAGIC) {
@@ -1451,8 +1146,7 @@ pub unsafe extern "C" fn companion_drafts_restore(
         );
         return false;
     }
-    // The magic is read before the key is asked for, so a file this
-    // build cannot read at all costs no keychain access.
+    // The magic is checked before the key, so a foreign file costs no prompt.
     let Some(key) = persist::load_state_key(guard.credentials.as_ref(), path) else {
         diag_fault!(
             "companion-ffi: the drafts file carries this build's envelope, but the content key \
@@ -1482,73 +1176,11 @@ pub unsafe extern "C" fn companion_drafts_restore(
     true
 }
 
-/// The second half of a drafts restore, for one file: look at the disk
-/// and leave the file in a state the shell can draw. True when the file
-/// stands in the roster afterwards; false when it was dropped from it,
-/// when nothing is open under the id, and when `resolved_path` was
-/// given and is not a path.
-///
-/// `resolved_path` is where the shell's bookmark resolved to, or null
-/// when the file has no bookmark or it would not resolve. A file that
-/// was moved while the app was closed is rebound to that path before
-/// anything is read, and the roster reports the new path from then on.
-/// The rebind is refused when another open file that has itself been
-/// hydrated already holds the resolved path, for the reason
-/// [`companion_file_save_as`] refuses the same thing: the file is then
-/// hydrated at the path its record carried, and the roster still shows
-/// that path afterwards, which is how the shell can tell. Null reads
-/// the recorded path.
-///
-/// **A hydration can wait.** When the resolved path is the recorded
-/// path of another file that is still pending, nothing is read and
-/// nothing is decided: that file may have been moved off the path, and
-/// its own hydration is what says so. The answer is true, because the
-/// file stands in the roster, and its row still reads
-/// `pendingHydration`, which is how the shell tells a wait from a
-/// settlement. The shell hydrates the other files and asks again. Two
-/// files that wait on each other are ended by hydrating one of them
-/// with null, which never waits. A file left waiting stays pending, and
-/// a pending file refuses every save and every edit, so a shell that
-/// forgot to ask again loses nothing.
-///
-/// What the read decides, per file:
-///
-///   - A clean file is filled from disk. If the disk copy had changed
-///     it is filled anyway, without asking, and its roster row carries
-///     `externallyReloaded` until
-///     [`companion_file_clear_reload_notice`] answers it.
-///   - A dirty file keeps its draft. If the disk copy is unchanged the
-///     draft is measured against it, so dirtiness is truthful from here
-///     on and stepping back to the file's text reads as clean; the
-///     persisted `lastEditedAt` survives, since the header states the
-///     draft's age. If the disk copy changed or will not read, the file
-///     stands in a `changed` conflict; if it is gone, a `missing` one.
-///     Where the read was one the platform refused, the row also
-///     carries `accessRefused`.
-///   - A clean file that is gone, or that is there and will not open
-///     as text, is dropped from the roster and named in
-///     [`companion_drafts_notices_json`].
-///
-/// **A hydration can hold.** A clean file whose read the platform
-/// refused, which is what a sandbox answers for a file whose grant is
-/// gone, is neither filled nor dropped. Something is there, and the
-/// person may know where the file is. The answer is true, the row
-/// stays `pendingHydration` and gains `accessRefused`, and its buffer is
-/// empty and refuses every edit and every save. The pair of flags is
-/// how the shell tells a hold from a wait. The way out is
-/// [`companion_file_relocate`], or this call again once the file can
-/// be read, or a close.
-///
-/// **One file never costs another.** Nothing here touches any file but
-/// the one named: a launch that lost every open tab because one of
-/// them was on an unmounted volume would be the worse answer by a
-/// distance.
-///
-/// A file that is not pending is left exactly as it is and answered
-/// true, so asking twice is harmless and a second call never rebinds.
-///
-/// The shell calls this inside the file's access grant, so the read
-/// happens while the grant is open.
+/// Settle one restored file against the disk at `resolved_path` (the
+/// bookmark's answer) or, when null, its recorded path. True when the file
+/// still stands in the roster, including a wait or a hold that leaves it
+/// `pendingHydration`. Touches no other file. Full contract in
+/// `companion_ffi.h`.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `resolved_path` a valid C string or
@@ -1588,34 +1220,9 @@ pub unsafe extern "C" fn companion_file_hydrate(
     )
 }
 
-/// Everything the last drafts save and the hydrations after a drafts
-/// restore have to tell the user about, as JSON:
-///
-/// ```text
-/// [{"name": string, "path": string,
-///   "reason": "missing" | "unreadable" | "draftTooLarge"}]
-/// ```
-///
-/// `missing` and `unreadable` are files that were open at the last quit
-/// and are not in the roster now: nothing is at the path any more, or
-/// something is and this build will not open it, because it is not
-/// UTF-8, looks binary or is past the size limit. `unreadable` here is
-/// never the roster's `accessRefused`: a file the platform would not
-/// let this process read is not dropped and is not in this list.
-/// `draftTooLarge` is a
-/// file that did come back, filled from disk and clean, whose unsaved
-/// editing was over the drafts file's size bound and was not staged.
-///
-/// **Reading drains the list.** This is a call the shell makes once
-/// after it has hydrated every restored file, not a view it polls, and
-/// an entry that stayed would
-/// be posted again on the next launch. The roster's own
-/// `externallyReloaded` flag is the opposite and is deliberately so: it
-/// is polled, so it is sticky and
-/// [`companion_file_clear_reload_notice`] answers it.
-///
-/// An empty array is the ordinary answer. Null when the answer cannot
-/// be had. Free with `companion_string_free`.
+/// The drafts notices as `[{name, path, reason}]` JSON, `reason` one of
+/// `missing`, `unreadable` or `draftTooLarge`. Reading drains the list. Null
+/// when the answer cannot be had. Free with `companion_string_free`.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1646,13 +1253,8 @@ pub unsafe extern "C" fn companion_drafts_notices_json(
     }
 }
 
-/// Drop the drafts file at `path`. True when the path is confirmed
-/// empty, including when there was nothing there to begin with.
-///
-/// No rotation happens here, and none may: the drafts file rests under
-/// the content key, and rotating on its behalf would destroy every
-/// staged page the user still has.
-///
+/// Drop the drafts file; true when the path is confirmed empty. Never
+/// rotates: the content key also keys every staged page.
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid C string.
 #[unsafe(no_mangle)]
@@ -1672,30 +1274,8 @@ pub unsafe extern "C" fn companion_drafts_erase(
     persist::erase_state(Path::new(path))
 }
 
-/// Rewrite the drafts file that sits beside `state_path` under whatever
-/// content key the halves now derive. Called by the rotation, under the
-/// handle lock, immediately after the old halves are destroyed and
-/// **before** the state file is resealed.
-///
-/// **Why drafts go first.** A rotation destroys the key, so everything
-/// sealed under it is unreadable the moment the old file half is
-/// erased. There is no ordering that keeps the drafts readable across
-/// that instant: writing them under the new key requires the new key,
-/// and the new key does not exist until the old halves are gone. What
-/// the ordering can decide is which of the two files survives a crash
-/// inside the window, and drafts win that. The rotation's own residual
-/// is already stated in `companion_persist_rotate_and_save`: the window
-/// costs the tab names, rungs and strip order, and costs no page
-/// content, because the rotation fires only when no tab holds a page. A
-/// draft is a person's unsaved typing and is the more valuable of the
-/// two, so it is written first and the arrangement takes the risk.
-///
-/// A file that is not there is not written: an install with no drafts
-/// file must not gain one from a rotation, because that would put an
-/// empty roster on disk where the shell reads one at launch.
-///
-/// Returns whether the drafts are readable under the new key, which for
-/// an install with no drafts file is trivially true.
+/// Reseal the drafts beside `state_path` under the new key, before the state
+/// file (Law 0005). Writes nothing when there is no drafts file and no open file.
 pub(crate) fn reseal_drafts_beside(state: &mut Companion, state_path: &Path) -> bool {
     let Some(path) = drafts_path_beside(state_path) else {
         return true;
@@ -1718,9 +1298,7 @@ pub(crate) fn reseal_drafts_beside(state: &mut Companion, state_path: &Path) -> 
     }
 }
 
-/// Erase the drafts file that sits beside `state_path`. The other half
-/// of `companion_persist_erase`: the gesture that drops the content
-/// file is the gesture that discards drafts.
+/// Erase the drafts file beside `state_path`.
 pub(crate) fn erase_drafts_beside(state_path: &Path) -> bool {
     let Some(path) = drafts_path_beside(state_path) else {
         return true;
@@ -1788,8 +1366,7 @@ mod tests {
         let (root, docs, staging) = target_and_staging("cross-filesystem");
         let target = docs.join("note.txt");
         std::fs::write(&target, b"original").unwrap();
-        // /dev is a separate mounted filesystem on macOS and Linux. It
-        // needs no writable fixture: preflight must reject before creation.
+        // /dev is its own filesystem on macOS and Linux.
         let other = Path::new("/dev");
         if std::fs::metadata(other).unwrap().dev() == std::fs::metadata(&docs).unwrap().dev() {
             eprintln!("cross-filesystem test skipped: /dev shares the scratch filesystem");
@@ -1818,14 +1395,29 @@ mod tests {
 
     unsafe fn take_json(ptr: *mut c_char) -> String {
         assert!(!ptr.is_null(), "the route answered null");
+        assert!(
+            crate::content_json::is_live(ptr),
+            "an owned return bypassed content_json"
+        );
         let text = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_string();
         unsafe { crate::companion_string_free(ptr) };
         text
     }
 
-    /// A temp directory of this test's own, for the files it opens and
-    /// the sealed state beside them. Never the installed state
-    /// directory, and never a path any other test shares.
+    #[test]
+    fn a_file_read_takes_no_more_than_one_byte_past_the_limit() {
+        let dir = scratch_dir("capped-read");
+        let path = dir.join("big.txt");
+        std::fs::write(&path, vec![b'a'; companion_core::FILE_SIZE_LIMIT + 4096]).unwrap();
+        let bytes = RealFileIo::new().read(&path).unwrap();
+        assert_eq!(bytes.len(), companion_core::FILE_SIZE_LIMIT + 1);
+        let small = dir.join("small.txt");
+        std::fs::write(&small, b"short").unwrap();
+        assert_eq!(RealFileIo::new().read(&small).unwrap(), b"short");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A temp directory of this test's own.
     fn scratch_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "ots-files-{tag}-{}-{}",
@@ -1836,17 +1428,11 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        // Resolved, because the store resolves every path it is given
-        // and the temp directory on macOS is reached through a symlink.
-        // A test that compared an unresolved path against the roster
-        // would be asserting the wrong thing.
+        // Resolved: the store resolves paths, and macOS reaches temp via a symlink.
         std::fs::canonicalize(&dir).unwrap()
     }
 
-    /// A handle over the in-process board with credentials that never
-    /// reach any keychain, built the way `lib.rs`'s own tests build
-    /// one. Two handles over one credential store model two launches
-    /// of the app against one keychain.
+    /// A handle on in-memory credentials; two handles on one store are a relaunch.
     fn handle_with(
         credentials: std::sync::Arc<dyn companion_credentials::CredentialStore>,
     ) -> *mut CompanionHandle {
@@ -1891,10 +1477,7 @@ mod tests {
         serde_json::from_str(&json).unwrap()
     }
 
-    /// The whole of a relaunch as a shell with no bookmark to resolve
-    /// performs it: restore the records, then hydrate every pending
-    /// row at the path its record carried. Answers what the restore
-    /// answered.
+    /// A relaunch with no bookmarks: restore, then hydrate every row in place.
     unsafe fn restore_and_hydrate(handle: *mut CompanionHandle, drafts: &CString) -> bool {
         if !unsafe { companion_drafts_restore(handle, drafts.as_ptr()) } {
             return false;
@@ -1906,11 +1489,40 @@ mod tests {
                 "every restored row waits on its hydration"
             );
             let id = row["id"].as_u64().unwrap();
-            // The answer is whether the file still stands, which each
-            // test reads off the roster for itself.
             let _ = unsafe { companion_file_hydrate(handle, id, ptr::null()) };
         }
         true
+    }
+
+    #[test]
+    fn file_runs_match_previous_json_bytes_for_empty_escaped_and_large_text() {
+        let (handle, dir) = scratch("content-json");
+        for (index, text) in [
+            String::new(),
+            "café 🦀\n\t\"\\".to_string(),
+            "café 🦀\n\t\"\\".repeat(16_384),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let file = dir.join(format!("{index}.txt"));
+            std::fs::write(&file, text.as_bytes()).unwrap();
+            unsafe {
+                let id = open(handle, &file);
+                assert!(FileId::is_tagged(id));
+                let expected = if text.is_empty() {
+                    serde_json::json!([])
+                } else {
+                    serde_json::json!([{"ink": text}])
+                };
+                assert_eq!(
+                    take_json(companion_file_runs_json(handle, id)),
+                    expected.to_string()
+                );
+                assert!(companion_file_close(handle, id));
+            }
+        }
+        cleanup(handle, &dir);
     }
 
     #[test]
@@ -1970,9 +1582,6 @@ mod tests {
             assert_eq!(row["pendingHydration"], serde_json::json!(false));
             assert_eq!(row["accessRefused"], serde_json::json!(false));
             assert_eq!(row["notFound"], serde_json::json!(false));
-            // The mark was once spelled the way the notice reason
-            // still is. The two are different things, and the row no
-            // longer carries the old word.
             assert!(row.get("unreadable").is_none());
         }
         cleanup(handle, &dir);
@@ -1980,8 +1589,6 @@ mod tests {
 
     #[test]
     fn a_save_never_recreates_a_file_that_is_gone_from_its_path() {
-        // Against the real filesystem and with no check asked first:
-        // the save looks at the path itself.
         let (handle, dir) = scratch("no-recreate");
         let clean = dir.join("clean.txt");
         let dirty = dir.join("dirty.txt");
@@ -2007,8 +1614,6 @@ mod tests {
             assert_eq!(row[1]["conflict"], serde_json::json!("missing"));
             assert_eq!(row[1]["isDirty"], serde_json::json!(true));
 
-            // A staging directory changes nothing about the refusal,
-            // and nothing is left behind in it.
             let staging = dir.join("staging");
             std::fs::create_dir(&staging).unwrap();
             let staging_c = cstring(&staging.to_string_lossy());
@@ -2016,13 +1621,10 @@ mod tests {
             assert!(!clean.exists());
             assert_eq!(std::fs::read_dir(&staging).unwrap().count(), 0);
 
-            // Keep mine is the consent that makes the file again.
             assert!(companion_file_resolve_keep_mine(handle, dirty_id));
             assert!(companion_file_save(handle, dirty_id, ptr::null()));
             assert_eq!(std::fs::read(&dirty).unwrap(), b"one mine");
 
-            // And save as is the way out for the clean one, back at
-            // the very path it left.
             let clean_c = cstring(&clean.to_string_lossy());
             assert!(companion_file_save_as(
                 handle,
@@ -2067,7 +1669,6 @@ mod tests {
                 save_error(handle),
                 Some(serde_json::json!({ "error": "conflict" }))
             );
-            // Asking is a plain read, so asking twice answers twice.
             assert_eq!(
                 save_error(handle),
                 Some(serde_json::json!({ "error": "conflict" }))
@@ -2088,9 +1689,7 @@ mod tests {
                 Some(serde_json::json!({ "error": "unknownFile" }))
             );
 
-            // An argument that cannot be read never reaches the file,
-            // and is not explained with the reason the save before it
-            // left behind.
+            // An unreadable argument clears the previous reason.
             let empty = cstring("");
             assert!(!companion_file_save(handle, clean_id, empty.as_ptr()));
             assert_eq!(save_error(handle), None);
@@ -2104,7 +1703,6 @@ mod tests {
             ));
             assert_eq!(save_error(handle), None);
 
-            // A save that writes leaves nothing to explain.
             assert!(companion_file_resolve_keep_mine(handle, dirty_id));
             assert!(!companion_file_save(handle, clean_id, ptr::null()));
             assert!(companion_file_save(handle, dirty_id, ptr::null()));
@@ -2115,10 +1713,7 @@ mod tests {
 
     #[test]
     fn a_write_the_platform_refuses_is_not_reported_as_a_file_not_found() {
-        // The corner the bool could not tell apart. The file is gone,
-        // a keep mine over the empty path licenses making it again, and
-        // then the write itself fails. The row still says not found,
-        // and the true reason is the write.
+        // Not found, licensed by keep mine, then the write itself fails.
         let (handle, dir) = scratch("save-error-write");
         let file = dir.join("gone.txt");
         std::fs::write(&file, b"one").unwrap();
@@ -2130,8 +1725,6 @@ mod tests {
             take_json(companion_file_check(handle, id));
             assert!(companion_file_resolve_keep_mine(handle, id));
 
-            // A staging directory that is not there fails the write and
-            // nothing else about the save.
             let absent = cstring(&dir.join("no-such-staging").to_string_lossy());
             assert!(!companion_file_save(handle, id, absent.as_ptr()));
             let error = save_error(handle).expect("the save refused");
@@ -2213,8 +1806,7 @@ mod tests {
         names
     }
 
-    /// A target directory and a staging directory beside it, both
-    /// inside one scratch directory and so on one volume.
+    /// Target and staging directories on one volume.
     fn target_and_staging(tag: &str) -> (PathBuf, PathBuf, PathBuf) {
         let root = scratch_dir(tag);
         let docs = root.join("docs");
@@ -2244,7 +1836,6 @@ mod tests {
             "the temp file left the staging directory with the rename"
         );
 
-        // A target that is not there yet is created the same way.
         let fresh = docs.join("fresh.txt");
         io.write_atomic(&fresh, b"first").unwrap();
         assert_eq!(std::fs::read(&fresh).unwrap(), b"first");
@@ -2261,10 +1852,7 @@ mod tests {
     #[test]
     fn a_staged_write_whose_rename_fails_takes_its_temp_file_back() {
         let (root, docs, staging) = target_and_staging("staged-fail");
-        // A directory with something in it can never be replaced by a
-        // file, so the rename is refused after the temp file has been
-        // written in full. That is the step a missing grant or a
-        // staging directory on another volume refuses too.
+        // A non-empty directory at the target fails the rename after the temp is written.
         let target = docs.join("occupied");
         std::fs::create_dir(&target).unwrap();
         std::fs::write(target.join("inside.txt"), b"theirs").unwrap();
@@ -2307,8 +1895,7 @@ mod tests {
         let (root, docs, staging) = target_and_staging("staged-mode");
         let target = docs.join("m.txt");
         std::fs::write(&target, b"body").unwrap();
-        // Group writable, which the usual umask would strip from a
-        // mode that was only asked for at open.
+        // Group writable, which the umask would strip from an open-time mode.
         std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o664)).unwrap();
         let before = std::fs::metadata(&target).unwrap();
 
@@ -2324,8 +1911,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// A group this user belongs to other than `not`, asked of `id`
-    /// rather than of libc, which this crate links on macOS only.
+    /// A group of this user's other than `not`, via `id`: no `libc` on Linux.
     #[cfg(unix)]
     fn another_group_of_mine(not: u32) -> Option<u32> {
         let output = std::process::Command::new("id").arg("-G").output().ok()?;
@@ -2343,10 +1929,7 @@ mod tests {
 
         let (root, docs, staging) = target_and_staging("staged-group");
         let staging_gid = std::fs::metadata(&staging).unwrap().gid();
-        // The shared directory: in a group the staging directory is
-        // not, and with the set group id bit, which is what makes a
-        // new file take the directory's group on Linux and changes
-        // nothing on macOS, where it always does.
+        // Set group id, so a new file takes the directory's group on Linux too.
         let Some(shared) = another_group_of_mine(staging_gid) else {
             // A user in one group has no second one to tell apart.
             let _ = std::fs::remove_dir_all(&root);
@@ -2358,8 +1941,6 @@ mod tests {
         }
         std::fs::set_permissions(&docs, std::fs::Permissions::from_mode(0o2755)).unwrap();
 
-        // What a file made beside its target gets, measured rather
-        // than assumed.
         let sibling = docs.join("sibling.txt");
         RealFileIo::new().write_atomic(&sibling, b"beside").unwrap();
         let expected = std::fs::metadata(&sibling).unwrap().gid();
@@ -2385,18 +1966,15 @@ mod tests {
         let (root, docs, staging) = target_and_staging("sibling");
         let target = docs.join("note.txt");
         std::fs::write(&target, b"old").unwrap();
-        // The directory the target sits in is made unwritable for the
-        // length of the write, which is the difference between the two
-        // routes made visible: the sibling route has to create there
-        // and cannot, and the staged route never tries.
+        // An unwritable target directory: the sibling route cannot create there and
+        // the staged route never tries.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
             std::fs::set_permissions(&docs, std::fs::Permissions::from_mode(0o555)).unwrap();
             let refused = RealFileIo::new().write_atomic(&target, b"new");
             std::fs::set_permissions(&docs, std::fs::Permissions::from_mode(0o755)).unwrap();
-            // Root writes anywhere, so a suite run as root learns
-            // nothing from this half and is not failed for it.
+            // Root writes anywhere.
             if let Err(error) = refused {
                 assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
                 assert_eq!(std::fs::read(&target).unwrap(), b"old");
@@ -2448,8 +2026,6 @@ mod tests {
                 serde_json::json!(copy.to_string_lossy())
             );
 
-            // A staging argument that was given and is not a path is
-            // refused outright rather than read as "none given".
             let ops = cstring(r#"[{"ins":{"at":0,"text":"x"}}]"#);
             assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
             let empty = cstring("");
@@ -2497,7 +2073,6 @@ mod tests {
             assert_eq!(error["error"], serde_json::json!("io"));
             assert!(error["detail"].is_string());
 
-            // A successful open clears the last refusal.
             let good = dir.join("good.txt");
             std::fs::write(&good, b"fine").unwrap();
             assert_ne!(open(handle, &good), 0);
@@ -2616,8 +2191,7 @@ mod tests {
             assert_eq!(roster(handle)[0]["conflict"], serde_json::json!("missing"));
             assert_eq!(roster(handle)[0]["notFound"], serde_json::json!(true));
 
-            // Take theirs is impossible with nothing there, so the
-            // reload refuses and the buffer stands.
+            // Nothing on disk to take, so the reload refuses and the buffer stands.
             assert!(!companion_file_reload(handle, id));
             std::fs::write(&file, b"back").unwrap();
             assert!(companion_file_reload(handle, id));
@@ -2698,8 +2272,7 @@ mod tests {
             "the draft's plaintext must not be on disk"
         );
         unsafe { crate::companion_free(handle) };
-        // A second handle sharing the same in-memory credential store
-        // is the relaunch: the same halves, a fresh store.
+        // A second handle over the same credentials is the relaunch.
         let relaunch = handle_with(keys);
         unsafe {
             assert!(restore_and_hydrate(relaunch, &drafts_c));
@@ -2718,8 +2291,7 @@ mod tests {
                 take_json(companion_file_bookmark_b64(relaunch, id)),
                 BASE64.encode(b"bookmark-blob")
             );
-            // The state file was never written, and the drafts file is
-            // not one: a draft record never lands in the sheet store.
+            // A draft record never lands in the sheet store.
             let state_c = cstring(&state.to_string_lossy());
             assert!(!crate::companion_persist_restore(
                 relaunch,
@@ -2731,9 +2303,32 @@ mod tests {
                 drafts_as_state.as_ptr()
             ));
             assert_eq!(tabs(relaunch).as_array().unwrap().len(), 0);
-            // The roster survived both refusals untouched.
             assert_eq!(roster(relaunch).as_array().unwrap().len(), 1);
         }
+        cleanup(relaunch, &dir);
+    }
+
+    #[test]
+    fn a_state_file_handed_to_the_drafts_restore_is_refused_and_kept() {
+        let keys = credentials();
+        let handle = handle_with(keys.clone());
+        let dir = scratch_dir("state-as-drafts");
+        let state = dir.join("state.sealed");
+        let state_c = cstring(&state.to_string_lossy());
+        unsafe {
+            let tab = crate::companion_tab_new(handle);
+            assert_ne!(tab, 0);
+            assert!(crate::companion_persist_save(handle, state_c.as_ptr()));
+        }
+        let sealed = std::fs::read(&state).unwrap();
+        unsafe { crate::companion_free(handle) };
+        let relaunch = handle_with(keys);
+        unsafe {
+            assert!(!companion_drafts_restore(relaunch, state_c.as_ptr()));
+            assert_eq!(roster(relaunch).as_array().unwrap().len(), 0);
+            assert_eq!(tabs(relaunch).as_array().unwrap().len(), 0);
+        }
+        assert_eq!(std::fs::read(&state).unwrap(), sealed);
         cleanup(relaunch, &dir);
     }
 
@@ -2747,9 +2342,7 @@ mod tests {
         serde_json::from_str(&json).unwrap()
     }
 
-    /// One clean file and one dirty one staged into a drafts file, and
-    /// the credential store that opens it again. The caller changes
-    /// what is on disk before relaunching.
+    /// A clean and a dirty file staged into drafts; the caller edits the disk.
     fn staged(
         tag: &str,
     ) -> (
@@ -2774,7 +2367,6 @@ mod tests {
             let ops = cstring(r#"[{"ins":{"at":0,"text":"typed "}}]"#);
             assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
             assert!(companion_drafts_save(handle, drafts_c.as_ptr()));
-            // A save reports no notices when nothing was left out.
             assert_eq!(notices(handle), serde_json::json!([]));
             crate::companion_free(handle);
         }
@@ -2788,9 +2380,6 @@ mod tests {
         unsafe {
             assert!(restore_and_hydrate(handle, &drafts_c));
             let row = roster(handle);
-            // The clean file arrived filled from disk, with nothing to
-            // say about it. The hydration was the read, so the shell
-            // calls no reload of its own.
             assert_eq!(row[0]["pendingHydration"], serde_json::json!(false));
             assert_eq!(row[0]["isDirty"], serde_json::json!(false));
             assert_eq!(row[0]["externallyReloaded"], serde_json::json!(false));
@@ -2799,7 +2388,6 @@ mod tests {
                 take_json(companion_file_runs_json(handle, clean_id)),
                 r#"[{"ink":"clean body\n"}]"#
             );
-            // The dirty one kept its draft and knows the disk copy.
             assert_eq!(row[1]["isDirty"], serde_json::json!(true));
             assert_eq!(row[1]["conflict"], serde_json::json!("none"));
             let dirty_id = row[1]["id"].as_u64().unwrap();
@@ -2830,8 +2418,7 @@ mod tests {
                 take_json(companion_file_runs_json(handle, id)),
                 r#"[{"ink":"somebody else wrote this\n"}]"#
             );
-            // Reading the roster again does not lose the flag; only the
-            // acknowledgement clears it.
+            // Only the acknowledgement clears the flag.
             assert_eq!(
                 roster(handle)[0]["externallyReloaded"],
                 serde_json::json!(true)
@@ -2894,7 +2481,6 @@ mod tests {
                 serde_json::json!(clean.to_string_lossy())
             );
             assert_eq!(posted[0]["reason"], serde_json::json!("missing"));
-            // Reading drains: the notice is not posted twice.
             assert_eq!(notices(handle), serde_json::json!([]));
         }
         cleanup(handle, &dir);
@@ -2918,8 +2504,7 @@ mod tests {
     #[test]
     fn a_restore_reads_no_file_and_leaves_every_row_pending() {
         let (keys, dir, clean, dirty, drafts_c) = staged("pending");
-        // Both files are gone. A restore that read them would drop the
-        // clean one and post a notice; this one must do neither.
+        // Both files are gone; a restore that read them would drop the clean one.
         std::fs::remove_file(&clean).unwrap();
         std::fs::remove_file(&dirty).unwrap();
         let handle = handle_with(keys);
@@ -2968,8 +2553,7 @@ mod tests {
                 assert!(!companion_file_resolve_take_theirs(handle, id));
                 assert!(!companion_file_resolve_keep_mine(handle, id));
             }
-            // The clean record's buffer is empty until it is hydrated,
-            // so a save that got through would have emptied the file.
+            // The pending buffer is empty, so a save would have emptied the file.
             assert_eq!(std::fs::read(&clean).unwrap(), b"clean body\n");
             assert_eq!(std::fs::read(&dirty).unwrap(), b"dirty body\n");
             assert!(!elsewhere.exists());
@@ -2981,7 +2565,6 @@ mod tests {
             );
             assert!(companion_file_save(handle, dirty_id, ptr::null()));
             assert_eq!(std::fs::read(&dirty).unwrap(), b"typed dirty body\n");
-            // The file beside it is still waiting and still refused.
             assert_eq!(
                 roster(handle)[0]["pendingHydration"],
                 serde_json::json!(true)
@@ -3031,7 +2614,6 @@ mod tests {
             assert_eq!(row[1]["conflict"], serde_json::json!("none"));
             assert_eq!(notices(handle), serde_json::json!([]));
 
-            // The save lands where the file is, not where it was.
             assert!(companion_file_save(handle, dirty_id, ptr::null()));
         }
         assert_eq!(std::fs::read(&moved_dirty).unwrap(), b"typed dirty body\n");
@@ -3050,9 +2632,7 @@ mod tests {
             let dirty_id = row[1]["id"].as_u64().unwrap();
             let taken = cstring(&clean.to_string_lossy());
 
-            // While the holder is still pending its claim on the path
-            // is unchecked, so the question waits: true, and the row
-            // still pending, with nothing read and nothing moved.
+            // The holder is still pending, so this waits: true, and still pending.
             assert!(companion_file_hydrate(handle, dirty_id, taken.as_ptr()));
             let row = roster(handle);
             assert_eq!(row[1]["pendingHydration"], serde_json::json!(true));
@@ -3060,8 +2640,6 @@ mod tests {
             assert_eq!(row[0]["pendingHydration"], serde_json::json!(true));
             assert!(!companion_file_save(handle, dirty_id, ptr::null()));
 
-            // A resolved path that was given and is not a path is
-            // refused, and the file is still waiting afterwards.
             let empty = cstring("");
             assert!(!companion_file_hydrate(handle, clean_id, empty.as_ptr()));
             assert_eq!(
@@ -3069,8 +2647,7 @@ mod tests {
                 serde_json::json!(true)
             );
 
-            // Once the holder has settled where its record said, the
-            // same question is refused for good.
+            // Once the holder settles, the same rebind is refused.
             assert!(companion_file_hydrate(handle, clean_id, ptr::null()));
             assert!(companion_file_hydrate(handle, dirty_id, taken.as_ptr()));
             let row = roster(handle);
@@ -3114,7 +2691,6 @@ mod tests {
             assert_eq!(row[0]["path"], serde_json::json!(dirty.to_string_lossy()));
             assert_eq!(row[0]["isDirty"], serde_json::json!(true));
             assert_eq!(row[0]["conflict"], serde_json::json!("none"));
-            // Asking again is harmless and changes nothing.
             assert!(companion_file_hydrate(handle, dirty_id, ptr::null()));
             assert!(!companion_file_hydrate(handle, clean_id, ptr::null()));
 
@@ -3129,11 +2705,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_read_the_platform_refuses_holds_a_clean_file_and_keeps_a_draft() {
-        // The nearest an unsandboxed test can come to a file the
-        // process holds no grant on: the stat answers and the read is
-        // refused. A clean record is held in the roster, marked access
-        // refused and unfilled, and a dirty one keeps its draft and stands in a
-        // conflict. Nothing is dropped, so nothing is named.
+        // Stands in for a file with no grant: the stat answers, the read is refused.
         use std::os::unix::fs::PermissionsExt as _;
 
         let (keys, dir, clean, dirty, drafts_c) = staged("denied");
@@ -3141,8 +2713,7 @@ mod tests {
         std::fs::set_permissions(&clean, locked.clone()).unwrap();
         std::fs::set_permissions(&dirty, locked).unwrap();
         if std::fs::read(&clean).is_ok() {
-            // Root reads through any mode, so there is no refusal here
-            // to test against.
+            // Root reads through any mode.
             let _ = std::fs::remove_dir_all(&dir);
             return;
         }
@@ -3162,7 +2733,6 @@ mod tests {
             let ops = cstring(r#"[{"ins":{"at":0,"text":"x"}}]"#);
             assert!(!companion_file_apply_ops(handle, held, ops.as_ptr()));
             assert!(!companion_file_save(handle, held, ptr::null()));
-            // An open of the same path must not hand the held row back.
             assert_eq!(open(handle, &clean), 0);
 
             assert_eq!(row[1]["path"], serde_json::json!(dirty.to_string_lossy()));
@@ -3178,10 +2748,7 @@ mod tests {
             assert!(!companion_file_save(handle, id, ptr::null()));
             assert!(!companion_file_resolve_take_theirs(handle, id));
 
-            // The check the first activation makes finds a stat that
-            // matches the record and a read that is still refused. The
-            // conflict the hydration set stands, and so does the
-            // refusal to save over a copy nothing here has read.
+            // The stat matches but the read is still refused, so the conflict stands.
             let check: serde_json::Value =
                 serde_json::from_str(&take_json(companion_file_check(handle, id))).unwrap();
             assert_eq!(check["state"], serde_json::json!("unchanged"));
@@ -3190,9 +2757,6 @@ mod tests {
             assert_eq!(row[1]["accessRefused"], serde_json::json!(true));
             assert!(!companion_file_save(handle, id, ptr::null()));
 
-            // The read comes back. The held file settles on the same
-            // call that held it, and the check clears the mark on the
-            // file that was already settled.
             let readable = std::fs::Permissions::from_mode(0o644);
             std::fs::set_permissions(&clean, readable.clone()).unwrap();
             std::fs::set_permissions(&dirty, readable).unwrap();
@@ -3212,10 +2776,8 @@ mod tests {
 
     #[test]
     fn a_relocation_follows_a_file_the_person_points_at() {
-        // A dirty file and a clean one, both moved while the app was
-        // away, with no bookmark handed to the hydration. The clean one
-        // is dropped as missing, which is today's rule, and the dirty
-        // one stands in a missing conflict until it is relocated.
+        // Both moved, no bookmark: the clean one drops as missing, the dirty one
+        // stands in a missing conflict.
         let (keys, dir, _clean, dirty, drafts_c) = staged("relocate");
         let moved = dir.join("moved.txt");
         std::fs::rename(&dirty, &moved).unwrap();
@@ -3286,13 +2848,10 @@ mod tests {
             let _other = open(handle, &held);
             let as_it_was = roster(handle);
 
-            // A path another open file holds: refused, and the open
-            // error has nothing to add.
             let held_c = cstring(&held.to_string_lossy());
             assert!(!companion_file_relocate(handle, id, held_c.as_ptr()));
             assert!(companion_file_open_error_json(handle).is_null());
 
-            // A file that will not open: refused in an open's own words.
             let binary_c = cstring(&binary.to_string_lossy());
             assert!(!companion_file_relocate(handle, id, binary_c.as_ptr()));
             assert_eq!(
@@ -3344,15 +2903,12 @@ mod tests {
             );
             assert!(companion_file_can_redo(handle, id));
 
-            // A live page's id, untagged, is refused here the way a
-            // file id is refused by the page pair.
             let tab = crate::companion_tab_new(handle);
             assert_ne!(tab, 0);
             let page = tabs(handle)[0]["page_id"].as_u64().unwrap();
             assert!(!companion_file_can_undo(handle, page));
             assert!(!companion_file_can_redo(handle, page));
 
-            // And the file still answers, so no refusal touched it.
             assert!(companion_file_can_redo(handle, id));
         }
         cleanup(handle, &dir);
@@ -3360,18 +2916,10 @@ mod tests {
 
     #[test]
     fn a_fifo_is_refused_rather_than_blocked_on() {
-        // A bare `std::fs::read` of a pipe with no writer parks in
-        // `open(2)` forever with the handle mutex held, which stops the
-        // whole app answering. The open must come back instead.
-        //
-        // The work runs on a second thread and the assertion waits on a
-        // channel, so a regression is a test that fails on a timeout
-        // rather than a suite that hangs.
+        // On a second thread, so a regression times out rather than hangs.
         let (handle, dir) = scratch("fifo");
         let fifo = dir.join("pipe");
-        // Planted through the command rather than `libc::mkfifo`, the
-        // same way persist.rs plants its FIFO: this crate takes `libc`
-        // on macOS only, and the Linux CI host compiles these tests.
+        // `mkfifo` the command: this crate takes `libc` on macOS only.
         assert!(
             std::process::Command::new("mkfifo")
                 .arg(&fifo)
@@ -3403,8 +2951,7 @@ mod tests {
         let error: serde_json::Value = serde_json::from_str(&error).unwrap();
         assert_eq!(error["error"], serde_json::json!("io"));
 
-        // The handle still answers, which is the property that matters:
-        // nothing walked off holding the lock.
+        // The handle still answers: nothing kept the lock.
         unsafe {
             assert_eq!(roster(handle), serde_json::json!([]));
         }
@@ -3440,7 +2987,6 @@ mod tests {
             assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
             assert!(companion_file_save(handle, id, ptr::null()));
 
-            // Opening the real path is the same file, not a second one.
             assert_eq!(open(handle, &real), id);
             assert_eq!(roster(handle).as_array().unwrap().len(), 1);
         }
@@ -3458,9 +3004,7 @@ mod tests {
 
     #[test]
     fn keep_mine_then_save_writes_through_the_documented_flow() {
-        // Check on activate, choose keep mine, check again before the
-        // save because the header says to, then save. Every step over
-        // the seam, because the bug this pins was invisible under it.
+        // Every step over the seam, in the header's order.
         let (handle, dir) = scratch("keepmine");
         let file = dir.join("k.txt");
         std::fs::write(&file, b"one").unwrap();
@@ -3516,9 +3060,6 @@ mod tests {
 
     #[test]
     fn dropping_the_content_file_keeps_an_open_file_s_draft() {
-        // The last page tab going away is a page lifecycle event. A
-        // person holding a dirty file tab at that moment did not ask
-        // for their unsaved typing to go anywhere.
         let keys = credentials();
         let handle = handle_with(keys.clone());
         let dir = scratch_dir("erase-keeps");
@@ -3535,14 +3076,12 @@ mod tests {
             assert!(crate::companion_persist_save(handle, state_c.as_ptr()));
             assert!(companion_drafts_save(handle, drafts_c.as_ptr()));
 
-            // The last page tab goes: the shell drops the content file.
             assert!(crate::companion_persist_erase(handle, state_c.as_ptr()));
             crate::companion_free(handle);
         }
         assert!(!state.exists(), "the content file went");
         assert!(drafts.exists(), "the draft did not");
 
-        // And it opens under the halves the drop minted.
         let relaunch = handle_with(keys);
         unsafe {
             assert!(restore_and_hydrate(relaunch, &drafts_c));
@@ -3571,7 +3110,6 @@ mod tests {
             let id = open(handle, &file);
             assert!(crate::companion_persist_save(handle, state_c.as_ptr()));
             assert!(companion_drafts_save(handle, drafts_c.as_ptr()));
-            // The tab is closed, so nothing is staged any more.
             assert!(companion_file_close(handle, id));
             assert!(crate::companion_persist_erase(handle, state_c.as_ptr()));
         }
@@ -3598,7 +3136,6 @@ mod tests {
             assert!(drafts.exists());
             assert!(companion_drafts_erase(handle, drafts_c.as_ptr()));
             assert!(!drafts.exists());
-            // Erasing what is not there is success, not a failure.
             assert!(companion_drafts_erase(handle, drafts_c.as_ptr()));
         }
         cleanup(handle, &dir);
@@ -3624,9 +3161,7 @@ mod tests {
         }
         let before = std::fs::read(&drafts).unwrap();
 
-        // The pad holds no page, so this is the rotation the shell
-        // performs when the last page expires: new halves, the strip
-        // resealed, and the drafts rewritten in the same operation.
+        // No page left: the rotation the shell runs when the last page expires.
         unsafe {
             assert!(crate::companion_persist_rotate_and_save(
                 handle,
@@ -3657,10 +3192,6 @@ mod tests {
 
     #[test]
     fn the_explicit_discard_always_takes_the_drafts() {
-        // `companion_drafts_erase` is the door for a person who asked
-        // to discard their unsaved file edits, and it takes them
-        // whether or not the file is still open. That is what lets
-        // `companion_persist_erase` be careful.
         let (handle, dir) = scratch("erase-pair");
         let drafts = dir.join(DRAFTS_FILE_NAME);
         let file = dir.join("x.txt");
@@ -3680,8 +3211,6 @@ mod tests {
 
     #[test]
     fn a_ledger_clear_leaves_the_drafts_alone() {
-        // The same entry point drops the ledger file, and that gesture
-        // asked nothing about files. Drafts must survive it.
         let (handle, dir) = scratch("ledger-clear");
         let ledger = dir.join("ledger.sealed");
         let drafts = dir.join(DRAFTS_FILE_NAME);
@@ -3702,10 +3231,6 @@ mod tests {
 
     #[test]
     fn the_drafts_file_neither_triggers_nor_blocks_a_rotation() {
-        // The rotation predicate reads the path's name and, failing
-        // that, the envelope at it. The drafts file answers no to both,
-        // so a rotation aimed at it is refused outright rather than
-        // destroying the halves that key every staged page.
         let (handle, dir) = scratch("predicate");
         let state = dir.join("state.sealed");
         let drafts = dir.join(DRAFTS_FILE_NAME);
@@ -3726,8 +3251,6 @@ mod tests {
                 "a rotation aimed at the drafts file is refused"
             );
         }
-        // The state file still opens, so nothing was rotated on the
-        // drafts file's behalf.
         unsafe {
             assert!(crate::companion_persist_restore(handle, state_c.as_ptr()));
         }
@@ -3760,7 +3283,6 @@ mod tests {
         std::fs::write(&file, b"one").unwrap();
         unsafe {
             open(handle, &file);
-            // A live page's id, untagged, put to every file route.
             let tab = crate::companion_tab_new(handle);
             assert_ne!(tab, 0);
             let page = tabs(handle)[0]["page_id"].as_u64().unwrap();
@@ -3815,7 +3337,6 @@ mod tests {
             assert!(!companion_file_clear_reload_notice(handle, page));
 
             assert!(!dir.join("nope.txt").exists());
-            // The page and the file both stood through all of it.
             assert_eq!(tabs(handle)[0]["page_id"].as_u64(), Some(page));
             assert_eq!(roster(handle).as_array().unwrap().len(), 1);
         }

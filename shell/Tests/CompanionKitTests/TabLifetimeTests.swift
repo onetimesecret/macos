@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import CompanionKit
@@ -13,7 +14,7 @@ import XCTest
 /// store, which is the issue #53 seam.
 @MainActor
 final class TabLifetimeTests: XCTestCase {
-    private func makeModel() throws -> PageModel {
+    private func makeModel(wake: NotificationCenter? = nil) throws -> PageModel {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("companion-tabs-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -29,7 +30,8 @@ final class TabLifetimeTests: XCTestCase {
             seams: .init(
                 stateDirectory: tempDir,
                 client: .ephemeral(tag: "tabs-\(UUID().uuidString)"),
-                saveDebounce: 0.05
+                saveDebounce: 0.05,
+                wakeNotifications: wake
             )
         )
     }
@@ -262,7 +264,8 @@ final class TabLifetimeTests: XCTestCase {
     }
 
     /// The other predicate's write, and the one that keeps the
-    /// forgetting claim true (ADR-0016 section 6, ADR-0017). When the
+    /// forgetting sentence true (persistence decision background section 6,
+    /// ADR-0017). When the
     /// last page expires and tabs remain, the save rotates both content
     /// key halves and reseals the strip under new ones, so every
     /// ciphertext generation the pages lived in stops being decryptable
@@ -394,6 +397,27 @@ final class TabLifetimeTests: XCTestCase {
             "with no strip left to reseal the file goes instead"
         )
     }
+
+    /// The event timer does not count sleep, so the system's wake settles as the
+    /// timer would: a page that came due asleep goes at once, with its write armed (Law 0001, expiry row).
+    func testAWakeSettlesAPageThatCameDueWhileTheMachineSlept() throws {
+        let wake = NotificationCenter()
+        let model = try makeModel(wake: wake)
+        model.loadStateIfNeeded()
+        let tab = try XCTUnwrap(model.selection)
+        XCTAssertTrue(model.coreClient.setRung(tab: tab, rung: .oneHour))
+        // No refresh here: the shell's timer stays armed for the page's old hour.
+        model.coreClient.ageForTests(byMs: 2 * 60 * 60 * 1_000)
+        XCTAssertEqual(model.coreClient.tabs().first?.hasPage, true, "the control: no sweep ran")
+        let marks = model.dirtyMarks
+
+        wake.post(name: NSWorkspace.didWakeNotification, object: nil)
+        drainMainQueue()
+
+        XCTAssertNil(model.selectedPageID, "the page that came due asleep outlived the wake")
+        XCTAssertFalse(try XCTUnwrap(model.tabs.first).hasPage)
+        XCTAssertGreaterThan(model.dirtyMarks, marks, "the wake's sweep armed no write")
+    }
 }
 
 /// What an empty slot offers, and what it must not. A tab whose page
@@ -404,18 +428,25 @@ final class TabLifetimeTests: XCTestCase {
 final class EmptySlotGestureTests: XCTestCase {
     func testTheHoldItemNamesTheTurnOfTheCycleItWillTake() {
         XCTAssertEqual(
-            SheetTab.holdMenuTitle(paused: false, toppedUp: false), "Hold the clock for 1h")
+            SheetTab.holdMenuTitle(paused: false, toppedUp: false), "Hold the Clock for 1h")
         XCTAssertEqual(
-            SheetTab.holdMenuTitle(paused: true, toppedUp: false), "Top the hold up to 24h")
-        XCTAssertEqual(SheetTab.holdMenuTitle(paused: true, toppedUp: true), "Release the hold")
+            SheetTab.holdMenuTitle(paused: true, toppedUp: false), "Top the Hold Up to 24h")
+        XCTAssertEqual(SheetTab.holdMenuTitle(paused: true, toppedUp: true), "Release the Hold")
     }
 
     /// On an empty slot the gesture sets the rung the next page is born
     /// at, which is not a countdown being shortened.
     func testTheRungItemSaysWhichClockItShortens() {
-        XCTAssertEqual(SheetTab.rungMenuTitle(hasPage: true), "Shorten the countdown")
+        XCTAssertEqual(SheetTab.rungMenuTitle(hasPage: true), "Shorten the Countdown")
         XCTAssertEqual(
-            SheetTab.rungMenuTitle(hasPage: false), "Shorten the next page's countdown")
+            SheetTab.rungMenuTitle(hasPage: false), "Shorten the Next Page's Countdown")
+    }
+
+    /// The ↗ page tab speaks the menu's verb, create, with the one-time
+    /// link as its object (ADR-0055 rule 3, issue #295).
+    func testThePageLinkTabNamesTheLinkInTheMenusWords() {
+        XCTAssertEqual(TabStripView.concealPageHelp, "create a one-time link from this page")
+        XCTAssertEqual(TabStripView.concealPageLabel, "Create one-time link from page")
     }
 
     /// The double-click on an empty slot, in the model where the

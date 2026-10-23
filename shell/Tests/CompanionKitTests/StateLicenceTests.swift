@@ -113,7 +113,8 @@ final class StateLicenceTests: XCTestCase {
     }
 }
 
-/// The content-side discard (ADR-0016 section 7, issue #49): the mirror
+/// The content-side discard (persistence decision background section 7,
+/// issue #49): the mirror
 /// of the ledger's Clear-based re-grant, and the one way back from a
 /// withheld content licence.
 final class ContentClearTests: XCTestCase {
@@ -142,12 +143,14 @@ final class QuitOutcomeTests: XCTestCase {
         // is beside the point.
         XCTAssertEqual(
             PageModel.quitOutcome(
-                settled: false, contentLicence: true, loaded: true, mutatedSinceLoad: true),
+                settled: false, contentLicence: true, loaded: true, mutatedSinceLoad: true,
+                draftsHeld: false),
             .refused
         )
         XCTAssertEqual(
             PageModel.quitOutcome(
-                settled: false, contentLicence: false, loaded: true, mutatedSinceLoad: false),
+                settled: false, contentLicence: false, loaded: true, mutatedSinceLoad: false,
+                draftsHeld: false),
             .refused
         )
     }
@@ -158,16 +161,67 @@ final class QuitOutcomeTests: XCTestCase {
         // must remain blocked.
         XCTAssertEqual(
             PageModel.quitOutcome(
-                settled: true, contentLicence: false, loaded: true, mutatedSinceLoad: true),
+                settled: true, contentLicence: false, loaded: true, mutatedSinceLoad: true,
+                draftsHeld: false),
             .unsavableWithContent
         )
+    }
+
+    func testASettledFlushOverAWithheldDraftsLicenceIsUnsavableWhenAFileHasEdits() {
+        // The drafts leg settled without writing (issue #296); the
+        // pages are on disk, a file's unsaved edits are not.
+        XCTAssertEqual(
+            PageModel.quitOutcome(
+                settled: true, contentLicence: true, loaded: true, mutatedSinceLoad: true,
+                draftsHeld: true),
+            .unsavableWithDrafts
+        )
+        // The content arm comes first and names the drafts in its line.
+        XCTAssertEqual(
+            PageModel.quitOutcome(
+                settled: true, contentLicence: false, loaded: true, mutatedSinceLoad: true,
+                draftsHeld: true),
+            .unsavableWithContent
+        )
+        XCTAssertEqual(
+            PageModel.quitOutcome(
+                settled: true, contentLicence: true, loaded: false, mutatedSinceLoad: true,
+                draftsHeld: true),
+            .settled
+        )
+    }
+
+    func testDraftsAreHeldOnlyByADirtyFileUnderAWithheldLicence() {
+        func file(_ name: String, id: UInt64, dirty: Bool) -> FileSummary {
+            FileSummary(
+                id: CompanionClient.fileIDTag | id, name: name, path: "/tmp/\(name)",
+                isDirty: dirty, conflict: .none, lineEnding: .lf, hasBOM: false,
+                lastEditedAt: 0, restoredFromDraft: false
+            )
+        }
+        let dirty = file("a.txt", id: 1, dirty: true)
+        let clean = file("b.txt", id: 2, dirty: false)
+        XCTAssertTrue(
+            PageModel.draftsHeld(
+                loaded: true, draftsLicence: false, draftsDirty: true, files: [clean, dirty]))
+        XCTAssertFalse(
+            PageModel.draftsHeld(loaded: true, draftsLicence: true, draftsDirty: true, files: [dirty]))
+        XCTAssertFalse(
+            PageModel.draftsHeld(loaded: true, draftsLicence: false, draftsDirty: false, files: [dirty]))
+        // A record move owes a write, but nothing a person typed rides on it.
+        XCTAssertFalse(
+            PageModel.draftsHeld(loaded: true, draftsLicence: false, draftsDirty: true, files: [clean]))
+        // A session that never loaded has no edits in memory only, as `quitOutcome` reads it.
+        XCTAssertFalse(
+            PageModel.draftsHeld(loaded: false, draftsLicence: false, draftsDirty: true, files: [dirty]))
     }
 
     func testAWithheldLicenceOverAnEmptySessionQuitsSilently() {
         // Nothing typed and nothing lost, so the flush is settled.
         XCTAssertEqual(
             PageModel.quitOutcome(
-                settled: true, contentLicence: false, loaded: true, mutatedSinceLoad: false),
+                settled: true, contentLicence: false, loaded: true, mutatedSinceLoad: false,
+                draftsHeld: false),
             .settled
         )
     }
@@ -175,7 +229,8 @@ final class QuitOutcomeTests: XCTestCase {
     func testALicensedSettledFlushQuitsSilently() {
         XCTAssertEqual(
             PageModel.quitOutcome(
-                settled: true, contentLicence: true, loaded: true, mutatedSinceLoad: true),
+                settled: true, contentLicence: true, loaded: true, mutatedSinceLoad: true,
+                draftsHeld: false),
             .settled
         )
     }
@@ -184,7 +239,8 @@ final class QuitOutcomeTests: XCTestCase {
         // No restore ran, so no licence was ever withheld.
         XCTAssertEqual(
             PageModel.quitOutcome(
-                settled: true, contentLicence: false, loaded: false, mutatedSinceLoad: true),
+                settled: true, contentLicence: false, loaded: false, mutatedSinceLoad: true,
+                draftsHeld: false),
             .settled
         )
     }
@@ -280,7 +336,8 @@ final class LedgerClearRecoveryTests: XCTestCase {
         // the licence-moving path that runs here, passes the content
         // licence through exactly as it found it. The one thing that
         // does heal it is the user's own discard of the file they
-        // cannot read (`ContentClearTests`, ADR-0016 section 7), which
+        // cannot read (`ContentClearTests`, persistence decision
+        // background section 7), which
         // is a decision they made rather than a recovery the app
         // performed for them.
         XCTAssertFalse(PageModel.grantsSaveLicence(fileExists: true, restored: false))
@@ -331,7 +388,8 @@ final class ContentFileEraseTests: XCTestCase {
     }
 }
 
-/// The other half of the same decision (ADR-0016 section 6, ADR-0017):
+/// The other half of the same decision (persistence decision background
+/// section 6, ADR-0017):
 /// the write that rotates both content key halves and reseals the strip
 /// under new ones. It fires on the state the drop refuses, which is what
 /// keeps an emptied pad a forgetting instead of a fresh generation

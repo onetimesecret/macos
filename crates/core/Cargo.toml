@@ -1,6 +1,6 @@
 [package]
 name = "companion-core"
-version = "0.25.0"
+version = "0.34.4"
 description = "Sheet store for the Onetime Secret macOS companion: ink + sealed chips, pausable per-page countdowns, the session ledger, zeroizing buffers. No UI, no macOS dependencies."
 publish = false
 edition.workspace = true
@@ -10,6 +10,10 @@ rust-version.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+# Test seams the ffi's own test-util exposes; never in a release build (ADR-0018).
+test-util = []
 
 [dependencies]
 zeroize = { workspace = true }
@@ -34,6 +38,11 @@ getrandom = "0.2"
 # a facade with no subscriber installed here); reviewed by cargo-deny with
 # allowances annotated in deny.toml.
 loro = { version = "=1.13.9", default-features = false }
+# The sealed fragment's envelope is JSON the core alone writes and reads
+# (ADR-0045 point 1). Both are already in the lock, by way of loro
+# and the ffi crate.
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 # SecretBuffer page locking (mlock/munlock) and core-dump disabling.
@@ -50,7 +59,6 @@ companion-credentials = { path = "../credentials" }
 # Compile-time proof that SecretBuffer implements no duplication or
 # serialization traits.
 static_assertions = "1"
-serde = { workspace = true }
 
 [[example]]
 name = "demo"

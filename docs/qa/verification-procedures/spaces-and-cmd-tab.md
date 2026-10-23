@@ -19,6 +19,27 @@ B4 routes of issue #210. The panel-off checks for #215 were added
 after that run and remain unverified. Rows with an empty result have
 not been run.
 
+## Current launch and activation checks (ADR-0059)
+
+ADR-0059 replaces older rows below that expect every Cmd-Tab or Dock click to select the editor, rest a raised panel, or use a two-second launch classification. Those route expectations are historical; their recorded results do not verify the replacement. Other geometry, stacking and full-screen checks remain applicable.
+
+These are manual checks for an explicitly selected development fixture, separate from any app already in use. Automated probes require injected temporary state and in-memory credentials; a separate bundle identity by itself does not meet that requirement. Record the macOS version, build revision, route and result. Repeat on macOS 13 and on a current macOS release; a deployment-target build alone does not execute the older platform.
+
+- [ ] **Foreground cold launch:** quit the development app, then open its bundle normally. Exactly one editor opens; Settings remains absent. Run once with the ambient panel enabled and once disabled.
+- [ ] **Background cold launch:** quit, then `open -g` the development bundle. Settings and the editor remain absent; the ambient panel follows its preference. A first-use Keychain introduction is a separate dialog and should be acknowledged before repeating this check.
+- [ ] **Native menu inventory:** verify Services population, Window's automatic list, fullscreen title switching, Emoji & Symbols, and Dictation on each supported platform. Record whether Minimize All or Cycle Through Windows is missing from the intended editing flow. Menu titles currently have English fallback text through CompanionL10n; verify supported localization expectations separately.
+- [ ] **Login-item launch:** on a disposable development fixture, log in with the item configured to start in the background. Settings and the editor remain absent; the ambient panel follows its preference. Record whether launch notification metadata identifies a nondefault launch.
+- [ ] **Session restoration:** repeat with macOS reopening applications after login. Existing ordinary-window restoration and selected page must be recorded separately from a new untitled editor request; verify no unsolicited Settings window.
+- [ ] **Return to Settings:** open Settings, switch to another app, then Cmd-Tab back. Settings retains the keyboard; an editor is neither created nor reordered ahead of it. Repeat with About and Send Feedback.
+- [ ] **Return to the editor:** move the roll into history, switch away and back. The caret, page and scroll position remain. Repeat with the editor minimized; Cmd-Tab does not deminiaturize it.
+- [ ] **No ordinary window:** close the editor and companions, switch away, then Cmd-Tab back. No editor or Settings opens. Click the Dock icon: the editor opens once without moving the selected page or roll to today.
+- [ ] **Reopen with Settings visible:** leave Settings visible and close the editor. Click the Dock icon and repeat with `open` on the running bundle. Settings remains the ordinary destination and no editor opens.
+- [ ] **Reopen a minimized editor:** minimize the editor and leave no other ordinary window visible. Click the Dock icon. The existing editor deminiaturizes; no duplicate editor or Settings appears.
+- [ ] **Explicit Settings:** exercise the application menu, configured shortcut, status-item menu and a pane-specific Settings button. The same Settings window opens, including the requested pane. Close and repeat. With the Settings keymap binding removed, the menu item remains clickable and advertises no shortcut.
+- [ ] **Finder launch:** quit, then open a text file using the development bundle. The file is selected once; no Settings window or today-anchor change follows. Repeat with the app already running.
+- [ ] **Menus:** verify Undo/Redo in the editor and a Settings field, native Cut/Copy/Paste/Find, file command enablement, disabled ambient-panel command when the preference is off, Window menu registration, Help, Services, and an unbound app-specific shortcut.
+- [ ] **Explicit presentations and modals:** switch with Open in Window, Show Ambient Panel, the hotkey and status item; open and cancel file panels and quit confirmation. Each explicit route returns to its intended owner without opening Settings.
+
 ## Scope after ADR-0033
 
 ADR-0033 separated the primary editor from the ambient panel. What the
@@ -45,9 +66,10 @@ finds the editor window closed opens it on the desktop the person is on,
 and a raised panel rests as the window takes the keyboard; one that finds
 it open on another desktop switches there, as it does for any document
 application. A pinned panel floats above every ordinary window, editor
-included; the editor never floats. *Companion* marks Settings and
-About, the ordinary windows ADR-0033 leaves under ADR-0032's companion
-window rule.
+included, and lowers under a key Settings, About or Send Feedback window
+(ADR-0032 Amendment 1); the editor never floats. *Companion* marks
+Settings and About, the ordinary windows ADR-0033 leaves under
+ADR-0032's companion window rule.
 
 ## What was seen, and what the code did about it
 
@@ -285,6 +307,9 @@ editor window is on, as it does for any document application").
       the horizontal checkpoint and its day label. **Pass:** the first
       click focuses the editor and typing resumes at the saved caret;
       neither the selected page nor the caret changes on that click.
+      The checkpoint's time and a typed name are not focus targets: a
+      click there opens the rename field (Law 0007), which the
+      [rename in place procedure](rename-in-place.md) checks.
       Repeat in the panel, the editor window, an empty buffer, and an
       unsaved file. Enlarge the window with only a short line and its
       final newline: repeat just below the text, halfway down the blank
@@ -491,7 +516,8 @@ when switching away** is off before the first run; the checks that need
 it on say so and turn it off again.
 
 Issue #190 lists twelve checks. Eleven are below; the twelfth, About
-with Pin on, is the About check under companion windows further down.
+with Pin on, is the first check under "Companion windows stay at normal
+level" further down, rewritten for ADR-0032 Amendment 1.
 Its first check predates ADR-0033 and ended with a ⌘Tab back to a keyed
 card; that return now selects the editor window, so the check below
 re-keys the card with the hotkey instead.
@@ -552,22 +578,24 @@ re-keys the card with the hotkey instead.
       its right click menu's Settings… item. Run all three with the pin
       off, then with the pin on (raise the card, use the header toggle,
       rest it with Esc). **Pass:** every time, Settings opens in front
-      of the card, keyed, and what is typed lands in Settings. ADR-0032:
-      "When Settings or another ordinary window of OnetimePad takes the
-      keyboard, its level must be compatible with the surface's
-      resulting inactive altitude." `CompanionLevelFollower` holds
-      Settings at the card's keyless altitude for as long as it is open.
-      **Fail:** Settings opens beneath the card, or opens without the
-      keyboard.
+      of the card, keyed, and what is typed goes into Settings; with the
+      pin on, the card is at normal level while Settings is key and
+      floats again when Settings closes. ADR-0032 Amendment 1
+      (2026-10-21, issue #293): Settings stays at normal level and
+      `BackdropAltitudeKeeper` lowers the card under it for as long as
+      it is key. **Fail:** Settings opens beneath the card, opens
+      without the keyboard, or floats over another app's windows.
 - [ ] **The preference toggled inside Settings over a raised keyless
       card.** *Companion.* With the pin off, raise the card (⌃⌥Space),
       then open Settings with `⌘,`; Settings takes the keyboard, so the
       card is raised and keyless. Turn **Keep OnetimePad above other
       apps when switching away** on, then off, then on, and finish with
       it off. **Pass:** Settings stays in front of the card at every
-      toggle. Each toggle moves the card between normal and floating,
-      and `CompanionLevelFollower` moves Settings with it. **Fail:**
-      Settings is left beneath the card after a toggle.
+      toggle, and the card stays at normal level throughout, since a
+      key Settings window lowers it whatever the preference says
+      (ADR-0032 Amendment 1, 2026-10-21, issue #293). Then turn it on
+      and close Settings: the card floats. **Fail:** Settings is left
+      beneath the card after a toggle, or Settings changes level.
 - [ ] **Open panel round trip on a desktop.** *Panel.* On an ordinary
       desktop, with the pin and the preference off, raise the card
       (⌃⌥Space), press ⌘O, then Cancel. **Pass:** while the open panel
@@ -864,20 +892,39 @@ first full-screen check above, and its row records it.
       **Fail:** OnetimePad stays active with no window that can take
       the keyboard, so typing goes nowhere, or any `VERDICT FAIL`.
 
-### Companion windows follow the surface (ADR-0032, issue #188)
+### Companion windows stay at normal level (ADR-0032 Amendment 1, issue #293)
 
-- [ ] **About stays in front while Pin and the preference move.**
-      *Companion.* With the card resting and unpinned, open About and
-      leave it open. Raise the card (⌃⌥Space), turn the pin on from the
-      header toggle and rest it (Esc). **Pass:** the card floats and
-      About is still in front of it. Raise the card and turn the pin
-      off, open Settings and turn **Keep OnetimePad above other apps
-      when switching away** on, then off, with About still open.
-      **Pass:** About is never left underneath the card at any step.
-      **Fail:** About is stranded beneath the card after a toggle, which
-      is what a level read only once at open produces. Its first pass,
-      About in front of the card with the pin on, is also issue #190's
-      check About with Pin on.
+Rewritten 2026-10-21 for issue #293. The checks here before asked About
+to follow the card's altitude (issue #188), which Amendment 1 replaces.
+
+- [ ] **About and the card trade places with the keyboard.**
+      *Companion.* With the pin on and the card resting, open About
+      from the OnetimePad menu. **Pass:** with About key, the card sits
+      below it. Press ⌃⌥Space: the card is key and floats over About.
+      Click About: the card lowers under it again. Repeat with the pin
+      off and **Keep OnetimePad above other apps when switching away**
+      on, then turn the preference off. **Fail:** the card covers About
+      while About is key, or stays under About once the card has the
+      keyboard. This is issue #190's check About with Pin on.
+- [ ] **A keyless About is covered by a pinned card.** *Companion.*
+      With the pin off and the card resting, open About and leave it.
+      Raise the card (⌃⌥Space), turn the pin on from the header toggle,
+      rest it (Esc), and click another app's window so that About is
+      open but not key. **Pass:** the card floats over About, as it
+      does over any window while pinned (ADR-0032 Amendment 1,
+      Consequences); clicking About gives it the keyboard and the card
+      lowers under it. **Fail:** the card stays under a keyless About,
+      or covers About once About is key.
+- [ ] **A hand off between companion windows keeps the card still.**
+      *Companion.* With the pin on and the card resting, open Settings
+      with `⌘,`, then choose About from the OnetimePad menu while
+      Settings is key. Then open Send Feedback, choose Export, and
+      cancel the save sheet. **Pass:** the card stays at normal level
+      under Settings, About, Send Feedback and the save sheet, with no
+      frame of it drawn over any of them, and floats again only once
+      the last of them closes or the app deactivates (ADR-0032
+      Amendment 1, 2026-10-21, issue #293). **Fail:** the card flashes
+      over a window during a hand off, or floats over the save sheet.
 
 ### The drag, which is a decision rather than a fix
 
@@ -926,8 +973,10 @@ recorded yet.
   window height. Click between pages and resize the window: earlier pages keep
   their text height, and selecting one does not add a window of blank space or
   move the checkpoint separators. Check a long roll too. Click each checkpoint's
-  horizontal rule and passive labels: the page beneath that header is selected
-  and receives focus at its saved caret. Rename and contextual menus still work.
+  horizontal rule and day label: the page beneath that header is selected
+  and receives focus at its saved caret. A click on the checkpoint's time, or on
+  a typed name, opens the rename field instead (Law 0007). Rename and contextual
+  menus still work.
 - Use the expand icon in the upper right. Only the selected page remains, with
   the timeline/tab picker and checkpoint headers hidden. Type, select text,
   undo, and resize. The caret remains in the same editor and long text scrolls.
@@ -1001,7 +1050,7 @@ is about, in the split ADR-0033 gives.
 | 2026-09-28 | not recorded | panel | hotkey, status item and resting card click stay with the panel | pass | ADR-0033. Reported passed by the maintainer. |
 | | | both | panel off: hotkey and status item focus the editor, closed, open and miniaturized | | #215. Record active app, typing and conditional stream evidence; rerun panel-on summons. |
 | | | both | panel off: hotkey and status item with the editor on another desktop | | #215. Unverified implementation interpretation; record actual desktop and keyboard result against the proposed expectation. |
-| | | both | blank content and checkpoint clicks focus at the saved caret; line clicks place it | | #215. Include empty buffers, unsaved files, and checkpoint rename/context menu. |
+| | | both | blank content and checkpoint rule and day label clicks focus at the saved caret; line clicks place it | | #215. Include empty buffers, unsaved files, and checkpoint rename/context menu. A click on the checkpoint's time or typed name opens the rename field (Law 0007, issue #248). |
 | | | both | blank-space modified clicks and drag selection remain native | | #215. Include enlarged short buffers and read-only text. |
 | | | both | checkpoint VoiceOver description and inline rename field | | #215. Screen-coordinate accessibility tests pass; VoiceOver check unrun. |
 | 2026-09-28 | not recorded | both | pinned panel floats above the editor window | pass | ADR-0033. Reported passed by the maintainer. |

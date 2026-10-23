@@ -1,6 +1,6 @@
 [package]
 name = "companion-transport"
-version = "0.2.0"
+version = "0.2.1"
 description = "The one concrete HTTP transport this workspace ships for ots-client: a TLS-only ureq::Agent (rustls). ots-client stays sans-IO by design; the transport and TLS stack are the integrator's choice, made once, here (docs/spec/05)."
 publish = false
 edition.workspace = true
@@ -16,3 +16,4 @@ ots-client = { path = "../ots-client" }
 # default-features off: skip gzip/cookies/charset — a single small JSON
 # POST doesn't need them, and the frugality budget (doc 05) says no.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+zeroize = { workspace = true }

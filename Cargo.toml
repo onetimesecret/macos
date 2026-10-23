@@ -1,6 +1,6 @@
 # Virtual workspace for the Onetime Secret macOS companion.
 #
-# Layout follows docs/spec/design/07-repo-skeleton.md: logic crates (`core`,
+# Layout follows docs/spec/design/2026-0707-repo-skeleton.md: logic crates (`core`,
 # `ots-client`) carry no macOS dependencies and build/test on Linux;
 # `pasteboard` is the sole crate allowed to touch platform FFI.
 # `shell/` is the Swift/AppKit shell (ADR-0002, accepted) — not Rust,
@@ -23,41 +23,51 @@ members = [
 
 [workspace.package]
 edition = "2024"
-license = "MIT"
-repository = "https://github.com/onetimesecret/macos"
 rust-version = "1.94"
+repository = "https://github.com/onetimesecret/macos"
+license = "MIT"
 
 [workspace.dependencies]
-zeroize = "1.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-
-[workspace.lints.rust]
-# Zeroize-on-drop is the security posture; `unsafe` would let a crate
-# sidestep it invisibly. Only `pasteboard` (and later the shell glue) may
-# carve out an allowance, arriving together with the FFI code that needs
-# it — so the unsafe surface stays auditable by crate boundary.
-unsafe_code = "deny"
-missing_docs = "warn"
+zeroize = "1.8"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
+doc_markdown = "deny"
+items_after_statements = "deny"
+map_unwrap_or = "deny"
+match_same_arms = "deny"
+needless_pass_by_value = "deny"
+redundant_closure_for_method_calls = "deny"
+semicolon_if_nothing_returned = "deny"
 # Curated pedantic subset (doc 07): high signal, low ceremony.
 uninlined_format_args = "deny"
-semicolon_if_nothing_returned = "deny"
-redundant_closure_for_method_calls = "deny"
 unnested_or_patterns = "deny"
-map_unwrap_or = "deny"
-needless_pass_by_value = "deny"
-match_same_arms = "deny"
-items_after_statements = "deny"
-doc_markdown = "deny"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+# Zeroize-on-drop is the security posture; `unsafe` would let a crate
+# sidestep it invisibly. Denied here and allowed back only by module,
+# each allowance arriving with the platform call that needs it and a
+# SAFETY note on every use, so the unsafe surface stays auditable by
+# grep for `allow(unsafe_code)`: `core`'s `secret` (page locking),
+# `harden` (core-dump limits) and `clock` (sleep-inclusive time);
+# `credentials`' `secitem` (Security framework); `ffi` (the C seam);
+# and `pasteboard`'s macOS adapter.
+unsafe_code = "deny"
 
 [profile.release]
+opt-level = "s"
+strip = "symbols"
+lto = "thin"
 # panic = "unwind" ON PURPOSE. "abort" is the usual size win, but aborting
 # skips Drop — and zeroize-on-drop *is* the security posture (doc 05).
 # Unwinding panics scrub buffers on the way down. Do not "optimize" this.
 panic = "unwind"
-lto = "thin"
-strip = "symbols"
-opt-level = "s"
+
+[profile.release.build-override]
+# Rust's LLVM-based stripping can misalign Mach-O LINKEDIT entries,
+# causing macOS 27 to reject host proc-macros (rust-lang/rust#157750).
+# Keep build-time artifacts unstripped; target release settings stay above.
+strip = "none"

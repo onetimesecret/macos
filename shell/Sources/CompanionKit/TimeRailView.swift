@@ -36,6 +36,8 @@ import SwiftUI
 /// the claim that horizontal mode is untouched is a fact about the diff.
 public struct TimeRailView: View {
     @ObservedObject var model: PageModel
+    /// The stance the page content takes; a read only rail's nodes take no drop (issue 267).
+    let readOnly: Bool
     @Environment(\.presentationSurface) private var surface
 
     /// The roll handed to a rail whose window does not own the page
@@ -46,8 +48,9 @@ public struct TimeRailView: View {
     /// can honestly say about one.
     @StateObject private var unclaimedRoll = RollGeometryModel()
 
-    public init(model: PageModel) {
+    public init(model: PageModel, readOnly: Bool) {
         self.model = model
+        self.readOnly = readOnly
     }
 
     /// Whether this window's rail reads and drives the roll, pure: only
@@ -89,6 +92,8 @@ public struct TimeRailView: View {
     /// caption. Longer than that truncates at the tail, which is the
     /// net rather than the plan.
     nonisolated static let width: CGFloat = 110
+
+    /// Extra room for the experimental rail's day and checkpoint sort controls.
     nonisolated static let experimentalWidth: CGFloat = 150
 
     /// Use the same measure in the view and layout disclosures; turning the
@@ -97,7 +102,9 @@ public struct TimeRailView: View {
         experimental ? experimentalWidth : width
     }
 
-    public var body: some View { unifiedRail }
+    public var body: some View {
+        unifiedRail
+    }
 
     private var unifiedRail: some View {
         let projection = model.timeUnits
@@ -110,7 +117,7 @@ public struct TimeRailView: View {
             surfaceShowsRoll: rollIsShowing,
             stampFormat: model.stampFormat
         )
-        // `FILES` and `PAD` are group labels in one navigation column.
+        // `Files` and `Pad` are group labels in one navigation column.
         // The default stack centres its intrinsic text while the PAD
         // heading itself fills the column for its trailing plus, which
         // made the two labels look unrelated. One leading alignment line
@@ -124,7 +131,7 @@ public struct TimeRailView: View {
             // is the ADR-0020 guarantee kept structurally: a file never
             // enters `tabs`, so the projection cannot see one.
             if !model.navigationFiles.isEmpty {
-                GroupLabel(text: "FILES")
+                GroupLabel(text: "Files")
                 ScrollView {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(model.navigationFiles) { file in
@@ -146,10 +153,10 @@ public struct TimeRailView: View {
                     owners: rollIsShowing ? model.rollGeometry : unclaimedRoll, unclaimed: unclaimedRoll
                 ),
                 drivesRoll: rollIsShowing && Self.drivesRoll(surface: surface, owner: model.owner),
+                readOnly: readOnly,
                 nodes: nodes,
                 chords: chords(for: nodes, openFileCount: model.navigationFiles.count)
             )
-            hiddenPages(count: projection.hiddenBlankPages)
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
@@ -157,18 +164,41 @@ public struct TimeRailView: View {
         .background(Color.panelBackground)
     }
 
-    private func sortControl(
-        direction: PadSortDirection, label: String, action: @escaping () -> Void
-    ) -> some View {
-        let copy = PadSortCopy(direction: direction, subject: label)
-        return Button(action: action) {
-            Image(systemName: direction == .chronological ? "arrow.down" : "arrow.up")
-                .font(.system(size: 10)).frame(width: 18, height: 18)
+    static func nodes(for unit: TimeUnitProjection.Unit, in nodes: [StreamNavigator.Node]) -> [StreamNavigator.Node] {
+        let pages = Set(unit.pageIDs)
+        return nodes.filter { node in
+            if let page = node.page { return pages.contains(page) }
+            return pages.isEmpty && node.bucket == unit.bucket
         }
-        .buttonStyle(.plain).help(copy.action)
+    }
+
+    private func sortMenu<Heading: View>(
+        direction: PadSortDirection, subject: String,
+        select: @escaping @MainActor (PadSortDirection) -> Void,
+        @ViewBuilder heading: () -> Heading
+    ) -> some View {
+        let copy = PadSortCopy(direction: direction, subject: subject)
+        return Menu {
+            // A closure literal: `set: select` crashed Xcode 26.6's IRGen (see PR 261).
+            Picker(copy.label, selection: Binding(get: { direction }, set: { select($0) })) {
+                ForEach(PadSortCopy.orders, id: \.self) { order in
+                    Text(PadSortCopy(direction: order, subject: subject).currentOrder).tag(order)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 4) {
+                heading()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: NSFont.miniSystemFontSize, weight: .medium))
+                    .foregroundStyle(Color.secondaryInk)
+            }
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .help(copy.help)
         .accessibilityLabel(copy.label)
         .accessibilityValue(copy.currentOrder)
-        .accessibilityHint(copy.action)
     }
 
     /// The PAD group's heading with the strip's + on it. The plus sits
@@ -182,13 +212,15 @@ public struct TimeRailView: View {
     /// two ways.
     private var padHeading: some View {
         HStack(spacing: 0) {
-            GroupLabel(text: "PAD")
-            Spacer(minLength: 0)
             if model.pads.isEnabled {
-                sortControl(
-                    direction: model.pads.daySortDirection(for: model.pads.activeID),
-                    label: CompanionL10n.string("pad.sort.days"), action: model.toggleDaySort)
+                sortMenu(direction: model.pads.daySortDirection(for: model.pads.activeID),
+                         subject: CompanionL10n.string("pad.sort.days"), select: model.setDaySort) {
+                    GroupLabel(text: CompanionL10n.string("pad.timeline.heading"))
+                }
+            } else {
+                GroupLabel(text: "Pad")
             }
+            Spacer(minLength: 0)
             Button(action: model.newPage) {
                 Image(systemName: "plus")
                     .font(.system(size: 10, weight: .bold))
@@ -196,7 +228,7 @@ public struct TimeRailView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color.emberText)
-            .help(TimeUnitTab.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
+            .help(TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
             .accessibilityLabel(Text("New page"))
         }
         .padding(.top, 6)
@@ -229,58 +261,6 @@ public struct TimeRailView: View {
         return chords
     }
 
-    /// The count of what the mode is hiding, and the instrument for the
-    /// content predicate itself.
-    ///
-    /// Old pages with nothing on them draw no nodes here, so without a
-    /// count a person would not know they exist, or that the strip
-    /// still holds them. The count says so out loud, and its tooltip
-    /// names the toggle that brings those pages back. They cost nothing
-    /// else, since the strip has no cap (issue #158), and nothing is
-    /// auto-discarded: reaping blank pages is a lifetime mechanism
-    /// nobody asked for (ADR-0016).
-    ///
-    /// A number that is routinely above zero in dogfood means the
-    /// content bar is set wrong, which is ADR-0020's fifth eject
-    /// trigger, so this line is a measurement as much as a message.
-    @ViewBuilder
-    private func hiddenPages(count: Int) -> some View {
-        if let line = Self.hiddenPagesLine(count: count) {
-            Text(line)
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-                .help(Self.hiddenPagesHelp(count: count))
-                .accessibilityLabel(Text(Self.hiddenPagesHelp(count: count)))
-        }
-    }
-
-    /// Which day the rail marks as the one the surface is showing.
-    ///
-    /// The mark follows the selected page's day rather than the row
-    /// that was last clicked, so a selection moved by the keyboard, or
-    /// dropped onto another day by the fall after an expiry, moves it
-    /// too. A selection standing in a slot the rail draws no node for
-    /// (an empty slot, or a blank old page the content bar is holding
-    /// back) lights nothing at all: what is on screen is then not on
-    /// the rail, and marking a node would say the surface is somewhere
-    /// it is not.
-    ///
-    /// Today is the one day that can answer to no slot, and while it
-    /// holds no page it takes the mark only by elimination, on the pad
-    /// where no drawn day holds a page, so there is nothing else the
-    /// mark could sit on and today is the place the next page would
-    /// land. Pure, because which day is lit is a decision and not a
-    /// drawing; `StreamNavigator.nodes` states the same rule per node.
-    static func selectedBucket(projection: TimeUnitProjection, selection: UInt64?) -> Int? {
-        if let selection,
-            let day = projection.units.first(where: { $0.tabIDs.contains(selection) }) {
-            return day.bucket
-        }
-        guard projection.units.allSatisfy({ $0.pageIDs.isEmpty }) else { return nil }
-        return projection.units.first { $0.bucket == 0 }?.bucket
-    }
-
     /// Where the day at `day` sits in `PageModel.visibleTargets`, which
     /// is the array `select(index:)` indexes.
     ///
@@ -306,27 +286,7 @@ public struct TimeRailView: View {
         return keymap.hintKeystroke(for: command)
     }
 
-    /// What the footer prints, or nothing at all when nothing is being
-    /// held back. Short, because it is a footer and not a node: it
-    /// counts what the rail is not showing, and a sentence at the
-    /// bottom of the column would weigh more than the days above it.
-    /// The sentence rides the tooltip and the accessibility label
-    /// instead, and "3 blank" is words rather than an abbreviation, so
-    /// doc 05's rule is answered at both ends.
-    static func hiddenPagesLine(count: Int) -> String? {
-        guard count > 0 else { return nil }
-        return "\(count) blank"
-    }
 
-    /// The same fact at length: how many live pages the days are not
-    /// showing, and the one place they can be reached from.
-    static func hiddenPagesHelp(count: Int) -> String {
-        let pages = count == 1
-            ? "One live page has nothing on it"
-            : "\(count) live pages have nothing on them"
-        return "\(pages), so no day is drawn for them. Turn the time tabs off in Settings "
-            + "to reach them, nothing is discarded to make room."
-    }
 }
 
 /// The navigator itself: the track, the nodes on it, the band over the
@@ -349,6 +309,8 @@ struct StreamNavigatorView: View {
     /// to move. Selection is the shared model's and either window may
     /// change it; the scroll that follows is the owner's own business.
     let drivesRoll: Bool
+    /// The rail's stance (`TimeRailView.readOnly`); a read only rail's nodes take no drop.
+    let readOnly: Bool
     let nodes: [StreamNavigator.Node]
     let chords: [UInt64: Keystroke]
 
@@ -357,40 +319,50 @@ struct StreamNavigatorView: View {
     @State private var dragInvalidated = false
     @State private var hoverID: UInt64?
     @State private var layoutCache = StreamNavigatorLayoutCache()
+    /// The width the clip gives the drawing, less a legacy scroller when the system shows one.
+    @State private var clipWidth: CGFloat?
 
     private typealias Metrics = StreamNavigator.Metrics
 
     var body: some View {
         GeometryReader { proxy in
+            let size = CGSize(width: clipWidth ?? proxy.size.width, height: proxy.size.height)
             let layout = layoutCache.layout(
-                nodes: nodes, geometry: roll.geometry,
-                height: proxy.size.height, width: proxy.size.width
-            )
+                nodes: nodes, geometry: roll.geometry, height: size.height, width: size.width)
             let dense = StreamNavigator.requiredHeight(nodes: nodes) > proxy.size.height
             if dense {
                 let mapHeight = min(max(0, proxy.size.height), max(40, proxy.size.height * 0.4))
                 let map = StreamNavigator.layout(nodes: nodes, geometry: roll.geometry,
                     height: mapHeight, width: proxy.size.width, compact: true)
                 VStack(spacing: 4) {
-                    canvas(map, width: proxy.size.width, height: mapHeight, compact: true)
+                    stream(map, size: CGSize(width: size.width, height: mapHeight), compact: true)
                         .frame(height: mapHeight)
                     ScrollViewReader { reader in
                         ScrollView {
                             VStack(alignment: .leading, spacing: 3) {
                                 ForEach(layout.placed) { placed in
-                                    node(placed, width: proxy.size.width, positioned: false)
+                                    node(placed, width: size.width, positioned: false)
                                         .id(placed.node.id)
                                 }
                             }
                         }
                         .onAppear { revealActive(using: reader) }
-                        .onChange(of: model.selection) { _ in revealActive(using: reader) }
+                        .onChange(of: nodes.first(where: \.active)?.id) { _ in revealActive(using: reader) }
                         .onChange(of: model.pads.activeID) { _ in revealActive(using: reader) }
                         .onChange(of: nodes.map(\.id)) { _ in revealActive(using: reader) }
                     }
                 }
             } else {
-                canvas(layout, width: proxy.size.width, height: proxy.size.height, compact: false)
+                // Rows that outrun the column lengthen the drawing, and the column scrolls to
+                // reach them inside its clip, with the overlay scroller a sidebar shows (#277).
+                ScrollView(.vertical, showsIndicators: true) {
+                    stream(layout, size: size)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .background(GeometryReader { content in
+                            Color.clear.preference(key: ClipWidthKey.self, value: content.size.width)
+                        })
+                }
+                .onPreferenceChange(ClipWidthKey.self) { clipWidth = $0 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -398,9 +370,20 @@ struct StreamNavigatorView: View {
         .accessibilityLabel(Text("pad stream"))
     }
 
-    private func canvas(_ layout: StreamNavigator.Layout, width: CGFloat,
-                        height: CGFloat, compact: Bool) -> some View {
-        ZStack(alignment: .topLeading) {
+    /// The drawing itself, `layout.contentHeight` tall and clipped by the scroll view around it.
+    private func stream(_ layout: StreamNavigator.Layout, size: CGSize, compact: Bool = false) -> some View {
+        // The one clamp: `.empty` reads 0 and the drawing still fills the column.
+        let contentHeight = max(size.height, layout.contentHeight)
+        // A wheel over a column that scrolls turns the column; over one that fits, it
+        // turns the roll (D-38), through a relay only the owner's rail installs, since a
+        // relay in the other window would swallow that window's wheel for a roll it may
+        // not drive.
+        let relays = drivesRoll
+            && StreamNavigator.relaysWheel(contentHeight: layout.contentHeight, columnHeight: size.height)
+        let reveal = compact ? nil : layout.placed.first { $0.node.active }.map {
+            RailReveal.Request(id: $0.id, top: $0.groundTop, bottom: $0.drawnTop + $0.rowHeight)
+        }
+        return ZStack(alignment: .topLeading) {
             // Bare track: a click here scrolls the roll to the
             // stretch clicked, selecting nothing. Under everything,
             // so the nodes above take their own clicks first.
@@ -428,7 +411,7 @@ struct StreamNavigatorView: View {
             }
             slivers(layout)
             if let band = layout.band {
-                viewportBand(band, width: width)
+                viewportBand(band, width: size.width)
             }
             ForEach(layout.placed) { placed in
                 if compact {
@@ -436,7 +419,7 @@ struct StreamNavigatorView: View {
                         .offset(x: Metrics.trackX - 3, y: placed.y)
                         .allowsHitTesting(false).accessibilityHidden(true)
                 } else {
-                    node(placed, width: width)
+                    node(placed, width: size.width)
                 }
             }
             // A scrollbar lane along the leading edge stays reachable
@@ -444,7 +427,7 @@ struct StreamNavigatorView: View {
             // the dots on the track, so the dots and the labels keep
             // their taps.
             Color.clear
-                .frame(width: Metrics.scrollLaneWidth, height: height)
+                .frame(width: Metrics.scrollLaneWidth, height: contentHeight)
                 .contentShape(Rectangle())
                 .onTapGesture(coordinateSpace: .local) { point in
                     jump(toTrackY: point.y, layout: layout)
@@ -461,6 +444,7 @@ struct StreamNavigatorView: View {
                 }
                 .accessibilityHidden(!drivesRoll || layout.band == nil)
         }
+        .frame(width: size.width, height: contentHeight, alignment: .topLeading)
         .highPriorityGesture(
             DragGesture(minimumDistance: 4, coordinateSpace: .local)
                 .updating($isScrubbing) { _, active, _ in active = true }
@@ -483,15 +467,12 @@ struct StreamNavigatorView: View {
         .onChange(of: drivesRoll) { _ in invalidateDrag() }
         .onChange(of: model.pads.activeID) { _ in invalidateDrag() }
         .onChange(of: nodes.map(\.id)) { _ in invalidateDrag() }
-        .onChange(of: width) { _ in invalidateDrag() }
-        .onChange(of: height) { _ in invalidateDrag() }
+        .onChange(of: size.width) { _ in invalidateDrag() }
+        .onChange(of: size.height) { _ in invalidateDrag() }
         .onChange(of: roll.geometry.document) { _ in invalidateDrag() }
         .onDisappear { scrollDrag = nil }
-        // Only the owner's rail installs the relay. A relay in the
-        // other window would watch that window's wheel events and
-        // swallow each one over the column, for a roll it may not
-        // drive.
-        .background(drivesRoll ? WheelRelay { event in roll.relay(wheel: event) } : nil)
+        .background(relays ? WheelRelay { event in roll.relay(wheel: event) }.accessibilityHidden(true) : nil)
+        .background(RailReveal(request: reveal).accessibilityHidden(true))
     }
 
     private func revealActive(using reader: ScrollViewProxy) {
@@ -540,8 +521,8 @@ struct StreamNavigatorView: View {
                 .fill(Color.secondary.opacity(0.4))
                 .frame(width: 7, height: 1)
             Text("7d")
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: NSFont.miniSystemFontSize, design: .monospaced))
+                .foregroundStyle(Color.secondaryInk)
         }
         .offset(x: Metrics.trackX - 3, y: y - 6)
         .help("seven-day boundary; pages outside the window are retained because they hold content")
@@ -557,8 +538,8 @@ struct StreamNavigatorView: View {
                     Color.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [1.5, 1.5]))
                 .frame(width: 5, height: 5)
             Text(StreamNavigator.emptyDaysLabel(count))
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: NSFont.miniSystemFontSize, design: .monospaced))
+                .foregroundStyle(Color.secondaryInk)
                 .lineLimit(1)
         }
         .offset(x: Metrics.trackX - 2, y: y)
@@ -613,9 +594,10 @@ struct StreamNavigatorView: View {
     /// the tooltip repeats what the gutter already shows.
     private func node(_ placed: StreamNavigator.Placed, width: CGFloat, positioned: Bool = true) -> some View {
         let node = placed.node
+        let target = node.target
         let first = node.firstOfDay
         let hovered = hoverID == node.id
-        return Button { jump(to: placed) } label: {
+        return Button { jump(to: target, documentTop: placed.documentTop) } label: {
             HStack(alignment: .top, spacing: 8) {
                 marker(for: node)
                     .padding(.top, 4)
@@ -623,20 +605,20 @@ struct StreamNavigatorView: View {
                     if first {
                         Text(node.dayLabel)
                             .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(node.active ? .primary : .secondary)
+                            .foregroundStyle(node.active ? Color.primary : Color.secondaryInk)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
                     if !node.stamp.isEmpty {
                         Text(node.stamp)
                             .font(.system(.caption2, design: .monospaced))
-                            .foregroundStyle(node.active ? .secondary : .tertiary)
+                            .foregroundStyle(node.active ? Color.primary : Color.secondaryInk)
                             .lineLimit(1)
                     }
                     if node.trailing {
                         Text(StreamNavigator.retainedLabel)
                             .font(.system(.caption2, design: .monospaced))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color.secondaryInk)
                             .lineLimit(1)
                     }
                     if node.active, !node.trailing, node.hasPage {
@@ -661,8 +643,10 @@ struct StreamNavigatorView: View {
             RoundedRectangle(cornerRadius: 5)
                 .fill(hovered ? Color.primary.opacity(0.07) : .clear)
         )
+        // The node takes drops for the page its click selects (issue 267).
+        .background(TabDropOverlay.node(target, model: model, readOnly: readOnly))
         .contentShape(Rectangle())
-        .offset(y: positioned ? placed.y - (first ? 7 : 6) : 0)
+        .offset(y: positioned ? placed.drawnTop : 0)
         .onHover { inside in
             if inside {
                 hoverID = node.id
@@ -672,11 +656,14 @@ struct StreamNavigatorView: View {
         }
         .contextMenu {
             if model.pads.isEnabled {
-                Button(PadSortCopy(
-                    direction: model.pads.checkpointSortDirection(
-                        for: model.pads.activeID, onDate: model.dateKey(forDayBucket: node.bucket)),
-                    subject: CompanionL10n.format("pad.sort.checkpoints", node.spokenDay)).action) {
-                    model.toggleCheckpointSort(dayBucket: node.bucket)
+                let subject = CompanionL10n.format("pad.sort.checkpoints", node.spokenDay)
+                let direction = model.pads.checkpointSortDirection(
+                    for: model.pads.activeID, onDate: model.dateKey(forDayBucket: node.bucket))
+                Picker(PadSortCopy(direction: direction, subject: subject).label,
+                       selection: Binding(get: { direction }, set: { model.setCheckpointSort($0, dayBucket: node.bucket) })) {
+                    ForEach(PadSortCopy.orders, id: \.self) { order in
+                        Text(PadSortCopy(direction: order, subject: subject).currentOrder).tag(order)
+                    }
                 }
             }
         }
@@ -684,9 +671,8 @@ struct StreamNavigatorView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
         .accessibilityValue(Text(node.spokenRemaining))
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAddTraits(node.active ? [.isSelected] : [])
-        .accessibilityAction { jump(to: placed) }
+        .accessibilityAddTraits(RowAccessibility.traits(selected: node.active))
+        .accessibilityActivation(when: true) { jump(to: target, documentTop: placed.documentTop) }
     }
 
     /// The mark on the track. The active node is a filled ember dot,
@@ -726,10 +712,10 @@ struct StreamNavigatorView: View {
     /// gets, and bring its gutter to the top of the roll. The empty
     /// today place takes the create path, which is the one click on the
     /// rail that makes something (ADR-0017).
-    private func jump(to placed: StreamNavigator.Placed) {
-        model.select(target: placed.node.target)
+    private func jump(to target: SurfaceTarget, documentTop: CGFloat) {
+        model.select(target: target)
         guard drivesRoll else { return }
-        roll.scroll(toDocumentOffset: StreamNavigator.jumpOffset(forDocumentTop: placed.documentTop))
+        roll.scroll(toDocumentOffset: StreamNavigator.jumpOffset(forDocumentTop: documentTop))
     }
 
     /// Bare track was clicked: scroll the roll to the stretch under the
@@ -791,6 +777,143 @@ private final class StreamNavigatorLayoutCache {
     }
 }
 
+/// A selection change brings the active node's row into the column (#277).
+///
+/// The column is a SwiftUI scroll view, and the one place its AppKit
+/// scroll view can be reached is from inside its content: this view
+/// sits behind the drawing, takes no clicks, and when the active node
+/// changes it asks its enclosing scroll view for the least move that
+/// shows the row, by `StreamNavigator.revealOffset`. The move waits one
+/// hop on the main queue, for the content to have taken the new row
+/// heights before the clip is measured against them.
+struct RailReveal: NSViewRepresentable {
+    /// The active node's ground, from the note or mark above its row through the row's bottom.
+    struct Request: Equatable {
+        let id: UInt64
+        let top: CGFloat
+        let bottom: CGFloat
+    }
+
+    let request: Request?
+
+    func makeNSView(context: Context) -> RailRevealView {
+        let view = RailRevealView()
+        view.setAccessibilityElement(false)
+        view.reveal(request)
+        return view
+    }
+
+    func updateNSView(_ view: RailRevealView, context: Context) {
+        view.reveal(request)
+    }
+}
+
+final class RailRevealView: NSView {
+    private(set) var memory = StreamNavigator.RevealMemory()
+    /// The request standing when the hop runs, so two in one hop make one move, the last.
+    private var pending: RailReveal.Request?
+    /// The request a hop could not measure, asked again when the clip or the drawing
+    /// changes size or the view comes into a window.
+    private var waiting: RailReveal.Request?
+
+    /// Flipped so a row's top is measured as the layout measures it, down from the column's top.
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    /// Scroll the ground into the clip, by `StreamNavigator.RevealMemory`: the node is
+    /// recorded only once its ground was measured against the clip. Every update
+    /// replaces the request a hop is waiting on, and one that is not due cancels it.
+    func reveal(_ request: RailReveal.Request?) {
+        unwatch()
+        guard let request else {
+            memory.forget()
+            pending = nil
+            return
+        }
+        guard memory.isDue(request.id) else {
+            pending = nil
+            return
+        }
+        schedule(request)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else {
+            NotificationCenter.default.removeObserver(self, name: NSView.frameDidChangeNotification, object: nil)
+            return
+        }
+        if let waiting { schedule(waiting) }
+    }
+
+    /// One hop on the main queue, for the content to take the new row heights first.
+    private func schedule(_ request: RailReveal.Request) {
+        pending = request
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let next = self.pending else { return }
+            self.pending = nil
+            self.scroll(to: next)
+        }
+    }
+
+    /// Wait on the clip and the drawing for a size a reveal can be measured against.
+    private func watch(_ views: [NSView], for request: RailReveal.Request) {
+        waiting = request
+        for view in views {
+            view.postsFrameChangedNotifications = true
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(sizeChanged), name: NSView.frameDidChangeNotification, object: view)
+        }
+    }
+
+    private func unwatch() {
+        waiting = nil
+        NotificationCenter.default.removeObserver(self, name: NSView.frameDidChangeNotification, object: nil)
+    }
+
+    @objc private func sizeChanged(_ notification: Notification) {
+        if let waiting { schedule(waiting) }
+    }
+
+    private func scroll(to request: RailReveal.Request) {
+        unwatch()
+        guard memory.isDue(request.id) else { return }
+        guard let scrollView = enclosingScrollView, let document = scrollView.documentView else {
+            waiting = request
+            return
+        }
+        // The offset is a distance down from the top, which is the clip origin's y
+        // only over a flipped document, the one SwiftUI's scroll view keeps.
+        guard document.isFlipped else { return }
+        let clip = scrollView.contentView
+        let visible = clip.documentVisibleRect
+        // A clip with no height, or a drawing that has not yet filled it, measures nothing.
+        guard visible.height > 0, document.frame.height >= clip.bounds.height else {
+            watch([clip, document], for: request)
+            return
+        }
+        memory.record(request.id)
+        let ground = convert(
+            NSRect(x: 0, y: request.top, width: 1, height: request.bottom - request.top), to: document)
+        guard let offset = StreamNavigator.revealOffset(
+            rowTop: ground.minY, rowHeight: ground.height,
+            visibleTop: visible.minY, visibleHeight: visible.height,
+            contentHeight: document.frame.height)
+        else { return }
+        clip.scroll(to: NSPoint(x: visible.minX, y: offset))
+        scrollView.reflectScrolledClipView(clip)
+    }
+}
+
+/// The width the scroll view's clip gives the drawing.
+private struct ClipWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        value = nextValue() ?? value
+    }
+}
+
 /// A wheel turned over the rail reaches the roll.
 ///
 /// The rail is SwiftUI and has no wheel of its own to answer, so a
@@ -806,6 +929,7 @@ private struct WheelRelay: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WheelRelayView {
         let view = WheelRelayView()
+        view.setAccessibilityElement(false)
         view.relay = relay
         return view
     }
@@ -831,8 +955,13 @@ final class WheelRelayView: NSView {
     var relay: ((NSEvent) -> Void)?
     /// Retired on the main-actor view lifecycle path when the view leaves
     /// its window or moves between windows, and by the representable's
-    /// dismantle (`retire`).
-    private var monitor: Any?
+    /// dismantle (`retire`), and as a last net by deinit, which copies
+    /// the token out; nonisolated(unsafe) because deinit is nonisolated.
+    private nonisolated(unsafe) var monitor: Any?
+
+    deinit {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+    }
 
     /// Whether the view is watching its window's wheel events.
     var isWatching: Bool { monitor != nil }
@@ -901,262 +1030,21 @@ final class WheelRelayView: NSView {
     }
 }
 
-/// Durable slots placed down the leading edge. The slots remain the
-/// same named, reorderable objects as the bottom presentation; only
-/// their measure and reading direction change (D-26). No layout draws
-/// this since ADR-0037 reduced the four combinations to Tabs and Timeline.
-public struct SlotRailView: View {
-    @ObservedObject var model: PageModel
-    @State private var rowFrames: [UInt64: CGRect] = [:]
-
-    public init(model: PageModel) {
-        self.model = model
-    }
-
-    public var body: some View {
-        // Keep the slot rail on the same leading grid as the stream
-        // rail. The two placement modes are peers, so changing between
-        // them must not make the Files and Pad labels jump sideways.
-        VStack(alignment: .leading, spacing: 2) {
-            if !model.navigationFiles.isEmpty {
-                GroupLabel(text: "FILES")
-                ForEach(model.navigationFiles) { file in
-                    FileShelfRow(
-                        file: file,
-                        selected: model.selectedFile == file.id && !model.showingLedger,
-                        model: model
-                    )
-                }
-                GroupLabel(text: "PAD")
-            }
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 2) {
-                    ForEach(model.navigationTabs) { sheet in
-                        SlotRailRow(
-                            sheet: sheet,
-                            selected: model.selection == sheet.id
-                                && model.selectedFile == nil && !model.showingLedger,
-                            model: model,
-                            beginReorder: { model.draggingTab = sheet.id },
-                            reorder: { pointerY in
-                                reorder(dragged: sheet.id, pointerY: pointerY)
-                            },
-                            endReorder: { model.draggingTab = nil }
-                        )
-                        .id(sheet.id)
-                        .opacity(model.draggingTab == sheet.id ? 0.6 : 1)
-                        .background(GeometryReader { geometry in
-                            Color.clear.preference(
-                                key: SlotRailFramesKey.self,
-                                value: [sheet.id: geometry.frame(in: .named(Self.space))]
-                            )
-                        })
-                    }
-                }
-            }
-            Button(action: model.newPage) {
-                Image(systemName: "plus")
-                    .font(.system(size: 10, weight: .medium))
-                    .frame(width: 24, height: 20)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help(TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
-            .accessibilityLabel(Text("New page"))
-            if blankCount > 0 {
-                Text("\(blankCount) blank")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityLabel(Text("\(blankCount) blank slot\(blankCount == 1 ? "" : "s")"))
-            }
-        }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 6)
-        .frame(width: TimeRailView.width)
-        .background(Color.panelBackground)
-        .coordinateSpace(name: Self.space)
-        .onPreferenceChange(SlotRailFramesKey.self) { rowFrames = $0 }
-    }
-
-    fileprivate static let space = "slotRail"
-
-    private var blankCount: Int {
-        model.navigationTabs.count { !$0.hasPage }
-    }
-
-    private func reorder(dragged: UInt64, pointerY: CGFloat) {
-        let target = model.navigationTabs
-            .filter { $0.id != dragged }
-            .count { rowFrames[$0.id].map { $0.midY < pointerY } ?? false }
-        guard let current = model.navigationTabs.firstIndex(where: { $0.id == dragged }), target != current
-        else { return }
-        model.move(dragged, to: target)
-    }
-}
-
-private struct SlotRailRow: View {
-    let sheet: TabSummary
-    let selected: Bool
-    @ObservedObject var model: PageModel
-    let beginReorder: () -> Void
-    let reorder: (CGFloat) -> Void
-    let endReorder: () -> Void
-
-    @State private var hovering = false
-    @State private var renaming = false
-    @State private var renameDraft = ""
-    @FocusState private var renameFocused: Bool
-
-    var body: some View {
-        VStack(spacing: 3) {
-            HStack(spacing: 3) {
-                if sheet.paused { HoldChip(toppedUp: sheet.holdToppedUp) }
-                if renaming {
-                    renameField
-                } else {
-                    Text(sheet.title)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                reorderHandle
-                Button { model.close(sheet.id) } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 7, weight: .bold))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .opacity(hovering ? 1 : 0)
-                .allowsHitTesting(hovering)
-                .accessibilityLabel(Text("Close tab"))
-            }
-            Group {
-                if sheet.hasPage {
-                    GaugeBar(
-                        fraction: sheet.fractionRemaining,
-                        paused: sheet.paused,
-                        toppedUp: sheet.holdToppedUp,
-                        lastHour: sheet.lastHour
-                    )
-                } else {
-                    EmptyRule()
-                }
-            }
-            .frame(height: 3)
-            .padding(.horizontal, 3)
-        }
-        .padding(.vertical, 4)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(selected ? Color.cellBackground : .clear)
-        )
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .gesture(TapGesture(count: 2).onEnded { if !renaming { model.pause(sheet.id) } })
-        .simultaneousGesture(TapGesture().onEnded { if !renaming { model.select(sheet.id) } })
-        .accessibilityElement(children: renaming ? .contain : .ignore)
-        .accessibilityLabel(Text(accessibilityDescription))
-        .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
-        .contextMenu {
-            Button("Rename tab…") { beginRename() }
-            Button(SheetTab.holdMenuTitle(
-                paused: sheet.paused, toppedUp: sheet.holdToppedUp)
-            ) { model.pause(sheet.id) }
-                .disabled(!sheet.hasPage)
-            Button(SheetTab.rungMenuTitle(hasPage: sheet.hasPage)) {
-                model.cycleRung(sheet.id)
-            }
-            if model.sync.enabled, let pageID = sheet.pageID {
-                Button(SheetTab.syncMenuTitle(enrolled: model.sync.isEnrolled(pageID))) {
-                    model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
-                }
-            }
-            Button("Close tab", role: .destructive) { model.close(sheet.id) }
-        }
-    }
-
-    private var reorderHandle: some View {
-        Image(systemName: "line.3.horizontal")
-            .font(.system(size: 8, weight: .medium))
-            .foregroundStyle(.secondary)
-            .frame(width: 12, height: 18)
-            .contentShape(Rectangle())
-            .help("Drag to reorder tab")
-            .accessibilityLabel(Text("Reorder tab"))
-            .gesture(
-                DragGesture(minimumDistance: 4, coordinateSpace: .named(SlotRailView.space))
-                    .onChanged { value in
-                        beginReorder()
-                        reorder(value.location.y)
-                    }
-                    .onEnded { _ in endReorder() }
-            )
-    }
-
-    private func beginRename() {
-        renameDraft = sheet.title
-        renaming = true
-    }
-
-    private var renameField: some View {
-        TextField("", text: $renameDraft)
-            .textFieldStyle(.plain)
-            .font(.system(.caption, design: .monospaced))
-            .focused($renameFocused)
-            .onSubmit { endRename(committed: true) }
-            .onExitCommand { endRename(committed: false) }
-            .onChange(of: renameFocused) { focused in
-                if !focused { endRename(committed: false) }
-            }
-            .onAppear { DispatchQueue.main.async { renameFocused = true } }
-            .accessibilityLabel(Text("Tab name"))
-    }
-
-    private func endRename(committed: Bool) {
-        guard renaming else { return }
-        renaming = false
-        switch TabRename.outcome(draft: renameDraft, current: sheet.title, committed: committed) {
-        case .rename(let name): model.renameTab(sheet.id, to: name)
-        case .keep: break
-        }
-    }
-
-    private var accessibilityDescription: String {
-        guard sheet.hasPage else { return "tab, \(sheet.title), holding no page" }
-        var description = "page, \(sheet.title)"
-        if sheet.chipCount > 0 {
-            description += ", \(sheet.chipCount) sealed chip\(sheet.chipCount == 1 ? "" : "s")"
-        }
-        if sheet.paused {
-            description += sheet.holdToppedUp ? ", clock held, topped up" : ", clock held"
-        }
-        return description
-    }
-}
-
-/// VoiceOver announces the current ordering as the value and the next ordering
-/// as the action, rather than presenting the next state as the current state.
+/// The menu's order choices and current value share their localized labels.
 struct PadSortCopy {
     let direction: PadSortDirection
     let subject: String
+    static let orders: [PadSortDirection] = [.natural, .chronological, .reverseChronological]
 
     var label: String { CompanionL10n.format("pad.sort.label", subject) }
     var currentOrder: String {
-        CompanionL10n.string(direction == .chronological ? "pad.sort.oldest" : "pad.sort.newest")
+        switch direction {
+        case .natural: return CompanionL10n.string("pad.sort.natural")
+        case .chronological: return CompanionL10n.string("pad.sort.oldest")
+        case .reverseChronological: return CompanionL10n.string("pad.sort.newest")
+        }
     }
-    var action: String {
-        CompanionL10n.format(direction == .chronological ? "pad.sort.toNewest" : "pad.sort.toOldest", subject)
-    }
-}
-
-private struct SlotRailFramesKey: PreferenceKey {
-    static let defaultValue: [UInt64: CGRect] = [:]
-
-    static func reduce(value: inout [UInt64: CGRect], nextValue: () -> [UInt64: CGRect]) {
-        value.merge(nextValue()) { _, newer in newer }
-    }
+    var help: String { CompanionL10n.format("pad.sort.help", label, currentOrder) }
 }
 
 /// One open file on the rail's Files shelf: the filename over the
@@ -1181,7 +1069,7 @@ struct FileShelfRow: View {
             HStack(spacing: 3) {
                 Image(systemName: "doc")
                     .font(.system(size: 8))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                     .accessibilityHidden(true)
                 Text(file.name)
                     .font(.system(.caption, design: .monospaced))
@@ -1205,86 +1093,26 @@ struct FileShelfRow: View {
         .help(FileRowLabel.help(for: file))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected))
+        .accessibilityActivation(when: true) { model.select(target: .file(file.id)) }
     }
 }
 
-/// The pure decisions a day's tab makes, shared by the bottom strip's
-/// `TimeUnitBottomTab` and the navigator's nodes: the target a click
-/// resolves to, which day offers a plus, and the tooltips. A namespace
-/// and no longer a view since the navigator replaced the rail's rows;
-/// kept under its name so the tests and the strip read as they did.
+/// The empty today node's tooltip, the one decision of the old rows the
+/// navigator still asks (`StreamNavigator.help`); a page node's tooltip
+/// is composed there. A namespace and no longer a view since the
+/// navigator replaced the rail's rows; kept under its name so the tests
+/// read as they did.
 ///
-/// Internal rather than private so the decisions can be tested without
+/// Internal rather than private so the wording can be tested without
 /// a window, in the idiom `TabStripView.newPageHelp` and
-/// `SheetTab.holdMenuTitle` set. On the main actor, as the view it
-/// replaced was, since the tooltips it builds read the strip's.
-@MainActor
+/// `SheetTab.holdMenuTitle` set.
 enum TimeUnitTab {
-    /// Which bottom tab carries the + button: today, and only today. A
-    /// page is minted with the clock's own reading of now, so today is
-    /// the one day a new page can land on; a plus beside yesterday
-    /// would promise a page in the past. Pure, so the strip's tests
-    /// can pin the placement without a window. The side rail puts its
-    /// plus on the PAD heading for the same reason.
-    nonisolated static func offersNewPage(_ unit: TimeUnitProjection.Unit) -> Bool {
-        unit.bucket == 0
-    }
-
-    /// The + button's tooltip, which is the strip's tooltip: one
-    /// sentence for one action, so a keymap that moved `page::New`
-    /// moves both, and a keymap that unbound it leaves both saying only
-    /// what the button does.
-    static func newPageHelp(chord: Keystroke?) -> String {
-        TabStripView.newPageHelp(chord: chord)
-    }
-
-    /// Where a click on a day lands.
-    ///
-    /// The same answer the keyboard gets, and deliberately the same
-    /// shape: a day answers with its first page's slot, and only today
-    /// can answer with no slot at all. `PageModel.visibleTargets` maps
-    /// the very same units the very same way, so a click on the second
-    /// day and ⌘2 cannot disagree about where the second day is.
-    static func target(for unit: TimeUnitProjection.Unit) -> SurfaceTarget {
-        guard let tab = unit.tabIDs.first else { return .today }
-        return .tab(tab)
-    }
-
-    /// A day's tooltip: what the click does, in the same words the day
-    /// itself shows, and the chord that does it too. With nothing bound
-    /// it says only what the click does, which is still true.
-    static func dayHelp(spokenLabel: String, chord: Keystroke?) -> String {
-        chorded("Go to \(spokenLabel)", chord: chord)
-    }
-
-    /// Today's tooltip, which has two readings. Today already holding a
-    /// page is a jump like any other; today holding none is the one
-    /// place where a click conjures something, and saying "go to today"
-    /// there would describe a page that does not exist. The two agree
-    /// word for word about the day that has one, so a day that gains a
-    /// page reads the same either way it was asked.
-    static func todayHelp(hasPage: Bool, chord: Keystroke?) -> String {
-        guard hasPage else { return chorded("Start today's page", chord: chord) }
-        return dayHelp(spokenLabel: "today", chord: chord)
-    }
-
-    /// The chord in parentheses after the description, or the plain
-    /// description when the keymap bound nothing, `newPageHelp`'s
-    /// shape, so every tooltip in the app degrades the same way.
-    private static func chorded(_ what: String, chord: Keystroke?) -> String {
-        guard let chord else { return what }
-        return "\(what) (\(chord.displaySymbol))"
-    }
-}
-
-extension View {
-    @ViewBuilder
-    func accessibilityNewPageAction(when offered: Bool, action: @escaping () -> Void) -> some View {
-        if offered {
-            accessibilityAction(named: Text("New page"), action)
-        } else {
-            self
-        }
+    /// Today holding no page is the one place where a click conjures
+    /// something, and the tooltip says so rather than promising a page
+    /// that does not exist; with nothing bound it says only what the
+    /// click does, which is still true.
+    nonisolated static func todayHelp(chord: Keystroke?) -> String {
+        Keystroke.chorded("Start today's page", chord: chord)
     }
 }

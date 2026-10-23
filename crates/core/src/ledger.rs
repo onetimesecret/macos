@@ -1,29 +1,10 @@
 //! The ledger: what happened, never what was written (ADR-0012).
-//!
-//! Earlier revisions kept dead pages here as residue: verbatim ink and
-//! chip tombstones carrying excerpts. ADR-0012 deletes that outright.
-//! The ledger is now an audit trail, and the boundary is structural
-//! rather than careful:
-//!
-//! - **No content.** A record carries an event, the item's random
-//!   [`ItemId`](crate::ItemId) in the clear, timestamps, a
-//!   [`SizeClass`], a [`DestinationClass`], and the page's title.
-//!   There is no field a byte of ink or a chip excerpt could occupy.
-//! - **The title is the one content-derived field**, and it is derived
-//!   by the page, at edit time, capped at 80 characters, or set
-//!   explicitly by the user. The ledger copies a name the page already
-//!   owned; it never reads ink itself. The honest claim is
-//!   "content-free by construction, except the capped title".
-//! - **Long-lived, under its own key.** Unlike staged content, which
-//!   dies with the boot session, the ledger persists across reboots
-//!   under a separate long-lived keychain item. That is why records
-//!   carry wall-clock stamps and why retention is a time window (see
-//!   [`evict_expired`]).
-//! - **Post-death recall of ink is gone on purpose.** If it is ever
-//!   wanted as a feature it belongs in the content store, under the
-//!   boot-bound key, with a TTL. It does not belong here.
+//! Metadata only: no field can hold ink or an excerpt; the page's capped
+//! title is the one content-derived field.
 
 use std::collections::VecDeque;
+
+use zeroize::Zeroizing;
 
 use crate::sheet::ItemId;
 
@@ -58,7 +39,7 @@ impl std::fmt::Display for LedgerEvent {
 }
 
 /// How much content the event moved, bucketed so the exact byte count
-/// (itself a weak fingerprint of the content) never reaches the record.
+/// never reaches the record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SizeClass {
     /// Under 64 bytes.
@@ -74,8 +55,7 @@ pub enum SizeClass {
 }
 
 impl SizeClass {
-    /// The bucket `bytes` falls in. Boundaries are exclusive upper
-    /// bounds: 64 bytes is [`SizeClass::Small`], not [`SizeClass::Tiny`].
+    /// The bucket `bytes` falls in; boundaries belong to the bucket above.
     #[must_use]
     pub fn of(bytes: usize) -> Self {
         match bytes {
@@ -100,20 +80,15 @@ impl SizeClass {
     }
 }
 
-/// The ledger JSON vocabulary comes from [`SizeClass::as_str`]. The Swift
-/// shell fails closed on any label outside this set (`SealedBlockTests`), so
-/// a spelling here is a contract change on both sides of the seam, not a
-/// cosmetic one.
+/// The Swift shell fails closed on labels outside this set
+/// (`SealedBlockTests`), so a spelling change is a contract change.
 impl std::fmt::Display for SizeClass {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-/// Where content went, for the events that move it. The pasteboard is
-/// this design's named existential risk, so egress to it is the single
-/// most useful line in the ledger; recording it costs no content, only
-/// the fact that it happened (ADR-0012).
+/// Where content went, for the events that move it (ADR-0012).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DestinationClass {
     /// The event moved nothing out of the app.
@@ -122,6 +97,9 @@ pub enum DestinationClass {
     Clipboard,
     /// A one-time link.
     OneTimeLink,
+    /// A decrypted drag's pasteboard item, written when a destination asks
+    /// (ADR-0012 Amendment 1; Law 0001, decrypted drag row).
+    Drag,
 }
 
 impl std::fmt::Display for DestinationClass {
@@ -130,20 +108,49 @@ impl std::fmt::Display for DestinationClass {
             DestinationClass::None => "none",
             DestinationClass::Clipboard => "clipboard",
             DestinationClass::OneTimeLink => "link",
+            DestinationClass::Drag => "drag",
         })
     }
 }
 
 /// One thing that happened, in metadata only.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct LedgerRecord {
     pub(crate) event: LedgerEvent,
     pub(crate) item: ItemId,
-    pub(crate) title: String,
+    /// A wiping owner, the one content derived field here (Law 0004, C16).
+    pub(crate) title: Zeroizing<String>,
     pub(crate) at_wall_ms: u64,
     pub(crate) item_created_wall_ms: u64,
     pub(crate) size: SizeClass,
     pub(crate) destination: DestinationClass,
+}
+
+/// The title is the one content derived field, so a record formats without it, as
+/// `Segment` does (Law 0004, C16).
+impl std::fmt::Debug for LedgerRecord {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Destructured in full, so a new field is a compile error here, not a silent print.
+        let Self {
+            event,
+            item,
+            title: _,
+            at_wall_ms,
+            item_created_wall_ms,
+            size,
+            destination,
+        } = self;
+        formatter
+            .debug_struct("LedgerRecord")
+            .field("event", event)
+            .field("item", item)
+            .field("title", &"[REDACTED]")
+            .field("at_wall_ms", at_wall_ms)
+            .field("item_created_wall_ms", item_created_wall_ms)
+            .field("size", size)
+            .field("destination", destination)
+            .finish()
+    }
 }
 
 impl LedgerRecord {
@@ -153,20 +160,16 @@ impl LedgerRecord {
         self.event
     }
 
-    /// The item this record is about: a page's identity for page
-    /// events, a chip's for chip events. The random UUID in the clear,
-    /// with no digest and no salt, because it is already content-free.
+    /// A page's identity for page events, a chip's for chip events.
     #[must_use]
     pub fn item(&self) -> ItemId {
         self.item
     }
 
-    /// The owning page's title at the moment of the event. The single
-    /// content-derived field in the whole record, capped at 80
-    /// characters by the page that owns it.
+    /// The owning page's title at the event, capped by the page.
     #[must_use]
     pub fn title(&self) -> &str {
-        &self.title
+        self.title.as_str()
     }
 
     /// When the event happened, in Unix epoch milliseconds.
@@ -175,11 +178,8 @@ impl LedgerRecord {
         self.at_wall_ms
     }
 
-    /// When the item's owning page was created, in Unix epoch
-    /// milliseconds. Chips do not carry a creation stamp of their own,
-    /// so a chip event reports the page it was sealed onto: always at or
-    /// before the chip's own birth, and enough to group a page's events
-    /// in a reader.
+    /// When the owning page was created, in Unix epoch milliseconds; chip
+    /// events report their page's stamp.
     #[must_use]
     pub fn item_created_wall_ms(&self) -> u64 {
         self.item_created_wall_ms
@@ -198,28 +198,8 @@ impl LedgerRecord {
     }
 }
 
-/// Drop every record older than the 90 day window, measured from
-/// `now_wall_ms`.
-///
-/// **Why wall-clock time here, when every expiry path in this crate is
-/// forbidden from touching it.** The rule elsewhere is nearly
-/// absolute: a secret's lifetime is measured on the monotonic clock, so
-/// no clock step can extend it while a session is running. The one
-/// interval that clock cannot measure is the gap between a save and the
-/// next launch, and ADR-0016 section 4 moved that, and only that, onto
-/// the calendar. Ledger records are the older deliberate exception,
-/// documented in ADR-0012. They are meant to survive reboots, and an
-/// `Instant` cannot: it is meaningless across a restart. So a record
-/// must carry wall-clock time anyway, and retention has nothing else to
-/// key on. The failure mode is bounded and benign in both directions: a
-/// stepped clock leaves a metadata record alive slightly too long, or
-/// kills it slightly early. Neither outcome extends the lifetime of a
-/// secret, because no secret is in reach of this function.
-///
-/// Eviction runs where the ledger is already being touched: on load,
-/// and on the write path. No timer exists for it, and none is wanted:
-/// expired records sitting in a closed file are inert until something
-/// reads them, and the read evicts them first.
+/// Drop every record older than the 90 day window before `now_wall_ms`.
+/// Wall time because records outlive reboots (ADR-0012).
 pub(crate) fn evict_expired(ledger: &mut VecDeque<LedgerRecord>, now_wall_ms: u64) {
     let cutoff = now_wall_ms.saturating_sub(LEDGER_RETENTION_MS);
     ledger.retain(|record| record.at_wall_ms >= cutoff);
@@ -233,7 +213,7 @@ mod tests {
         LedgerRecord {
             event: LedgerEvent::Created,
             item: ItemId::random(),
-            title: String::from("a page"),
+            title: Zeroizing::new(String::from("a page")),
             at_wall_ms,
             item_created_wall_ms: at_wall_ms,
             size: SizeClass::Tiny,
@@ -241,9 +221,24 @@ mod tests {
         }
     }
 
+    /// The title, the one content derived field here, is a wiping owner (Law 0004, C16), and a
+    /// record formats without it.
+    #[test]
+    fn the_title_is_a_wiping_owner() {
+        let record = record(1);
+        let title: &Zeroizing<String> = &record.title;
+        assert_eq!(title.as_str(), "a page");
+        assert_eq!(record.title(), "a page");
+        let formatted = format!("{record:?}");
+        assert!(formatted.contains("[REDACTED]"), "{formatted}");
+        assert!(
+            !formatted.contains("a page"),
+            "the title reached a debug line: {formatted}"
+        );
+    }
+
     #[test]
     fn size_class_buckets_are_exclusive() {
-        // Every boundary belongs to the bucket above it.
         assert_eq!(SizeClass::of(0), SizeClass::Tiny);
         assert_eq!(SizeClass::of(63), SizeClass::Tiny);
         assert_eq!(SizeClass::of(64), SizeClass::Small);
@@ -261,16 +256,12 @@ mod tests {
         let now = 1_800_000_000_000;
         let day = 24 * 60 * 60 * 1000;
         let mut ledger: VecDeque<LedgerRecord> = VecDeque::new();
-        // Ten thousand records, all recent: a count-based cap would have
-        // thrown most of them away. The window keeps every one.
         for _ in 0..10_000 {
             ledger.push_front(record(now - day));
         }
         evict_expired(&mut ledger, now);
         assert_eq!(ledger.len(), 10_000);
 
-        // The boundary is inclusive at exactly 90 days; one millisecond
-        // older falls off.
         ledger.push_front(record(now - LEDGER_RETENTION_MS));
         ledger.push_front(record(now - LEDGER_RETENTION_MS - 1));
         evict_expired(&mut ledger, now);
@@ -281,8 +272,6 @@ mod tests {
     fn a_wall_clock_that_stepped_backwards_evicts_nothing() {
         let mut ledger: VecDeque<LedgerRecord> = VecDeque::new();
         ledger.push_front(record(1_800_000_000_000));
-        // `now` before every record: the cutoff saturates at zero rather
-        // than wrapping and reaping the whole ledger.
         evict_expired(&mut ledger, 0);
         assert_eq!(ledger.len(), 1);
     }

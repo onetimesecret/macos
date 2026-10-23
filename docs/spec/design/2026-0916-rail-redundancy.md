@@ -4,7 +4,7 @@ title: The rail and the gutters say each fact once
 status: accepted   # draft → accepted → superseded
 dated: 2026-09-16
 supersedes: docs/spec/design/2026-0916-clipboard-clear-interval.md, on D-34's stamp, D-36's marks, D-37's gutter gauge and D-38's tooltip only; docs/spec/design/2026-0915-ui-ux-decisions.md, on D-12's markup stripping only
-superseded-by: docs/adr/0040-shared-pad-timeline-navigation.md, on dense checkpoint label presentation; the active mark distinction remains only
+superseded-by: docs/adr/0060-shared-pad-timeline-navigation.md, on dense checkpoint label presentation; the active mark distinction remains only
 reviewed: 2026-09-16
 surfaces: OnetimePad (background surface), Days + side
 sources:
@@ -20,7 +20,7 @@ sources:
   - crates/ffi/src/lib.rs
 ---
 
-> Scoped successor, 2026-10-03: [ADR-0040](../../adr/0040-shared-pad-timeline-navigation.md)
+> Scoped successor, 2026-10-03: [ADR-0060](../../adr/0060-shared-pad-timeline-navigation.md)
 > replaces dense checkpoint label presentation; the active mark distinction remains. Its shared navigator, selectable day/checkpoint
 > ordering, density handling, and session reading-position rules are approved
 > design requirements, not an implementation verification report.
@@ -100,6 +100,11 @@ Three pages minted in one minute read as three copies of one page.
   `testTheGutterDrawsOnlyATypedName`;
   `DayScrollTests.testAGutterDrawsATypedNameAndNoGauge`; the FFI's key
   list test names `title_source`.
+  *Amended 2026-10-13:* [Law 0007](../../law/0007-edit-in-place.md)
+  (issue 248) gives the time its own seat: a typed name stands between
+  the day and the time, `today · Deploy notes · 13:00`, and a rename
+  opens on what the seat showed, the name or else the time. The pure
+  function is now `DayHeaderView.words(spokenLabel:stamp:firstOfDay:)`.
 - **D-47 (fixed)** No gauge on a gutter. A page's remaining life is
   drawn once, under the active node on the rail, and nowhere on the
   roll. D-37 kept the gutter's gauge because time as geometry is D-11

@@ -1,14 +1,33 @@
-//! Request building and response interpretation — the sans-IO half —
-//! plus [`Client`], which pairs it with a transport.
+//! Request building and response interpretation, plus [`Client`].
 
-use zeroize::Zeroizing;
+use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::auth::AuthStrategy;
 use crate::http::{HttpRequest, HttpResponse, Transport};
 use crate::types::{ConcealData, ConcealPayload, Error, RecordEnvelope};
 
-/// Builds v3 API requests and interprets responses. Does no networking:
-/// pair with a [`Transport`] via [`Client`], or drive it by hand.
+/// The v2-inherited wrapper: the payload nests under `secret`.
+#[derive(serde::Serialize)]
+struct ConcealEnvelope<'a> {
+    secret: &'a ConcealPayload,
+}
+
+/// Counts bytes, to size a serialization before allocating its buffer.
+/// Requires deterministic output: no unordered maps in `ConcealPayload`.
+struct ByteCounter(usize);
+
+impl std::io::Write for ByteCounter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0 += buf.len();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Builds v3 API requests and interprets responses; does no networking.
 pub struct Api {
     base_url: String,
     auth: Box<dyn AuthStrategy>,
@@ -26,8 +45,7 @@ impl Api {
         Self { base_url, auth }
     }
 
-    /// The server this client talks to — the app's one outbound
-    /// destination.
+    /// The server this client talks to.
     #[must_use]
     pub fn base_url(&self) -> &str {
         &self.base_url
@@ -43,9 +61,7 @@ impl Api {
         self.post_conceal("/api/v3/secret/conceal", payload, true)
     }
 
-    /// Build `POST /api/v3/guest/secret/conceal` — concealing with zero
-    /// configuration, where the server enables guest routes. Never
-    /// carries credentials.
+    /// Build `POST /api/v3/guest/secret/conceal`, without credentials.
     ///
     /// # Errors
     ///
@@ -54,7 +70,7 @@ impl Api {
         self.post_conceal("/api/v3/guest/secret/conceal", payload, false)
     }
 
-    /// Build `GET /api/v3/status` — the connection test.
+    /// Build `GET /api/v3/status`, the connection test.
     #[must_use]
     pub fn status_request(&self) -> HttpRequest {
         let mut req = HttpRequest::new("GET", format!("{}/api/v3/status", self.base_url));
@@ -69,9 +85,14 @@ impl Api {
         payload: &ConcealPayload,
         authenticated: bool,
     ) -> Result<HttpRequest, Error> {
-        // V2-inherited transport wrapper: params nest under "secret".
-        let body = serde_json::to_vec(&serde_json::json!({ "secret": payload }))
-            .map_err(|e| Error::Decode(e.to_string()))?;
+        // No intermediate `Value` (it would hold unwiped copies), and an
+        // exact-size buffer so growth never strands a partial copy.
+        let envelope = ConcealEnvelope { secret: payload };
+        let mut counter = ByteCounter(0);
+        serde_json::to_writer(&mut counter, &envelope).map_err(|e| Error::Decode(e.to_string()))?;
+        let mut body = Zeroizing::new(Vec::with_capacity(counter.0));
+        serde_json::to_writer(&mut *body, &envelope).map_err(|e| Error::Decode(e.to_string()))?;
+        debug_assert_eq!(body.len(), counter.0, "sizing pass drifted from the write");
         let mut req = HttpRequest::new("POST", format!("{}{path}", self.base_url));
         req.headers
             .push(("Content-Type".into(), "application/json".into()));
@@ -80,7 +101,7 @@ impl Api {
         if authenticated {
             self.auth.apply(&mut req);
         }
-        req.body = Some(Zeroizing::new(body));
+        req.body = Some(body);
         Ok(req)
     }
 
@@ -104,16 +125,14 @@ impl Api {
     }
 }
 
-/// A transport paired with the API surface: the whole conceal call in
-/// one method.
+/// An [`Api`] paired with a [`Transport`].
 pub struct Client<T: Transport> {
     api: Api,
     transport: T,
 }
 
 impl<T: Transport> Client<T> {
-    /// A client for `base_url`, authenticating with `auth`, sending via
-    /// `transport`.
+    /// A client for `base_url`, sending via `transport`.
     #[must_use]
     pub fn new(base_url: impl Into<String>, auth: Box<dyn AuthStrategy>, transport: T) -> Self {
         Self {
@@ -128,7 +147,7 @@ impl<T: Transport> Client<T> {
         &self.api
     }
 
-    /// Conceal a secret: one `POST`, one one-time link.
+    /// Conceal a secret.
     ///
     /// # Errors
     ///
@@ -137,8 +156,11 @@ impl<T: Transport> Client<T> {
     /// [`Api::parse_conceal_response`].
     pub fn conceal(&self, payload: &ConcealPayload) -> Result<ConcealData, Error> {
         let request = self.api.conceal_request(payload)?;
-        let response = self.transport.send(request)?;
-        self.api.parse_conceal_response(&response)
+        let mut response = self.transport.send(request)?;
+        // The body carries the link key; the returned copy is not wiped.
+        let parsed = self.api.parse_conceal_response(&response);
+        response.body.zeroize();
+        parsed
     }
 
     /// Conceal via the guest route (no credentials).
@@ -148,8 +170,10 @@ impl<T: Transport> Client<T> {
     /// Same as [`Client::conceal`].
     pub fn guest_conceal(&self, payload: &ConcealPayload) -> Result<ConcealData, Error> {
         let request = self.api.guest_conceal_request(payload)?;
-        let response = self.transport.send(request)?;
-        self.api.parse_conceal_response(&response)
+        let mut response = self.transport.send(request)?;
+        let parsed = self.api.parse_conceal_response(&response);
+        response.body.zeroize();
+        parsed
     }
 }
 
@@ -166,14 +190,9 @@ pub fn share_link(base_url: &str, data: &ConcealData) -> String {
     }
 }
 
-/// Snap a requested TTL to a server-allowed value, **downward**. Falls
-/// back to the smallest allowed value when the request is shorter than
-/// all of them; `None` only when `allowed` is empty.
-///
-/// The request is the link's own: a page's remaining time is not an
-/// input to a link's lifetime (ADR-0026), and the companion no longer
-/// derives one from the other. This helper stays for the day the server
-/// reports an allowed set per request (ADR-0026's second eject trigger).
+/// Snap a requested TTL down to a server-allowed value, else the smallest;
+/// `None` when `allowed` is empty. Unused until the server reports a set
+/// (ADR-0026).
 #[must_use]
 pub fn snap_ttl(remaining_secs: u64, allowed: &[u64]) -> Option<u64> {
     allowed
@@ -247,6 +266,22 @@ mod tests {
     }
 
     #[test]
+    fn the_conceal_body_is_written_at_its_exact_size() {
+        let api = Api::new("https://x.example", Box::new(NoAuth));
+        let secret = "line \"one\"\n\u{1F511} ".repeat(500);
+        let payload = ConcealPayload::new(secret, "x.example")
+            .with_ttl(3600)
+            .with_passphrase("pass\\word");
+        for req in [
+            api.conceal_request(&payload).unwrap(),
+            api.guest_conceal_request(&payload).unwrap(),
+        ] {
+            let body = req.body.as_ref().unwrap();
+            assert_eq!(body.capacity(), body.len());
+        }
+    }
+
+    #[test]
     fn success_response_parses_into_conceal_data() {
         let api = Api::new("https://x.example", Box::new(NoAuth));
         let response = HttpResponse {
@@ -293,11 +328,9 @@ mod tests {
     #[test]
     fn snap_ttl_snaps_down_never_up() {
         let allowed = [3600, 28_800, 86_400, 604_800];
-        // 7h10m remaining → 1h, not 8h: never outlive intent.
         assert_eq!(snap_ttl(25_800, &allowed), Some(3600));
         assert_eq!(snap_ttl(28_800, &allowed), Some(28_800));
         assert_eq!(snap_ttl(1_000_000, &allowed), Some(604_800));
-        // Shorter than every allowed value → the smallest allowed.
         assert_eq!(snap_ttl(120, &allowed), Some(3600));
         assert_eq!(snap_ttl(120, &[]), None);
     }

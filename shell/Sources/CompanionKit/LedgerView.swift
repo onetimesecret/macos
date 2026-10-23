@@ -20,7 +20,7 @@ public struct LedgerView: View {
                 if entries.isEmpty {
                     Text("The ledger has nothing to show yet.")
                         .font(.system(.callout, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.secondaryInk)
                         .padding(.top, 24)
                         .frame(maxWidth: .infinity)
                 } else {
@@ -46,16 +46,16 @@ private struct LedgerRecord: View {
             HStack(spacing: 6) {
                 Text(entry.event)
                     .font(.system(.caption, design: .monospaced).weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                 Text(entry.title)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondaryInk)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 8)
                 Text(Self.stamp(entry.atMs))
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.secondaryInk)
             }
             HStack(spacing: 6) {
                 // The correlation handle an auditor lines records up by.
@@ -63,14 +63,14 @@ private struct LedgerRecord: View {
                 // full UUID is the accessibility value.
                 Text(Self.shortItem(entry.item))
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.secondaryInk)
                 Text(entry.size)
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.secondaryInk)
                 if entry.destination != "none" {
                     Text("→ \(entry.destination)")
                         .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.secondaryInk)
                 }
             }
         }

@@ -24,7 +24,7 @@ the second costs sync and why that cost is kept.
 
 Issue #92 settled the doctrine first: the network boundary now reads "at
 most two outbound destinations, TLS-only, and no others"
-(docs/spec/design/05-technical-direction.md). The first is the
+(docs/spec/design/2026-0707-technical-direction.md). The first is the
 configured OTS server, reached only on an explicit conceal. The second
 is this relay, reached only for a page the user has shared to their own
 enrolled devices. This ADR cannot contradict that boundary and does not:
@@ -182,7 +182,7 @@ can read pages. The account gate and the pairing gate fail
 independently, and both must be passed.
 
 **Rejected: iCloud Keychain as the key channel.** Apple ships exactly
-this mechanism, and ADR-0016 section 3 deliberately opted the durable
+this mechanism, and the [persistence decision background](../../../plans/trustworthy-persistence-decision-background.md) section 3 deliberately opted the durable
 keychain half out of it with `ThisDeviceOnly`
 (crates/credentials/src/lib.rs). Using iCloud Keychain for the
 transport key would put key custody inside an ecosystem the threat
@@ -341,7 +341,8 @@ twenty-four hours topped up, crates/core/src/store.rs) becomes
 a replicated register on the logical clock, and a live hold suspends
 the countdown on every device exactly as it suspends it locally. The
 hold is not a clock candidate under the minimum rule; it is policy,
-the user's own instruction, the same class of exception ADR-0016
+the user's own instruction, the same class of exception the
+[persistence decision background](../../../plans/trustworthy-persistence-decision-background.md)
 section 4 already grants a deliberate rung click. Two consequences
 make that safe to say. A device offline past the original deadline
 never saw the hold, so it still entombs its own copy on its own clock,
@@ -395,10 +396,10 @@ network to move it across a process boundary, which the doctrine's
 "only for a page the user has shared to their own enrolled devices"
 does not license.
 
-### 8. ADR-0016 section 3 and the key that must travel
+### 8. Persistence decision background section 3 and the key that must travel
 
 The keychain half stays `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`
-(crates/credentials/src/lib.rs), and ADR-0016 section 3's
+(crates/credentials/src/lib.rs), and the [persistence decision background](../../../plans/trustworthy-persistence-decision-background.md) section 3's
 observation that `ThisDeviceOnly` "keeps a half that is durable across
 boots out of iCloud Keychain" hardens here from a property into a
 rule: no key in this design rides iCloud Keychain, ever. The content
@@ -421,7 +422,7 @@ establishing that the account is not the device.
   not change shape for sync.
 - The network boundary doctrine holds at two destinations and
   `crates/transport`'s allowlist widens by one entry. Every claim in
-  docs/spec/design/05-technical-direction.md about the relay
+  docs/spec/design/2026-0707-technical-direction.md about the relay
   (ciphertext only, opt-in per page, holds nothing past the page's own
   TTL) is made true by sections 1, 2 and 6 rather than asserted.
 - A compromised relay is bounded, and the bound is stated: one GOP of

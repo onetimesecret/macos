@@ -73,7 +73,7 @@ struct CompanionCoreReleaseProbe {
 }
 SWIFT
 
-SEAM_PATTERN='_companion_(new_ephemeral|test_age_ms|test_wire_stub|test_wire_last_json)$'
+SEAM_PATTERN='_companion_(new_ephemeral|test_age_ms|test_wire_stub|test_wire_last_json|test_memory_pasteboard|test_ink_below_the_guard)$'
 for ARCH in arm64 x86_64; do
   TARGET="$ARCH-apple-macosx13.0"
   BIN="$TMP/companion-core-$ARCH"

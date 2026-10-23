@@ -208,6 +208,7 @@ public struct DayScrollView: NSViewRepresentable {
            coordinator.model.rollGeometry.holdsClaim(stack), let pad = stack.renderedPadID {
             coordinator.model.rememberPadReadingPlace(stack.currentPlace, for: pad)
         }
+        stack.unobserveEditor()
         // Whatever became of the editor, this roll's measurement
         // describes a surface that is going away, and the rail must not
         // keep drawing the shape of it behind a ledger (issue #131).
@@ -217,17 +218,7 @@ public struct DayScrollView: NSViewRepresentable {
         // word would blank it until the next pass happened to re-measure.
         coordinator.model.rollGeometry.reset(from: stack)
         guard let editor = stack.editor else { return }
-        // The editor comes off its page on the way out, as the page's
-        // own dismantle takes it off: the caret is left with the model,
-        // so the surface that mounts this page next finds it, and the
-        // layout manager leaves the storage. The caret only: the roll's
-        // offset belongs to the roll's one clip and to no page in it,
-        // and a handoff carries it to the other window
-        // (`PageModel.transferOwnership`). Multiple pads additionally keep
-        // the semantic reading position above for File/Ledger round trips;
-        // the single-pad layout still opens a rebuilt roll at Day 0. A parked
-        // editor stands on no page and an editor already replaced has
-        // no storage, and `leavePage` declines both.
+        // Retire the page editor after recording this pad's reading position.
         coordinator.leavePage(editor, scrollView: nil)
         coordinator.model.retireEditor(editor)
     }
@@ -326,6 +317,7 @@ final class DayStackView: NSView {
         let buckets: [Int]
         let pages: [[UInt64]]
         let selected: UInt64?
+        let previews: [UInt64]
         let clipWidth: CGFloat
         let padExperiment: Bool
         let padID: UUID?
@@ -346,6 +338,8 @@ final class DayStackView: NSView {
     /// projection still holds keeps the same view, the same storage and
     /// the same laid-out glyphs.
     private(set) var quietRegions: [UInt64: QuietPageView] = [:]
+    private(set) var previewRegions: [UInt64: MarkdownPreviewView] = [:]
+    private var readOnly = false
 
     /// The headers, pooled and re-used rather than re-made, the way the
     /// page's own block labels are: a header is a frame and three
@@ -362,6 +356,11 @@ final class DayStackView: NSView {
     private var rows: [Row] = []
     private var rendered: Signature?
     private var expandedLayout = false
+    private var readingPlace: RollPlace?
+    #if DEBUG
+        /// The passes `relayout()` made, for the tests.
+        private(set) var measurements = 0
+    #endif
 
     /// Extents and line marks change only during layout. Scroll
     /// notifications reuse this captured document half and publish a new
@@ -416,24 +415,22 @@ final class DayStackView: NSView {
     override var needsPanelToBecomeKey: Bool { editor?.isEditable == true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    private var focusableEditor: InkTextView? {
-        guard model.owner == coordinator.surface,
-              let window, let editor, editor.isEditable,
-              editor.window === window else { return nil }
-        return editor
+    var selectedPreview: MarkdownPreviewView? {
+        model.selectedPageID.flatMap { previewRegions[$0] }
     }
 
     @discardableResult
     func focusEditor(on page: UInt64? = nil) -> Bool {
-        guard let editor = focusableEditor, let window else { return false }
+        guard model.owner == coordinator.surface, !readOnly, let window else { return false }
         if let page, page != coordinator.currentSheet {
             guard let tab = model.tabs.first(where: { $0.pageID == page }) else { return false }
-            // A header has no text insertion point. Let the ordinary editor
-            // handoff restore this page's saved caret instead of inventing one.
             pendingCaret = nil
             model.select(tab.id)
+            update(projection: model.timeUnits, selectedPage: page, readOnly: readOnly)
         }
-        return window.makeFirstResponder(editor) && window.firstResponder === editor
+        guard let target: NSTextView = selectedPreview ?? editor,
+              target.window === window, !target.isHidden else { return false }
+        return window.makeFirstResponder(target) && window.firstResponder === target
     }
 
     // MARK: What the roll is watching
@@ -467,12 +464,8 @@ final class DayStackView: NSView {
             name: NSView.boundsDidChangeNotification,
             object: clip
         )
-        // A rendering dependency moved under a page whose contents did
-        // not change (preview scope, syntax highlighting, typeface); the
-        // model has already dropped its quiet cache, and the roll picks
-        // up the change by reseeding every visible region. The mounted
-        // page is restyled by the coordinator on its own published side.
-        // Registered by selector so it retires with the view.
+        // Preview changes can restyle the editor without changing the global setting.
+        // Registered by selector so this observation retires with the view.
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(quietRenderingsInvalidated),
@@ -497,10 +490,55 @@ final class DayStackView: NSView {
         )
     }
 
-    /// A measurement changed. Only frames move from here, nothing
-    /// touches the model, because a layout pass is the one place a
-    /// synchronous change to observed state would re-enter SwiftUI
-    /// mid-render.
+    /// For a dismantle: the page's storage and the editor outlive this roll, and `leavePage`
+    /// resizes the editor while the roll still stands, which would lay the roll out again.
+    func unobserveEditor() {
+        observeMountedStorage(nil)
+        guard let editor else { return }
+        let center = NotificationCenter.default
+        center.removeObserver(self, name: NSView.frameDidChangeNotification, object: editor)
+        center.removeObserver(self, name: NSText.didChangeNotification, object: editor)
+    }
+
+    /// The storage `mountedStorageEdited` is registered for, held so the registration can be
+    /// taken off it when the editor moves to another day.
+    private var observedStorage: NSTextStorage?
+
+    /// Watch `mounted` alone, or nothing for nil.
+    private func observeMountedStorage(_ mounted: NSTextStorage?) {
+        guard mounted !== observedStorage else { return }
+        let center = NotificationCenter.default
+        if let observedStorage {
+            center.removeObserver(self, name: NSTextStorage.didProcessEditingNotification, object: observedStorage)
+        }
+        observedStorage = mounted
+        guard let mounted else { return }
+        center.addObserver(
+            self, selector: #selector(mountedStorageEdited),
+            name: NSTextStorage.didProcessEditingNotification, object: mounted)
+    }
+
+    /// Rebase a reading place on the mounted page through an edit to its storage. Only the
+    /// place moves here, inside `processEditing`; the next pass returns the clip to it.
+    @objc nonisolated private func mountedStorageEdited(_ notification: Notification) {
+        guard Thread.isMainThread, let storage = notification.object as? NSTextStorage,
+              storage.editedMask.contains(.editedCharacters) else { return }
+        let edited = storage.editedRange
+        let delta = storage.changeInLength
+        let length = storage.length
+        let posted = ObjectIdentifier(storage)
+        MainActor.assumeIsolated {
+            guard let mounted = editor?.textStorage, ObjectIdentifier(mounted) == posted,
+                  let place = readingPlace, place.page == coordinator.currentSheet,
+                  place.reading == .source else { return }
+            readingPlace = place.rebased(
+                throughEdit: edited, changeInLength: delta, length: length,
+                text: mounted.string, byProjection: model.isApplyingProjection)
+        }
+    }
+
+    /// A measurement changed: the pass places every region and returns the clip to the reading
+    /// place, then a place a hand off left waiting is opened.
     @objc private func surroundingsChanged(_ notification: Notification) {
         relayout()
         // A roll mounted before SwiftUI sized its clip finds the place
@@ -513,16 +551,25 @@ final class DayStackView: NSView {
     /// of the document the clip has open, which is half of what the
     /// minimap says.
     @objc private func rollScrolled(_ notification: Notification) {
+        positionViewportChrome()
+        if !isLayingOut { readingPlace = currentPlace }
         publishGeometry()
     }
 
-    /// A rendering dependency moved (preview scope, syntax highlighting,
-    /// typeface). Every quiet region still on screen belongs to a page
-    /// whose cached rendering the model has already dropped, so a fresh
-    /// call to `quietRendering(for:)` builds under the new preference
-    /// and is handed back through `reseed`.
+    private func positionViewportChrome() {
+        guard let clip = enclosingScrollView?.contentView else { return }
+        for row in rows where !row.body.isHidden {
+            row.header.setFrameOrigin(NSPoint(x: clip.bounds.minX, y: row.header.frame.minY))
+            if row.body is MarkdownPreviewView || row.body is EmptyTodayView {
+                row.body.setFrameOrigin(NSPoint(x: clip.bounds.minX, y: row.body.frame.minY))
+            }
+        }
+    }
+
+    /// Refresh the mounted editor, header controls and quiet regions
+    /// after the model invalidates preview renderings.
     @objc private func quietRenderingsInvalidated(_ notification: Notification) {
-        refreshQuietRegions()
+        update(projection: model.timeUnits, selectedPage: model.selectedPageID, readOnly: readOnly)
     }
 
     // MARK: The pass
@@ -538,10 +585,16 @@ final class DayStackView: NSView {
         // asked. It is asked again here because this is the mount site
         // and the tests drive it directly.
         guard model.owner == coordinator.surface else { return }
+        self.readOnly = readOnly
+        if let selectedPage, model.markdownPreviewEnabled(for: selectedPage),
+           let editor, editor.hasMarkedText() {
+            InkEditorView.discardComposition(in: editor)
+        }
         let signature = Signature(
             buckets: projection.units.map(\.bucket),
             pages: projection.units.map(\.pageIDs),
             selected: selectedPage,
+            previews: projection.units.flatMap(\.pageIDs).filter { model.markdownPreviewEnabled(for: $0) },
             clipWidth: clipWidth,
             padExperiment: model.pads.isEnabled,
             padID: model.pads.isEnabled ? model.pads.activeID : nil
@@ -561,15 +614,10 @@ final class DayStackView: NSView {
                 }
             }
         } else if signature.padExperiment, let previous = rendered,
-                  previous.buckets != signature.buckets || previous.pages != signature.pages {
-            // Save before reordering rows; the same visible character can then
-            // be found against the new document order and current wrap width.
-            if let place = currentPlace, signature.pages.joined().contains(place.page) {
-                open(at: place)
-            } else {
-                pendingPlace = nil
-                pendingTodayAnchor = true
-            }
+                  previous.buckets != signature.buckets || previous.pages != signature.pages,
+                  let place = readingPlace, !signature.pages.joined().contains(place.page) {
+            pendingPlace = nil
+            pendingTodayAnchor = true
         }
         renderedPadID = signature.padID
         // The typeface can change under a roll that is otherwise still:
@@ -579,7 +627,9 @@ final class DayStackView: NSView {
         coordinator.applyTypeface(model.typeface)
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
-        coordinator.applyPreviewRendering(model.previewRendering)
+        if selectedPage != nil {
+            coordinator.applyPreviewRendering(model.previewRendering)
+        }
         guard signature != rendered else {
             // The ordinary pass: a keystroke, or the cosmetic redraw.
             // The countdowns in the gutters move every second and the
@@ -596,16 +646,14 @@ final class DayStackView: NSView {
                 isLayingOut = true
                 settleEditor(on: selectedPage)
                 isLayingOut = false
-            } else if let editor, coordinator.currentSheet != nil {
+            } else if let editor, coordinator.currentSheet != nil, !editor.isHidden {
                 coordinator.announce(editor)
             }
             refreshGutters()
             refreshQuietRegions()
+            refreshEditorPresentation()
             relayout()
             settlePendingPlace()
-            if let editor {
-                coordinator.updateEditability(of: editor, to: !readOnly)
-            }
             model.scheduleEditStepsRefresh()
             return
         }
@@ -616,6 +664,7 @@ final class DayStackView: NSView {
         // one puts characters in the editor and a text view that grows
         // posts a frame change like any other.
         isLayingOut = true
+        let heldEditorFocus = editor != nil && window?.firstResponder === editor
         // The page the editor is leaving has to be finished with before
         // it is drawn. A composition in flight is provisional text the
         // emission gate deliberately keeps out of the core, so a
@@ -635,12 +684,9 @@ final class DayStackView: NSView {
         assembleRows(projection: projection, selectedPage: selectedPage)
         settleEditor(on: selectedPage)
         isLayingOut = false
-        if let editor {
-            coordinator.updateEditability(of: editor, to: !readOnly)
-        }
+        refreshEditorPresentation(heldEditorFocus: heldEditorFocus)
         model.scheduleEditStepsRefresh()
-        relayout()
-        keepStill(anchoredOn: anchor)
+        if !relayout() { keepStill(anchoredOn: anchor) }
         settlePendingPlace()
     }
 
@@ -664,13 +710,13 @@ final class DayStackView: NSView {
         var wantedPages: Set<UInt64> = []
         var isFirstOnRoll = true
         var emptyToday: EmptyTodayView?
-        for unit in projection.units {
+        for (unitIndex, unit) in projection.units.enumerated() {
             if unit.pageIDs.isEmpty {
                 // Only today can be a day with no page on it: every
                 // other day exists because a live page is keyed to it.
                 let header = pooledHeader(at: built.count)
                 header.show(
-                    dayText: DayHeaderView.dayText(spokenLabel: unit.spokenLabel, stamp: nil),
+                    words: DayHeaderView.words(spokenLabel: unit.spokenLabel, stamp: nil),
                     spokenLabel: unit.spokenLabel,
                     mark: model.pads.isEnabled && isFirstOnRoll ? .hairline :
                         DayHeaderView.mark(isFirstOnRoll: isFirstOnRoll, isFirstOfDay: true),
@@ -687,7 +733,7 @@ final class DayStackView: NSView {
                     body: place,
                     bucket: unit.bucket,
                     page: nil,
-                    fillsViewport: unit.bucket == projection.units.last?.bucket
+                    fillsViewport: unitIndex == projection.units.count - 1
                 ))
                 isFirstOnRoll = false
                 continue
@@ -703,7 +749,7 @@ final class DayStackView: NSView {
                 let header = pooledHeader(at: built.count)
                 let summary = summaries[index]
                 header.show(
-                    dayText: DayHeaderView.dayText(
+                    words: DayHeaderView.words(
                         spokenLabel: unit.spokenLabel, stamp: stamps[index], firstOfDay: firstOfDay
                     ),
                     spokenLabel: unit.spokenLabel,
@@ -718,8 +764,13 @@ final class DayStackView: NSView {
                 // declined an editor, which `update`'s own guard keeps
                 // from happening: a day with no editor on it is a quiet
                 // day.
-                let body: NSView = (page == selectedPage ? editorView(for: page) : nil)
-                    ?? quietRegion(for: page)
+                let body: NSView
+                if model.markdownPreviewEnabled(for: page) {
+                    body = previewRegion(for: page, selected: page == selectedPage)
+                } else {
+                    body = (page == selectedPage ? editorView(for: page) : nil)
+                        ?? quietRegion(for: page)
+                }
                 built.append(Row(
                     header: header, body: body, bucket: unit.bucket, page: page,
                     fillsViewport: false
@@ -733,8 +784,18 @@ final class DayStackView: NSView {
         // **before** the swap: the editor and a rendering must never be
         // over one page at once, not even for the length of a call.
         for page in Array(quietRegions.keys)
-        where !wantedPages.contains(page) || page == selectedPage {
+        where !wantedPages.contains(page) || page == selectedPage || model.markdownPreviewEnabled(for: page) {
             quietRegions.removeValue(forKey: page)?.removeFromSuperview()
+        }
+        for page in Array(previewRegions.keys)
+        where !wantedPages.contains(page) || !model.markdownPreviewEnabled(for: page) {
+            let outgoing = previewRegions.removeValue(forKey: page)
+            if window?.firstResponder === outgoing {
+                editor?.isHidden = false
+                if let editor { coordinator.updateEditability(of: editor, to: !readOnly) }
+                window?.makeFirstResponder(editor)
+            }
+            outgoing?.removeFromSuperview()
         }
         if todayPlace !== emptyToday {
             todayPlace?.removeFromSuperview()
@@ -798,7 +859,7 @@ final class DayStackView: NSView {
     private func quietRegion(for page: UInt64) -> QuietPageView {
         let rendering = model.quietRendering(for: page)
         if let existing = quietRegions[page] {
-            existing.reseed(with: rendering)
+            follow(page, in: existing, replacing: existing.reseed(with: rendering))
             return existing
         }
         let region = QuietPageView(
@@ -832,7 +893,54 @@ final class DayStackView: NSView {
     /// no page named here has left the projection since.
     private func refreshQuietRegions() {
         for (page, region) in quietRegions {
-            region.reseed(with: model.quietRendering(for: page))
+            follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
+        }
+        for (page, region) in previewRegions {
+            follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
+        }
+    }
+
+    /// Keep the reader on the same text when the region they are reading is reseeded.
+    private func follow(_ page: UInt64, in region: NSTextView, replacing previous: String?) {
+        guard let previous, let place = readingPlace, place.page == page,
+              place.reading == Self.reading(of: region) else { return }
+        readingPlace = place.rebased(from: previous, to: region.string)
+    }
+
+    /// The rendered preview of a page, gated as the page's own text is (Law 0001);
+    /// only the selected page's is selectable, and a click on another promotes
+    /// its page as a click on a quiet page does (ADR-0030).
+    private func previewRegion(for page: UInt64, selected: Bool) -> MarkdownPreviewView {
+        let region = previewRegions[page] ?? MarkdownPreviewView(page: page, coordinator: coordinator)
+        region.onPromote = { [weak self] in
+            guard let self, self.model.owner == self.coordinator.surface,
+                  let tab = self.model.tabs.first(where: { $0.pageID == page }),
+                  self.model.selectedPageID != page else { return }
+            // The rendered index is no source index, so the saved caret stands.
+            self.pendingCaret = nil
+            self.model.select(tab.id)
+            self.update(projection: self.model.timeUnits, selectedPage: page, readOnly: self.readOnly)
+        }
+        region.isSelectedPage = selected
+        follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
+        previewRegions[page] = region
+        return region
+    }
+
+    /// Stand the selected page's preview over the editor, or the editor alone, and move
+    /// the keys with the page: from the editor, or from a preview the selection left.
+    private func refreshEditorPresentation(heldEditorFocus: Bool = false) {
+        guard let editor else { return }
+        let preview = coordinator.currentSheet.flatMap { previewRegions[$0] }
+        let responder = window?.firstResponder
+        let keysOnAnotherPreview = (responder as? MarkdownPreviewView).map { keeper in
+            keeper !== preview && previewRegions.values.contains { $0 === keeper }
+        } ?? false
+        let transferFocus = heldEditorFocus || responder === editor || keysOnAnotherPreview
+        coordinator.updateEditability(of: editor, to: !readOnly && preview == nil)
+        editor.isHidden = preview != nil
+        if transferFocus, let target: NSTextView = preview ?? (editor.isHidden ? nil : editor) {
+            window?.makeFirstResponder(target)
         }
     }
 
@@ -864,6 +972,7 @@ final class DayStackView: NSView {
     /// because nothing was re-parented, but the mounted editor moved and
     /// every path that moves it asks for the keys back (ADR-0005).
     private func settleEditor(on page: UInt64?) {
+        defer { observeMountedStorage(editor?.textStorage) }
         guard let page else {
             parkEditor()
             return
@@ -915,17 +1024,7 @@ final class DayStackView: NSView {
         built.maxSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude
         )
-        // Wrap is forced on while the days are showing, and the stored
-        // `wrapsLines` preference is left exactly where the user left
-        // it: a line that ran off the side of one day would run off the
-        // side of the roll, and a roll that scrolled in two directions
-        // would have no honest anchor. This passes `true` rather than
-        // the preference, so the setting takes effect again the moment
-        // the mode goes off, and ⌥Z changes nothing here, because the
-        // dispatch refuses it in this mode and says so rather than
-        // writing a value this surface would not honour
-        // (`PageModel.wrapIsFixedNotice`).
-        coordinator.applyWrap(true)
+        built.autoresizingMask = []
         return built
     }
 
@@ -978,17 +1077,18 @@ final class DayStackView: NSView {
 
     // MARK: Measuring and placing
 
-    /// Re-measure every region and place it. Frames only, with one
-    /// deliberate exception at the end: the measurement handed to the
-    /// rail's minimap, which is published on a hop rather than written
-    /// here (issue #131). Nothing observable moves synchronously from
-    /// this pass, which is what lets the AppKit notifications call it
-    /// without re-entering a SwiftUI render.
-    func relayout() {
+    /// Re-measure and place every region, then return the clip to the reading place, or to today
+    /// for a waiting summon, and answer whether it did; the rail's measurement follows on a hop (#131).
+    @discardableResult
+    func relayout() -> Bool {
         guard !isLayingOut, model.owner == coordinator.surface,
-              let scroll = enclosingScrollView else { return }
+              let scroll = enclosingScrollView else { return false }
         isLayingOut = true
-        let expanded = model.isPageExpanded && rows.contains { $0.body === editor }
+        #if DEBUG
+            measurements += 1
+        #endif
+        let expandedBody = rows.first { $0.page == model.selectedPageID && $0.page != nil }?.body
+        let expanded = model.isPageExpanded && expandedBody != nil
         let expansionChanged = expanded != expandedLayout
         if expansionChanged && expanded && model.pageExpansionReturn == nil {
             model.pageExpansionReturn = PageModel.PageExpansionReturn(place: currentPlace)
@@ -1014,11 +1114,31 @@ final class DayStackView: NSView {
                 }
             }
         }
+        // Set only on change; a keystroke runs a pass (#278).
+        let wantsHorizontalScroller = !model.wrapsLines
+        if scroll.hasHorizontalScroller != wantsHorizontalScroller {
+            scroll.hasHorizontalScroller = wantsHorizontalScroller
+        }
         let width = max(scroll.contentView.bounds.width, 0)
         let clipHeight = scroll.contentView.bounds.height
+        var documentWidth = width
+        var sourceHeights: [ObjectIdentifier: CGFloat] = [:]
+        for row in rows where !expanded || row.body === expandedBody {
+            guard let text = Self.sourceText(row.body) else { continue }
+            text.autoresizingMask = []
+            text.isHorizontallyResizable = false
+            text.minSize = .zero
+            InkEditorView.configureWrapping(model.wrapsLines, textView: text, viewportWidth: width)
+            let height = Self.measuredHeight(of: text, width: width)
+            if !model.wrapsLines {
+                documentWidth = max(documentWidth, InkEditorView.measuredSourceWidth(of: text))
+            }
+            sourceHeights[ObjectIdentifier(text)] = height
+        }
+
         var y: CGFloat = 0
         for row in rows {
-            row.body.isHidden = expanded && row.body !== editor
+            row.body.isHidden = expanded && row.body !== expandedBody
             row.header.isHidden = expanded
             guard !row.body.isHidden else { continue }
             let headerHeight = expanded ? 0 : row.header.preferredHeight
@@ -1032,13 +1152,15 @@ final class DayStackView: NSView {
                 // earlier page must not insert a window of space into the roll.
                 let minimum = expanded || row.body === rows.last?.body ? max(0, clipHeight - y) : 0
                 text.minSize = NSSize(width: width, height: minimum)
-                height = max(minimum, Self.measuredHeight(of: text, width: width))
+                height = max(minimum, sourceHeights[ObjectIdentifier(text)]
+                    ?? Self.measuredHeight(of: text, width: width))
             } else if row.fillsViewport {
                 height = max(clipHeight - y, Self.minimumRegionHeight)
             } else {
                 height = Self.minimumRegionHeight
             }
-            row.body.frame = NSRect(x: 0, y: y, width: width, height: height)
+            let bodyWidth = Self.sourceText(row.body) != nil ? documentWidth : width
+            row.body.frame = NSRect(x: 0, y: y, width: bodyWidth, height: height)
             (row.body as? EmptyTodayView)?.place()
             y += height
         }
@@ -1046,12 +1168,36 @@ final class DayStackView: NSView {
         // own, and a child with no row occupies nothing.
         if let editor, !rows.contains(where: { $0.body === editor }) {
             editor.frame = .zero
+            editor.isHidden = true
         }
-        setFrameSize(NSSize(width: width, height: max(y, clipHeight)))
+        setFrameSize(NSSize(width: documentWidth, height: max(y, clipHeight)))
+        var restoredPlace: RollPlace?
+        var summoned = false
+        if !expansionChanged, pendingPlace == nil, let place = readingPlace, restore(place: place) {
+            restoredPlace = place
+        }
+        constrainScrollOffset()
+        if pendingTodayAnchor {
+            scrollToDayZero()
+            // The summon scrolled when it cleared its flag, and it outranks the restored place.
+            summoned = !pendingTodayAnchor
+            if summoned { restoredPlace = nil }
+        }
+        positionViewportChrome()
+        readingPlace = restoredPlace ?? currentPlace
         scroll.reflectScrolledClipView(scroll.contentView)
         captureDocumentGeometry()
         publishGeometry()
-        if pendingTodayAnchor { scrollToDayZero() }
+        return restoredPlace != nil || summoned
+    }
+
+    private func constrainScrollOffset() {
+        guard let clip = enclosingScrollView?.contentView else { return }
+        let origin = clip.bounds.origin
+        let target = NSPoint(
+            x: min(max(origin.x, 0), max(frame.width - clip.bounds.width, 0)),
+            y: min(max(origin.y, 0), max(frame.height - clip.bounds.height, 0)))
+        if origin != target { clip.scroll(to: target) }
     }
 
     // MARK: What the rail draws behind the days
@@ -1116,7 +1262,9 @@ final class DayStackView: NSView {
     static func lineMarks(of text: NSTextView?) -> [RollGeometry.LineMark] {
         guard let text, let layoutManager = text.layoutManager,
               let container = text.textContainer else { return [] }
-        let wrap = max(container.size.width - container.lineFragmentPadding * 2, 1)
+        let measure = (container as? InkTextContainer)?.capturedEditorMeasure
+            ?? (text.bounds.width - text.textContainerInset.width * 2)
+        let wrap = max(measure - container.lineFragmentPadding * 2, 1)
         let origin = text.frame.minY + text.textContainerInset.height
         var marks: [RollGeometry.LineMark] = []
         let glyphs = layoutManager.glyphRange(for: container)
@@ -1195,6 +1343,13 @@ final class DayStackView: NSView {
     /// still somewhere a click can land.
     static let minimumRegionHeight: CGFloat = 32
 
+    /// The region's source text, which is measured for wrapping and set at the document's width;
+    /// nil for a preview or any other body, which keeps the viewport's width.
+    private static func sourceText(_ body: NSView) -> NSTextView? {
+        guard let text = body as? NSTextView, !(text is MarkdownPreviewView) else { return nil }
+        return text
+    }
+
     /// How tall a region has to be to show all of its text at this
     /// width: the used rect of laid-out glyphs plus the inset above and
     /// below, which is the one measurement the page's own scroll restore
@@ -1239,19 +1394,11 @@ final class DayStackView: NSView {
 
     // MARK: The roll's place across a hand off (ADR-0033)
 
-    /// Where the roll stands: the first page with anything below the
-    /// top edge of the clip, and the line of it at that edge. The single
-    /// pad handoff treats the origin as no place. Multiple pads retain
-    /// that first visible page too, since sorting can move it elsewhere.
-    /// A roll outside a window has no reading position.
-    ///
-    /// A top edge in a header, or in the empty Today above the first
-    /// page, is a place above that page's first line, and the anchor
-    /// says so with a negative fraction, as it does for a top inset.
+    /// The visible page and text anchor; multipad navigation records the origin too.
     var currentPlace: RollPlace? {
         guard window != nil, let scroll = enclosingScrollView else { return nil }
         let origin = scroll.contentView.bounds.origin
-        guard origin.y > 0 || model.pads.isEnabled,
+        guard origin.y > 0 || origin.x > 0 || model.pads.isEnabled,
               let row = rows.first(where: { $0.page != nil && !$0.body.isHidden && $0.body.frame.maxY > origin.y }),
               let page = row.page, let text = row.body as? NSTextView,
               let anchor = ScrollAnchor(
@@ -1259,7 +1406,13 @@ final class DayStackView: NSView {
                   clipOrigin: NSPoint(x: origin.x, y: origin.y - text.frame.minY)
               )
         else { return nil }
-        return RollPlace(page: page, anchor: anchor)
+        return RollPlace(
+            page: page, anchor: anchor, reading: Self.reading(of: text),
+            length: text.textStorage?.length ?? 0, atTop: origin.y <= 0)
+    }
+
+    private static func reading(of text: NSTextView) -> RollPlace.Reading {
+        text is MarkdownPreviewView ? .preview : .source
     }
 
     /// The place the other window's roll left, waiting for rows to find
@@ -1288,22 +1441,34 @@ final class DayStackView: NSView {
               let scroll = enclosingScrollView, !scroll.contentView.bounds.isEmpty
         else { return }
         pendingPlace = nil
-        guard let row = rows.first(where: { $0.page == place.page }),
-              let text = row.body as? NSTextView,
-              let within = place.anchor.offset(in: text) else {
+        if restore(place: place) {
+            readingPlace = place
+        } else if model.pads.isEnabled {
             scrollToDayZero()
-            return
         }
+    }
+
+    /// True when the place's page stood on the roll and the clip was moved to it.
+    @discardableResult
+    private func restore(place: RollPlace) -> Bool {
+        guard let scroll = enclosingScrollView,
+              let row = rows.first(where: { $0.page == place.page && !$0.body.isHidden }),
+              let text = row.body as? NSTextView,
+              let within = place.mappedAnchor(
+                  into: Self.reading(of: text), text: text.string
+              ).offset(in: text) else { return false }
         let clip = scroll.contentView
         let floor = max(frame.height - clip.bounds.height, 0)
         let target = NSPoint(
-            x: within.x, y: min(max(text.frame.minY + within.y, 0), floor)
+            x: min(max(within.x, 0), max(frame.width - clip.bounds.width, 0)),
+            y: place.atTop ? 0 : min(max(text.frame.minY + within.y, 0), floor)
         )
         // Restoring a different document order supersedes a navigation jump
         // still animating toward coordinates in the previous document.
         self.scroll(toDocumentOffset: target.y, animated: false)
         clip.scroll(to: target)
         scroll.reflectScrolledClipView(clip)
+        return true
     }
 
     /// The topmost page on the roll and where its ink stands, taken
@@ -1374,38 +1539,35 @@ final class DayStackView: NSView {
     /// first line, so every pass refreshes what the gutters say without
     /// touching what the roll is made of. `stampFormat` is one such
     /// change: a pattern edited in Settings publishes back into an
-    /// unchanged projection, so the `dayText` the header prints must be
+    /// unchanged projection, so the `words` the header prints must be
     /// re-derived here rather than only in the assembly pass, or the
     /// mounted headers keep their old stamps until the roll rebuilds
     /// for another reason (Greptile P1 #1).
     private func refreshGutters() {
         let units = model.timeUnits.units
-        let unitByBucket = Dictionary(uniqueKeysWithValues: units.map { ($0.bucket, $0) })
-        var stampsByBucket: [Int: [String]] = [:]
+        var pageWords: [UInt64: (unit: TimeUnitProjection.Unit, index: Int, stamp: String)] = [:]
         for unit in units where !unit.pageIDs.isEmpty {
             let summaries = unit.tabIDs.map { summary(ofTab: $0) }
-            stampsByBucket[unit.bucket] = StreamNavigator.stamps(
-                createdMs: summaries.map { $0?.pageCreatedMs }, format: model.stampFormat
-            )
+            let stamps = StreamNavigator.stamps(
+                createdMs: summaries.map { $0?.pageCreatedMs }, format: model.stampFormat)
+            for (index, page) in unit.pageIDs.enumerated() {
+                pageWords[page] = (unit, index, stamps[index])
+            }
         }
         for row in rows {
-            let unit = unitByBucket[row.bucket]
-            let spokenLabel = unit?.spokenLabel ?? ""
-            let dayText: String
+            let words: DayHeaderView.Words
             let rowSummary: TabSummary?
-            if let page = row.page, let unit,
-               let index = unit.pageIDs.firstIndex(of: page)
-            {
-                let stamp = stampsByBucket[unit.bucket]?[index] ?? ""
-                dayText = DayHeaderView.dayText(
-                    spokenLabel: spokenLabel, stamp: stamp, firstOfDay: index == 0
-                )
-                rowSummary = summary(ofTab: unit.tabIDs[index])
+            if let page = row.page, let reading = pageWords[page] {
+                words = DayHeaderView.words(
+                    spokenLabel: reading.unit.spokenLabel, stamp: reading.stamp,
+                    firstOfDay: reading.index == 0)
+                rowSummary = summary(ofTab: reading.unit.tabIDs[reading.index])
             } else {
-                dayText = DayHeaderView.dayText(spokenLabel: spokenLabel, stamp: nil)
+                let spokenLabel = units.first { $0.bucket == row.bucket }?.spokenLabel ?? ""
+                words = DayHeaderView.words(spokenLabel: spokenLabel, stamp: nil)
                 rowSummary = row.header.tab.flatMap { summary(ofTab: $0) }
             }
-            row.header.refresh(dayText: dayText, summary: rowSummary)
+            row.header.refresh(words: words, summary: rowSummary)
         }
     }
 }
@@ -1441,7 +1603,11 @@ final class DayHeaderView: NSView {
 
     private let model: PageModel
     private let dayField = NSTextField(labelWithString: "")
+    /// The page's birth time, in its own frame because it is the seat a
+    /// typed name takes: a click on it opens the field (Law 0007).
+    private let timeField = NSTextField(labelWithString: "")
     private let titleField = NSTextField(labelWithString: "")
+    private let previewButton = NSButton()
     /// The retained words for a page past the window, and otherwise
     /// empty. The countdown that used to stand here became a gauge,
     /// and the gauge went too: a page's remaining life is drawn once,
@@ -1454,6 +1620,11 @@ final class DayHeaderView: NSView {
     /// as of the last refresh, which is what decides whether the title
     /// is drawn once a rename ends (`drawsTitle`).
     private var titleSource: TitleSource?
+    /// The title the last summary carried, which a kept rename puts back.
+    private var summaryTitle = ""
+    /// The day and the time as the stack last said them, apart from the
+    /// dots that join them to a name.
+    private var words = Words(day: "", time: "")
 
     /// What this header draws across its top. Readable so a test can
     /// ask the mounted roll where its perforations are rather than
@@ -1462,13 +1633,16 @@ final class DayHeaderView: NSView {
 
     /// The page under this gutter is the one the surface is showing:
     /// the rule under the checkpoint's words draws in ember, and the
-    /// words in ink rather than the faint label. Set by the stack on
+    /// words in ink rather than the secondary label, the name with them
+    /// so it never reads dimmer than its time. Set by the stack on
     /// every assembly, the selection being part of what an assembly is
     /// keyed on.
     var isActive = false {
         didSet {
             guard isActive != oldValue else { return }
-            dayField.textColor = isActive ? .labelColor : .tertiaryLabelColor
+            dayField.textColor = Self.wordsColor(active: isActive)
+            timeField.textColor = dayField.textColor
+            titleField.textColor = dayField.textColor
             needsDisplay = true
         }
     }
@@ -1505,18 +1679,34 @@ final class DayHeaderView: NSView {
         self.model = model
         super.init(frame: .zero)
         dayField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        dayField.textColor = .tertiaryLabelColor
+        dayField.textColor = Self.wordsColor(active: false)
+        timeField.font = dayField.font
+        timeField.textColor = dayField.textColor
         titleField.font = NSFont.systemFont(ofSize: 11)
-        titleField.textColor = .secondaryLabelColor
+        titleField.textColor = dayField.textColor
         titleField.usesSingleLineMode = true
         titleField.cell?.lineBreakMode = .byTruncatingTail
         remainingField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        remainingField.textColor = .tertiaryLabelColor
+        remainingField.textColor = .secondaryInk
         remainingField.alignment = .right
         titleField.isHidden = true
         addSubview(dayField)
         addSubview(titleField)
+        addSubview(timeField)
         addSubview(remainingField)
+        previewButton.setButtonType(.pushOnPushOff)
+        previewButton.bezelStyle = .inline
+        previewButton.controlSize = .small
+        previewButton.imagePosition = .imageOnly
+        previewButton.image = NSImage(systemSymbolName: "eye", accessibilityDescription: nil)
+        previewButton.refusesFirstResponder = true
+        previewButton.target = self
+        previewButton.action = #selector(toggleMarkdownPreview(_:))
+        previewButton.isHidden = true
+        previewButton.setAccessibilityLabel(NSLocalizedString(
+            "Markdown preview for this checkpoint", bundle: CompanionLocalization.bundle,
+            comment: "Checkpoint Markdown preview toggle"))
+        addSubview(previewButton)
         setAccessibilityElement(true)
     }
 
@@ -1527,10 +1717,20 @@ final class DayHeaderView: NSView {
 
     override var isFlipped: Bool { true }
 
+    /// The gutter's words, the day, the time and the name alike: ink on
+    /// the active page, the secondary ink elsewhere, never tertiary,
+    /// which reads about 2:1 (record section 9, row 5).
+    static func wordsColor(active: Bool) -> NSColor {
+        active ? .labelColor : .secondaryInk
+    }
+
+    /// The colours the gutter's three word fields wear, for a test.
+    var wordColors: [NSColor?] { [dayField.textColor, timeField.textColor, titleField.textColor] }
+
     // MARK: What a header says
 
-    /// The checkpoint belongs to the content area. Its passive labels
-    /// share the focus click; an inline rename keeps its own text input.
+    /// The checkpoint belongs to the content area: the day and the rule
+    /// focus the page, and the time's seat opens the rename field.
     override var needsPanelToBecomeKey: Bool {
         dayStack?.needsPanelToBecomeKey ?? false
     }
@@ -1548,23 +1748,24 @@ final class DayHeaderView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
-        if hit === dayField || hit === remainingField
+        if hit === dayField || hit === timeField || hit === remainingField
             || (hit === titleField && !titleField.isEditable) {
             return self
         }
         return hit
     }
 
-    // Mouse hit redirection must not replace the composed spoken header
-    // with an individual passive label. The editable rename field keeps
-    // its own accessibility target.
-    private enum AccessibilityHit: Sendable { case outside, header, rename }
+    // Passive labels use the composed header; rename and preview keep their own targets.
+    private enum AccessibilityHit: Sendable { case outside, header, rename, preview }
 
     override func accessibilityHitTest(_ point: NSPoint) -> Any? {
         let target: AccessibilityHit = MainActor.assumeIsolated {
             guard let window else { return .outside }
             let local = convert(window.convertPoint(fromScreen: point), from: nil)
             guard bounds.contains(local) else { return .outside }
+            if !previewButton.isHidden && previewButton.frame.contains(local) {
+                return .preview
+            }
             if titleField.isEditable && !titleField.isHidden && titleField.frame.contains(local) {
                 return .rename
             }
@@ -1573,8 +1774,16 @@ final class DayHeaderView: NSView {
         switch target {
         case .header: return self
         case .rename: return titleField
+        case .preview: return previewButton
         case .outside: return super.accessibilityHitTest(point)
         }
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        var controls: [NSView] = []
+        if titleField.isEditable && !titleField.isHidden { controls.append(titleField) }
+        if !previewButton.isHidden { controls.append(previewButton) }
+        return controls.isEmpty ? nil : controls
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -1582,7 +1791,19 @@ final class DayHeaderView: NSView {
             super.mouseDown(with: event)
             return
         }
+        if opensRename(at: convert(event.locationInWindow, from: nil)) {
+            beginRename()
+            return
+        }
         if dayStack?.focusEditor(on: pageID) != true { super.mouseDown(with: event) }
+    }
+
+    /// Whether a click lands in the time's seat, on the time or on a typed
+    /// name standing in it; elsewhere the click focuses the page (Law 0007).
+    private func opensRename(at point: NSPoint) -> Bool {
+        guard tab != nil, titleBeforeRename == nil else { return false }
+        if !timeField.stringValue.isEmpty, timeField.frame.contains(point) { return true }
+        return !titleField.isHidden && titleField.frame.contains(point)
     }
 
     /// Which mark a header draws, as a decision rather than as a
@@ -1595,20 +1816,43 @@ final class DayHeaderView: NSView {
         return isFirstOfDay ? .tear : .hairline
     }
 
-    /// The checkpoint's words. A day's first gutter reads the day and
-    /// the page's birth time, "2 days ago · 13:00"; the gutters under
-    /// it on the same day read the time alone, "13:17", because the
-    /// day was said once above them and the hairline says these are
-    /// one day's pages. Saying the day on every gutter, and a date in
-    /// every time, was the same fact three times over. Two pages born
-    /// the same minute read to the second (`StreamNavigator.stamps`).
-    /// The empty place has no time, so it says the day alone. Pure, so
-    /// the shape is an assertion.
-    nonisolated static func dayText(
+    /// The checkpoint's words, the day apart from the time, since the
+    /// time is the seat a typed name takes (Law 0007).
+    struct Words: Equatable {
+        /// Empty on the gutters under a day's first (D-46).
+        var day: String
+        /// Empty on the empty place, which has no page.
+        var time: String
+
+        /// The line a gutter reads, left to right: day, typed name, time.
+        func reading(name: String?) -> String {
+            [day, name ?? "", time].filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+    }
+
+    /// The day once per day and the time on every page (D-46); the empty
+    /// place says the day alone.
+    nonisolated static func words(
         spokenLabel: String, stamp: String?, firstOfDay: Bool = true
-    ) -> String {
-        guard let stamp, !stamp.isEmpty else { return spokenLabel }
-        return firstOfDay ? "\(spokenLabel) · \(stamp)" : stamp
+    ) -> Words {
+        guard let stamp, !stamp.isEmpty else { return Words(day: spokenLabel, time: "") }
+        return Words(day: firstOfDay ? spokenLabel : "", time: stamp)
+    }
+
+    /// What stood in the seat, which a rename opens on: a typed name, or
+    /// else the time (Law 0007, Opening).
+    nonisolated static func seat(source: TitleSource?, title: String, time: String) -> String {
+        source == .name ? title : time
+    }
+
+    /// The day and time as drawn either side of the seat, each carrying
+    /// the dot that joins it to a neighbour.
+    nonisolated static func runs(_ words: Words, named: Bool) -> Words {
+        let followed = named || !words.time.isEmpty
+        return Words(
+            day: words.day.isEmpty || !followed ? words.day : "\(words.day) ·",
+            time: named && !words.time.isEmpty ? "· \(words.time)" : words.time
+        )
     }
 
     /// Whether the gutter draws its title: only a name the user typed.
@@ -1653,10 +1897,10 @@ final class DayHeaderView: NSView {
         mark == .none ? Self.gutterHeight : Self.gutterHeight + Self.tearReserve
     }
 
-    func show(dayText: String, spokenLabel: String, mark: Mark, summary: TabSummary?) {
+    func show(words: Words, spokenLabel: String, mark: Mark, summary: TabSummary?) {
         self.mark = mark
         self.spokenLabel = spokenLabel
-        refresh(dayText: dayText, summary: summary)
+        refresh(words: words, summary: summary)
     }
 
     private var spokenLabel = ""
@@ -1667,8 +1911,8 @@ final class DayHeaderView: NSView {
     /// runs on every pass while `show` runs only on an assembly, so a
     /// pattern edit that leaves the roll's structure alone still moves
     /// the stamp on every gutter.
-    func refresh(dayText: String, summary: TabSummary?) {
-        dayField.stringValue = dayText
+    func refresh(words: Words, summary: TabSummary?) {
+        self.words = words
         refresh(summary: summary)
     }
 
@@ -1682,19 +1926,49 @@ final class DayHeaderView: NSView {
         paused = summary?.paused ?? false
         toppedUp = summary?.holdToppedUp ?? false
         pageID = summary?.pageID
+        refreshPreviewButton()
         spokenRemainingLabel = summary.map { $0.hasPage ? $0.remainingLabel : "" } ?? ""
+        summaryTitle = summary?.title ?? ""
         // Not while a draft is in the field: this pass runs every
         // second, and the title it would write is the one the rename
         // is there to replace.
         if titleBeforeRename == nil {
-            titleField.stringValue = summary?.title ?? ""
+            titleField.stringValue = summaryTitle
         }
         titleSource = summary?.titleSource
         titleField.isHidden = !Self.drawsTitle(
             source: titleSource, renaming: titleBeforeRename != nil)
         remainingField.stringValue = Self.retainedText(pageDayOffset: summary?.pageDayOffset)
+        compose()
         updateAccessibilityLabel()
         needsDisplay = true
+    }
+
+    private func refreshPreviewButton() {
+        previewButton.isHidden = !hasPage || pageID == nil
+        previewButton.isEnabled = !previewButton.isHidden
+        let enabled = pageID.map {
+            model.markdownPreviewEnabled(for: $0)
+        } ?? false
+        previewButton.state = enabled ? .on : .off
+        previewButton.toolTip = enabled ? NSLocalizedString(
+            "Turn Markdown preview off for this checkpoint", bundle: CompanionLocalization.bundle,
+            comment: "Checkpoint Markdown preview toggle tooltip") : NSLocalizedString(
+                "Turn Markdown preview on for this checkpoint", bundle: CompanionLocalization.bundle,
+                comment: "Checkpoint Markdown preview toggle tooltip")
+    }
+
+    @objc private func toggleMarkdownPreview(_ sender: NSButton) {
+        guard hasPage, let pageID else { return }
+        model.toggleMarkdownPreview(for: pageID)
+        refreshPreviewButton()
+    }
+
+    /// The day and time runs, re-joined to whatever the seat now holds.
+    private func compose() {
+        let runs = Self.runs(words, named: !titleField.isHidden)
+        dayField.stringValue = runs.day
+        timeField.stringValue = runs.time
     }
 
     /// The countdown VoiceOver hears, kept beside the gauge that
@@ -1716,32 +1990,57 @@ final class DayHeaderView: NSView {
     /// unplaced header.
     func place() {
         let top: CGFloat = mark == .none ? 0 : Self.tearReserve
-        dayField.sizeToFit()
-        remainingField.sizeToFit()
-        let dayWidth = dayField.frame.width
+        let labelHeight = Self.gutterHeight - 6
+        for field in [dayField, timeField, remainingField, titleField] { field.sizeToFit() }
         let remainingWidth = remainingField.frame.width
-        dayField.frame = NSRect(
-            x: Self.margin, y: top + 3, width: dayWidth, height: Self.gutterHeight - 6
-        )
+        let previewRoom: CGFloat = previewButton.isHidden ? 0 : Self.previewWidth + Self.gap
         remainingField.frame = NSRect(
             x: max(bounds.width - Self.margin - remainingWidth, 0), y: top + 3,
-            width: remainingWidth, height: Self.gutterHeight - 6
+            width: remainingWidth, height: labelHeight
         )
-        let titleX = Self.margin + (dayWidth > 0 ? dayWidth + 8 : 0)
-        titleField.frame = NSRect(
-            x: titleX,
-            y: top + 2,
-            width: max(bounds.width - titleX - remainingWidth - Self.margin * 2, 0),
-            height: Self.gutterHeight - 4
-        )
+        var x = Self.margin
+        let dayWidth = dayField.stringValue.isEmpty ? 0 : dayField.frame.width
+        dayField.frame = NSRect(x: x, y: top + 3, width: dayWidth, height: labelHeight)
+        if dayWidth > 0 { x += dayWidth + Self.gap }
+        if !titleField.isHidden {
+            let timeWidth = timeField.stringValue.isEmpty ? 0 : timeField.frame.width + Self.gap
+            let room = bounds.width - x - timeWidth - previewRoom - remainingWidth - Self.margin * 2
+            let wanted = titleField.frame.width + (titleField.isEditable ? Self.caretRoom : 0)
+            let width = max(min(wanted, room), titleField.isEditable ? Self.caretRoom : 0)
+            titleField.frame = NSRect(x: x, y: top + 2, width: width, height: Self.gutterHeight - 4)
+            x += width + Self.gap
+        }
+        let timeWidth = timeField.stringValue.isEmpty ? 0 : timeField.frame.width
+        timeField.frame = NSRect(x: x, y: top + 3, width: timeWidth, height: labelHeight)
+        if timeWidth > 0 { x += timeWidth + Self.gap }
+        previewButton.frame = NSRect(
+            x: x, y: top + 1, width: Self.previewWidth, height: Self.gutterHeight - 2)
     }
+
+    /// The words as drawn, left to right by frame, so a test can pin the
+    /// order a reader sees rather than the order they were set in.
+    var reading: String {
+        [dayField, titleField, timeField]
+            .filter { !$0.isHidden && !$0.stringValue.isEmpty }
+            .sorted { $0.frame.minX < $1.frame.minX }
+            .map(\.stringValue)
+            .joined(separator: " ")
+    }
+
+    /// The time's frame in the header, so a test can click on it.
+    var timeFrame: NSRect { timeField.frame }
 
     override func layout() {
         super.layout()
         place()
     }
 
+    private static let previewWidth: CGFloat = 22
     private static let margin: CGFloat = 12
+    private static let gap: CGFloat = 4
+    /// The width an open field keeps past its draft, so the caret and an
+    /// empty draft have somewhere to stand.
+    private static let caretRoom: CGFloat = 16
 
     // MARK: The tear
 
@@ -1800,7 +2099,7 @@ final class DayHeaderView: NSView {
         // decide would send it looking for a validator this view does
         // not have, and the hold item's own refusal would go with it.
         menu.autoenablesItems = false
-        menu.addItem(item(title: "Rename page…", action: #selector(renameTab)))
+        menu.addItem(item(title: "Rename Page", action: #selector(renameTab)))
         let hold = item(
             title: SheetTab.holdMenuTitle(paused: paused, toppedUp: toppedUp),
             action: #selector(holdClock)
@@ -1825,7 +2124,7 @@ final class DayHeaderView: NSView {
                 action: #selector(toggleSync)
             ))
         }
-        menu.addItem(item(title: "Close page", action: #selector(closeTab)))
+        menu.addItem(item(title: "Close Page", action: #selector(closeTab)))
         return menu
     }
 
@@ -1841,28 +2140,24 @@ final class DayHeaderView: NSView {
 
     // MARK: The rename, in place
 
-    /// The title becomes a field where it stands (D-14, issue #172): a
-    /// rename is not destructive and has no claim on an interrupting
-    /// question, so the gutter's own label takes the keyboard, with
-    /// the whole title selected, and gives it back when the draft is
-    /// committed or let go of. The label is a text field already; what
-    /// changes is that it may be edited, and who holds the keyboard.
-    ///
-    /// Internal, with `endRename` and `renameDraft`, so the roll's
-    /// tests can drive a rename without a window's field editor and
-    /// pin that no modal session is entered on the way.
+    /// The seat becomes a field where it stands, on what the seat showed,
+    /// selected whole (D-14, Law 0007); internal so the tests can drive it.
     func beginRename() {
         guard let tab, titleBeforeRename == nil else { return }
-        titleBeforeRename = titleField.stringValue
+        let draft = Self.seat(source: titleSource, title: summaryTitle, time: words.time)
+        titleBeforeRename = draft
         tabBeingRenamed = tab
-        responderBeforeRename = window?.firstResponder
-        // A placeholder or a first line is not drawn as a label, but
-        // it is the draft a rename starts from, so the field shows for
-        // the rename's length.
+        responderBeforeRename = Self.keyboardToReturn(
+            holder: window?.firstResponder, page: dayStack?.editor)
+        // The field opens in the time's seat and the time slides right.
+        titleField.stringValue = draft
         titleField.isHidden = false
         titleField.delegate = self
         titleField.isSelectable = true
         titleField.isEditable = true
+        compose()
+        place()
+        updateAccessibilityLabel()
         window?.makeFirstResponder(titleField)
         titleField.currentEditor()?.selectAll(nil)
     }
@@ -1871,9 +2166,13 @@ final class DayHeaderView: NSView {
     /// can pin what a gutter shows without a window.
     var titleIsDrawn: Bool { !titleField.isHidden }
 
-    /// The day text as the gutter is drawing it, readable so a test
-    /// can pin what the header shows across a stamp-format edit.
-    var dayText: String { dayField.stringValue }
+    /// Whether the seat is a field, readable so a test can tell a click
+    /// that opened it from one that focused the page.
+    var isRenaming: Bool { titleBeforeRename != nil }
+
+    /// The time as the gutter is drawing it, readable so a test can pin
+    /// what the header shows across a stamp-format edit.
+    var timeText: String { words.time }
 
     /// The draft as the field holds it, readable and settable so a test
     /// can stand in for the keyboard.
@@ -1881,8 +2180,15 @@ final class DayHeaderView: NSView {
         get { titleField.stringValue }
         set {
             titleField.stringValue = newValue
-            updateAccessibilityLabel()
+            draftChanged()
         }
+    }
+
+    /// The field follows its draft's length, so the time to its right
+    /// moves as the user types.
+    private func draftChanged() {
+        updateAccessibilityLabel()
+        place()
     }
 
     /// Ends the rename one way or the other, deciding through
@@ -1892,25 +2198,35 @@ final class DayHeaderView: NSView {
     /// keyboard is not moved here: the endings that give it back do so
     /// themselves, and a focus loss has already moved it.
     func endRename(committed: Bool) {
-        guard let current = titleBeforeRename else { return }
+        guard let opened = titleBeforeRename else { return }
         let targetTab = tabBeingRenamed
         titleBeforeRename = nil
         tabBeingRenamed = nil
         titleField.delegate = nil
         titleField.isEditable = false
         titleField.isSelectable = false
-        switch TabRename.outcome(draft: titleField.stringValue, current: current, committed: committed) {
+        switch TabRename.outcome(draft: titleField.stringValue, current: opened, committed: committed) {
         case .rename(let name):
-            guard let targetTab else { return }
-            // The field stays up: the name it now holds is a typed
-            // one, and the model's next pass confirms it as such.
-            model.renameTab(targetTab, to: name)
+            if let targetTab { model.renameTab(targetTab, to: name) }
+            // The model's next pass confirms the name; an empty one
+            // gives the seat back to the time.
+            titleField.stringValue = name
+            titleField.isHidden = name.isEmpty
         case .keep:
-            titleField.stringValue = current
+            titleField.stringValue = summaryTitle
             titleField.isHidden = !Self.drawsTitle(source: titleSource, renaming: false)
         }
+        compose()
+        place()
         updateAccessibilityLabel()
         needsDisplay = true
+    }
+
+    /// Who takes the keys when the field ends. A field editor is lent to
+    /// another field, which this opening ends, so the page takes them.
+    static func keyboardToReturn(holder: NSResponder?, page: NSResponder?) -> NSResponder? {
+        if let lent = holder as? NSTextView, lent.isFieldEditor { return page }
+        return holder
     }
 
     /// The keyboard back to whoever held it before the rename, or to
@@ -1953,7 +2269,7 @@ final class DayHeaderView: NSView {
 /// which ends the editing the ordinary way.
 extension DayHeaderView: NSTextFieldDelegate {
     func controlTextDidChange(_ notification: Notification) {
-        updateAccessibilityLabel()
+        draftChanged()
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
@@ -2023,7 +2339,6 @@ final class QuietPageView: NSTextView {
         self.onClick = onClick
         self.seeded = rendering
         let storage = NSTextStorage()
-        storage.setAttributedString(rendering.text)
         self.storage = storage
         // The same layout manager the editor uses, seeded with the
         // payload's fence regions (ADR-0030): fence wash is part of the
@@ -2033,7 +2348,7 @@ final class QuietPageView: NSTextView {
         let layoutManager = InkLayoutManager()
         layoutManager.fenceRegions = rendering.fenceRegions
         storage.addLayoutManager(layoutManager)
-        let container = NSTextContainer(size: NSSize(
+        let container = InkTextContainer(size: NSSize(
             width: 0, height: CGFloat.greatestFiniteMagnitude
         ))
         container.widthTracksTextView = true
@@ -2044,7 +2359,7 @@ final class QuietPageView: NSTextView {
         drawsBackground = false
         isVerticallyResizable = true
         isHorizontallyResizable = false
-        autoresizingMask = [.width]
+        autoresizingMask = []
         minSize = .zero
         maxSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude
@@ -2057,6 +2372,7 @@ final class QuietPageView: NSTextView {
         // here.
         textContainerInset = NSSize(width: 12, height: InkEditorView.Coordinator.topInset)
         font = InkStyle.baseFont
+        storage.setAttributedString(rendering.text)
     }
 
     @available(*, unavailable)
@@ -2078,17 +2394,23 @@ final class QuietPageView: NSTextView {
     /// rebuilt under the roll would take its layout, its measured height
     /// and its place in the stack down with it, for a day whose only
     /// news is a word.
-    func reseed(with rendering: PageModel.QuietRendering) {
-        guard rendering !== seeded else { return }
+    ///
+    /// The text it replaced, or nil when the rendering was the one already seeded.
+    @discardableResult
+    func reseed(with rendering: PageModel.QuietRendering) -> String? {
+        guard rendering !== seeded else { return nil }
+        let previous = storage.string
         seeded = rendering
         storage.setAttributedString(rendering.text)
         if let manager = layoutManager as? InkLayoutManager {
             manager.fenceRegions = rendering.fenceRegions
             needsDisplay = true
         }
+        return previous
     }
 
-    /// One focusable text view in the card, always. The editor is it.
+    /// One focusable text view in the card, always: the editor, or the
+    /// selected page's preview where one stands over it (ADR-0030).
     override var acceptsFirstResponder: Bool { false }
 
     override func becomeFirstResponder() -> Bool { false }
@@ -2137,10 +2459,10 @@ final class EmptyTodayView: NSView {
         self.hint = NSTextField(labelWithString: hint)
         super.init(frame: .zero)
         lead.font = NSFont.preferredFont(forTextStyle: .callout)
-        lead.textColor = .secondaryLabelColor
+        lead.textColor = .secondaryInk
         lead.alignment = .center
         self.hint.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-        self.hint.textColor = .tertiaryLabelColor
+        self.hint.textColor = .secondaryInk
         self.hint.alignment = .center
         addSubview(lead)
         addSubview(self.hint)

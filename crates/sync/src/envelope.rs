@@ -8,25 +8,24 @@
 //! seal: the bytes it produces exist only as input to
 //! `GopKeyChain::seal` and output of `open`.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Visitor};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// The ceremony messages of §5, riding the same stream as content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum ControlPayload {
     /// A ceremony proposal: entropy minted by the proposer, sealed per
-    /// surviving device to that device's static key package (§6) —
-    /// never under the current GOP key, which a just-revoked device
-    /// still holds.
+    /// named device to that device's one-shot key package, never under
+    /// the current GOP key, which a just-revoked device still holds
+    /// (client protocol §5, §7.3).
     Propose {
         /// The ballot this proposal opens.
         ballot_id: String,
-        /// The page whose transition proposed the compaction — named
-        /// on the wire so a follower joins the right ballot instead of
-        /// inferring the channel's one busy page (the #99 follow-up;
-        /// every enrolled page still compacts, §2).
+        /// The page to compact, named so a follower joins the right
+        /// ballot; only this page compacts (client protocol §7.6).
         page: String,
         /// Per-device sealed entropy, keyed by identity fingerprint.
         /// A `BTreeMap` so the encoding is deterministic.
@@ -54,7 +53,7 @@ pub enum DeltaEnvelope {
         ops: ByteBlob,
     },
     /// The page's expiry policy: the policy, never the deadline
-    /// (ADR-0021 §6, `companion_core::ExpiryPolicy`).
+    /// (relay decision background §6, `companion_core::ExpiryPolicy`).
     Expiry {
         /// The page the policy governs.
         page: String,
@@ -73,8 +72,8 @@ pub enum DeltaEnvelope {
         /// stands.
         hold: Option<(u64, u64, bool)>,
     },
-    /// A signed terminal marker (ADR-0021 §6): the page is dead
-    /// everywhere, and a ceremony proposal follows immediately.
+    /// A signed terminal marker (relay decision background §6): the page
+    /// is dead everywhere, and a ceremony proposal follows immediately.
     Terminal {
         /// The dead page.
         page: String,
@@ -92,11 +91,12 @@ pub enum DeltaEnvelope {
 
 impl DeltaEnvelope {
     /// Encode for sealing.
-    #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
-        // Serialization of these shapes cannot fail; the expect is a
-        // programming-error tripwire, not a runtime path.
-        serde_json::to_vec(self).expect("envelope shapes always serialize")
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::secret_json::to_zeroizing_vec`]'s errors.
+    pub fn encode(&self) -> serde_json::Result<Zeroizing<Vec<u8>>> {
+        crate::secret_json::to_zeroizing_vec(self)
     }
 
     /// Decode an opened delta. `None` refuses anything that is not an
@@ -110,21 +110,85 @@ impl DeltaEnvelope {
 
 /// Bytes that travel as base64 inside envelope JSON, so ops and
 /// markers do not balloon into number arrays before padding.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ByteBlob(pub Vec<u8>);
+#[derive(Clone, PartialEq, Eq)]
+pub struct ByteBlob(Zeroizing<Vec<u8>>);
+
+impl ByteBlob {
+    /// Borrow the bytes without exposing the backing vector for growth.
+    #[must_use]
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl From<Zeroizing<Vec<u8>>> for ByteBlob {
+    fn from(bytes: Zeroizing<Vec<u8>>) -> Self {
+        Self(bytes)
+    }
+}
+
+impl From<Vec<u8>> for ByteBlob {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self(Zeroizing::new(bytes))
+    }
+}
+
+impl From<&[u8]> for ByteBlob {
+    fn from(bytes: &[u8]) -> Self {
+        Self::from(bytes.to_vec())
+    }
+}
+
+impl AsRef<[u8]> for ByteBlob {
+    fn as_ref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl Zeroize for ByteBlob {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for ByteBlob {}
+
+impl fmt::Debug for ByteBlob {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ByteBlob([REDACTED])")
+    }
+}
 
 impl Serialize for ByteBlob {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&crate::b64::encode(&self.0))
+        serializer.serialize_str(&crate::b64::encode_zeroizing(self.as_slice()))
     }
 }
 
 impl<'de> Deserialize<'de> for ByteBlob {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let encoded = String::deserialize(deserializer)?;
-        crate::b64::decode(&encoded)
-            .map(ByteBlob)
-            .ok_or_else(|| serde::de::Error::custom("invalid base64"))
+        struct BytesVisitor;
+
+        impl Visitor<'_> for BytesVisitor {
+            type Value = ByteBlob;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a base64 string")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, encoded: &str) -> Result<ByteBlob, E> {
+                crate::b64::decode_zeroizing(encoded)
+                    .map(ByteBlob)
+                    .ok_or_else(|| E::custom("invalid base64"))
+            }
+
+            fn visit_string<E: serde::de::Error>(self, encoded: String) -> Result<ByteBlob, E> {
+                let encoded = Zeroizing::new(encoded);
+                self.visit_str(&encoded)
+            }
+        }
+
+        deserializer.deserialize_str(BytesVisitor)
     }
 }
 
@@ -135,11 +199,11 @@ mod tests {
     #[test]
     fn every_variant_round_trips() {
         let mut entropy = BTreeMap::new();
-        entropy.insert("fp-2".to_owned(), ByteBlob(vec![9, 9, 9]));
+        entropy.insert("fp-2".to_owned(), ByteBlob::from(vec![9, 9, 9]));
         let envelopes = [
             DeltaEnvelope::Ops {
                 page: "page-1".into(),
-                ops: ByteBlob(vec![1, 2, 3]),
+                ops: ByteBlob::from(vec![1, 2, 3]),
             },
             DeltaEnvelope::Expiry {
                 page: "page-1".into(),
@@ -150,9 +214,13 @@ mod tests {
                 page: "page-1".into(),
                 hold: Some((30_000, 90_000, false)),
             },
+            DeltaEnvelope::Hold {
+                page: "page-1".into(),
+                hold: None,
+            },
             DeltaEnvelope::Terminal {
                 page: "page-1".into(),
-                marker: ByteBlob(vec![4, 5]),
+                marker: ByteBlob::from(vec![4, 5]),
             },
             DeltaEnvelope::Control {
                 payload: ControlPayload::Propose {
@@ -168,8 +236,20 @@ mod tests {
                 },
             },
         ];
-        for envelope in envelopes {
-            assert_eq!(DeltaEnvelope::decode(&envelope.encode()), Some(envelope));
+        let wire = [
+            r#"{"kind":"ops","page":"page-1","ops":"AQID"}"#,
+            r#"{"kind":"expiry","page":"page-1","anchor_wall_ms":1000,"ttl_ms":60000}"#,
+            r#"{"kind":"hold","page":"page-1","hold":[30000,90000,false]}"#,
+            r#"{"kind":"hold","page":"page-1","hold":null}"#,
+            r#"{"kind":"terminal","page":"page-1","marker":"BAU="}"#,
+            r#"{"kind":"control","op":"propose","ballot_id":"ballot-1","page":"page-1","entropy_sealed":{"fp-2":"CQkJ"}}"#,
+            r#"{"kind":"control","op":"accept","ballot_id":"ballot-1","device_fingerprint":"fp-2"}"#,
+        ];
+        for (envelope, wire) in envelopes.into_iter().zip(wire) {
+            let encoded = envelope.encode().unwrap();
+            assert_eq!(encoded.as_slice(), wire.as_bytes());
+            assert_eq!(encoded.len(), encoded.capacity());
+            assert_eq!(DeltaEnvelope::decode(&encoded), Some(envelope));
         }
     }
 
@@ -177,11 +257,73 @@ mod tests {
     fn bytes_travel_as_base64_not_number_arrays() {
         let encoded = DeltaEnvelope::Ops {
             page: "p".into(),
-            ops: ByteBlob(vec![255; 32]),
+            ops: ByteBlob::from(vec![255; 32]),
         }
-        .encode();
-        let text = String::from_utf8(encoded).unwrap();
+        .encode()
+        .unwrap();
+        let text = std::str::from_utf8(&encoded).unwrap();
         assert!(!text.contains("255"));
+    }
+
+    #[test]
+    fn escaped_fields_and_base64_still_decode() {
+        let wire = br#"{"kind":"ops","page":"p\"\\\n\u00e9","ops":"\/\u0077=="}"#;
+        let envelope = DeltaEnvelope::decode(wire).unwrap();
+        assert_eq!(
+            envelope,
+            DeltaEnvelope::Ops {
+                page: "p\"\\\né".into(),
+                ops: ByteBlob::from(vec![255]),
+            }
+        );
+        assert_eq!(
+            envelope.encode().unwrap().as_slice(),
+            "{\"kind\":\"ops\",\"page\":\"p\\\"\\\\\\né\",\"ops\":\"/w==\"}".as_bytes()
+        );
+        assert_eq!(
+            DeltaEnvelope::decode(br#"{"ops":"\/w==","page":"p","kind":"ops"}"#),
+            Some(DeltaEnvelope::Ops {
+                page: "p".into(),
+                ops: ByteBlob::from(vec![255]),
+            })
+        );
+    }
+
+    #[test]
+    fn blob_clones_are_independent_zeroizing_owners_with_redacted_debug() {
+        fn zeroizing_owner<T: ZeroizeOnDrop>() {}
+        zeroizing_owner::<ByteBlob>();
+        let bytes = Zeroizing::new(b"secret bytes".to_vec());
+        let allocation = bytes.as_ptr();
+        let mut original = ByteBlob::from(bytes);
+        assert_eq!(original.as_slice().as_ptr(), allocation);
+        let mut cloned = original.clone();
+        assert_eq!(cloned.0.len(), cloned.0.capacity());
+        assert_ne!(original.as_slice().as_ptr(), cloned.as_slice().as_ptr());
+        assert_eq!(format!("{original:?}"), "ByteBlob([REDACTED])");
+        original.zeroize();
+        assert!(original.as_slice().is_empty());
+        assert_eq!(cloned.as_slice(), b"secret bytes");
+        cloned.clone_from(&ByteBlob::from(b"replacement".as_slice()));
+        assert_eq!(cloned.as_slice(), b"replacement");
+        let envelope = DeltaEnvelope::Ops {
+            page: "p".into(),
+            ops: cloned,
+        };
+        let debug = format!("{envelope:?}");
+        assert!(!debug.contains("replacement"));
+        assert!(debug.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn invalid_base64_and_truncated_envelopes_are_refused() {
+        for wire in [
+            r#"{"kind":"ops","page":"p","ops":"c2VjcmV0!"}"#,
+            r#"{"kind":"ops","page":"p","ops":"/x=="}"#,
+            r#"{"kind":"ops","page":"p","ops":"c2VjcmV0""#,
+        ] {
+            assert!(DeltaEnvelope::decode(wire.as_bytes()).is_none());
+        }
     }
 
     #[test]

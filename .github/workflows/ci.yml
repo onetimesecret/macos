@@ -1,4 +1,4 @@
-# Two lanes, both required (docs/spec/07-repo-skeleton.md):
+# Two lanes, both required (docs/spec/design/2026-0707-repo-skeleton.md):
 #   logic    — ubuntu: the crates that hold all the logic, cheap and fast
 #   platform — macos:  full workspace, incl. the pasteboard adapter
 #
@@ -58,6 +58,8 @@ jobs:
   platform:
     name: platform (macos)
     runs-on: macos-latest
+    env:
+      RUST_BACKTRACE: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned toolchain
@@ -66,7 +68,7 @@ jobs:
       - name: Clippy (full workspace)
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test (full workspace)
-        run: cargo test --workspace
+        run: cargo test --workspace -- --nocapture
       # The shape above enables no features (cargo issue 2911), so a
       # test gated on `feature = "test-util"` never runs in it. The
       # ubuntu lane covers the seams for the crates that build there,
@@ -77,7 +79,7 @@ jobs:
       # against the virtual manifest because companion-ffi is the one
       # member that declares it (crates/ffi/Cargo.toml).
       - name: Test (full workspace, test-util seams)
-        run: cargo test --workspace --features test-util
+        run: cargo test --workspace --features test-util -- --nocapture
 
   # The Swift/AppKit shell (ADR-0002): build the C-ABI seam as a
   # universal xcframework, then build and test the Swift package against
@@ -103,6 +105,12 @@ jobs:
           swift build --package-path shell
       - name: swift test
         run: ./scripts/test-shell.sh
+      - name: Check reveal lab
+        timeout-minutes: 5
+        run: |
+          swift build --package-path tools/reveal-lab
+          swift run --skip-build --package-path tools/reveal-lab RevealLab --self-test
+          sh tools/reveal-lab/run.sh --build-only
       # --debug reuses the build above; the step exists to keep the
       # bundle assembly (Info.plist, stamping, codesign) from rotting.
       - name: Assemble the app bundle
@@ -136,6 +144,19 @@ jobs:
           sudden="$(plutil -extract NSSupportsSuddenTermination raw "dist/OnetimePad Debug.app/Contents/Info.plist")"
           test "$sudden" = "true" \
             || { echo "expected NSSupportsSuddenTermination true, got: $sudden" >&2; exit 1; }
+          # The Finder's Open With (BundleDeclarationTests pins the source
+          # plist): one plain text type, Editor and Alternate, and no
+          # NSDocumentClass, so cmd-n stays with page::New (issue #77).
+          plist="dist/OnetimePad Debug.app/Contents/Info.plist"
+          types="$(plutil -extract CFBundleDocumentTypes raw "$plist")"
+          role="$(plutil -extract CFBundleDocumentTypes.0.CFBundleTypeRole raw "$plist")"
+          rank="$(plutil -extract CFBundleDocumentTypes.0.LSHandlerRank raw "$plist")"
+          uti="$(plutil -extract CFBundleDocumentTypes.0.LSItemContentTypes.0 raw "$plist")"
+          test "$types/$role/$rank/$uti" = "1/Editor/Alternate/public.plain-text" \
+            || { echo "expected 1/Editor/Alternate/public.plain-text, got: $types/$role/$rank/$uti" >&2; exit 1; }
+          if plutil -extract CFBundleDocumentTypes.0.NSDocumentClass raw "$plist" >/dev/null 2>&1; then
+            echo "CFBundleDocumentTypes.0 names an NSDocumentClass; cmd-n belongs to page::New" >&2; exit 1
+          fi
           # The pre-signature digest is the published artifact; an
           # empty file means the hash pipeline broke silently.
           test -s "dist/OnetimePad Debug.presig.sha256" \
@@ -213,6 +234,17 @@ jobs:
           sudden="$(plutil -extract NSSupportsSuddenTermination raw "dist/OnetimePad Local.app/Contents/Info.plist")"
           test "$sudden" = "true" \
             || { echo "expected NSSupportsSuddenTermination true, got: $sudden" >&2; exit 1; }
+          # The document type, on the plist that ships; the debug job says why.
+          plist="dist/OnetimePad Local.app/Contents/Info.plist"
+          types="$(plutil -extract CFBundleDocumentTypes raw "$plist")"
+          role="$(plutil -extract CFBundleDocumentTypes.0.CFBundleTypeRole raw "$plist")"
+          rank="$(plutil -extract CFBundleDocumentTypes.0.LSHandlerRank raw "$plist")"
+          uti="$(plutil -extract CFBundleDocumentTypes.0.LSItemContentTypes.0 raw "$plist")"
+          test "$types/$role/$rank/$uti" = "1/Editor/Alternate/public.plain-text" \
+            || { echo "expected 1/Editor/Alternate/public.plain-text, got: $types/$role/$rank/$uti" >&2; exit 1; }
+          if plutil -extract CFBundleDocumentTypes.0.NSDocumentClass raw "$plist" >/dev/null 2>&1; then
+            echo "CFBundleDocumentTypes.0 names an NSDocumentClass; cmd-n belongs to page::New" >&2; exit 1
+          fi
           test -s "dist/OnetimePad Local.presig.sha256" \
             || { echo "dist/OnetimePad Local.presig.sha256 is missing or empty" >&2; exit 1; }
           cmp THIRD_PARTY_NOTICES.md "dist/OnetimePad Local.app/Contents/Resources/THIRD_PARTY_NOTICES.md"

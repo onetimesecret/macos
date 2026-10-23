@@ -100,7 +100,7 @@ Storage choice, migration, and metadata removal still require review.
   command contract. Native keymap validation remains required; browser interception is not that validation.
 - ADR-0017 is not the only record that gives ⌘1 to ⌘9 to slots. The cap
   paragraph and keyboard map of
-  [04-interaction-model.md](../spec/design/04-interaction-model.md), the
+  [2026-0707-interaction-model.md](../spec/design/2026-0707-interaction-model.md), the
   [vertical time tabs feature spec](../spec/feature/vertical-time-tabs/README.md)
   with its mode off and its
   [capacity and Today proposal](../spec/feature/vertical-time-tabs/2026-0904-capacity-and-today-proposal.md),
@@ -151,9 +151,35 @@ Storage choice, migration, and metadata removal still require review.
   association editing, and bounded recency need tests and documented failure
   behavior. Sample chooser exclusivity does not prove any of them.
 - Independent day/checkpoint sorting is recorded in the mockup design record.
-  [ADR-0040](0040-shared-pad-timeline-navigation.md) separately records the
+  [ADR-0060](0060-shared-pad-timeline-navigation.md) separately records the
   approved successor to the newest-first day policy and shared navigator.
   This ADR does not establish timeline ordering by itself.
+
+## Amendment 1: switch from a menu, manage in Settings
+
+Proposed 2026-10-14 with the HIG audit's fixes; this amendment remains
+proposed. The original decision was accepted on 2026-10-03. The Decision's first rule put add and remove controls "within
+that pad's menu cell" and the footer's options in the same list, which
+built a popover three rows tall per pad. The audit's convention is a
+switcher that is a menu, with management in a separate window or a
+Settings pane, as Xcode's schemes are; the maintainer chose that.
+
+1. The picker's name opens a native menu: each pad once, the active pad
+   checked in the menu's leading column, ⌘0 to ⌘9 shown beside the pads
+   the keymap leaves those digits to, then *New Pad…* and *Manage
+   Pads…*. The shortcuts in the menu are labels; the app-local monitor
+   still switches on them.
+2. *Manage Pads…* opens the Pads tab of Settings: the experiment's
+   switch, moved from General with its captions; each pad with its
+   folders and its Applications pop-up, *Rename* and *Remove Pad…* on the
+   row's actions menu; *New Pad…*; App associations; Show full paths.
+3. A pad is renamed in its row in the Pads tab (Law 0007), and a refused
+   name is said under the field there, since the line under the page is
+   in another window. Removal keeps the platform's confirmation, which
+   D-14 allows for a destructive Settings action.
+
+The Settings window gains a fifth tab; the 2026-0915 UI/UX record's
+section 8 names four.
 
 ## Eject triggers
 
@@ -183,3 +209,5 @@ Storage choice, migration, and metadata removal still require review.
   choice, migration, metadata removal, deterministic routing prerequisites,
   and native verification remain the review conditions stated above; approval
   does not assert that these conditions have been met.
+- 2026-10-14: Amendment 1 proposed: the switcher is a menu and the pads are
+  managed in a Pads tab of Settings.

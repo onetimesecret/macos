@@ -28,7 +28,7 @@ surface by surface.
 or a local display. It is suspect wherever it produces an event with an
 externally observable clock.**
 
-The reason is ADR-0021 section 4. Sync batches deltas on a fixed clock
+The reason is the [relay decision background](../sync/relay-decision-background.md) section 4. Sync batches deltas on a fixed clock
 precisely so that the cadence of what leaves this machine says nothing
 about the cadence of the typing that produced it; the core's
 `set_change_merge_interval(0)`
@@ -77,7 +77,7 @@ Two caveats, recorded because both are easy to overstate:
   taking back more is the loss tenet №1 forbids.
 - **It groups local operations only.** The interval is read inside the
   undo manager and reaches nothing else. Sync cadence is untouched:
-  ADR-0021 section 4's clock still batches deltas, and no observable
+  the [relay decision background](../sync/relay-decision-background.md) section 4's clock still batches deltas, and no observable
   event moves because of this number.
 
 One class of edit opts out of the interval entirely: the ones the page
@@ -168,7 +168,7 @@ boundaries, and not on the page's stamps.
 
 ## What would reopen this
 
-- ADR-0021 section 4's clock batching is replaced by something that
+- The [relay decision background](../sync/relay-decision-background.md) section 4's clock batching is replaced by something that
   already publishes edit cadence, at which point the persist debounce's
   first refusal loses its force and only reasons 2 and 3 stand.
 - The revision panel ships and its boundary derivation proves that idle

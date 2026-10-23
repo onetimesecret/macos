@@ -29,9 +29,12 @@ import SwiftUI
 /// ordinary horizontal drag to scroll the strip.
 public struct TabStripView: View {
     @ObservedObject var model: PageModel
+    /// The stance the page content takes; a read only strip's tabs take no drop (issue 254).
+    let readOnly: Bool
 
-    public init(model: PageModel) {
+    public init(model: PageModel, readOnly: Bool) {
         self.model = model
+        self.readOnly = readOnly
     }
 
     /// Each tab's frame in the strip's space, kept fresh by preference
@@ -49,7 +52,7 @@ public struct TabStripView: View {
             // spacing, and `stripGroupsAreAbsentWithNoFileOpen` holds
             // the model side of that.
             if !model.navigationFiles.isEmpty {
-                GroupLabel(text: "FILES")
+                GroupLabel(text: "Files")
                 ForEach(model.navigationFiles) { file in
                     FileTab(
                         file: file,
@@ -57,7 +60,7 @@ public struct TabStripView: View {
                         model: model
                     )
                 }
-                GroupLabel(text: "PAD")
+                GroupLabel(text: "Pad")
             }
             // The slots scroll as one run. The frames the reorder reads
             // are taken in the strip's own space, which the scroll offset
@@ -71,6 +74,7 @@ public struct TabStripView: View {
                                 sheet: sheet,
                                 selected: model.selection == sheet.id && !model.showingLedger,
                                 model: model,
+                                readOnly: readOnly,
                                 beginReorder: { model.draggingTab = sheet.id },
                                 reorder: { pointerX in
                                     reorder(dragged: sheet.id, pointerX: pointerX)
@@ -143,7 +147,7 @@ public struct TabStripView: View {
                 .frame(width: 24, height: 22)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color.secondaryInk)
         .help(Self.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
         .accessibilityLabel(Text("New page"))
     }
@@ -154,8 +158,7 @@ public struct TabStripView: View {
     /// that unbound it leaves the tooltip saying only what the button
     /// does, which is still true.
     static func newPageHelp(chord: Keystroke?) -> String {
-        guard let chord else { return "New page" }
-        return "New page (\(chord.displaySymbol))"
+        Keystroke.chorded(CompanionL10n.string("pad.page.new"), chord: chord)
     }
 
     /// The ledger tab's tooltip, on the same terms. It named ⌘0 until
@@ -164,9 +167,7 @@ public struct TabStripView: View {
     /// chord appears only when something bound it, which for the tab's
     /// own build is a keymap the user wrote.
     static func ledgerHelp(chord: Keystroke?) -> String {
-        let what = "The ledger: what the app did with each page and chip"
-        guard let chord else { return what }
-        return "\(what) (\(chord.displaySymbol))"
+        Keystroke.chorded("The ledger: what the app did with each page and chip", chord: chord)
     }
 
     /// ↗ page (docs/spec/04, conceal flow): conceal the visible page
@@ -178,7 +179,7 @@ public struct TabStripView: View {
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: NSFont.miniSystemFontSize, weight: .medium))
                 Text("page")
                     .font(.system(.caption2, design: .monospaced))
             }
@@ -186,11 +187,16 @@ public struct TabStripView: View {
             .frame(height: 22)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color.secondaryInk)
         .disabled(model.selectedPageID == nil || model.showingLedger)
-        .help("Conceal this page into a one-time link")
-        .accessibilityLabel(Text("Conceal page into one-time link"))
+        .help(Self.concealPageHelp)
+        .accessibilityLabel(Text(Self.concealPageLabel))
     }
+
+    /// The ↗ page tab's tooltip and spoken label, in one-time link
+    /// vocabulary (ADR-0055 rule 3, issue #295).
+    nonisolated static let concealPageHelp = "create a one-time link from this page"
+    nonisolated static let concealPageLabel = "Create one-time link from page"
 
     /// The dashed residue tab: the audit trail, one line per event. A
     /// toggle, so a second click returns to the page. Built and not
@@ -210,143 +216,25 @@ public struct TabStripView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 5)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3]))
-                    .foregroundStyle(model.showingLedger ? Color.ember : .secondary)
+                    .foregroundStyle(model.showingLedger ? Color.ember : Color.secondaryInk)
             )
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color.secondaryInk)
         .help(Self.ledgerHelp(chord: model.keymap.hintKeystroke(for: .ledgerShow)))
         .accessibilityLabel(Text("Ledger, \(model.ledgerEntries.count) records"))
     }
 }
 
-/// Days placed along the bottom. This is the horizontal presentation
-/// of the same `TimeUnitProjection` the side column uses; it changes
-/// neither grouping nor selection semantics (D-26). No layout draws
-/// this since ADR-0037 reduced the four combinations to Tabs and Timeline.
-public struct TimeStripView: View {
-    @ObservedObject var model: PageModel
-
-    public init(model: PageModel) {
-        self.model = model
-    }
-
-    public var body: some View {
-        let projection = model.timeUnits
-        let selected = TimeRailView.selectedBucket(
-            projection: projection, selection: model.selection)
-        HStack(spacing: 2) {
-            if !model.navigationFiles.isEmpty {
-                GroupLabel(text: "FILES")
-                ForEach(model.navigationFiles) { file in
-                    FileTab(
-                        file: file,
-                        selected: model.selectedFile == file.id && !model.showingLedger,
-                        model: model
-                    )
-                }
-                GroupLabel(text: "PAD")
-            }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(projection.units.indices, id: \.self) { index in
-                        let unit = projection.units[index]
-                        TimeUnitBottomTab(
-                            unit: unit,
-                            selected: !model.showingLedger && model.selectedFile == nil
-                                && unit.bucket == selected,
-                            chord: model.pads.isEnabled ? nil : TimeRailView.chord(
-                                forRowAt: TimeRailView.targetIndex(
-                                    forDay: index, openFileCount: model.navigationFiles.count),
-                                keymap: model.keymap),
-                            model: model
-                        )
-                    }
-                }
-            }
-            if projection.hiddenBlankPages > 0 {
-                Text("\(projection.hiddenBlankPages) blank")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .help(TimeRailView.hiddenPagesHelp(count: projection.hiddenBlankPages))
-                    .accessibilityLabel(Text(TimeRailView.hiddenPagesHelp(
-                        count: projection.hiddenBlankPages)))
-            }
-            Spacer(minLength: 8)
+extension TabRename {
+    /// Selects the whole draft once a SwiftUI field holds the keyboard
+    /// (Law 0007, Opening); anything but a field editor is left alone.
+    @MainActor static func selectWholeDraft() {
+        DispatchQueue.main.async {
+            guard let editor = NSApp?.keyWindow?.firstResponder as? NSTextView,
+                  editor.isFieldEditor else { return }
+            editor.selectAll(nil)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .frame(height: 32)
-        .background(Color.panelBackground)
-    }
-}
-
-/// A day in the bottom run. Its content and actions mirror
-/// `TimeUnitTab`; only its measure changes to the bottom-tab metrics.
-private struct TimeUnitBottomTab: View {
-    let unit: TimeUnitProjection.Unit
-    let selected: Bool
-    let chord: Keystroke?
-    @ObservedObject var model: PageModel
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 4) {
-                Text(unit.railLabel)
-                    .font(.system(.caption, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if TimeUnitTab.offersNewPage(unit) {
-                    Button(action: model.newPage) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 8, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help(TimeUnitTab.newPageHelp(
-                        chord: model.keymap.hintKeystroke(for: .pageNew)))
-                    .accessibilityLabel(Text("New page"))
-                }
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 18)
-            Group {
-                if unit.pageIDs.isEmpty {
-                    EmptyRule()
-                } else {
-                    GaugeBar(
-                        fraction: unit.fractionRemaining,
-                        paused: unit.paused,
-                        toppedUp: unit.toppedUp,
-                        lastHour: unit.lastHour
-                    )
-                }
-            }
-            .frame(height: 3)
-            .padding(.horizontal, 3)
-        }
-        .frame(maxWidth: 140)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(selected ? Color.cellBackground : .clear)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture { model.select(target: TimeUnitTab.target(for: unit)) }
-        .help(helpText)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(unit.spokenLabel))
-        .accessibilityValue(Text(unit.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
-        .accessibilityNewPageAction(when: TimeUnitTab.offersNewPage(unit)) {
-            model.newPage()
-        }
-    }
-
-    private var helpText: String {
-        if unit.pageIDs.isEmpty {
-            return TimeUnitTab.todayHelp(hasPage: false, chord: chord)
-        }
-        return TimeUnitTab.dayHelp(spokenLabel: unit.spokenLabel, chord: chord)
     }
 }
 
@@ -373,6 +261,7 @@ struct SheetTab: View {
     let sheet: TabSummary
     let selected: Bool
     @ObservedObject var model: PageModel
+    let readOnly: Bool
     let beginReorder: () -> Void
     let reorder: (CGFloat) -> Void
     let endReorder: () -> Void
@@ -383,9 +272,10 @@ struct SheetTab: View {
     /// field in the tab's own seat, holding the draft, and the field
     /// goes away when the draft is committed or let go of. The draft
     /// is the field's, not the model's, until return is pressed.
-    @State private var renaming = false
-    @State private var renameDraft = ""
+    @State private var rename = TabRename.Field()
     @FocusState private var renameFocused: Bool
+
+    private var renaming: Bool { rename.isOpen }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -410,12 +300,17 @@ struct SheetTab: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
+                        .frame(width: 12, height: 16)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
-                .accessibilityLabel(Text("Close tab"))
+                .help("Close tab")
+                // The row offers Close Tab as an action; the mark is
+                // pointer-only.
+                .accessibilityHidden(true)
             }
             .padding(.horizontal, 8)
             .frame(height: 18)
@@ -443,6 +338,8 @@ struct SheetTab: View {
             RoundedRectangle(cornerRadius: 5)
                 .fill(selected ? Color.cellBackground : .clear)
         )
+        // The tab takes drops at the end of its page (issue 254); its clicks stay SwiftUI's.
+        .background(TabDropOverlay(model: model, slot: sheet.id, readOnly: readOnly))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         // Select on click; a double-click's second tap cycles the hold
@@ -461,12 +358,23 @@ struct SheetTab: View {
         .help(holdDescription)
         // The tab speaks as one element until it holds the field, which
         // has to be reachable on its own for the draft to be read back.
+        // Mid-rename the label stays on the container: the field speaks
+        // its own "Tab name", not the tab's description, so nothing doubles.
         .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected, renaming: renaming))
+        // The hover-only close mark and the menu verbs, reachable
+        // without a pointer, as on the rail's rows.
+        .accessibilityActivation(when: !renaming) { model.select(sheet.id) }
+        .accessibilityActions {
+            if !renaming {
+                Button("Rename Tab") { beginRename() }
+                Button("Close Tab") { model.close(sheet.id) }
+            }
+        }
         .contextMenu {
-            Button("Rename tab…") { beginRename() }
+            Button("Rename Tab") { beginRename() }
             // Disabled rather than hidden on an empty slot: the item
             // keeps its place in a menu whose shape the user knows, and
             // an item that says it will hold a clock there would be
@@ -483,7 +391,8 @@ struct SheetTab: View {
                     model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
                 }
             }
-            Button("Close tab", role: .destructive) { model.close(sheet.id) }
+            Divider()
+            Button("Close Tab", role: .destructive) { model.close(sheet.id) }
         }
     }
 
@@ -493,7 +402,7 @@ struct SheetTab: View {
     private var reorderHandle: some View {
         Image(systemName: "line.3.horizontal")
             .font(.system(size: 8, weight: .medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.secondaryInk)
             .frame(width: 12, height: 18)
             .contentShape(Rectangle())
             .help("Drag to reorder tab")
@@ -520,8 +429,8 @@ struct SheetTab: View {
     /// the menu offers at each turn of the cycle is testable without a
     /// menu.
     static func holdMenuTitle(paused: Bool, toppedUp: Bool) -> String {
-        if toppedUp { return "Release the hold" }
-        return paused ? "Top the hold up to 24h" : "Hold the clock for 1h"
+        if toppedUp { return "Release the Hold" }
+        return paused ? "Top the Hold Up to 24h" : "Hold the Clock for 1h"
     }
 
     /// The rung item's label. On an empty slot the gesture sets the
@@ -529,7 +438,7 @@ struct SheetTab: View {
     /// countdown, and there is no countdown to name, so the item says
     /// what it will actually do (ADR-0017).
     static func rungMenuTitle(hasPage: Bool) -> String {
-        hasPage ? "Shorten the countdown" : "Shorten the next page's countdown"
+        hasPage ? "Shorten the Countdown" : "Shorten the Next Page's Countdown"
     }
 
     /// The sync item's label: what the click will do, both ways. Pure,
@@ -537,7 +446,7 @@ struct SheetTab: View {
     /// without a menu — nonisolated because nothing about it needs
     /// the view's actor, and the tests call it from off it.
     nonisolated static func syncMenuTitle(enrolled: Bool) -> String {
-        enrolled ? "Stop syncing this page" : "Sync this page to your devices"
+        enrolled ? "Stop Syncing This Page" : "Sync This Page to Your Devices"
     }
 
     /// The tooltip: the tier in words, since the chip carries it only
@@ -577,8 +486,7 @@ struct SheetTab: View {
     /// #79) through their own field, and the two agree on what an
     /// ending means through `TabRename`, so one rule is stated once.
     private func beginRename() {
-        renameDraft = sheet.title
-        renaming = true
+        rename.open(on: sheet.title)
     }
 
     /// The field, focused as it appears. Return commits and escape
@@ -587,7 +495,7 @@ struct SheetTab: View {
     /// answered. The keyboard map's own escape rests the surface, and
     /// that lands here as the focus leaving, which is the same cancel.
     private var renameField: some View {
-        TextField("", text: $renameDraft)
+        TextField("", text: $rename.draft)
             .textFieldStyle(.plain)
             .font(.system(.caption, design: .monospaced))
             .frame(minWidth: 48)
@@ -595,7 +503,7 @@ struct SheetTab: View {
             .onSubmit { endRename(committed: true) }
             .onExitCommand { endRename(committed: false) }
             .onChange(of: renameFocused) { focused in
-                if !focused { endRename(committed: false) }
+                if focused { TabRename.selectWholeDraft() } else { endRename(committed: false) }
             }
             .onAppear {
                 // Asked for on the next turn, once the field is in the
@@ -607,17 +515,11 @@ struct SheetTab: View {
             .help("Return renames the tab; escape leaves it as it was")
     }
 
-    /// Ends the rename one way or the other. The guard makes the field
-    /// going away, which drops its focus and would otherwise report a
-    /// second ending, a no-op.
+    /// Ends the rename, judged against the title the field opened on; the
+    /// focus loss that follows a Return is a second ending `end` ignores.
     private func endRename(committed: Bool) {
-        guard renaming else { return }
-        renaming = false
-        switch TabRename.outcome(draft: renameDraft, current: sheet.title, committed: committed) {
-        case .rename(let name):
+        if case .rename(let name)? = rename.end(committed: committed) {
             model.renameTab(sheet.id, to: name)
-        case .keep:
-            break
         }
     }
 
@@ -661,8 +563,8 @@ struct FileTab: View {
         VStack(spacing: 0) {
             HStack(spacing: 4) {
                 Image(systemName: "doc")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: NSFont.miniSystemFontSize))
+                    .foregroundStyle(Color.secondaryInk)
                     .accessibilityHidden(true) // the tab says "file" in words
                 Text(file.name)
                     .font(.system(.caption, design: .monospaced))
@@ -673,12 +575,17 @@ struct FileTab: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
+                        .frame(width: 12, height: 16)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
-                .accessibilityLabel(Text("Close file"))
+                .help("Close file")
+                // The row offers Close File as an action; the mark is
+                // pointer-only.
+                .accessibilityHidden(true)
             }
             .padding(.horizontal, 8)
             .frame(height: 18)
@@ -704,16 +611,19 @@ struct FileTab: View {
         .help(FileRowLabel.help(for: file))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAddTraits(RowAccessibility.traits(selected: selected))
+        .accessibilityActivation(when: true) { model.select(target: .file(file.id)) }
+        .accessibilityAction(named: Text("Close File")) { model.closeFile(file.id) }
         .contextMenu {
             Button("Save") { model.select(target: .file(file.id)); model.saveActiveFile() }
             Button("Save As…") { model.select(target: .file(file.id)); model.saveActiveFileAs() }
-            Button("Close file", role: .destructive) { model.closeFile(file.id) }
+            Divider()
+            Button("Close File", role: .destructive) { model.closeFile(file.id) }
         }
     }
 }
 
-/// The strip's group headings, FILES and PAD (ADR-0028).
+/// The strip's group headings, Files and Pad (ADR-0028).
 ///
 /// They exist because the two classes have to be visibly separated and
 /// a gap alone would not say why: a person seeing a document glyph
@@ -724,14 +634,15 @@ struct FileTab: View {
 ///
 /// Exposed to VoiceOver as the group's name rather than hidden, which
 /// is what makes the two named groups the specification asks for.
+/// Set as a sidebar section header: title case in the system font, in
+/// the secondary label, which clears 4.5:1 where tertiary reads 2:1.
 struct GroupLabel: View {
     let text: String
 
     var body: some View {
         Text(text)
-            .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .tracking(1.3)
-            .foregroundStyle(.tertiary)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Color.secondaryInk)
             .padding(.horizontal, 4)
             .accessibilityLabel(Text("\(text.lowercased()) group"))
     }
@@ -777,7 +688,7 @@ struct HoldChip: View {
         .padding(.horizontal, 3)
         .padding(.vertical, 1)
         .background(Capsule().fill(Color.secondary.opacity(0.15)))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color.secondaryInk)
         .fixedSize() // never squeezed by a long title
         .accessibilityHidden(true) // the tab speaks the hold in words
     }

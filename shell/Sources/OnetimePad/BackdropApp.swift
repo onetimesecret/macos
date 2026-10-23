@@ -1,196 +1,61 @@
 import AppKit
+import Combine
+import Darwin
 import CompanionKit
-import SwiftUI
 import os
 
-/// OnetimePad, the background-surface form factor
-/// (docs/spec/feature/background-surface): an ambient pane resting at
-/// desktop level, raised to a floating editor by ⌃⌥Space or the
-/// menu-bar item, beside the primary editor window that ⌘Tab, the
-/// Dock icon and a person's launch select (ADR-0033). It began as a
-/// sibling of the panel app (ADR-0010), same Rust core through the
-/// same seam, different posture; the panel was archived once this form
-/// factor reached parity (ADR-0014), and its state file and Keychain
-/// items remain untouched by this target.
 @main
-struct BackdropApp: App {
-    @NSApplicationDelegateAdaptor(BackdropAppDelegate.self) private var appDelegate
-
-    var body: some Scene {
-        // AppKit owns the windows. Native Settings scene requests still
-        // need a destination, even with the menu command replaced below.
-        Settings {
-            SettingsSceneRedirect(openSettings: appDelegate.openSettings)
+@MainActor
+enum BackdropApp {
+    static func main() {
+        guard AppLaunchIdentity.accepts(Bundle.main.bundleIdentifier) else {
+            FileHandle.standardError.write(Data(
+                "OnetimePad refused startup (bundle identifier: \(Bundle.main.bundleIdentifier ?? "none")): launch a packaged app with a recognized bundle identifier. Use scripts/dev.sh for development and scripts/test-shell.sh for isolated tests.\n".utf8))
+            exit(EXIT_FAILURE)
         }
-            .commands {
-                // ⌘F and its neighbours. The editor answers
-                // `performTextFinderAction:` (its find bar is on), but
-                // nothing sends it without menu items to send it: the
-                // card is borderless and this app's only declared scene
-                // is the Settings placeholder, so the standard Edit menu
-                // is asked for by name rather than assumed.
-                TextEditingCommands()
-                // Edit → Seal Selected Content (D-30): the menu bar's
-                // placement of the seal, beside the pasteboard verbs
-                // it is a cousin of. It posts the same action down
-                // the responder chain that Undo does, and the page's
-                // text view answers with the method the chord runs.
-                CommandGroup(after: .pasteboard) {
-                    SealSelectionMenuItem(
-                        availability: appDelegate.sealActions,
-                        shortcut: appDelegate.shortcut(for: SealSelectionMenu.command),
-                        send: appDelegate.sendToResponder
-                    )
-                }
-                if PageModel.languageDetectionFeaturesAvailable {
-                    CommandGroup(after: .pasteboard) {
-                        LanguageDetectionMenuItems(
-                            pages: appDelegate.pages,
-                            send: appDelegate.sendToResponder
-                        )
-                    }
-                }
-                // The app's first File menu (ADR-0028). Every item
-                // dispatches the same command id the chord does, so
-                // there is one implementation of each verb and the menu
-                // cannot drift from the keyboard; the chords are read
-                // out of the keymap for the reason ⌘, is, so a person
-                // who rebound one sees their own chord here.
-                CommandMenu("File") {
-                    FileMenuItems(
-                        pages: appDelegate.pages,
-                        newShortcut: appDelegate.shortcut(for: .pageNew),
-                        openShortcut: appDelegate.shortcut(for: .fileOpen),
-                        saveShortcut: appDelegate.shortcut(for: .stateSaveNow),
-                        saveAsShortcut: appDelegate.shortcut(for: .fileSaveAs),
-                        closeShortcut: appDelegate.shortcut(for: .pageClose)
-                    )
-                }
-                // These buttons establish the menu placement, labels and
-                // configured shortcuts. Once AppKit has built the menu,
-                // `routeUndoRedoThroughResponder` turns the items into
-                // ordinary nil-targeted `undo:`/`redo:` commands. The
-                // focused editor then answers from Loro, while a native
-                // field editor in Settings keeps AppKit's own undo stack.
-                //
-                // The chords come from the keymap, like every other
-                // chord this app advertises: nil means the file unbound
-                // them, and then the items stay and lose the shortcut.
-                CommandGroup(replacing: .undoRedo) {
-                    UndoRedoItems(
-                        undoShortcut: appDelegate.undoShortcut,
-                        redoShortcut: appDelegate.redoShortcut,
-                        send: appDelegate.sendToResponder
-                    )
-                }
-                // The scene's automatic "Settings…" (⌘,) item would open
-                // the empty placeholder as a blank window. Repoint it so
-                // every ⌘, in the app lands on the one real Settings
-                // window the delegate owns.
-                //
-                // "Customize Keyboard Shortcuts…" sits below Settings…
-                // because it is a preference too, one that carries no
-                // chord of its own on purpose: users rebind it rarely,
-                // and offering a shortcut here would spend the chord
-                // budget on the door to the file rather than on a page
-                // verb. It opens keymap.json as an ordinary document
-                // (creating the configuration directory and seeding the
-                // bundled default the first time), so the file the app
-                // reads is the file the person is editing.
-                CommandGroup(replacing: .appSettings) {
-                    Button("Settings…") { appDelegate.openSettings() }
-                        .keyboardShortcut(appDelegate.settingsShortcut)
-                    Button("Customize Keyboard Shortcuts…") {
-                        appDelegate.pages.openUserKeymapFile()
-                    }
-                }
-                // Repointed for the same reason and with more at stake.
-                // The synthesized item calls AppKit's own
-                // `orderFrontStandardAboutPanel:`, which builds the
-                // panel with default collection behavior; the delegate's
-                // route is what puts `.moveToActiveSpace` on it
-                // (ADR-0019), and a panel left open on the desktop it
-                // was first shown on carries the user back there on the
-                // next ⌘Tab. The app is `.regular`, so this menu is on
-                // screen whenever the app is active and the route is not
-                // hypothetical. It also adds the linked Rust component
-                // versions, which the standard item cannot know.
-                CommandGroup(replacing: .appInfo) {
-                    Button("About \(BackdropAppDelegate.productName)") {
-                        appDelegate.showAbout()
-                    }
-                }
-                CommandGroup(replacing: .help) {
-                    Button("OnetimePad Help") { appDelegate.showHelp() }
-                    Divider()
-                    Button("Export Diagnostics…") { appDelegate.exportDiagnostics() }
-                    Button("Copy Diagnostic Summary") { appDelegate.copyDiagnosticSummary() }
-                    Divider()
-                    Button("Send Feedback…") { appDelegate.sendFeedback() }
-                }
-                // The Window menu's Close Window (issue #201, ADR-0033).
-                // ⌘W stays `page::Close` on the strip; ⇧⌘W closes the
-                // window the keyboard is in and reaches Settings too.
-                // The item is placed before AppKit's Minimize/Zoom group
-                // so it heads the menu the way Close does in every other
-                // macOS app. The chord comes from the keymap, so an
-                // override that takes it away leaves the item without a
-                // shortcut rather than lying (see docs/development/keymap-format-and-dispatch.md).
-                //
-                // `performClose:` down the responder chain: the key
-                // window answers, so Settings closes on Settings, the
-                // editor closes on itself, and the borderless panel
-                // (`.panel` and its key relay) answers with nothing to
-                // do because it carries no close box. Panel and relay
-                // are also `isExcludedFromWindowsMenu = true`, so the
-                // menu itself lists the editor window and Settings only.
-                CommandGroup(before: .windowArrangement) {
-                    appDelegate.presentationCommands
-                    Divider()
-                    WindowCloseMenuItem(shortcut: appDelegate.shortcut(for: .windowClose)) {
-                        appDelegate.sendToResponder(#selector(NSWindow.performClose(_:)))
-                    }
-                    Divider()
-                }
-            }
+        let application = NSApplication.shared
+        let delegate = BackdropAppDelegate()
+        application.delegate = delegate
+        application.setActivationPolicy(.regular)
+        application.run()
+        withExtendedLifetime(delegate) {}
     }
 }
 
-/// Page and file commands share the keyboard dispatch path. Save,
-/// Save As, and Close File apply only to the open file.
-@MainActor
-private struct FileMenuItems: View {
-    @ObservedObject var pages: PageModel
-    let newShortcut: KeyboardShortcut?
-    let openShortcut: KeyboardShortcut?
-    let saveShortcut: KeyboardShortcut?
-    let saveAsShortcut: KeyboardShortcut?
-    let closeShortcut: KeyboardShortcut?
+enum CloseMenuItem: Equatable {
+    case closeFile
+    case closeLedger
+    case closePage(enabled: Bool)
+    case closeWindow(enabled: Bool)
 
-    /// Whether the surface is showing a file, which is what the three
-    /// file verbs need to be true.
-    private var onAFile: Bool {
-        if case .file = pages.activeTarget { return true }
-        return false
+    static func resolve(
+        target: CloseChordTarget, showing: SurfaceTarget, ledgerShowing: Bool,
+        keyWindowCanClose: Bool
+    ) -> CloseMenuItem {
+        switch (target, showing) {
+        case (.surface, .file): return .closeFile
+        case (.surface, _) where ledgerShowing: return .closeLedger
+        case (.surface, .tab): return .closePage(enabled: true)
+        case (.surface, .today): return .closePage(enabled: false)
+        case (.companionWindow, _): return .closeWindow(enabled: keyWindowCanClose)
+        case (.nothing, _): return .closeWindow(enabled: false)
+        }
     }
 
-    var body: some View {
-        Button("New Page") { pages.perform(.pageNew) }
-            .keyboardShortcut(newShortcut)
-        Divider()
-        Button("Open…") { pages.perform(.fileOpen) }
-            .keyboardShortcut(openShortcut)
-        Divider()
-        Button("Save") { pages.perform(.stateSaveNow) }
-            .keyboardShortcut(saveShortcut)
-            .disabled(!onAFile)
-        Button("Save As…") { pages.perform(.fileSaveAs) }
-            .keyboardShortcut(saveAsShortcut)
-            .disabled(!onAFile)
-        Divider()
-        Button("Close File") { pages.perform(.pageClose) }
-            .keyboardShortcut(closeShortcut)
-            .disabled(!onAFile)
+    var title: String {
+        switch self {
+        case .closeFile: return "Close File"
+        case .closeLedger: return "Close Ledger"
+        case .closePage: return "Close Page"
+        case .closeWindow: return "Close Window"
+        }
+    }
+
+    var isEnabled: Bool {
+        switch self {
+        case .closeFile, .closeLedger: return true
+        case .closePage(let enabled), .closeWindow(let enabled): return enabled
+        }
     }
 }
 
@@ -207,121 +72,22 @@ enum ManualLanguageChoiceTarget: Equatable {
         guard editorSelectionIsEmpty == true else { return nil }
         return selectedFile.map(Self.file)
     }
-}
 
-@MainActor
-private struct LanguageDetectionMenuItems: View {
-    @ObservedObject var pages: PageModel
-    @ObservedObject private var languageActions: LanguageActionAvailability
-    let send: (Selector) -> Void
-
-    init(pages: PageModel, send: @escaping (Selector) -> Void) {
-        self.pages = pages
-        _languageActions = ObservedObject(wrappedValue: pages.languageActions)
-        self.send = send
-    }
-
-    private var responder: LanguageDetectionResponder? {
-        pages.activeEditor as? LanguageDetectionResponder
-    }
-
-    private var manualChoiceTarget: ManualLanguageChoiceTarget? {
-        ManualLanguageChoiceTarget.resolve(
-            editorCanChoose: languageActions.canChoose,
-            editorSelectionIsEmpty: languageActions.selectionIsEmpty,
-            selectedFile: pages.showingLedger ? nil : pages.selectedFile
-        )
-    }
-
-    private func chooseSourceLanguage(_ language: String) {
-        switch manualChoiceTarget {
+    /// Runs a choice: an editor's goes down the responder chain to whichever
+    /// surface holds the keys (Law 0007, keys row), a file's render mode to the model.
+    @MainActor
+    func choose(
+        _ language: String,
+        send: (Selector, Any?) -> Void,
+        selectFileMode: (FileRenderMode, UInt64) -> Void
+    ) {
+        switch self {
         case .editor:
-            responder?.chooseCodeLanguage(language)
+            send(
+                #selector(LanguageDetectionResponder.chooseCodeLanguage(_:)),
+                CodeLanguageChoice(language: language))
         case .file(let id):
-            pages.selectFileRenderMode(.source(language), for: id)
-        case nil:
-            break
-        }
-    }
-
-    var body: some View {
-        Button("Detect Code Language…") {
-            send(#selector(LanguageDetectionResponder.detectCodeLanguage(_:)))
-        }
-        .disabled(!languageActions.canDetect)
-
-        Menu("Choose Language") {
-            if case .file(let id) = manualChoiceTarget {
-                Button("Plain Text") { pages.selectFileRenderMode(.plainText, for: id) }
-                Button("Markdown") { pages.selectFileRenderMode(.markdown, for: id) }
-                Divider()
-            }
-            ForEach(InkEditorView.Coordinator.manualLanguages, id: \.self) { language in
-                Button(language.capitalized) { chooseSourceLanguage(language) }
-            }
-        }
-        .disabled(manualChoiceTarget == nil)
-
-        Button("Paste Without Detection") {
-            send(#selector(LanguageDetectionResponder.pasteWithoutDetection(_:)))
-        }
-        .disabled(pages.activeEditor?.isEditable != true)
-    }
-}
-
-@MainActor
-/// SwiftUI supplies Undo/Redo placement and shortcuts. The delegate keeps
-/// their targets on the AppKit responder chain as menus are rebuilt.
-private struct UndoRedoItems: View {
-    let undoShortcut: KeyboardShortcut?
-    let redoShortcut: KeyboardShortcut?
-    let send: (Selector) -> Void
-
-    var body: some View {
-        Button("Undo") { send(#selector(EditStepResponder.undo(_:))) }
-            .keyboardShortcut(undoShortcut)
-        Button("Redo") { send(#selector(EditStepResponder.redo(_:))) }
-            .keyboardShortcut(redoShortcut)
-    }
-}
-
-/// The Edit menu's Seal Selected Content (D-30). It greys itself out on
-/// the model's answer, which is whether the editor holds an editable page
-/// with a selection. The chord comes from the keymap like every other chord
-/// the menus advertise, and the page's text view claims it first; the menu
-/// carries it to show what the item costs, not to be the thing that fires.
-private struct SealSelectionMenuItem: View {
-    @ObservedObject var availability: SealActionAvailability
-    let shortcut: KeyboardShortcut?
-    let send: (Selector) -> Void
-
-    var body: some View {
-        Button(SealSelectionMenu.editMenuTitle) {
-            send(#selector(SealResponder.sealSelectedContent(_:)))
-        }
-        .keyboardShortcut(shortcut)
-        .disabled(!availability.canSeal)
-    }
-}
-
-/// The Window menu's Close Window (issue #201). A view of its own
-/// because `.keyboardShortcut(nil)` on a `Button` inside a Window-menu
-/// `CommandGroup` empties the group in place, item and neighbouring
-/// divider both; the surrounding menu closes over the gap and the
-/// item disappears rather than losing only its chord. Splitting the
-/// two arms into distinct expressions keeps the button live when the
-/// keymap has nothing to say, which is the fail-open shape the doc
-/// comment on the group promises.
-private struct WindowCloseMenuItem: View {
-    let shortcut: KeyboardShortcut?
-    let action: () -> Void
-
-    var body: some View {
-        if let shortcut {
-            Button("Close Window", action: action)
-                .keyboardShortcut(shortcut)
-        } else {
-            Button("Close Window", action: action)
+            selectFileMode(.source(language), id)
         }
     }
 }
@@ -329,66 +95,91 @@ private struct WindowCloseMenuItem: View {
 @MainActor
 final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private let model: BackdropModel
+    private let applicationIsActive: () -> Bool
     private var startupComplete = false
-    private var activationDuringStartup = false
+    private enum PendingApplicationOpen {
+        case untitled
+        case reopen(hasVisibleWindows: Bool)
+    }
+    private var pendingApplicationOpen: PendingApplicationOpen?
+    private var defaultLaunch = true
+    private var initialOpenHandled = false
 
     override init() {
         model = BackdropModel()
+        applicationIsActive = { NSApp.isActive }
         super.init()
     }
 
-    init(model: BackdropModel) {
+    init(model: BackdropModel, applicationIsActive: @escaping () -> Bool = { NSApp.isActive }) {
         self.model = model
+        self.applicationIsActive = applicationIsActive
         super.init()
     }
     private var controller: BackdropWindowController?
+    private var mainMenu: MainMenuController?
     private var statusItem: NSStatusItem?
-    private var undoMenuRouting: UndoMenuRoutingWatch?
     private var summonKey: BackdropHotKey?
     private var summonKeyFailure: BackdropHotKey.RegistrationFailure?
     private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "shortcut")
-    private lazy var settings = BackdropSettingsWindowController(model: model)
-    private lazy var help = HelpWindowController(model: model)
-    private lazy var feedback = FeedbackWindowController(model: model) { [unowned self] in
-        diagnosticReport()
+    /// The Settings and Send Feedback controllers, made on first use.
+    /// Backed by optionals rather than `lazy` so that a question about
+    /// a window they may not have made yet does not make the controller.
+    private(set) var madeSettings: BackdropSettingsWindowController?
+    private var settings: BackdropSettingsWindowController {
+        if let madeSettings { return madeSettings }
+        let made = BackdropSettingsWindowController(model: model)
+        madeSettings = made
+        return made
     }
+    private var madeFeedback: FeedbackWindowController?
+    private var feedback: FeedbackWindowController {
+        if let madeFeedback { return madeFeedback }
+        let made = FeedbackWindowController(model: model) { [unowned self] in
+            diagnosticReport()
+        }
+        madeFeedback = made
+        return made
+    }
+
+    /// The About panel `showAbout` last put up, by identity. AppKit
+    /// reuses the one panel for the life of the process.
+    private weak var aboutPanel: NSWindow?
 
 
     /// The primary editor window (ADR-0033), the second of the two
-    /// content windows over the one model.
-    private lazy var editorWindow = PrimaryEditorWindowController(model: model)
+    /// content windows over the one model. Optional backed, as Settings is.
+    private var madeEditorWindow: PrimaryEditorWindowController?
+    private var editorWindow: PrimaryEditorWindowController {
+        if let madeEditorWindow { return madeEditorWindow }
+        let made = PrimaryEditorWindowController(model: model)
+        madeEditorWindow = made
+        return made
+    }
 
-    /// Holds the About panel at the surface's keyless altitude while
-    /// it is open. Settings owns a follower of its own; this one is
-    /// the delegate's because the About panel is AppKit's and has no
-    /// controller of ours to live in.
-    private lazy var aboutLevelFollower = CompanionLevelFollower(model: model)
+    /// Whether a window is one of the app's own ordinary windows:
+    /// Settings, Send Feedback, or the About panel AppKit put up. ⌘W
+    /// closes one of them while it has the keyboard (#201), and the card
+    /// lowers under it (#293).
+    func isCompanionWindow(_ window: NSWindow) -> Bool {
+        Self.isCompanionWindow(
+            window, settings: madeSettings?.window, feedback: madeFeedback?.window, about: aboutPanel)
+    }
 
-    /// Not every activation is the same raise, and one kind of launch
-    /// brings no activation at all. A launch the person performs, from
-    /// the Finder, the Dock, Spotlight or `open`, activates the app
-    /// within moments of `applicationDidFinishLaunching`, and that
-    /// activation is read as the launch itself and routed to the editor
-    /// as a summon. A login item, or any other launch the system performs
-    /// in the background, never activates, so nothing arrives inside the
-    /// launch window.
-    /// About's activation is flagged by `showAbout`, and Settings' by
-    /// `openSettings`, because those windows need the activation for
-    /// themselves without dragging the surface up with them. A
-    /// panel-off editor summon waits for its own activation before
-    /// showing the window. Every other activation, whether by ⌘Tab or
-    /// the Dock icon, is the user choosing this app and answers with a
-    /// raise.
-    ///
-    /// The launch time is taken in `applicationWillFinishLaunching`,
-    /// the first thing AppKit tells the delegate, rather than in
-    /// `applicationDidFinishLaunching`, so that the recency rule does
-    /// not rest on which of the two launch notifications and the
-    /// activation is delivered first. Were the activation ever to
-    /// arrive between the two, a launch time taken in the later one
-    /// would still be `distantPast`, and the person's launch would be
-    /// read as a ⌘Tab hours later.
-    private var launchedAt = Date.distantPast
+    /// The companion rule, pure so each window is an assertion: identity
+    /// against the windows already made, and no scan of `NSApp.windows`.
+    static func isCompanionWindow(
+        _ window: NSWindow, settings: NSWindow?, feedback: NSWindow?, about: NSWindow?
+    ) -> Bool {
+        [settings, feedback, about].contains { $0 === window }
+    }
+
+    /// Whether a window is the owner's: the panel, its key relay, or the
+    /// primary editor window. ⌘W closes the surface's page or file there.
+    private func isOwnerWindow(_ window: NSWindow) -> Bool {
+        controller?.owns(window) == true || madeEditorWindow?.owns(window) == true
+    }
+
     private var aboutActivation = false
     private var settingsActivation = false
     /// The activation claim for every other window or alert of ours that
@@ -398,6 +189,21 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
     /// An inactive app must finish activating before its editor can be key.
     private var pendingEditorSummon: ActivationRoute?
+
+    /// Files the Finder asked to open, waiting for a drain (`FinderOpenPlan`).
+    private(set) var finderDocuments: [URL] = []
+
+    /// Selects the editor after a Finder open; a test replaces it so its runner opens no window.
+    lazy var selectEditor: () -> Void = { [weak self] in
+        self?.applySummon(.openEditorPresentation)
+    }
+
+    lazy var selectInitialEditor: () -> Void = { [weak self] in
+        self?.applySummon(.launchActivation)
+    }
+
+    /// Drains the Finder queue a turn after `pendingFileClose` returns to nil.
+    private var closeDecisionObserver: AnyCancellable?
 
     /// The observation of `ModalSession.didEndNotification`, held for
     /// the life of the delegate, which is the life of the process.
@@ -409,28 +215,44 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// (`BackdropModel.auxiliaryWindowReleasedKeys`).
     private var windowCloseObserver: NSObjectProtocol?
 
-    func applicationWillFinishLaunching(_ notification: Notification) {
-        launchedAt = Date()
+    /// Which window is key, for the ⌘W and ⇧⌘W items (issue #201).
+    /// Starts observing once the app has finished launching.
+    private(set) lazy var keyWindow = KeyWindowFacts(
+        isOwnerWindow: { [weak self] window in self?.isOwnerWindow(window) ?? false },
+        isCompanionWindow: { [weak self] window in self?.isCompanionWindow(window) ?? false }
+    )
+
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { true }
+
+    func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        guard startupComplete else {
+            if case nil = pendingApplicationOpen { pendingApplicationOpen = .untitled }
+            return true
+        }
+        guard finderDocuments.isEmpty else {
+            initialOpenHandled = true
+            return true
+        }
+        if initialOpenHandled {
+            _ = applicationShouldHandleReopen(sender, hasVisibleWindows: false)
+            return true
+        }
+        initialOpenHandled = true
+        guard defaultLaunch else { return true }
+        selectInitialEditor()
+        return true
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // A regular app, deliberately — the panel's accessory posture
-        // (menu bar only, docs/spec/03 §2) is amended for this form
-        // factor: living in ⌘Tab is what makes flipping between the
-        // work window and the surface (copy from one, paste into the
-        // other) a reflex instead of a remembered chord. The Dock icon
-        // is the fee; whether it makes the surface too central is the
-        // feature spec's open question №7.
-        NSApp.setActivationPolicy(.regular)
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        let mainMenu = MainMenuController(app: self)
+        self.mainMenu = mainMenu
+        mainMenu.install()
+    }
 
-        // File belongs after the app menu, the way every macOS app
-        // orders its own. SwiftUI's `CommandMenu("File")` appends
-        // instead, because the app has no document scene for the
-        // synthesised File menu to attach to (Settings is the only
-        // scene, and it is the placeholder). Move it into place, so
-        // the menu bar reads: App | File | Edit | View | Window | Help.
-        Self.moveFileMenuAfterAppMenu()
-        undoMenuRouting = UndoMenuRoutingWatch(mainMenu: { NSApp.mainMenu })
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        keyWindow.observe()
 
         // The Dock and the ⌘Tab card draw from `applicationIconImage`.
         // Re-publish the bundled icon here rather than leaving AppKit to
@@ -448,6 +270,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 self.apply(
                     ActivationRouter.decide(.cardClick, in: self.activationContext())
                 )
+            },
+            isCompanionWindow: { [weak self] window in
+                self?.isCompanionWindow(window) ?? false
             }
         )
         self.controller = controller
@@ -458,6 +283,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         model.pages.onHandBackKeys = { [weak model] in model?.handBackKeys() }
         model.onOpenEditorWindow = { [weak self] in self?.openEditorPresentation() }
         model.pages.onOpenSettings = { [weak self] in self?.openSettings() }
+        model.pages.onOpenSettingsPane = { [weak self] pane in self?.openSettingsTab(SettingsTab(pane)) }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = Self.trayImage()
@@ -525,41 +351,39 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // The backdrop exists by being there: it takes its place on
-        // screen at launch, resting, opened onto whatever page the last
-        // quit sealed (`BackdropModel.start`). Whether anything then
-        // comes forward is not decided here, because the launch cannot
-        // tell who asked for it. A person who opens the app is owed a
-        // window in front, since an app that parks itself behind every
-        // other window on first open reads as broken (dogfood phase 4),
-        // and under ADR-0033 that window is the editor window, opened
-        // as a summon; a login item, or any other launch the system
-        // performs, is owed the resting card, behind everything, and
-        // no editor window. AppKit already tells the two apart: a
-        // person's launch activates the app moments after this returns,
-        // and a background launch never does. So the opening waits for
-        // that activation (`applicationDidBecomeActive`), and a launch
-        // nobody activates stays resting.
-        // The explanatory modal activates the app. Hold that activation
-        // until Continue and restoration finish, so it cannot mount an
-        // editor and trigger Keychain access behind the introduction.
+        // Initial foreground opening arrives through applicationOpenUntitledFile.
+        // Background launches only start the configured ambient presentation.
         KeychainIntroduction.showIfNeeded(defaults: FormFactor.settingsDefaults)
         controller.show()
-        startupComplete = true
-        if activationDuringStartup, NSApp.isActive {
-            activationDuringStartup = false
-            launchedAt = Date()
-            applicationDidBecomeActive(notification)
-        }
+        completeStartup(notification)
     }
 
-
-    /// How long after launch an activation is read as the launch's own.
-    /// Recency rather than a skip-one counter, since a login item or a
-    /// background launch never activates and a counter would read the
-    /// first real ⌘Tab hours later as the launch, anchoring the roll on
-    /// today under a sentence someone was coming back to.
-    nonisolated static let launchWindow: TimeInterval = 2
+    /// Drain queued document and application-open events after model startup.
+    func completeStartup(_ notification: Notification) {
+        defaultLaunch = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool != false
+        startupComplete = true
+        // @Published emits before the store, so the drain waits a turn to read the decision gone.
+        closeDecisionObserver = pages.$pendingFileClose
+            .map { $0 == nil }
+            .removeDuplicates()
+            .dropFirst()
+            .filter { $0 }
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.drainFinderDocuments() }
+            }
+        let openedFinderDocument = drainFinderDocuments()
+        if let pendingApplicationOpen {
+            self.pendingApplicationOpen = nil
+            if !openedFinderDocument && finderDocuments.isEmpty {
+                switch pendingApplicationOpen {
+                case .untitled:
+                    _ = applicationOpenUntitledFile(NSApplication.shared)
+                case .reopen(let visible):
+                    _ = applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: visible)
+                }
+            }
+        }
+    }
 
 
     /// The routing table's world, read straight off the model. Kept in
@@ -592,7 +416,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             },
             raisePanel: { [model] raise in model.raise(raise) },
             summonPanel: { [model] in model.summon() },
-            closeEditorForPanel: { [self] in editorWindow.closeForAmbientPanel() }
+            closeEditorForPanel: { [self] in madeEditorWindow?.closeForAmbientPanel() }
         )
     }
 
@@ -602,25 +426,14 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// so the ordinary editor window can take keyboard focus. Show it from
     /// that activation callback, which must not route this same gesture
     /// a second time as a launch or ⌘Tab (and possibly anchor on today).
-    private func applySummon(_ reason: ActivationReason) {
+    func applySummon(_ reason: ActivationReason) {
         guard startupComplete else { return }
-        // A deliberate selection supersedes an outstanding companion request;
-        // only automatic activation callbacks defer to that earlier claim.
-        if reason == .openEditorPresentation {
-            aboutActivation = false
-            settingsActivation = false
-            auxiliaryActivation = false
-        }
+        aboutActivation = false
+        settingsActivation = false
+        auxiliaryActivation = false
         let route = ActivationRouter.decide(reason, in: activationContext())
-        if ActivationRouter.defersForActivation(route: route, appActive: NSApp.isActive) {
-            // Activation is a request and may never deliver its callback.
-            // Panel-off summons and explicit Open in Window all select
-            // .openEditorWindow(.activation), matching late activation, so a
-            // stranded route cannot change the next activation's meaning.
-            // This relies on their raise staying .activation;
-            // changing it to .summon would require expiring pending intent.
-            assert(route == .openEditorWindow(.activation),
-                   "Deferred editor selections must match the late activation route")
+        if ActivationRouter.defersForActivation(route: route, appActive: applicationIsActive()) {
+            // Clear pending intent if activation is lost before the command can finish.
             pendingEditorSummon = route
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -674,56 +487,20 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         return reply
     }
 
-    /// ⌘Tab (or the Dock icon) landing on this app selects the editor
-    /// window (ADR-0033): the user came here, so bring it, opening it
-    /// when it is closed, unconditionally, never a rest, because
-    /// activation only ever means "bring it to me". The activation a
-    /// person's launch sends moments after
-    /// `applicationDidFinishLaunching` is the opening the launch itself
-    /// withheld, and takes the launch route; About's and Settings' are
-    /// exempt because those windows asked for the activation for
-    /// themselves.
-    ///
-    /// Otherwise an **activation** and not a summon: the user named the
-    /// app, not a surface, and someone who ⌘Tabbed away from a sentence
-    /// in an older day is coming back to that sentence. What hangs off
-    /// the distinction is the roll's anchor, see `BackdropRaise`.
+    /// AppKit restores focus on activation; only a pending explicit command selects an editor.
     func applicationDidBecomeActive(_ notification: Notification) {
-        guard startupComplete else {
-            activationDuringStartup = true
-            return
-        }
-        // Ahead of the routing table's answer, and ahead of the launch
-        // window: coming back to the app is exactly when a checkout, a
-        // formatter or another editor has had its turn at a file, and
-        // that is true whether or not this particular activation moves
-        // any window (decisions.md item 5).
+        guard startupComplete else { return }
+        // Returning to the app also checks changes made by external file editors.
         pages.checkOpenFilesOnActivate()
-        // All three flags are consumed by whichever activation arrives
-        // next, launch window or not: each was set only when an
-        // activation was certain to follow, so this is that activation,
-        // and a flag left standing here would swallow the next real ⌘Tab
-        // instead.
-        //
-        // Under ADR-0033 an editor window on screen is not a claim: it
-        // is exactly the surface the activation is routed to. Only
-        // About, Settings and the auxiliary windows and alerts (Send
-        // Feedback, Export Diagnostics, the unavailable shortcut) hold
-        // their own claim, and the routing function sees them through
-        // `claimedByAnotherWindow`.
+        // A companion request supersedes an editor selection waiting for activation.
         let claimed = aboutActivation || settingsActivation || auxiliaryActivation
         aboutActivation = false
         settingsActivation = false
         auxiliaryActivation = false
-        // Consume pending intent even when one of those claims this
-        // activation, so it cannot leak into the next real ⌘Tab. Otherwise
-        // it takes precedence over recency and keeps the gesture's raise.
         let pending = pendingEditorSummon
         pendingEditorSummon = nil
         apply(ActivationRouter.routeForActivation(
             pendingSummon: pending,
-            sinceLaunch: Date().timeIntervalSince(launchedAt),
-            launchWindow: Self.launchWindow,
             context: activationContext(claimed: claimed)
         ))
     }
@@ -733,6 +510,40 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // instead loses activation, no summon should survive that turn
         // away and take precedence over a later return.
         pendingEditorSummon = nil
+        aboutActivation = false
+        settingsActivation = false
+        auxiliaryActivation = false
+    }
+
+    /// The Finder's Open and Open With, and files dropped on the Dock icon.
+    /// Queued, then opened by the drain once startup is done, no modal is
+    /// up and no close decision stands.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        if urls.contains(where: \.isFileURL) { initialOpenHandled = true }
+        finderDocuments += urls
+        drainFinderDocuments()
+    }
+
+    /// Opens what `FinderOpenPlan` allows and keeps the rest; true when a file opened.
+    @discardableResult
+    private func drainFinderDocuments() -> Bool {
+        let plan = FinderOpenPlan.decide(
+            queued: finderDocuments,
+            startupComplete: startupComplete,
+            modalSessionRunning: ModalSession.isRunning,
+            modalBracketed: ModalSession.isBracketed,
+            closeDecisionPending: pages.openRefusedForCloseDecision)
+        finderDocuments = plan.held
+        guard openDocuments(plan.open) else { return false }
+        return true
+    }
+
+    /// Opens each file as a drop would, then selects the editor window without moving the roll.
+    private func openDocuments(_ urls: [URL]) -> Bool {
+        guard BackdropRootView.forwardDroppedURLs(urls, openFile: { pages.openFile(at: $0) })
+        else { return false }
+        selectEditor()
+        return true
     }
 
     /// A modal open or save panel has returned, accepted or cancelled.
@@ -767,9 +578,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // there (no modal of ours running now). The route itself is
         // the routing function's, so "back to the owner" is written
         // in one place.
-        guard model.stance == .raised else { return }
+        let raisedWhenItEnded = model.stance == .raised
         Task { @MainActor [weak self] in
-            guard let self,
+            // A Finder open held through the modal selects the editor in place of the return.
+            guard let self, !self.drainFinderDocuments(), raisedWhenItEnded,
                 Self.raisesAfterModal(
                     stance: self.model.stance, modalSessionRunning: ModalSession.isRunning)
             else { return }
@@ -788,38 +600,50 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         stance == .raised && !modalSessionRunning
     }
 
-    /// The Dock icon's click, and any other reopen (`open -a` on a
-    /// running app). It selects the editor window, opening it when it
-    /// is closed and bringing the open one forward, the same
-    /// destination `applicationDidBecomeActive` gives a later
-    /// activation (ADR-0033), so one gesture cannot mean two things
-    /// depending on which of the two callbacks it arrived at.
-    ///
-    /// A Dock click on an inactive app sends an activation as well as
-    /// this, in no promised order. Either order ends in the same place:
-    /// whichever arrives first opens the window and rests a raised
-    /// panel, and the second finds the window open and brings it
-    /// forward (`PrimaryEditorWindowController.show()`).
+    /// Reopen orders existing ordinary windows, or explicitly requests an editor.
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {
+        initialOpenHandled = true
         guard startupComplete else {
-            activationDuringStartup = true
+            pendingApplicationOpen = .reopen(hasVisibleWindows: flag)
             return false
         }
-        // The same activation, so the same file check. This is the
-        // route a Dock click takes while the app is already frontmost,
-        // which `applicationDidBecomeActive` never sees, and a person
-        // coming back through it is owed the same answer about what
-        // else wrote their files.
         pages.checkOpenFilesOnActivate()
-        // Through the routing table like every other activation: the
-        // reopen row selects the editor window whatever the ambient
-        // panel preference says, and opens it when it is closed. Only
-        // a claim by About or Settings turns it into a no-op, and this
-        // callback passes none.
-        apply(ActivationRouter.decide(.reopen, in: activationContext()))
+        if ModalSession.isRunning || ModalSession.isBracketed { return false }
+        var frontmost: NSWindow?
+        sender.enumerateWindows(options: [.orderedFrontToBack]) { window, stop in
+            if let target = Self.reopenWindow(window,
+                isAmbientWindow: { self.controller?.owns($0) == true },
+                isCompanion: { self.isCompanionWindow($0) }) {
+                frontmost = target
+                stop.pointee = true
+            }
+        }
+        if let frontmost {
+            // AppKit can report no visible windows when only an NSPanel remains.
+            if !flag { frontmost.makeKeyAndOrderFront(nil) }
+            return flag
+        }
+        applySummon(.reopen)
         return false
+    }
+
+    static func reopenWindow(
+        _ window: NSWindow, isAmbientWindow: (NSWindow) -> Bool, isCompanion: (NSWindow) -> Bool
+    ) -> NSWindow? {
+        let target = window.sheetParent ?? window
+        guard !isAmbientWindow(target),
+              isVisibleOrdinaryWindow(window, isAmbientWindow: isAmbientWindow(window),
+                                      isCompanion: isCompanion(window)) else { return nil }
+        return target
+    }
+
+    static func isVisibleOrdinaryWindow(
+        _ window: NSWindow, isAmbientWindow: Bool, isCompanion: Bool = false
+    ) -> Bool {
+        !isAmbientWindow && window.isVisible && !window.isMiniaturized
+            && (isCompanion || window.canBecomeMain || window.isSheet)
     }
 
     /// Left click summons (raise, or re-key, or rest — the summon
@@ -862,7 +686,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             settingsItem.target = self
             menu.addItem(.separator())
             menu.addItem(
-                withTitle: "Quit",
+                withTitle: "Quit \(Self.productName)",
                 action: #selector(NSApplication.terminate(_:)),
                 keyEquivalent: "q"
             ).target = NSApp
@@ -881,16 +705,23 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Observed Window-menu switches, updated when the ambient preference changes.
-    var presentationCommands: some View {
-        PresentationSwitchMenuItems(model: model,
-                                    openWindow: openEditorPresentation,
-                                    showPanel: showAmbientPresentation)
-    }
+    var ambientPanelEnabled: Bool { model.ambientPanelEnabled }
 
     /// Explicit selection ignores companion activation claims, unlike reopen.
     @objc func openEditorPresentation() {
         applySummon(.openEditorPresentation)
+    }
+
+    /// Back to whichever surface owns the pages, the editor window or
+    /// the panel, by the route a dismissed sheet takes: a menu command
+    /// run from Settings names no surface (ADR-0033, ADR-0036).
+    func returnToOwner() {
+        // Under one of our own modals or sheets the surface stays put,
+        // as the route's other takers do (`raisesAfterModal`).
+        guard startupComplete, !ModalSession.isRunning,
+              NSApp.keyWindow?.sheetParent == nil
+        else { return }
+        apply(ActivationRouter.decide(.modalReturn, in: activationContext()))
     }
 
     /// Switch presentations without toggling rest or anchoring on today. This
@@ -918,10 +749,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         guard let failure = summonKeyFailure else { return }
         let alert = NSAlert()
         alert.messageText = "The keyboard shortcut is unavailable"
-        alert.informativeText = "macOS could not register ⌃⌥Space. Another app, including another copy of OnetimePad, may already use it. You can still open the pad from the menu bar. Close any other copy or change a conflicting shortcut, then try again.\n\nRegistration: \(failure.stage.rawValue), code \(failure.status)."
+        alert.informativeText = "macOS could not register ⌃⌥Space. Another app, or another copy of \(Self.productName), may use it; with two or more input sources, the Input Sources pane of Keyboard Shortcuts may hold it. The pad still opens from the menu bar. Free the shortcut, then try again.\n\nRegistration: \(failure.stage.rawValue), code \(failure.status)."
         alert.addButton(withTitle: "Try Again")
-        alert.addButton(withTitle: "OK")
-        auxiliaryActivation = !NSApp.isActive
+        alert.addButton(withTitle: "Cancel")
+        auxiliaryActivation = !applicationIsActive()
         NSApp.activate(ignoringOtherApps: true)
         if ModalSession.run({ alert.runModal() }) == .alertFirstButtonReturn {
             registerSummonShortcut()
@@ -933,7 +764,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         Self.addPresentationItems(to: menu, ambientPanelEnabled: model.ambientPanelEnabled,
                                   target: self)
         if summonKeyFailure != nil {
-            menu.addItem(withTitle: "⌃⌥Space unavailable…",
+            menu.addItem(withTitle: "⌃⌥Space Unavailable…",
                          action: #selector(explainUnavailableShortcut), keyEquivalent: "").target = self
         }
     }
@@ -973,51 +804,6 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         model.pages.keymap.menuKeystroke(for: .appSettings)
     }
 
-    /// The same chord for the SwiftUI command group, and nil for the
-    /// same reason: a main-menu shortcut is the app-wide half of the
-    /// claim, so restoring ⌘, here would hand back most of what the
-    /// unbinding took away. Both menu items stay, and stay clickable;
-    /// what a nil costs is the chord, which is what was asked for.
-    ///
-    /// The keymap has nothing to say only when the file took the
-    /// binding away or moved it into a section that does not advertise
-    /// chords. An override that cannot be read leaves the bundled
-    /// default standing, and the bundled default binds ⌘, in a section
-    /// that does; a bundled default this build lost binds nothing at
-    /// all, and quietly keeping one chord out of the twenty would be
-    /// the surprise, not the honesty.
-    var settingsShortcut: KeyboardShortcut? {
-        settingsKeystroke?.keyboardShortcut
-    }
-
-    /// The Edit menu's two undo chords, read from the keymap for the
-    /// same reason ⌘, is: the file is the authoritative list of what
-    /// the keyboard does, and a chord spelled in Swift here would
-    /// survive a user unbinding it in their own keymap.
-    ///
-    /// The page's text view claims the same chord first, because a key
-    /// equivalent reaches the key window's view chain before the main
-    /// menu. The menu carries it to show what the item costs, not to be
-    /// the thing that fires.
-    var undoShortcut: KeyboardShortcut? {
-        model.pages.keymap.menuKeystroke(for: .editorUndo)?.keyboardShortcut
-    }
-
-    var redoShortcut: KeyboardShortcut? {
-        model.pages.keymap.menuKeystroke(for: .editorRedo)?.keyboardShortcut
-    }
-
-    /// Any command's advertised chord, on the same terms as the three
-    /// above: the keymap decides, and nil means the file took the
-    /// binding away and the item keeps its place without a chord.
-    ///
-    /// General rather than one property per command because the File
-    /// menu needs four of them and four near-identical properties would
-    /// be four places for the same rule to be written differently.
-    func shortcut(for command: CommandID) -> KeyboardShortcut? {
-        model.pages.keymap.menuKeystroke(for: command)?.keyboardShortcut
-    }
-
     /// The model the File menu reads its enablement from.
     var pages: PageModel { model.pages }
 
@@ -1041,6 +827,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.sendAction(selector, to: nil, from: nil)
     }
 
+    /// The same, with a sender the answer reads, as Choose Language's
+    /// `CodeLanguageChoice` (Law 0007, keys row).
+    func sendToResponder(_ selector: Selector, carrying sender: Any?) {
+        NSApp.sendAction(selector, to: nil, from: sender)
+    }
+
     /// The Settings window, from the menu bar's ⌘, or either of the
     /// tray's routes. Its `show()` activates the app so the window can
     /// take the keyboard, and that activation must not read as a summon:
@@ -1048,19 +840,27 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// About, and only when the activation will actually happen, since
     /// an already-active app fires no notification to consume the flag.
     @objc func openSettings() {
-        settingsActivation = !NSApp.isActive
-        settings.show()
+        openSettingsTab(nil)
+    }
+
+    func openSettingsTab(_ tab: SettingsTab?) {
+        settingsActivation = !applicationIsActive()
+        settings.show(tab: tab)
     }
 
     private func diagnosticReport() -> DiagnosticsReport {
         let shortcutStatus = summonKeyFailure.map {
             "failed (\($0.stage.rawValue), OSStatus \($0.status))"
         } ?? (summonKey == nil ? "not registered" : "registered")
-        return DiagnosticsReport.capture(model: model, shortcutStatus: shortcutStatus)
+        return DiagnosticsReport.capture(
+            model: model,
+            companionKeyed: controller?.companionWindowKeyed ?? false,
+            shortcutStatus: shortcutStatus
+        )
     }
 
     @objc func exportDiagnostics() {
-        auxiliaryActivation = !NSApp.isActive
+        auxiliaryActivation = !applicationIsActive()
         NSApp.activate(ignoringOtherApps: true)
         DiagnosticsActions.export(diagnosticReport())
     }
@@ -1070,13 +870,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func sendFeedback() {
-        auxiliaryActivation = !NSApp.isActive
+        auxiliaryActivation = !applicationIsActive()
         feedback.show()
-    }
-
-    func showHelp() {
-        auxiliaryActivation = !NSApp.isActive
-        help.show()
     }
 
     /// The standard About panel leads with the app's product version and
@@ -1123,7 +918,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                     ofSize: NSFont.smallSystemFontSize,
                     weight: .regular
                 ),
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: NSColor.secondaryInk,
                 .paragraphStyle: paragraph,
             ]
         ))
@@ -1144,23 +939,19 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // AppKit has put it up.
         let panel = standardAboutPanel()
         panel?.collectionBehavior.insert(.moveToActiveSpace)
-        // About sits at the surface's keyless altitude for as long as
-        // it is open, as Settings does and through the same follower
-        // (ADR-0032, #188). Otherwise About opens at .normal beneath a
-        // raised, pinned or keep above card, and a level read only at
-        // open strands it there the moment the pin is toggled on the
-        // card while About is up. The follower lets go when the panel
-        // closes and picks it up again on the next open.
-        if let panel {
-            aboutLevelFollower.follow(panel)
-        }
+        // Kept by identity, so the lookup runs here once and not on every key event.
+        aboutPanel = panel
+        // An active app keyed the panel inside the order front, before it was known,
+        // so the key window facts and the altitude keeper (#293) read it now.
+        keyWindow.refresh()
+        if let panel { controller?.noticeCompanionWindow(panel) }
         // The app is usually inactive when About is chosen from the
         // status item; without activation the panel appears behind
         // whatever is frontmost. This activation is About's, not a
         // summon — flag it so the raise is skipped (only when the
         // activation will actually happen; an already-active app fires
         // no notification to consume the flag).
-        aboutActivation = !NSApp.isActive
+        aboutActivation = !applicationIsActive()
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -1170,11 +961,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// text. Settings has a title, and the surface and its key relay are
     /// borderless, so none of those can be mistaken for it. A sheet can:
     /// a confirmation run on the Settings window is visible, titled and
-    /// carries no title text, and following it would hand the About
-    /// follower a window that closes with the answer. So a sheet is
-    /// never the panel, and neither is the Settings window itself,
-    /// whatever its title reads at the time. If a future macOS builds
-    /// the panel differently the lookup finds nothing and the panel
+    /// has no title text, and taking it for the panel would hand
+    /// the companion lookup a window that closes with the answer (a
+    /// sheet counts through its parent instead). So a sheet is never
+    /// the panel, and neither is the Settings window itself,
+    /// whatever its title reads at the time, or an open or save panel.
+    /// If a future macOS builds the panel differently the lookup finds nothing and the panel
     /// keeps the behavior it had before this existed.
     private func standardAboutPanel() -> NSWindow? {
         NSApp.windows.first { window in
@@ -1183,16 +975,18 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 titled: window.styleMask.contains(.titled),
                 title: window.title,
                 isSheet: window.isSheet,
-                isSettings: settings.owns(window)
+                isSettings: madeSettings?.owns(window) == true,
+                isFilePanel: window is NSSavePanel
             )
         }
     }
 
     /// The lookup's rule, pure so each exclusion is an assertion.
     nonisolated static func looksLikeTheAboutPanel(
-        visible: Bool, titled: Bool, title: String, isSheet: Bool, isSettings: Bool
+        visible: Bool, titled: Bool, title: String, isSheet: Bool, isSettings: Bool,
+        isFilePanel: Bool
     ) -> Bool {
-        visible && titled && title.isEmpty && !isSheet && !isSettings
+        visible && titled && title.isEmpty && !isSheet && !isSettings && !isFilePanel
     }
 
     /// What this app calls itself to the user, for the places a bundle
@@ -1230,46 +1024,36 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         return NSImage(contentsOf: url)
     }
 
-    /// Move the File menu item into standard macOS position: right
-    /// after the app menu, ahead of Edit and View.
-    ///
-    /// SwiftUI has no direct positioning knob for `CommandMenu`, and
-    /// this app has no document scene for the framework to synthesise
-    /// a File menu around, so the runtime order comes out as App | Edit
-    /// | View | File | Window | Help. AppKit's main menu is an ordinary
-    /// `NSMenu` by the time the delegate is called, so a reorder here
-    /// is safe and idempotent. Absence of the File item (a future
-    /// build that dropped the menu) is silent on purpose.
-    private static func moveFileMenuAfterAppMenu() {
-        guard let mainMenu = NSApp.mainMenu,
-              let index = mainMenu.items.firstIndex(where: { $0.title == "File" }),
-              index > 1
-        else { return }
-        let item = mainMenu.items[index]
-        mainMenu.removeItem(at: index)
-        mainMenu.insertItem(item, at: 1)
+    /// Where OnetimePad Help goes until the docs site has a page of its
+    /// own (issue #294).
+    static let helpURL = URL(string: "https://docs.onetimesecret.dev/macos")!
+
+    /// The Help menu's item, through the model's external link route so
+    /// a test records the URL rather than starting a browser.
+    @objc func openHelp(_ sender: Any?) {
+        model.pages.openExternal(Self.helpURL)
     }
 
-    /// Turn SwiftUI's two placeholder buttons into ordinary nil-targeted
-    /// AppKit commands. The responder chain then chooses the undo owner: an
-    /// `InkTextView` validates against Loro, while a field editor in Settings
-    /// keeps its native `UndoManager` behavior.
-    static func routeUndoRedoThroughResponder(in mainMenu: NSMenu?) {
-        guard let editMenu = mainMenu?.items.first(where: { $0.title == "Edit" })?.submenu
-        else { return }
-        if !editMenu.autoenablesItems { editMenu.autoenablesItems = true }
-        for (title, action) in [
-            ("Undo", #selector(EditStepResponder.undo(_:))),
-            ("Redo", #selector(EditStepResponder.redo(_:))),
-        ] {
-            guard let item = editMenu.items.first(where: {
-                $0.title == title || $0.action == action
-            }) else { continue }
-            if item.target != nil { item.target = nil }
-            if item.action != action { item.action = action }
-            // AppKit owns enabled state. Resetting it here would undo the
-            // focused responder's validation after history is exhausted.
+    /// Inserts product help into the supplied menu, below view-backed system items.
+    @discardableResult
+    static func installHelpItem(in helpMenu: NSMenu?, productName: String,
+                                keystroke: Keystroke?,
+                                target: BackdropAppDelegate) -> NSMenu? {
+        guard let helpMenu else { return nil }
+        if helpMenu.items.contains(where: { $0.action == #selector(openHelp(_:)) }) { return helpMenu }
+        let help = NSMenuItem(title: CompanionL10n.format("%@ Help", productName),
+                              action: #selector(openHelp(_:)),
+                              keyEquivalent: keystroke?.menuKeyEquivalent ?? "")
+        help.keyEquivalentModifierMask = keystroke?.menuModifierMask ?? []
+        help.target = target
+        // Below any item drawn by a view of its own, which none of ours is.
+        let at = helpMenu.items.firstIndex { $0.view == nil } ?? helpMenu.numberOfItems
+        helpMenu.insertItem(help, at: at)
+        let next = at + 1
+        if next < helpMenu.numberOfItems, !helpMenu.items[next].isSeparatorItem {
+            helpMenu.insertItem(.separator(), at: next)
         }
+        return helpMenu
     }
 
     /// What sits in the menu bar: the onetimesecret.com logo mark, the
@@ -1321,18 +1105,5 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             )
             return true
         }
-    }
-}
-
-/// Keep SwiftUI menu enablement current without rebuilding the app delegate.
-private struct PresentationSwitchMenuItems: View {
-    @ObservedObject var model: BackdropModel
-    let openWindow: () -> Void
-    let showPanel: () -> Void
-
-    var body: some View {
-        Button("Open in Window", action: openWindow)
-        Button("Show Ambient Panel", action: showPanel)
-            .disabled(!model.ambientPanelEnabled)
     }
 }

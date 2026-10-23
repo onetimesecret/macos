@@ -30,12 +30,33 @@ public struct PageContentView: View {
     /// backdrop names the one that would make it typeable at all.
     let emptyHint: String
 
+    /// Whether the expand control stands over the page. The editor
+    /// window puts it in its toolbar instead, out of a band of its own.
+    let showsExpandControl: Bool
+
     @Environment(\.presentationSurface) private var surface
 
-    public init(model: PageModel, readOnly: Bool = false, emptyHint: String) {
+    public init(
+        model: PageModel, readOnly: Bool = false, emptyHint: String,
+        showsExpandControl: Bool = true
+    ) {
         self.model = model
         self.readOnly = readOnly
         self.emptyHint = emptyHint
+        self.showsExpandControl = showsExpandControl
+    }
+
+    /// The expand control's glyph: a page centred in its frame, which
+    /// does not read as the window's full screen arrows.
+    public static let expandSymbol = "rectangle.center.inset.filled"
+
+    /// The expand control's words, one pair wherever the control stands.
+    public static func expandHelp(expanded: Bool) -> String {
+        expanded ? "Collapse page (Esc)" : "Expand page"
+    }
+
+    public static func expandLabel(expanded: Bool) -> String {
+        expanded ? "Collapse page" : "Expand page"
     }
 
     /// Whether a window shows the content area at all, pure: only the
@@ -48,22 +69,21 @@ public struct PageContentView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            if Self.mounts(surface: surface, owner: model.owner), model.canExpandPage {
+            if showsExpandControl, Self.mounts(surface: surface, owner: model.owner),
+               model.canExpandPage {
                 HStack {
                     Spacer()
                     Button(action: model.togglePageExpansion) {
-                        Image(systemName: model.isPageExpanded
-                              ? "arrow.down.right.and.arrow.up.left"
-                              : "arrow.up.left.and.arrow.down.right")
-                            .scaleEffect(x: 1, y: -1)
+                        Image(systemName: Self.expandSymbol)
                             .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(model.isPageExpanded ? Color.accentColor : Color.secondaryInk)
                             .frame(width: 28, height: 28)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help(model.isPageExpanded ? "Collapse page (Esc)" : "Expand page")
-                    .accessibilityLabel(model.isPageExpanded ? "Collapse page" : "Expand page")
+                    .help(Self.expandHelp(expanded: model.isPageExpanded))
+                    .accessibilityLabel(Self.expandLabel(expanded: model.isPageExpanded))
+                    .accessibilityAddTraits(model.isPageExpanded ? .isSelected : [])
                     .disabled(readOnly)
                 }
                 .padding(.trailing, 6)
@@ -160,10 +180,10 @@ public struct PageContentView: View {
                 VStack(spacing: 6) {
                     Text("No page here yet.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondaryInk)
                     Text(emptyHint)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.secondaryInk)
                 }
                 .allowsHitTesting(false)
             }
@@ -179,6 +199,12 @@ public struct PageContentView: View {
 /// something to say, so a quiet surface shows none of them and the
 /// layout does not reserve their room.
 public struct PageStatusStack: View {
+    /// The offer's button names the chord the keymap binds, as the
+    /// strip's tooltip does; unbound, it names only the verb.
+    static func sealItTitle(chord: Keystroke?) -> String {
+        Keystroke.chorded("Seal It", chord: chord)
+    }
+
     @ObservedObject var model: PageModel
     /// Observed directly: the controller is its own `ObservableObject`,
     /// and a nested object's changes do not republish through the
@@ -195,34 +221,15 @@ public struct PageStatusStack: View {
         _sync = ObservedObject(wrappedValue: model.sync)
     }
 
-    /// What the discard button says it will do.
-    ///
-    /// Out of the body because it is a sentence rather than a view,
-    /// and because the drafts clause makes it long enough that the
-    /// type checker stops enjoying it inline. The discard drops the
-    /// sealed content file, and the drafts are sealed under the same
-    /// key, so it takes any unsaved file edits with it. Named by
-    /// filename rather than warned about in general (decisions.md
-    /// item 14).
+    /// What the discard button says it will do, as a pure function of the drafts refusal.
     private var discardHelp: String {
-        let base = "Deletes the sealed file this session could not read and starts "
-            + "saving this session's pages in its place. The unreadable file "
-            + "cannot be recovered afterwards."
-        guard let atRisk = PageModel.draftsAtRiskSentence(files: model.openFiles) else {
-            return base
-        }
-        return base + " " + atRisk
+        PageModel.stateDiscardHelp(draftsRefused: model.draftsRestoreRefused)
     }
 
-    /// What the quit anyway button says it will do: the loss named by
-    /// filename where a dirty file is open, for the same reason as
-    /// `discardHelp`.
-    private var quitAnywayHelp: String {
-        let base = "Quits now. The pages this session could not save are lost."
-        guard let atRisk = PageModel.draftsAtRiskSentence(files: model.openFiles) else {
-            return base
-        }
-        return base + " " + atRisk
+    /// What the quit anyway button says it will do: the loss the line beside it names.
+    private func quitAnywayHelp(_ refusal: QuitSaveOutcome) -> String {
+        PageModel.quitAnywayHelp(
+            refusal, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty)
     }
 
     public var body: some View {
@@ -230,19 +237,38 @@ public struct PageStatusStack: View {
             // The standing restore-failure state (issue #49): persistent
             // for the whole session, unlike a notice, because the
             // condition is. One action, the content-side discard that
-            // ADR-0016 section 7 requires; until it is taken, nothing
+            // the persistence decision background section 7 requires;
+            // until it is taken, nothing
             // typed here reaches disk and the unreadable file is left
             // untouched.
             HStack(spacing: 8) {
                 Text("the existing state file would not open, so nothing in this session is being saved")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.emberText)
-                Button("discard it and start saving") { model.clearUnreadableStateFile() }
+                Button("Discard It and Start Saving") { model.clearUnreadableStateFile() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .help(discardHelp)
                     .accessibilityLabel(
                         Text("Discard the unreadable state file and start saving this session"))
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+        }
+        if model.draftsRestoreRefused {
+            // As quiet as the ledger line; the header word comes only with a file's edits
+            // in memory (issue #296). It stands because it is the one route to the discard.
+            HStack(spacing: 8) {
+                Text("the existing drafts file could not be read, so unsaved edits to open files are not kept as drafts")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color.emberText)
+                Button("Discard It and Keep Drafts") { model.clearUnreadableDraftsFile() }
+                    .font(.system(.caption, design: .monospaced))
+                    .controlSize(.small)
+                    .help("Deletes the drafts file this session could not read and keeps this session's drafts in its place. The unreadable file cannot be recovered afterwards; the open files on disk are untouched.")
+                    .accessibilityLabel(
+                        Text("Discard the unreadable drafts file and keep this session's drafts"))
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -262,25 +288,22 @@ public struct PageStatusStack: View {
         }
         if let refusal = model.quitRefusal,
             let sentence = PageModel.quitRefusalSentence(
-                refusal, files: model.openFiles, draftsUnwritten: model.draftsDirty)
+                refusal, files: model.quitLineFiles, draftsUnwritten: model.draftsDirty)
         {
-            // The quit the terminate path cancelled (issue 172, D-14 and
-            // D-19). Standing rather than a notice, because the condition
-            // it names is; ember because the one thing to do about it is
-            // a decision. The button and a second ⌘Q are the same answer
-            // (`QuitPrompt.terminateReply`), so ⌘Q is never inert: the
-            // first press says what the quit costs and the second pays
-            // it. The recovery line above, when it stands, is the other
-            // way out.
+            // The quit the terminate path cancelled (issue 172, D-14, D-19), standing and ember.
+            // The button and ⌘Q answer it alike; a flush whose outcome changed restates it.
             HStack(spacing: 8) {
                 Text(sentence)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.emberText)
-                Button("quit anyway (⌘Q)") { model.requestQuitAnyway() }
+                Button("Quit Anyway (⌘Q)") { model.requestQuitAnyway() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
-                    .help(quitAnywayHelp)
-                    .accessibilityLabel(Text("Quit without this session's unsaved pages"))
+                    .help(quitAnywayHelp(refusal))
+                    .accessibilityLabel(
+                        Text(refusal == .unsavableWithDrafts
+                            ? "Quit without the unsaved file changes"
+                            : "Quit without this session's unsaved pages"))
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -295,7 +318,7 @@ public struct PageStatusStack: View {
             // which is a fact rather than a fault.
             Text(sentence)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(sync.standingSentenceIsTrouble ? Color.emberText : Color.secondary)
+                .foregroundStyle(sync.standingSentenceIsTrouble ? Color.emberText : Color.secondaryInk)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -311,7 +334,7 @@ public struct PageStatusStack: View {
             // what the header's word is for.
             Text("another device is editing this page")
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondaryInk)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -330,12 +353,39 @@ public struct PageStatusStack: View {
             HStack(spacing: 8) {
                 Text("the clipboard holds content")
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Button("seal it (⇧⌘V)") { model.performSealedPaste?() }
+                    .foregroundStyle(Color.secondaryInk)
+                Button(Self.sealItTitle(chord: model.keymap.hintKeystroke(for: .clipboardSeal))) {
+                    model.performSealedPaste?()
+                }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
                     .accessibilityLabel(Text("Seal the clipboard's content onto this page"))
                 Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+        }
+        if let cut = model.activeCut, let sentence = PageModel.cutSlotSentence(for: cut),
+            PageModel.shouldShowCutSlot(
+                cutStands: true,
+                hasPage: model.selectedPageID != nil,
+                fileShowing: model.selectedFile != nil,
+                ledgerShowing: model.showingLedger,
+                ownsPresentation: model.owner == surface
+            )
+        {
+            // The clipboard slot (sealed row spec): faces and one button, no menu or panel.
+            HStack(spacing: 8) {
+                Text(sentence)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color.secondaryInk)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Button("Place Here") { model.placeActiveCutAtCaret() }
+                    .font(.system(.caption, design: .monospaced))
+                    .controlSize(.small)
+                    .accessibilityLabel(Text("Place the cut sealed objects at the caret"))
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
@@ -351,7 +401,7 @@ public struct PageStatusStack: View {
                 Text(notice)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(
-                        model.noticeTone == .actionable ? Color.emberText : Color.secondary)
+                        model.noticeTone == .actionable ? Color.emberText : Color.secondaryInk)
                 if let action = model.noticeAction {
                     Button(action.label) { model.performNoticeAction() }
                         .font(.system(.caption, design: .monospaced))

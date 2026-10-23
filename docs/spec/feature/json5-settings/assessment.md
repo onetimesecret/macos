@@ -58,12 +58,12 @@ ADR-0011 requires boundary snapping to be a persisted setting in the local form 
 
 Primary source locations:
 
-- `shell/Sources/CompanionKit/PageModel.swift:642-904`
-- `shell/Sources/CompanionKit/PageModel.swift:1358-1436`
-- `shell/Sources/CompanionKit/PageModel.swift:4696-4733`
-- `shell/Sources/CompanionKit/SyncController.swift:4-43`
-- `shell/Sources/CompanionKit/SyncController.swift:83-91`
-- `shell/Sources/CompanionKit/SyncController.swift:147-208`
+- `shell/Sources/CompanionKit/PageModel.swift:723-1001`
+- `shell/Sources/CompanionKit/PageModel.swift:1515-1592`
+- `shell/Sources/CompanionKit/PageModel.swift:7009-7046`
+- `shell/Sources/CompanionKit/SyncController.swift:4-40`
+- `shell/Sources/CompanionKit/SyncController.swift:69-77`
+- `shell/Sources/CompanionKit/SyncController.swift:128-182`
 - `shell/Sources/OnetimePad/BackdropModel.swift:73-169`
 - `shell/Sources/OnetimePad/BackdropModel.swift:719-793`
 - `shell/Sources/OnetimePad/BackdropGeometry.swift:99-160`
@@ -106,7 +106,7 @@ Verified persisted candidates are:
 | `restingPinned` | `BackdropModel` | Current backdrop pinning behavior |
 | `backdrop.geometry` | `BackdropGeometry` | Existing encoded shape includes a legacy decoding path |
 
-`floatsOnTop` requires an explicit retain, migrate, or remove decision. It is still initialized and writable in `PageModel`, but current backdrop behavior uses `restingPinned` instead (`shell/Sources/CompanionKit/PageModel.swift:642-650`; `shell/Sources/OnetimePad/BackdropModel.swift:73-87`).
+`floatsOnTop` requires an explicit retain, migrate, or remove decision. It is still initialized and writable in `PageModel`, but current backdrop behavior uses `restingPinned` instead (`shell/Sources/CompanionKit/PageModel.swift:723-731`; `shell/Sources/OnetimePad/BackdropModel.swift:73-87`).
 
 ## Persistence boundary
 
@@ -283,11 +283,11 @@ Validation covers:
 
 ### Cross-field behavior
 
-Automatic paste fencing currently remains storable while language detection is disabled. Runtime activation requires both values (`shell/Sources/CompanionKit/InkEditorView.swift:634-636`, `shell/Sources/CompanionKit/InkEditorView.swift:786-790`). The schema preserves this dormant-setting behavior unless an accepted decision deliberately changes it.
+Automatic paste fencing currently remains storable while language detection is disabled. Runtime activation requires both values (`shell/Sources/CompanionKit/InkEditorView.swift:709-711`, `shell/Sources/CompanionKit/InkEditorView.swift:869-871`). The schema preserves this dormant-setting behavior unless an accepted decision deliberately changes it.
 
 ### Connection validation
 
-Connection configuration is persisted only after the core accepts it. A rejected server URL does not modify the stored file. The existing behavior is at `shell/Sources/CompanionKit/PageModel.swift:4698-4714`.
+Connection configuration is persisted only after the core accepts it. A rejected server URL does not modify the stored file. The existing behavior is at `shell/Sources/CompanionKit/PageModel.swift:7011-7027`.
 
 The API token and non-secret connection fields require a defined transaction outcome when one persistence operation succeeds and the other fails.
 
@@ -301,7 +301,7 @@ Sync validation distinguishes among:
 - client-ID requirements;
 - an absent relay, which remains meaningful and does not acquire an invented fallback.
 
-The absence of a relay fallback is explicit at `shell/Sources/CompanionKit/SyncController.swift:4-33`.
+The absence of a relay fallback is explicit at `shell/Sources/CompanionKit/SyncController.swift:4-30`.
 
 ## Settings store and runtime ownership
 
@@ -316,7 +316,7 @@ Runtime application follows a two-phase lifecycle:
 3. Runtime consumers are attached.
 4. Side-effecting services start at their existing lifecycle points.
 
-This separation preserves existing behavior in which initialization reads persisted values without property observers. It also preserves the delayed sync start: `SyncController.init` is inert even when sync is enabled, and `start()` runs after page restoration (`shell/Sources/CompanionKit/SyncController.swift:189-208`).
+This separation preserves existing behavior in which initialization reads persisted values without property observers. It also preserves the delayed sync start: `SyncController.init` is inert even when sync is enabled, and `start()` runs after page restoration (`shell/Sources/CompanionKit/SyncController.swift:164-182`).
 
 Settings changes apply through explicit runtime consumers rather than by hydrating live models through unrelated public setters. Effects include:
 
@@ -405,9 +405,9 @@ The migration imports an explicitly stored relay URL without inventing one. Auth
 The bundled file is processed as a SwiftPM resource and copied explicitly by `scripts/package-app.sh`. The assembled application does not rely on SwiftPM's generated resource bundle. The existing keymap packaging behavior is visible at:
 
 - `shell/Package.swift:27-32`
-- `scripts/package-app.sh:171-187`
+- `scripts/package-app.sh:336-355`
 - `shell/Sources/CompanionKit/Keymap/Keymap.swift:245-263`
-- `shell/Tests/CompanionKitTests/BundledKeymapTests.swift:200-236`
+- `shell/Tests/CompanionKitTests/BundledKeymapTests.swift:250-286`
 
 The loader supports `Bundle.main` in the packaged application and the SwiftPM resource-bundle layout used by `swift run` and tests without using a resource accessor that traps when the bundle is missing.
 

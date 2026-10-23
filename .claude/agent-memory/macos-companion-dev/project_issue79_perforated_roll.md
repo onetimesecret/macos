@@ -113,9 +113,9 @@ procedure.
   because `coordinator.applyWrap(true)` is here: on 79-3 and 79-5 the
   mode still mounts `PageContentView`'s ordinary editor, which honours
   the preference, so gating there would have made those branches wrong.
-  `KeymapRegistry`'s `.editorToggleWrap` arm branches on the mode and
-  flashes `PageModel.wrapIsFixedNotice`; "inert" became "changes
-  nothing, and says so", which the spec bullet now states.
+  Superseded by PR 271: the days roll now follows `wrapsLines`, ⌥Z
+  toggles it in days mode, and `wrapIsFixedNotice` is gone (see
+  [[pr271-reading-place]]).
 - **Cite DayScrollView.swift by symbol, never by line.** Its numbers
   went stale inside the branch that wrote them and again when these
   fixes landed. The spec's change map, ADR-0020 item 13 and this file

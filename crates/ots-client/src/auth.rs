@@ -1,5 +1,4 @@
-//! Authentication as a swappable strategy, so the HTTP-Basic-to-PASETO
-//! migration is additive (docs/spec/05).
+//! Authentication as a swappable strategy (docs/spec/05).
 
 use zeroize::Zeroizing;
 
@@ -12,17 +11,14 @@ pub trait AuthStrategy {
     fn apply(&self, request: &mut HttpRequest);
 }
 
-/// HTTP Basic: the v3 API's phase-1 scheme. Credentials are an API key
-/// and secret pair, configured alongside the organization `extid`; the
-/// caller keeps them in the macOS Keychain, never in config files.
+/// HTTP Basic, the v3 API's phase-1 scheme.
 pub struct BasicAuth {
     username: String,
     password: Zeroizing<String>,
 }
 
 impl BasicAuth {
-    /// Basic credentials. `username` is the API key identifier;
-    /// `password` is the API secret.
+    /// `username` is the API key identifier; `password` the API secret.
     #[must_use]
     pub fn new(username: impl Into<String>, password: impl Into<String>) -> Self {
         Self {
@@ -35,10 +31,12 @@ impl BasicAuth {
 impl AuthStrategy for BasicAuth {
     fn apply(&self, request: &mut HttpRequest) {
         let credentials = Zeroizing::new(format!("{}:{}", self.username, *self.password));
-        let encoded = base64::encode(credentials.as_bytes());
+        // Base64 is no protection, so wipe this copy; the header value is
+        // a plain String and is not wiped.
+        let encoded = Zeroizing::new(base64::encode(credentials.as_bytes()));
         request
             .headers
-            .push(("Authorization".into(), format!("Basic {encoded}")));
+            .push(("Authorization".into(), format!("Basic {}", *encoded)));
     }
 }
 
@@ -68,7 +66,7 @@ impl AuthStrategy for BearerAuth {
     }
 }
 
-/// No credentials — guest routes, where the server enables them.
+/// No credentials, for guest routes.
 pub struct NoAuth;
 
 impl AuthStrategy for NoAuth {

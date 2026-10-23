@@ -77,15 +77,16 @@
       "cmd-t": "page::New",
       "cmd-alt-left": "page::Previous",
       "cmd-alt-right": "page::Next",
+      // cmd-w closes what the key window shows (issue #201): the page or
+      // the file on the surface, and Settings, About or Send Feedback
+      // when one of those has the keyboard, as in Safari and Terminal.
       "cmd-w": "page::Close",
 
-      // The window ⇧⌘W closes is the one the keyboard is in: the editor
-      // window and Settings alike (issue #201). Distinct from ⌘W above,
-      // which acts on the strip's page or the file. Carried by the
-      // Window menu's item, which lets the chord fire even in Settings
-      // where the surface installs nothing. The panel is borderless
-      // and answers `performClose:` with nothing to do, so a stray press
-      // over the resting card is harmless.
+      // cmd-shift-w closes the window the keyboard is in, the editor
+      // window and Settings alike (issue #201). The Window menu's item
+      // fires it, so it works where the surface installs nothing, and an
+      // override that unbinds it leaves the item without a shortcut (see
+      // docs/development/keymap-format-and-dispatch.md).
       "cmd-shift-w": "window::Close",
 
       // Sealing, which is the one gesture that cannot be undone. Both
@@ -100,6 +101,11 @@
       // selection is exactly one sealed object, so an ordinary cmd-c
       // over ink or over an object stays an ordinary copy.
       "cmd-shift-c": "chip::CopyDecrypted",
+
+      // A sealed object's note grows to the card's content area and back
+      // (issue #246). Answered by the note's own writing surface while it
+      // holds the keys, and by nothing else.
+      "shift-escape": "note::ToggleExpanded",
 
       // Undo and redo. Bound here rather than left to the standard Edit
       // menu, because the stack they drive is the core's now and not
@@ -131,6 +137,8 @@
       // The app around the page.
       "cmd-s": "state::SaveNow",
       "cmd-,": "app::Settings",
+      // The Help menu's product help item fires cmd-? app-wide (issue #294).
+      "cmd-?": "app::Help",
       "escape": "surface::HandBackKeys",
     },
   },

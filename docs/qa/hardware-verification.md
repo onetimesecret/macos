@@ -86,6 +86,10 @@ both and note any divergence in feel, not just function:
       *general clipboard is untouched* (`pbpaste` before/after
       matches). The core read the drag pasteboard itself —
       `companion_sheet_seal_from_drag` — no byte transited Swift.
+- [ ] **Drag over a file or the ledger:** with a file or the ledger
+      showing, drag text from another app onto it. The cursor shows no
+      copy badge and the drop puts nothing in the file. Then drop a
+      Finder file there and record whether it opens or is refused.
 - [ ] **Image drag:** drop an image; confirm the app's behaviour
       (accept-and-seal or refuse) matches the spec's current text-first
       posture, and nothing crashes or renders raw data.
@@ -241,6 +245,12 @@ front` names it) and leave this window visible but not key.
       the one the mint paths make worth re-checking, since they now ask
       for focus where they used not to; the ask is refused for an
       unkeyed surface, and the refusal is what this line is about.
+- [ ] Launch without activating (`open -g` on the bundle, or as a login
+      item) while another app is frontmost and no Keychain prompt is
+      due: the pad comes up without taking the keys or the menu bar,
+      and `lsappinfo front` is unchanged. Then a first launch that
+      shows the Keychain introduction: once it is dismissed, the editor
+      window is key and the menu bar is the pad's.
 
 ## §G — File-close decision and editor keys
 
@@ -253,7 +263,7 @@ front` names it) and leave this window visible but not key.
 - [ ] Reopen the file, make one edit, request close, then press ⌘Z until the
       buffer matches the saved file. The file closes.
 - [ ] Reopen the file, make an edit, modify the same file on disk, and request
-      close. Choose **Take theirs**. The file closes with the on-disk contents
+      close. Choose **Take Theirs**. The file closes with the on-disk contents
       unchanged.
 
 ## Separate procedures, in their own documents
@@ -267,28 +277,28 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
 - [`reboot.md`](verification-procedures/reboot.md). Owner: delano.
   A real reboot with a live pad; a reboot with the pad emptied first,
   confirming key rotation ran; a reboot with a page held, confirming it
-  returns held. ADR-0016 section 10, case 3.
+  returns held. The [persistence decision background](../plans/trustworthy-persistence-decision-background.md) section 10, case 3.
 - [`force-termination.md`](verification-procedures/force-termination.md).
   Owner: delano. A `kill -9` inside the debounce window and a second one
   after a settled write, then the Force Quit dialog and a rebuild over a
-  live instance as the same death by other routes. ADR-0016 section 10,
+  live instance as the same death by other routes. The [persistence decision background](../plans/trustworthy-persistence-decision-background.md) section 10,
   case 2.
 - [`power-loss.md`](verification-procedures/power-loss.md). Owner:
   delano. A hard power cut mid session, then the stranded
   `state.sealed.<hex>.tmp` artifacts and the sweep launch runs over
-  them. ADR-0016 section 1 and section 10.
+  them. The [persistence decision background](../plans/trustworthy-persistence-decision-background.md) section 1 and section 10.
 - [`re-signed-bundle.md`](verification-procedures/re-signed-bundle.md).
   Owner: delano. Re-signing with a different identity refuses without
   erasing, and the `dev.onetimesecret.pad.debug` bundle id keeps its state
-  directory separate from the release one. ADR-0016 section 10, case 4.
+  directory separate from the release one. The [persistence decision background](../plans/trustworthy-persistence-decision-background.md) section 10, case 4.
 - [`locked-keychain.md`](verification-procedures/locked-keychain.md).
   Owner: delano. A locked keychain at load, and a denied ACL prompt,
-  each refusing with no erase and no overwrite. ADR-0016 section 10,
+  each refusing with no erase and no overwrite. The [persistence decision background](../plans/trustworthy-persistence-decision-background.md) section 10,
   case 6. §C above covers the round trip; this covers the refusals.
 - [`clock-step-back.md`](verification-procedures/clock-step-back.md).
   Owner: delano. The machine clock stepped back a day with a live pad,
   across a relaunch and again mid session, confirming a page ages by
-  zero rather than gaining life. ADR-0016 section 4 and section 10,
+  zero rather than gaining life. The [persistence decision background](../plans/trustworthy-persistence-decision-background.md) section 4 and section 10,
   case 7.
 - [`raised-card-drag-tracking.md`](verification-procedures/raised-card-drag-tracking.md).
   Owner: delano. Drag and resize tracking on the raised card. Not an
@@ -337,15 +347,18 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   the six digits can be failed on purpose, that a page travels and
   carries the mark while another device writes on it, and that a
   revoke stops new edits without reaching across to the other
-  machine's records (issue #102, ADR-0027 section 5, ADR-0021 section
-  3). Blocked on the relay. Not an ADR-0016 case.
+  machine's records (issue #102, [account-auth decision
+  background](../spec/feature/sync/account-auth-decision-background.md)
+  section 5, [relay decision
+  background](../spec/feature/sync/relay-decision-background.md)
+  section 3). Blocked on the relay. Not an ADR-0016 case.
 
 - [`file-draft-lifecycle.md`](verification-procedures/file-draft-lifecycle.md).
   Owner: delano. A dirty file backed document across a SIGKILL and a
   relaunch, the draft's own last edit time on the header, the automatic
   content erase resealing rather than dropping the draft when the last
   page tab closes, the inline dirty-close decision ending the draft,
-  Take theirs remaining undoable, and dirty-file quit asking nothing
+  Take Theirs remaining undoable, and dirty-file quit asking nothing
   (ADR-0028, D-14, D-19). Not an ADR-0016 case: a file is not staged
   content.
 
@@ -364,6 +377,23 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   (ADR-0035). Nothing in the repository's suites runs
   under a sandbox, so this is the only place any of it is checked. Not
   an ADR-0016 case.
+
+- [`rename-in-place.md`](verification-procedures/rename-in-place.md).
+  Owner: delano. The rename fields of Law 0007 in a real key window: a
+  click on a gutter's time opens its field, the keys come back to the
+  page after Escape and Return, the strip's field selects its title
+  whole, and the pad cell's field opens without a sheet, keeps its keys
+  and its refusal line over an empty Return, and keeps the name on
+  Escape (issues #248, #249, #250); a sealed object's name field opens
+  by its double click and keeps its keys over a refusal (issue #245).
+  Not an ADR-0016 case.
+
+- [`sealed-zones-and-note.md`](verification-procedures/sealed-zones-and-note.md).
+  Owner: delano. A named sealed row's zones under a real pointer, the
+  ember beat with Reduce Motion on and off, and the note on the raised
+  card: a press in it leaves the card raised, ⇧Esc and Esc expand,
+  contract and close it, its ⌘Z stays its own, and it follows its block
+  as the page scrolls (issues #244, #246). Not an ADR-0016 case.
 
 Whether any of them has been run is recorded in each file's own Status
 line and Results table, which is the one place a run belongs. A tally

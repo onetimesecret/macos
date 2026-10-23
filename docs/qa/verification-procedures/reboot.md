@@ -85,7 +85,7 @@ than the elapsed wall clock, or any of the four refusal lines from
 
 ## Case 2: a reboot with the pad emptied first, confirming rotation ran
 
-Rotation now has two triggers and only two (ADR-0016 section 6). This
+Rotation now has two triggers and only two ([persistence decision background](../../plans/trustworthy-persistence-decision-background.md) section 6). This
 tests the first: the pad empties. Emptying it drops the state file
 through `companion_persist_erase`, which rotates both halves before it
 erases (`crates/ffi/src/lib.rs`, `crates/ffi/src/persist.rs`,
@@ -139,7 +139,7 @@ half survived the rotation, since the name is derived from it
 ## Case 3: a reboot with a page paused, confirming it returns paused
 
 A hold takes the gap first, and only the part of the gap beyond the
-hold reaches the countdown (ADR-0016 section 4).
+hold reaches the countdown ([persistence decision background](../../plans/trustworthy-persistence-decision-background.md) section 4).
 
 1. With a live pad, double click a tab to hold that page's clock at 1h
    (`shell/Sources/CompanionKit/TabStripView.swift`,

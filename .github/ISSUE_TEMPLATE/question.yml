@@ -7,7 +7,7 @@ body:
     attributes:
       label: Your question
       description: >
-        If it touches behaviour, check docs/spec/06-open-questions.md
+        If it touches behaviour, check docs/spec/design/2026-0707-open-questions.md
         first — it may already be an open question with a current leaning.
     validations:
       required: true

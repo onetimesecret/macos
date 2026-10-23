@@ -150,7 +150,7 @@ final class FenceLanguageTests: XCTestCase {
             for appearance in ThemeContrastTests.appearances {
                 for (backingName, layers) in ThemeContrastTests.fenceWashes {
                     let ratio = ThemeContrastTests.contrastRatio(
-                        InkStyle.tokenColor(kind), over: layers, appearance: appearance)
+                        InkStyle.tokenColor(kind), over: { layers }, appearance: appearance)
                     XCTAssertGreaterThanOrEqual(
                         ratio, ThemeContrastTests.bar,
                         "\(kind) on \(backingName) under \(appearance.rawValue) reads \(ratio):1")

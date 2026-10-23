@@ -6,7 +6,9 @@ for each choice, and settles the three things this spec left implicit:
 the gate as a state the core reports rather than the shell infers
 (§5's table below), a server that declines to rotate refresh tokens,
 and what happens to edits queued for peers when the gate closes mid
-session. Where the two disagree, the ADR governs.
+session. Where the two disagree, the ADR governs. The numbered
+sections cited below as "account-auth decision background §N" are in
+the [account-auth decision background](account-auth-decision-background.md).
 
 **Status:** built, spec first — the order issue
 [#98](https://github.com/onetimesecret/macos/issues/98)'s acceptance
@@ -15,9 +17,10 @@ written down before any client code, and the client now implements
 them (`crates/sync/src/oauth.rs` for §1's ceremony and §2's lifetimes,
 `crates/sync/src/loopback.rs` for the redirect, `BearerAuth` in
 `crates/ots-client` for §3, driven by `crates/ffi/src/sync_driver.rs`
-and `SyncController.swift`). The one job this document covers is
-ADR-0021 §3's first gate: prove to the relay that the attaching client
-belongs to the account, and nothing else. Device trust is pairing
+and `SyncController.swift`). The one job this document covers is the
+[relay decision background](relay-decision-background.md) §3's first
+gate: prove to the relay that the attaching client belongs to the
+account, and nothing else. Device trust is pairing
 (issue #97, `crates/ffi/src/pairing.rs`) and is not renegotiated here.
 
 The authorization server is OTS itself. onetimesecret.dev, the v0.27
@@ -38,8 +41,8 @@ and `scope=sync` asked for explicitly. The app opens the browser,
 listens once on an ephemeral loopback port, exchanges the code, and
 closes the listener. The redirect URI is **registered portless**
 server side (`http://127.0.0.1/callback`), which is what lets any
-ephemeral port match; ADR-0027 §1 says why that registration is a hard
-requirement rather than a detail.
+ephemeral port match; the account-auth decision background §1 says
+why that registration is a hard requirement rather than a detail.
 
 The issue asks where the browser step lands for an app that "is not a
 browser and has no server side to receive a redirect". The BCP's
@@ -77,9 +80,10 @@ lifetimes are chosen for that shape:
   is the intended path, not an error path. Rotation is requested and
   never required: RFC 6749 §6 makes the new token optional, so a
   refresh answer carrying an access token and no refresh token is a
-  success and the resting token stands (ADR-0027 §2). Requiring one
-  would refuse every grant a non-rotating server issues, behind a
-  `2xx` the client could not explain.
+  success and the resting token stands (account-auth decision
+  background §2). Requiring one would refuse every grant a
+  non-rotating server issues, behind a `2xx` the client could not
+  explain.
 - **Expiry mid-session:** the relay answers an expired access token
   with `401`; the client refreshes and retries the one request. The
   long-poll (`relay-protocol.md` §4) simply returns on the same `401`
@@ -96,13 +100,14 @@ lifetimes are chosen for that shape:
   ceremony again.
 
 This is the answer to open question 21
-(`docs/spec/design/06-open-questions.md`) fed back into v3
+(`docs/spec/design/2026-0707-open-questions.md`) fed back into v3
 auth while it is unbuilt: the desktop app needs refresh rotation with a
 long idle window, and it does not need a device claim inside the token
-— the account is not the device (ADR-0021 §3), and putting a device
-identity into the account credential would re-entangle the two gates
-this design keeps separate. If phase 2 lands PASETO bearer tokens
-(`docs/spec/design/05-technical-direction.md`), nothing here moves:
+— the account is not the device (relay decision background §3), and
+putting a device identity into the account credential would
+re-entangle the two gates this design keeps separate. If phase 2
+delivers PASETO bearer tokens
+(`docs/spec/design/2026-0707-technical-direction.md`), nothing here moves:
 the flow and lifetimes above are format-agnostic, and the bearer's
 encoding is the server's business.
 
@@ -113,7 +118,8 @@ the `AuthStrategy` trait (`crates/ots-client/src/auth.rs`),
 stored under the `api-token` account. The sync tokens are a different
 credential for a different act: a conceal is deliberate and foreground,
 sync is background, and one credential serving both would make the
-background act as powerful as the deliberate one (ADR-0021 §3).
+background act as powerful as the deliberate one (relay decision
+background §3).
 
 - The refresh token rests in the credential store under its own
   account, `sync-oauth-refresh` — beside, and never inside, the
@@ -156,12 +162,13 @@ attach or publish actually needs the network.
 | No network at refresh time | Sync degraded with its sentence ("sync could not reach the server"); retry follows the publish clock, not a hot loop. |
 | Token or grant revoked account-side | Indistinguishable from refresh refused, handled identically. |
 
-Every one of these lands on one of ADR-0027 §5's seven gate states,
-which the core reports as a machine token in the sync status (`gate`)
-and through `companion_sync_gate`. Closing the gate dissolves the
-engine, and the dissolve rewinds each enrolled page to what the relay
-acknowledged, so an account failure costs the peers a delay and never
-an edit (ADR-0027 §7).
+Every one of these maps to one of the account-auth decision
+background §5's seven gate states, which the core reports as a machine
+token in the sync status (`gate`) and through `companion_sync_gate`.
+Closing the gate dissolves the engine, and the dissolve rewinds each
+enrolled page to what the relay acknowledged, so an account failure
+costs the peers a delay and never an edit (account-auth decision
+background §7).
 
 Every one of these ends in a state issue #102 owes a sentence, and none
 of them may be silent — an expired token disabling sync without a word
@@ -169,5 +176,5 @@ would break the promise pass 1 wrote down: no unaccounted behaviour
 change, in either direction. Those words are now written down and
 built: [surface.md](surface.md) §5 carries the sentence each of these
 rows lands on, §4 the header word the gate chooses, and §2 the way out
-of a browser trip that is still open, which is what ADR-0027 §5's
-`signing_in` row asks the surface for.
+of a browser trip that is still open, which is what the account-auth
+decision background §5's `signing_in` row asks the surface for.

@@ -1,52 +1,29 @@
-//! The tab and the sheet: a durable slot and the perishable page
-//! inside it (interaction-model rev C, doc 04; ADR-0017).
-//!
-//! A [`Tab`] is the thing the user navigates with: an identity, a
-//! creation stamp, an optional name they typed, the rung pages born in
-//! the slot start at, and at most one page. A [`Sheet`] is everything
-//! that expires. Nothing the app derived from content ever reaches the
-//! tab, which is why the tab may outlive every page it held.
-//!
-//! A sheet reads like a little text file. **Ink** is anything typed —
-//! visible, editable, ordinary text, held authoritatively in the
-//! sheet's operation-logged document (ADR-0013) and cached here as a
-//! segments projection. A **sealed chip** is an opaque
-//! token standing in for content that was deliberately masked; its bytes
-//! live only here, in a [`SecretBuffer`], and never render.
-//!
-//! Masking is decided by **gesture, not by content and not by origin**
-//! (doc 04): the core never parses, classifies, or scores what arrives.
-//! The excerpt on a chip is mechanical; counts are counts; detection
-//! never returns.
+//! The tab, a durable slot, and the sheet, the page that expires in it
+//! (doc 04, ADR-0017). Masking is by gesture, never by content (doc 04).
 
+use std::fmt;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::blocks::{BlockIndex, BlockMeta};
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::SizeClass;
+use crate::note::Note;
 use crate::secret::SecretBuffer;
 use crate::ttl::{self, Ttl};
 
-/// A stable 128-bit item identifier. Newly minted values are version 7 UUIDs;
-/// restored legacy version 4 values retain their original bytes. The
-/// sequential [`SheetId`] and [`ChipId`] counters stay for
-/// internal ordering; this is the only identifier that may appear in the
-/// ledger or in any persisted artifact (ADR-0012; `UUIDv7` follow-up in ADR-0039).
+/// A 128-bit item identity: `UUIDv7` when minted, legacy bytes kept on
+/// restore. The only identifier allowed in the ledger or on disk (ADR-0012).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ItemId([u8; 16]);
 
 impl ItemId {
-    /// Mint a `UUIDv7` from Unix milliseconds and the operating system CSPRNG.
-    /// The timestamp is visible in the ID; the remaining 74 bits are random.
-    /// Same-millisecond order and clock-rollback monotonicity are not promised.
-    /// A pre-epoch clock uses timestamp zero; a clock beyond the 48-bit field
-    /// uses its maximum value. Neither clock condition aborts identity minting.
+    /// Mint a `UUIDv7` from Unix milliseconds and the OS CSPRNG; out-of-range
+    /// clocks clamp rather than fail.
     ///
-    /// Panicking when the CSPRNG is unavailable is deliberate: a fallback
-    /// identifier would be predictable, and an unpredictable identity is
-    /// the whole point. `getentropy` does not fail on a healthy Darwin or
-    /// Linux host, so this panic is a genuine "the machine is broken"
-    /// signal rather than a condition worth handling.
+    /// # Panics
+    /// If the OS CSPRNG is unavailable; a fallback would be predictable.
     #[must_use]
     pub fn random() -> Self {
         let mut bytes = [0u8; 16];
@@ -64,8 +41,7 @@ impl ItemId {
 
     fn version_seven(millis: u128, mut bytes: [u8; 16]) -> Self {
         let millis = millis.min((1_u128 << 48) - 1);
-        // RFC 9562 §5.7: 48-bit big-endian timestamp, version 7 and
-        // RFC variant, with all other bits drawn from the CSPRNG.
+        // RFC 9562 §5.7 layout.
         bytes[..6].copy_from_slice(&millis.to_be_bytes()[10..]);
         bytes[6] = (bytes[6] & 0x0F) | 0x70;
         bytes[8] = (bytes[8] & 0x3F) | 0x80;
@@ -78,17 +54,34 @@ impl ItemId {
         &self.0
     }
 
-    /// Rebuild an identity from its raw bytes. Used only when reading a
-    /// snapshot back, so that a restore preserves identity instead of
-    /// minting a new one.
+    /// Rebuild an identity from its raw bytes (restore path).
     #[must_use]
     pub fn from_bytes(bytes: [u8; 16]) -> Self {
         Self(bytes)
     }
+
+    /// Parse the 8-4-4-4-12 hex form, the inverse of `Display`.
+    pub(crate) fn parse(text: &str) -> Option<Self> {
+        if text.len() != 36 {
+            return None;
+        }
+        let hex: Vec<u32> = text
+            .bytes()
+            .filter(|byte| *byte != b'-')
+            .map(|byte| (byte as char).to_digit(16))
+            .collect::<Option<_>>()?;
+        if hex.len() != 32 {
+            return None;
+        }
+        let mut bytes = [0u8; 16];
+        for (index, pair) in hex.chunks(2).enumerate() {
+            bytes[index] = ((pair[0] << 4) | pair[1]) as u8;
+        }
+        Some(Self(bytes))
+    }
 }
 
-/// Lowercase hyphenated 8-4-4-4-12 hex. This is the only rendering of an
-/// item identity that crosses the FFI seam.
+/// Lowercase hyphenated 8-4-4-4-12 hex, the form that crosses the FFI seam.
 impl std::fmt::Display for ItemId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (index, byte) in self.0.iter().enumerate() {
@@ -112,19 +105,15 @@ impl SheetId {
         self.0
     }
 
-    /// Rebuild an id from its raw form (an FFI caller handing one back).
-    /// Unknown ids are harmless: lookups simply return `None`.
+    /// Rebuild an id from its raw form; an unknown id just misses on lookup.
     #[must_use]
     pub fn from_raw(raw: u64) -> Self {
         Self(raw)
     }
 }
 
-/// Opaque, monotonically assigned tab identifier. `0` is never issued.
-///
-/// A slot's handle, distinct from the [`SheetId`] of whatever page is
-/// standing in it: the tab survives the page, so one number cannot do
-/// both jobs (ADR-0017).
+/// Opaque, monotonically assigned tab identifier, distinct from the
+/// page's [`SheetId`] (ADR-0017). `0` is never issued.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TabId(pub(crate) u64);
 
@@ -135,8 +124,7 @@ impl TabId {
         self.0
     }
 
-    /// Rebuild an id from its raw form (an FFI caller handing one back).
-    /// Unknown ids are harmless: lookups simply return `None`.
+    /// Rebuild an id from its raw form; an unknown id just misses on lookup.
     #[must_use]
     pub fn from_raw(raw: u64) -> Self {
         Self(raw)
@@ -162,75 +150,145 @@ impl ChipId {
     }
 }
 
-/// One run of the body's cached projection: visible ink, or a sealed
-/// chip's position. The sheet's operation-logged document is the source
-/// of truth; this shape is rebuilt from its runs for the ledger, for
-/// tab titles, and for concealing a sheet; ink is not secret (it
-/// renders), so holding a copy here breaks no law.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One run of the body's projection, cached from the sheet's document.
+#[derive(Clone, PartialEq, Eq)]
 pub enum Segment {
-    /// Visible text, exactly as typed (markup preserved — doc 04).
+    /// Visible text, exactly as typed.
     Ink(String),
     /// A sealed chip sits here.
     Chip(ChipId),
 }
 
-/// What a chip's bytes are, described without reading them — a header
-/// peek for the image kind is the entire extent of inspection.
+impl fmt::Debug for Segment {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ink(_) => formatter.write_str("Ink([REDACTED])"),
+            Self::Chip(id) => formatter.debug_tuple("Chip").field(id).finish(),
+        }
+    }
+}
+
+impl Zeroize for Segment {
+    fn zeroize(&mut self) {
+        if let Self::Ink(text) = self {
+            text.zeroize();
+        }
+    }
+}
+
+impl Drop for Segment {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for Segment {}
+
+/// What a chip's bytes are, described without reading them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChipMeta {
-    /// UTF-8 text: character count (after trailing-newline trim) and
-    /// line count.
+    /// UTF-8 text.
     Text {
         /// Characters, as the size label counts them.
         chars: usize,
         /// Lines, after trimming trailing newlines.
         lines: usize,
     },
-    /// An image, held as encoded bytes; only the container format is
-    /// sniffed (magic bytes), never the contents.
+    /// An image; only the container format is sniffed.
     Image {
         /// Encoded byte length.
         byte_len: usize,
     },
 }
 
-/// Record of a chip's conceal: the moment it became a one-time link.
-/// Only the receipt identifier is retained — no link, no local history
-/// of concealed secrets (doc 03 §5).
+/// A chip's conceal: only the receipt id is kept (doc 03 §5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Conceal {
-    /// Server receipt identifier, kept solely to offer "burn remote" on
-    /// this live chip.
+    /// Server receipt id, kept to offer burn-remote on this chip.
     pub receipt_id: String,
 }
 
-/// A sealed chip: the bytes, and the non-secret face it shows.
-/// Not `Debug` — it owns a [`SecretBuffer`], and chips are never logged.
+/// The longest sealed name, in characters (ADR-0042 point 1).
+pub const NAME_CAP: usize = 64;
+
+/// Why a sealed name was refused. A refusal leaves the name as it was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameRefusal {
+    /// No such chip, or one on a page past its deadline (Law 0001, expiry row).
+    UnknownChip,
+    /// Longer than [`NAME_CAP`] once trimmed.
+    TooLong,
+    /// Outside `[A-Za-z_][A-Za-z0-9_]*`.
+    OutsideCharset,
+}
+
+impl std::fmt::Display for NameRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NameRefusal::UnknownChip => write!(f, "no such sealed object"),
+            NameRefusal::TooLong => write!(f, "a name is at most {NAME_CAP} characters"),
+            NameRefusal::OutsideCharset => write!(
+                f,
+                "a name is letters, digits and underscores, and does not start with a digit"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for NameRefusal {}
+
+/// Judge a draft name: trimmed, empty clears (`None`), anything else must
+/// be [`NAME_CAP`] characters of `[A-Za-z_][A-Za-z0-9_]*`
+/// (ADR-0042 point 1).
+///
+/// # Errors
+/// [`NameRefusal::OutsideCharset`], judged first, or [`NameRefusal::TooLong`].
+pub fn judge_name(draft: &str) -> Result<Option<&str>, NameRefusal> {
+    let name = draft.trim();
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return Ok(None);
+    };
+    let leads = first.is_ascii_alphabetic() || first == '_';
+    if !leads || !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(NameRefusal::OutsideCharset);
+    }
+    // ASCII by now, so bytes count characters.
+    if name.len() > NAME_CAP {
+        return Err(NameRefusal::TooLong);
+    }
+    Ok(Some(name))
+}
+
+/// A sealed chip: secret bytes, the face it shows, and the typed name and
+/// note beside it (ADR-0043 point 1); the face and the name are content too,
+/// and wipe with the bytes (Law 0004).
 pub struct SealedChip {
     pub(crate) id: ChipId,
-    /// Minted once, when the chip is sealed, and never re-minted: a
-    /// restore carries the stored identity through rather than issuing a
-    /// fresh one.
     pub(crate) uuid: ItemId,
     pub(crate) bytes: SecretBuffer,
     pub(crate) meta: ChipMeta,
-    pub(crate) excerpt: String,
+    /// A wiping owner: the excerpt is the content's own head and tail (Law 0004, C09).
+    pub(crate) excerpt: Zeroizing<String>,
     pub(crate) size_label: String,
     pub(crate) conceal: Option<Conceal>,
+    /// A wiping owner, since a name is content (Law 0004, C10).
+    pub(crate) name: Option<Zeroizing<String>>,
+    /// Made by its first accepted edit, or by a restore, a paste or a clone that brings its
+    /// text, which then rests until an edit (C31).
+    pub(crate) note: Option<Note>,
+    /// Whether its sentinel has stood in a body; the first standing is the
+    /// seal's, which no step may take back (D-30).
+    pub(crate) stood: bool,
 }
 
 impl SealedChip {
-    /// Seal UTF-8 text. The excerpt and size label are computed here,
-    /// once, mechanically — they are the only rendering this content
-    /// will ever get.
+    /// Seal UTF-8 text; the face is computed once, here.
     pub(crate) fn text(id: ChipId, text: &str) -> Self {
         Self::text_with_uuid(id, ItemId::random(), text)
     }
 
-    /// Seal UTF-8 text under an identity that already exists. This form
-    /// exists solely so a restore preserves the stored identity instead
-    /// of re-minting it.
+    /// Seal text under an existing identity (restore path).
     pub(crate) fn text_with_uuid(id: ChipId, uuid: ItemId, text: &str) -> Self {
         let (excerpt, size_label, meta) = text_face(text);
         Self {
@@ -241,23 +299,21 @@ impl SealedChip {
             excerpt,
             size_label,
             conceal: None,
+            name: None,
+            note: None,
+            stood: false,
         }
     }
 
-    /// Seal image bytes (encoded, as delivered). The face is clipboard
-    /// metadata only: sniffed container format and byte size — read
-    /// without opening the contents (doc 04). Images are excluded from
-    /// `mlock` and documented as such (doc 05): still zeroized on death,
-    /// but never pinned against swap.
+    /// Seal encoded image bytes. Not `mlock`ed (doc 05), but still zeroized.
     pub(crate) fn image(id: ChipId, bytes: Vec<u8>) -> Self {
         Self::image_with_uuid(id, ItemId::random(), bytes)
     }
 
-    /// Seal image bytes under an identity that already exists, for the
-    /// restore path.
+    /// Seal image bytes under an existing identity (restore path).
     pub(crate) fn image_with_uuid(id: ChipId, uuid: ItemId, bytes: Vec<u8>) -> Self {
         let byte_len = bytes.len();
-        let excerpt = format!("{} image", sniff_image_kind(&bytes));
+        let excerpt = Zeroizing::new(format!("{} image", sniff_image_kind(&bytes)));
         Self {
             id,
             uuid,
@@ -266,7 +322,25 @@ impl SealedChip {
             excerpt,
             size_label: SizeClass::of(byte_len).to_string(),
             conceal: None,
+            name: None,
+            note: None,
+            stood: false,
         }
+    }
+
+    /// A clone under a new identity: the payload copied core-side at its exact size, with
+    /// no receipt, name or note; resolution then sets the envelope's (Law 0001, sealed fragment).
+    pub(crate) fn duplicate(&self, id: ChipId) -> Self {
+        let mut clone = match self.meta {
+            ChipMeta::Text { .. } => Self::text(
+                id,
+                std::str::from_utf8(self.bytes.expose()).expect("a text chip is sealed from UTF-8"),
+            ),
+            ChipMeta::Image { .. } => Self::image(id, self.bytes.expose().to_vec()),
+        };
+        // Its first standing is a paste, which a step may take back.
+        clone.stood = true;
+        clone
     }
 
     /// Identifier.
@@ -275,8 +349,7 @@ impl SealedChip {
         self.id
     }
 
-    /// The item identity, minted when this chip was sealed. The
-    /// only identifier of this chip that may leave the process.
+    /// The item identity, the only chip identifier that leaves the process.
     #[must_use]
     pub fn uuid(&self) -> ItemId {
         self.uuid
@@ -288,17 +361,13 @@ impl SealedChip {
         self.meta
     }
 
-    /// The mechanical excerpt — recognized by the person who pasted it,
-    /// not identified by a stranger. This is the only rendering the
-    /// content ever gets; there is no reveal affordance at any privilege.
+    /// The mechanical excerpt, the only rendering the content ever gets.
     #[must_use]
     pub fn excerpt(&self) -> &str {
-        &self.excerpt
+        self.excerpt.as_str()
     }
 
-    /// The size class shown beside the excerpt ("tiny", "small",
-    /// "medium", "large", "huge"): the ledger's own bucket
-    /// ([`SizeClass`]), never an exact length (D-29).
+    /// The ledger's size class, never an exact length (D-29).
     #[must_use]
     pub fn size_label(&self) -> &str {
         &self.size_label
@@ -309,10 +378,21 @@ impl SealedChip {
     pub fn conceal(&self) -> Option<&Conceal> {
         self.conceal.as_ref()
     }
+
+    /// The typed name, if one was given.
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref().map(String::as_str)
+    }
+
+    /// Whether a note holds anything but whitespace: the block's doorway.
+    #[must_use]
+    pub fn has_note(&self) -> bool {
+        self.note.as_ref().is_some_and(Note::has_content)
+    }
 }
 
-/// One sheet's clock. Time belongs to the sheet — no per-chip timers,
-/// ever (doc 04).
+/// One sheet's clock; there are no per-chip timers (doc 04).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SheetClock {
     /// Draining toward `deadline`.
@@ -320,99 +400,60 @@ pub(crate) enum SheetClock {
         /// The instant the sheet expires.
         deadline: Instant,
     },
-    /// Held by the pause gesture: the remaining life is frozen and does
-    /// not drain until the hold lapses at `until`.
+    /// Frozen by the pause gesture until `until`.
     Held {
         /// When the hold lapses and the page is a regular page again.
         until: Instant,
         /// The remaining life frozen at the moment of the hold.
         frozen_remaining: Duration,
-        /// When this hold began — so cumulative held time stays
-        /// accountable (a total-held ceiling is open question №8).
+        /// When the hold began (total-held accounting, open question №8).
         started: Instant,
-        /// Whether the hold has already been topped up to its 24 hour
-        /// ceiling. The pause gesture is a three state cycle (doc 04):
-        /// hold, top up, release. Without this the third press could
-        /// only be inferred from the hold's length, and a restore
-        /// (which rebuilds `until` and `started` from time away) would
-        /// lose the distinction.
+        /// Topped up to 24 hours, so the next press releases (doc 04). Stored
+        /// because a restore cannot infer it from the hold's length.
         topped_up: bool,
     },
 }
 
-/// How a page's compaction ceremony runs (ADR-0013, issue #101).
-/// Solo is the default and the restored state: a rung transition
-/// compacts inline, exactly as it always has. A page attached to a
-/// sync channel is marked deferred by the session layer, and a
-/// transition then leaves the history standing — the ceremony becomes
-/// a proposal ([`crate::sync::PageChannel`]), performed only once
-/// every attached device confirms
-/// ([`SheetStore::perform_ceremony`]). Never persisted: a sync
-/// session does not survive a restart, so a restore comes back
-/// immediate and the engine re-defers on attach.
-///
-/// [`SheetStore::perform_ceremony`]: crate::store::SheetStore::perform_ceremony
+/// Whether rung-transition compaction runs inline or waits for every
+/// attached device to confirm (issue #101). Never persisted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CeremonyState {
     /// No peer is attached: compaction runs inline at the transition.
     Immediate,
-    /// Peers are attached: transitions mark the ceremony due instead
-    /// of compacting, and the history stands until the channel
-    /// confirms. Keeping the trail one more rung is recoverable;
-    /// splitting devices across a half-run boundary is not.
+    /// Peers attached: a transition marks the ceremony due instead.
     Deferred {
-        /// Whether a transition has come due since the last ceremony,
-        /// which is what tells the session layer this device should
-        /// propose.
+        /// A transition came due since the last ceremony; this device proposes.
         due: bool,
     },
 }
 
-/// A sheet: the operation-logged body, the chips it owns, and one
-/// countdown. Not `Debug` — it holds [`SealedChip`]s.
-///
-/// The `uuid` is minted once, at creation, and never re-minted: a
-/// restore carries the stored identity through, so a page keeps the same
-/// identity across a relaunch.
+/// A sheet: the operation-logged body, its chips, and one countdown.
 pub struct Sheet {
     pub(crate) id: SheetId,
     pub(crate) uuid: ItemId,
-    /// The first non-blank line of the body, held as state: re-derived
-    /// on edit, never recomputed at read time and never derived at
-    /// ledger time (ADR-0012). `None` while the body has no line to
-    /// take one from. It is content the app derived on its own, so it
-    /// dies with the page and is never written down (ADR-0017): the
-    /// restore path recomputes it from the restored segments.
-    pub(crate) derived_title: Option<String>,
-    /// Unix epoch milliseconds at creation, the page's own birth, now
-    /// distinct from the tab's. Expiry math never reads it.
+    /// First non-blank line, re-derived on edit; never persisted (ADR-0017).
+    /// A wiping owner, since it is ink (Law 0004, C13).
+    pub(crate) derived_title: Option<Zeroizing<String>>,
+    /// Unix ms at the page's creation, not the tab's.
     pub(crate) created_wall_ms: u64,
-    /// The body as an operation-logged document (ADR-0013): the source
-    /// of truth for ink and chip positions inside the core.
+    /// The body (ADR-0013): source of truth for ink and chip positions.
     pub(crate) document: SheetDocument,
-    /// A cached projection of the document, rebuilt from its runs after
-    /// every mutation ([`Sheet::rebuild_segments`]). Readers keep this
-    /// shape; nothing edits it directly.
+    /// Projection of `document`, rebuilt by [`Sheet::rebuild_segments`].
     pub(crate) segments: Vec<Segment>,
-    /// The page's paragraphs as identities (ADR-0013): maintained op by
-    /// op through every mutation path so a paragraph keeps its name
-    /// across edits, and settled by [`Sheet::settle_blocks`].
+    /// Paragraph identities, kept across edits (ADR-0013).
     pub(crate) blocks: BlockIndex,
+    /// Chips whose sentinels stand in the body.
     pub(crate) chips: Vec<SealedChip>,
+    /// Chips the body no longer shows, kept on the page's clock
+    /// (ADR-0046 point 1).
+    pub(crate) detached: Vec<SealedChip>,
     pub(crate) clock: SheetClock,
-    /// Held time from holds that have already lapsed; the live hold's
-    /// span is added on normalization (open question №8 accounting).
+    /// Held time from lapsed holds (open question №8).
     pub(crate) total_held: Duration,
-    /// Whether compaction runs inline or waits for the channel
-    /// (issue #101). [`CeremonyState::Immediate`] until a sync session
-    /// says otherwise, so a page never touched by sync behaves exactly
-    /// as it always has.
+    /// Inline or deferred compaction (issue #101); `Immediate` until sync.
     pub(crate) ceremony: CeremonyState,
 }
 
-/// A derived title is a page property, not a projection: it is
-/// computed once per edit and read from state afterwards, so nothing
-/// re-derives it at ledger time.
 impl Sheet {
     /// Identifier.
     #[must_use]
@@ -420,8 +461,7 @@ impl Sheet {
         self.id
     }
 
-    /// The item identity, minted when this page was created. The
-    /// only identifier of this page that may leave the process.
+    /// The item identity, the only page identifier that leaves the process.
     #[must_use]
     pub fn uuid(&self) -> ItemId {
         self.uuid
@@ -433,19 +473,34 @@ impl Sheet {
         &self.segments
     }
 
-    /// Rebuild the cached segments projection from the document's runs.
-    /// Every mutation path calls this, so readers never see the
-    /// projection drift from the document. A sentinel whose identity
-    /// matches no owned chip drops out of the projection: it cannot
-    /// arise by construction, and a chip the sheet cannot resolve must
-    /// not render.
+    /// Detach each chip whose sentinel left the body and reattach each
+    /// detached chip whose sentinel stands again (ADR-0046 point 1).
+    pub(crate) fn settle_roster(&mut self) {
+        let live = self.document.live_chips();
+        let (standing, gone): (Vec<_>, Vec<_>) = std::mem::take(&mut self.chips)
+            .into_iter()
+            .partition(|chip| live.contains(&chip.uuid));
+        let (back, away): (Vec<_>, Vec<_>) = std::mem::take(&mut self.detached)
+            .into_iter()
+            .partition(|chip| live.contains(&chip.uuid));
+        self.chips = standing;
+        self.chips.extend(back);
+        for chip in &mut self.chips {
+            chip.stood = true;
+        }
+        self.detached = away;
+        self.detached.extend(gone);
+    }
+
+    /// Rebuild `segments` from the document. A sentinel matching no owned
+    /// chip is dropped rather than rendered.
     pub(crate) fn rebuild_segments(&mut self) {
         self.segments = self
             .document
             .runs()
             .into_iter()
             .filter_map(|run| match run {
-                DocRun::Ink(text) => Some(Segment::Ink(text)),
+                DocRun::Ink(mut text) => Some(Segment::Ink(std::mem::take(&mut *text))),
                 DocRun::Chip(uuid) => self
                     .chips
                     .iter()
@@ -455,66 +510,35 @@ impl Sheet {
             .collect();
     }
 
-    /// Settle the block index against the document as it now stands:
-    /// re-take every anchor, and if the index no longer describes the
-    /// body (a wholesale restate, or a mutation path that failed to
-    /// narrate itself), rebuild it with fresh identities rather than
-    /// serve stale ones. Every mutation path ends here.
+    /// Re-take anchors, or rebuild the index with fresh identities when it no
+    /// longer describes the body. Every mutation path ends here.
     pub(crate) fn settle_blocks(&mut self) {
-        // A delete that ended the body on a newline left an empty
-        // paragraph with no block standing for it, which the narration
-        // could not see because it reads widths and not characters.
-        // Mend that here, before the check: judged as it stands the
-        // index looks stale, and the page would be handed a whole set
-        // of fresh identities for the crime of a finished sentence.
+        // Before the check: narration reads widths, so it cannot open the trailing block.
         self.blocks.reopen_trailing_block(&self.document);
         if self.blocks.matches(&self.document) {
             self.blocks.retake_anchors(&self.document);
         } else {
-            // The floor is the page's stamp, not any block's, so it must
-            // outlive a rebuild of the block identities. A rebuild that
-            // dropped it would let the page's modified time step back the
-            // moment a wholesale restate (through `sync_document`) tripped
-            // the mismatch, and only `compact` happens to re-note it.
             let floor = self.blocks.compaction_frontier();
             self.blocks = BlockIndex::for_document(&self.document);
             self.blocks.note_compaction(floor);
         }
     }
 
-    /// The compaction ceremony (ADR-0013): graduate first, then
-    /// discard. Every block's derived provenance is frozen into its
-    /// materialized slot while the ops still exist to prove it, origin
-    /// included; then the document is reborn from its runs under a
-    /// fresh peer identity and the trail dies. Chips and their sealed
-    /// bytes pass through untouched, since they live beside the
-    /// document, not inside its history. The settle at the end keeps
-    /// the standing discipline: anchors are re-taken, and an index that
-    /// somehow stopped describing the body is rebuilt fresh rather
-    /// than trusted.
+    /// The compaction ceremony (ADR-0013): freeze provenance into the blocks,
+    /// then rebirth the document without its history. Chips pass through.
     pub(crate) fn compact(&mut self) {
-        // The log's frontier is read while the log still exists, and
-        // kept as the page's floor: a deletion is a change with no
-        // surviving character to vote for it, so the per-block
-        // summaries below cannot carry it and the page's modified
-        // stamp would step back to whenever its oldest surviving text
-        // was written.
+        // Read while the log exists: a deletion leaves no character to carry it.
         let frontier = self.document.latest_timestamp();
         self.blocks.graduate(&self.document);
         self.document.compact();
         self.rebuild_segments();
         self.settle_blocks();
-        // After the settle, so a rebuilt index inherits the floor: it
-        // is the page's stamp, not any block's, and nothing about a
-        // rebuild makes the page younger.
+        // After the settle, so a rebuilt index inherits the floor.
         self.blocks.note_compaction(frontier);
     }
 
-    /// What a rung transition does to the history: compact now when the
-    /// page is solo, or mark the ceremony due and leave the trail
-    /// standing when peers are attached (issue #101). Every transition
-    /// site calls this instead of [`Sheet::compact`] directly, so the
-    /// two behaviours cannot drift apart.
+    /// Compact now when solo, or mark the ceremony due when peers are
+    /// attached (issue #101). Every transition calls this, not `compact`.
     pub(crate) fn compact_or_defer(&mut self) {
         match self.ceremony {
             CeremonyState::Immediate => self.compact(),
@@ -524,21 +548,15 @@ impl Sheet {
         }
     }
 
-    /// Per-block provenance, in document order: each paragraph's
-    /// identity with its created and modified stamps (Unix seconds),
-    /// derived from the operation log (ADR-0013). Identities and
-    /// timestamps only; block content never crosses here.
+    /// Per-block identity and stamps (Unix seconds), in document order; no
+    /// content (ADR-0013).
     #[must_use]
     pub fn blocks_meta(&self) -> Vec<BlockMeta> {
         self.blocks.metas(&self.document)
     }
 
-    /// The page's modified stamp, Unix seconds: the newest change in
-    /// the page's operation log, merged with the newest materialized
-    /// stamp once compaction has destroyed the ops behind it. `None`
-    /// for a page whose body has never been touched. The created stamp
-    /// stays [`Sheet::created_wall_ms`], which predates the document's
-    /// first change.
+    /// Newest change in the log or in compacted stamps, Unix seconds; `None`
+    /// for an untouched body.
     #[must_use]
     pub fn modified_s(&self) -> Option<i64> {
         self.document
@@ -557,6 +575,26 @@ impl Sheet {
         self.chips.iter().find(|c| c.id == id)
     }
 
+    /// The chips the body no longer shows, kept for undo and for a paste
+    /// that names them (ADR-0046 point 1).
+    pub fn detached(&self) -> impl Iterator<Item = &SealedChip> {
+        self.detached.iter()
+    }
+
+    /// A chip by id, attached or detached.
+    pub(crate) fn owned_chip(&self, id: ChipId) -> Option<&SealedChip> {
+        self.chips.iter().chain(&self.detached).find(|c| c.id == id)
+    }
+
+    /// Every identity the page owns, attached or detached.
+    pub(crate) fn owned_uuids(&self) -> Vec<ItemId> {
+        self.chips
+            .iter()
+            .chain(&self.detached)
+            .map(|chip| chip.uuid)
+            .collect()
+    }
+
     /// Number of chips on the sheet.
     #[must_use]
     pub fn chip_count(&self) -> usize {
@@ -572,9 +610,7 @@ impl Sheet {
         }
     }
 
-    /// Total time this page's clock has spent held, through `now` —
-    /// the accounting a cumulative pause ceiling would need (open
-    /// question №8; no ceiling is enforced today).
+    /// Total held time through `now` (open question №8; no ceiling enforced).
     #[must_use]
     pub fn total_held(&self, now: Instant) -> Duration {
         let live = match self.clock {
@@ -586,9 +622,7 @@ impl Sheet {
         self.total_held + live
     }
 
-    /// Whether the live hold has already been topped up to 24 hours,
-    /// meaning the next pause press releases it rather than extending
-    /// it. False when the page is not held at all.
+    /// Whether the live hold is topped up, so the next press releases it.
     #[must_use]
     pub fn hold_topped_up(&self, now: Instant) -> bool {
         match self.clock {
@@ -608,9 +642,7 @@ impl Sheet {
         }
     }
 
-    /// Remaining life at `now`. While held it is the frozen value; after
-    /// a hold lapses (lazily, before [`crate::SheetStore::expire_due`]
-    /// normalizes) it drains from where it froze.
+    /// Remaining life: frozen while held, draining after the hold lapses.
     #[must_use]
     pub fn remaining(&self, now: Instant) -> Duration {
         match self.clock {
@@ -629,17 +661,44 @@ impl Sheet {
         }
     }
 
+    /// Whether the countdown has run out at `now`, whether or not a sweep
+    /// has taken the page yet (Law 0001, expiry row).
+    #[must_use]
+    pub fn is_due(&self, now: Instant) -> bool {
+        self.remaining(now).is_zero()
+    }
+
+    /// When this page's clock next changes: `now` once [`Sheet::is_due`]
+    /// holds, else its hold's lapse or its deadline (Law 0001, expiry row).
+    #[must_use]
+    pub(crate) fn next_event(&self, now: Instant) -> Instant {
+        if self.is_due(now) {
+            return now;
+        }
+        match self.clock {
+            SheetClock::Running { deadline } => deadline,
+            SheetClock::Held {
+                until,
+                frozen_remaining,
+                ..
+            } => {
+                if now < until {
+                    until
+                } else {
+                    until + frozen_remaining
+                }
+            }
+        }
+    }
+
     /// The countdown label text ("3h 40m").
     #[must_use]
     pub fn remaining_label(&self, now: Instant) -> String {
         ttl::human_remaining(self.remaining(now))
     }
 
-    /// Fraction of the gauge still full at `now`, in `0.0..=1.0`.
-    ///
-    /// The rung is passed in because it belongs to the tab that owns
-    /// this page, not to the page (ADR-0017): the gauge is a reading of
-    /// a page's life against the slot it was born into.
+    /// Fraction of the gauge still full, in `0.0..=1.0`, against the tab's
+    /// rung (ADR-0017).
     #[must_use]
     pub fn fraction_remaining(&self, rung: Ttl, now: Instant) -> f32 {
         let total = rung.duration().as_secs_f32();
@@ -649,44 +708,27 @@ impl Sheet {
         (self.remaining(now).as_secs_f32() / total).clamp(0.0, 1.0)
     }
 
-    /// Under an hour left — the gauge turns ember with a hatched
-    /// texture; urgency is never colour-only (doc 04).
+    /// Under an hour left (the ember gauge, doc 04).
     #[must_use]
     pub fn last_hour(&self, now: Instant) -> bool {
         let remaining = self.remaining(now);
         !remaining.is_zero() && remaining <= Duration::from_secs(60 * 60)
     }
 
-    /// The page's own name for itself: its first typed line with
-    /// markdown syntax stripped, `None` while nothing has been typed.
-    /// Chips never contribute — the author's own typed line does the
-    /// naming — and the user never sets this one, which is the tab's
-    /// [`name`](Tab::name) instead. It is the middle step of the label
-    /// the strip shows, and it dies with the page.
+    /// The first typed line, markdown stripped; `None` until one is typed.
     #[must_use]
     pub fn derived_title(&self) -> Option<&str> {
-        self.derived_title.as_deref()
+        self.derived_title.as_deref().map(String::as_str)
     }
 
-    /// Unix epoch milliseconds at this page's creation. Never used for
-    /// expiry math, and no longer the stamp any placeholder renders
-    /// from: that is the tab's birthday now (ADR-0017).
+    /// Unix ms at this page's creation; neither expiry nor the placeholder reads it.
     #[must_use]
     pub fn created_wall_ms(&self) -> u64 {
         self.created_wall_ms
     }
 
-    /// Whether this page holds anything at all: one line of ink that is
-    /// more than whitespace, or one sealed chip.
-    ///
-    /// This is the bar the ledger uses. `SheetStore::entomb` asks it
-    /// whether a dying page did anything worth recording, so the core
-    /// has one definition of holding something rather than two that can
-    /// drift apart, and a surface asking the same question of a live
-    /// page gets the answer the audit trail would have given at its
-    /// death. A page carrying nothing but a stray newline is
-    /// deliberately below the bar: whitespace is not a thing a person
-    /// did.
+    /// A non-whitespace line or a standing chip: what the page shows. The
+    /// ledger also records a page holding only detached chips.
     #[must_use]
     pub fn has_content(&self) -> bool {
         !self.chips.is_empty()
@@ -696,49 +738,26 @@ impl Sheet {
             })
     }
 
-    /// The local day this page was born on, through the offset the
-    /// caller's clock reports: [`local_day`] over the page's own stamp.
-    ///
-    /// The page's stamp and never the slot's, because a slot outlives
-    /// every page that stands in it. `SheetStore::open_page` mints
-    /// today's page into a tab opened last week, so the tab's birthday
-    /// would file a page typed this morning under a day nobody was
-    /// here. This one dies with the page, which is exactly the life a
-    /// reading of "which day is this page on" should have.
+    /// The local day this page was born on, by its own stamp, not the tab's.
     #[must_use]
     pub fn local_day(&self, utc_offset_seconds: i32) -> i64 {
         local_day(self.created_wall_ms, utc_offset_seconds)
     }
 }
 
-/// A tab: the durable slot a page stands in. Not `Debug` — it may hold
-/// a [`Sheet`], and a sheet owns [`SealedChip`]s.
-///
-/// Everything here outlives every page the slot ever held, so nothing
-/// here may be derived from what a page contained (ADR-0017). The
-/// `name` is the user's own word for the slot or nothing at all; the
-/// `rung` is a number with no clock behind it, so a tab schedules
-/// nothing and expires never.
+/// A tab: the durable slot a page stands in. Nothing here may derive from
+/// page content (ADR-0017).
 pub struct Tab {
     pub(crate) id: TabId,
-    /// Minted once, when the slot is opened, and carried through a
-    /// restore rather than re-minted. Distinct from the page's identity
-    /// and named by no ledger record.
     pub(crate) uuid: ItemId,
-    /// Unix epoch milliseconds when the slot was opened: the stamp the
-    /// `MMDD-HHmm` placeholder renders from, and the reason an unnamed
-    /// tab keeps the same label across every page it holds.
+    /// Unix ms the slot opened; the placeholder renders from it.
     pub(crate) created_wall_ms: u64,
-    /// The name the user typed, capped at [`TITLE_CAP`] characters.
-    /// `Some` means they typed it; `None` means the tab has no name.
-    /// Never derived from content, at any point, by any path.
-    pub(crate) name: Option<String>,
-    /// The rung pages born in this slot start at. Not a countdown:
-    /// there is no clock, no deadline and nothing remaining, so the
-    /// timer path has nothing here to read and nothing to schedule.
+    /// The name the user typed, at most [`TITLE_CAP`] chars; never derived.
+    /// A wiping owner, since a name is content (Law 0004, C14).
+    pub(crate) name: Option<Zeroizing<String>>,
+    /// The rung new pages start at. No clock: a tab never expires.
     pub(crate) rung: Ttl,
-    /// The page standing in the slot, if one is. `None` is a tab whose
-    /// page expired, or one that has never held a page.
+    /// The page in the slot; `None` once it expires or before the first.
     pub(crate) page: Option<Sheet>,
 }
 
@@ -764,7 +783,7 @@ impl Tab {
     /// The name the user typed, if they typed one.
     #[must_use]
     pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+        self.name.as_deref().map(String::as_str)
     }
 
     /// The rung pages born in this slot start at.
@@ -784,21 +803,10 @@ impl Tab {
         self.page.as_ref().is_some_and(|held| held.id == page)
     }
 
-    /// The label the strip and the ledger read, resolved in three
-    /// steps: the name the user typed, else the live page's derived
-    /// title, else the placeholder from *this tab's* creation stamp.
-    ///
-    /// The stamp is the tab's rather than the page's on purpose. An
-    /// unnamed tab that keeps taking fresh pages would otherwise change
-    /// its label every time one was born, and the slot the user
-    /// arranged by dragging would stop being recognizable.
-    ///
-    /// Which branch answered is [`Tab::label_source`]'s business, and
-    /// this function reads through it rather than repeating the walk,
-    /// so the two cannot disagree about a tab whose name was cleared
-    /// or whose page just settled its first line.
+    /// The user's name, else the page's derived title, else the placeholder
+    /// from the tab's own stamp, so an unnamed slot keeps its label.
     #[must_use]
-    pub fn label(&self, utc_offset_seconds: i32) -> String {
+    pub fn label(&self, utc_offset_seconds: i32) -> Zeroizing<String> {
         match self.label_source() {
             LabelSource::Name => self
                 .name
@@ -809,14 +817,13 @@ impl Tab {
                 .as_ref()
                 .and_then(|page| page.derived_title.clone())
                 .expect("label_source promised Derived has a derived title"),
-            LabelSource::Placeholder => placeholder_title(self.created_wall_ms, utc_offset_seconds),
+            LabelSource::Placeholder => {
+                Zeroizing::new(placeholder_title(self.created_wall_ms, utc_offset_seconds))
+            }
         }
     }
 
-    /// Which of [`Tab::label`]'s three steps answered. The far side
-    /// reads it to decide what the label is worth drawing beside: a
-    /// placeholder repeats the stamp the gutter and the rail already
-    /// carry, and a derived title repeats the page's own first line.
+    /// Which of [`Tab::label`]'s steps answered.
     #[must_use]
     pub fn label_source(&self) -> LabelSource {
         if self.name.is_some() {
@@ -856,29 +863,28 @@ impl LabelSource {
     }
 }
 
-/// A title is a name, not a document: 80 characters, counted in `char`s
-/// so a multibyte secret can never be split mid-scalar.
+/// Counted in `char`s so a multibyte scalar is never split.
 pub(crate) const TITLE_CAP: usize = 80;
 
-/// First non-blank ink line across the document, markdown syntax
-/// stripped and capped at [`TITLE_CAP`] characters; `None` when the
-/// body offers no such line.
-///
-/// A fence's rules are markup and never a name (D-12): the walk steps
-/// over an opening rule (three backticks or tildes, with or without a
-/// language word) and takes the first line inside the fence, as typed,
-/// since code carries no markdown to strip. A body that is nothing but
-/// rules derives nothing, the same as a body that is nothing but
-/// blank lines.
-///
-/// The walk stops at the walk (ADR-0017): the fallback is
-/// [`Tab::label`]'s business, because the placeholder renders from the
-/// tab's stamp and not the page's. Answering `None` here is what keeps
-/// a label from jumping to a different four-digit stamp the moment a
-/// page expires under it.
-pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
+/// The byte offset where the first [`TITLE_CAP`] chars of `text` end, or its length.
+fn cap_end(text: &str) -> usize {
+    text.char_indices()
+        .nth(TITLE_CAP)
+        .map_or(text.len(), |(index, _)| index)
+}
+
+/// The first [`TITLE_CAP`] chars of any content string, a tab's name included, as a wiping
+/// owner allocated once at its exact size, so no growing scratch is left behind (Law 0004).
+pub(crate) fn capped_title(text: &str) -> Zeroizing<String> {
+    Zeroizing::new(text[..cap_end(text)].to_owned())
+}
+
+/// First non-blank ink line, markdown stripped, capped at [`TITLE_CAP`].
+/// Fence rules are skipped and fenced code is taken as typed (D-12).
+/// No fallback here; that is the tab's (ADR-0017).
+pub(crate) fn derive_title(segments: &[Segment]) -> Option<Zeroizing<String>> {
     let mut fence: Option<Fence> = None;
-    let mut result: Option<String> = None;
+    let mut result: Option<Zeroizing<String>> = None;
     'outer: for text in segments.iter().filter_map(|s| match s {
         Segment::Ink(text) => Some(text),
         Segment::Chip(_) => None,
@@ -889,7 +895,7 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
                 Some(_) => {
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
-                        result = Some(trimmed.to_string());
+                        result = Some(Zeroizing::new(trimmed.to_string()));
                         break 'outer;
                     }
                 }
@@ -907,24 +913,20 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
             }
         }
     }
-    result.map(|line| line.chars().take(TITLE_CAP).collect())
+    // The resident owner is the cap's size, not the line's: a long first line wipes as the
+    // intermediate drops rather than living on in the title's spare capacity.
+    result.map(|line| capped_title(&line))
 }
 
-/// A fenced code block, remembered as the opener saw it: the marker
-/// character (`` ` `` or `~`) and the length of the opener's run
-/// (three or more). A closer has to match both so a `~~~` line inside
-/// a backtick fence stays code, and a `` ``` `` line inside a longer
-/// `` ```` `` fence stays code (`CommonMark` §4.5).
+/// An open fence. A closer must match its marker and be at least as long
+/// (`CommonMark` §4.5).
 #[derive(Clone, Copy)]
 struct Fence {
     marker: char,
     length: usize,
 }
 
-/// A fence's opening rule: up to three spaces of indent, then three
-/// or more backticks or tildes, with or without an info string after.
-/// Four or more spaces of leading indent is a `CommonMark` indented
-/// code block and the line stays prose.
+/// Up to three spaces of indent, then three or more backticks or tildes.
 fn opens_fence(line: &str) -> Option<Fence> {
     let indent = line.chars().take_while(|c| *c == ' ').count();
     if indent >= 4 {
@@ -942,10 +944,7 @@ fn opens_fence(line: &str) -> Option<Fence> {
     Some(Fence { marker, length })
 }
 
-/// A fence's closing rule: up to three spaces of indent, a marker run
-/// of the opener's kind at least as long as the opener's, and nothing
-/// but whitespace after it. An info string on a would-be closer is
-/// not one, and the fence stays open (`CommonMark` §4.5).
+/// A long-enough run of the opener's marker, then only whitespace.
 fn closes_fence(line: &str, opener: Fence) -> bool {
     let indent = line.chars().take_while(|c| *c == ' ').count();
     if indent >= 4 {
@@ -959,45 +958,19 @@ fn closes_fence(line: &str, opener: Fence) -> bool {
     rest[marker_count..].chars().all(char::is_whitespace)
 }
 
-/// The local day a wall-clock stamp falls on: days since the Unix
-/// epoch, counted after the stamp has been folded through the offset
-/// the caller's clock reports. The divide is `div_euclid` rather than a
-/// truncating one because the local reading can be negative even though
-/// the stamp cannot (the first hours of 1970 read from a zone west of
-/// UTC), and truncation would round those towards zero and call them
-/// the first of January.
-///
-/// This is the crate's only bucketing arithmetic, and it is
-/// [`placeholder_title`]'s: the `MMDD` half of the stamp a tab renders
-/// comes from this number, so the four digits on a label and the day
-/// anything else files that page under cannot disagree. Anyone
-/// grouping by day reads this rather than writing the divide again.
-///
-/// The offset is read at render time and applied to an old stamp,
-/// never stored beside it. A page staged within an hour of local
-/// midnight can therefore bucket differently after a daylight-saving
-/// change or a flight, the property [`placeholder_title`] already had,
-/// and the one its tests already pin. Storing a day index at creation
-/// would settle it, at the price of a field in the sealed snapshot and
-/// a durable answer to a question that is only ever asked at read time.
+/// Days since the Unix epoch in local time, via the caller's UTC offset.
+/// The crate's one day-bucketing function; the placeholder's `MMDD` uses it.
 #[must_use]
 pub fn local_day(wall_ms: u64, utc_offset_seconds: i32) -> i64 {
     local_seconds(wall_ms, utc_offset_seconds).div_euclid(86_400)
 }
 
-/// Seconds since the Unix epoch in the caller's local time: the one
-/// conversion both the day and the clock face are read out of.
 fn local_seconds(wall_ms: u64, utc_offset_seconds: i32) -> i64 {
     let epoch_seconds = i64::try_from(wall_ms / 1000).unwrap_or(i64::MAX);
     epoch_seconds.saturating_add(i64::from(utc_offset_seconds))
 }
 
-/// `MMDD-HHmm` in the user's local time, from the tab's creation
-/// stamp. The common case: a slot nobody has named holding a page whose
-/// first line is still empty.
-///
-/// The word "untitled" no longer exists in the core: an unnamed tab
-/// reads as `MMDD-HHmm`, which tells the user when they opened it.
+/// `MMDD-HHmm` in local time, from the tab's creation stamp.
 pub(crate) fn placeholder_title(wall_ms: u64, utc_offset_seconds: i32) -> String {
     let days = local_day(wall_ms, utc_offset_seconds);
     let secs_of_day = local_seconds(wall_ms, utc_offset_seconds).rem_euclid(86_400);
@@ -1007,9 +980,7 @@ pub(crate) fn placeholder_title(wall_ms: u64, utc_offset_seconds: i32) -> String
     format!("{month:02}{day:02}-{hour:02}{minute:02}")
 }
 
-/// Month and day from days since the Unix epoch: Howard Hinnant's
-/// `civil_from_days`, integer arithmetic only, no calendar dependency.
-/// The era starts in March, which is why the month wraps by three.
+/// Month and day from days since the epoch (Hinnant's `civil_from_days`).
 fn civil_month_day(days_since_epoch: i64) -> (i64, i64) {
     // Shift the epoch to 0000-03-01, the start of a 400-year era.
     let z = days_since_epoch + 719_468;
@@ -1028,12 +999,9 @@ fn civil_month_day(days_since_epoch: i64) -> (i64, i64) {
     (month, day)
 }
 
-/// Reduce one line of markdown to the name inside it. Deliberately not
-/// a parser: it handles the syntax a person types on a first line and
-/// nothing more, in a fixed order: blockquote markers, one list bullet,
-/// heading hashes, inline emphasis and code runs, then link syntax
-/// collapsed to its label.
-fn strip_markdown(line: &str) -> String {
+/// Reduce a first line of markdown to its name. Not a parser. Every buffer on the way is a
+/// wiping owner sized once, since the line is ink (Law 0004, C13).
+fn strip_markdown(line: &str) -> Zeroizing<String> {
     let mut rest = line.trim();
 
     // Blockquote markers, however deeply nested: "> > note" → "note".
@@ -1044,14 +1012,16 @@ fn strip_markdown(line: &str) -> String {
     rest = strip_list_bullet(rest);
     rest = strip_heading_markup(rest);
 
-    // Emphasis, strikethrough and inline code are decoration; the
-    // characters simply drop out.
-    let bare: String = rest
-        .chars()
-        .filter(|c| !matches!(c, '`' | '*' | '_' | '~'))
-        .collect();
+    let mut bare = Zeroizing::new(String::with_capacity(rest.len()));
+    bare.extend(rest.chars().filter(|c| !matches!(c, '`' | '*' | '_' | '~')));
 
-    flatten_links(&bare).trim().to_string()
+    let flat = flatten_links(&bare);
+    let trimmed = flat.trim();
+    if trimmed.len() == flat.len() {
+        flat
+    } else {
+        Zeroizing::new(trimmed.to_owned())
+    }
 }
 
 /// One leading list bullet: `- item`, `* item`, `+ item`, `3. item`.
@@ -1072,9 +1042,7 @@ fn strip_list_bullet(line: &str) -> &str {
     line
 }
 
-/// `### deploy friday` → `deploy friday`. Headings only (#, ## and
-/// deeper, doc 04); a `#hashtag` with no following whitespace is not a
-/// heading and stays as typed.
+/// Strip heading hashes; a `#hashtag` with no space after stays.
 fn strip_heading_markup(line: &str) -> &str {
     let trimmed = line.trim();
     let hashes = trimmed.len() - trimmed.trim_start_matches('#').len();
@@ -1090,10 +1058,9 @@ fn strip_heading_markup(line: &str) -> &str {
     trimmed
 }
 
-/// `[label](https://example.test)` → `label`, in one forward scan. An
-/// unterminated link is left exactly as typed.
-fn flatten_links(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
+/// `[label](url)` becomes `label`; an unterminated link stays as typed.
+fn flatten_links(text: &str) -> Zeroizing<String> {
+    let mut out = Zeroizing::new(String::with_capacity(text.len()));
     let mut rest = text;
     while let Some(open) = rest.find('[') {
         let after_open = &rest[open + 1..];
@@ -1112,38 +1079,18 @@ fn flatten_links(text: &str) -> String {
     out
 }
 
-/// The mechanical excerpt rule (doc 04; reference implementation in the
-/// rev C prototype's `excerptOf`). Returns (excerpt, size label, meta).
-///
-/// - Multi-line: first line, at most 17 characters, `…` appended.
-/// - Single line of n characters: reveal budget `B = min(24, ⌊n/3⌋)`,
-///   split 60/40 head–tail (`head = max(1, ⌈0.6·B⌉)`), middle hidden;
-///   too short to split (`B < 1`) shows `···`.
-///
-/// The size label is a class, never a count: the same bucket the
-/// ledger reduces the seal to, read off the sealed bytes whole. An
-/// exact length is a weak fingerprint of the content, and the label is
-/// what would sit in a clipboard history forever once a placeholder
-/// carries it (D-29). Trailing newlines are trimmed before the excerpt
-/// is cut, so the person who pasted "abc\n" still recognizes "a…";
-/// the character and line counts stay in the meta, which never
-/// renders. Counts are `char`s, mechanical and not grapheme-aware; the
-/// excerpt only has to be recognized by the person who pasted it.
-fn text_face(text: &str) -> (String, String, ChipMeta) {
+/// The mechanical excerpt rule (doc 04), returning (excerpt, size label,
+/// meta). The label is a size class, never a count (D-29).
+fn text_face(text: &str) -> (Zeroizing<String>, String, ChipMeta) {
     let size_label = SizeClass::of(text.len()).to_string();
     let trimmed = text.trim_end_matches('\n');
     let lines = trimmed.split('\n').count().max(1);
     if lines > 1 {
-        let head: String = trimmed
-            .split('\n')
-            .next()
-            .unwrap_or_default()
-            .chars()
-            .take(17)
-            .collect();
+        let first = trimmed.split('\n').next().unwrap_or_default();
+        let head = &first[..char_boundary(first, 17)];
         let chars = trimmed.chars().count();
         return (
-            format!("{head}…"),
+            head_and_tail(head, ""),
             size_label,
             ChipMeta::Text { chars, lines },
         );
@@ -1152,18 +1099,35 @@ fn text_face(text: &str) -> (String, String, ChipMeta) {
     let meta = ChipMeta::Text { chars: n, lines };
     let budget = (n / 3).min(24);
     if budget < 1 {
-        return ("···".to_string(), size_label, meta);
+        return (Zeroizing::new("···".to_string()), size_label, meta);
     }
     // 60/40 head–tail, head rounded up: max(1, ⌈0.6·B⌉) = max(1, ⌈3B/5⌉).
     let head_len = (3 * budget).div_ceil(5).max(1);
     let tail_len = budget - head_len;
-    let head: String = trimmed.chars().take(head_len).collect();
-    let tail: String = trimmed.chars().skip(n.saturating_sub(tail_len)).collect();
-    (format!("{head}…{tail}"), size_label, meta)
+    let head = &trimmed[..char_boundary(trimmed, head_len)];
+    let tail = &trimmed[char_boundary(trimmed, n.saturating_sub(tail_len))..];
+    (head_and_tail(head, tail), size_label, meta)
 }
 
-/// Sniff an image container from magic bytes — a header peek, never a
-/// decode. Unknown formats are simply "image".
+/// The byte offset of the `chars`th char of `text`, or its end.
+fn char_boundary(text: &str, chars: usize) -> usize {
+    text.char_indices()
+        .nth(chars)
+        .map_or(text.len(), |(index, _)| index)
+}
+
+/// The head, the mark and the tail joined into one wiping owner allocated at its exact
+/// size, with no growing scratch and no copy of the slices before it (Law 0004).
+fn head_and_tail(head: &str, tail: &str) -> Zeroizing<String> {
+    const MARK: &str = "…";
+    let mut out = Zeroizing::new(String::with_capacity(head.len() + MARK.len() + tail.len()));
+    out.push_str(head);
+    out.push_str(MARK);
+    out.push_str(tail);
+    out
+}
+
+/// Image container from magic bytes; never a decode.
 fn sniff_image_kind(bytes: &[u8]) -> &'static str {
     if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
         "PNG"
@@ -1183,9 +1147,12 @@ mod tests {
     use super::*;
     use crate::clock::{Clock, ManualClock};
 
+    /// Compiles only for a type that wipes on drop: the pin the owner tests rest on.
+    fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
+
     fn face(text: &str) -> (String, String) {
         let (excerpt, label, _) = text_face(text);
-        (excerpt, label)
+        (excerpt.as_str().to_owned(), label)
     }
 
     #[test]
@@ -1245,6 +1212,16 @@ mod tests {
     }
 
     #[test]
+    fn an_item_id_parses_back_from_the_form_it_displays() {
+        let id = ItemId::random();
+        assert_eq!(ItemId::parse(&id.to_string()), Some(id));
+        assert_eq!(ItemId::parse(&id.to_string().to_uppercase()), Some(id));
+        assert_eq!(ItemId::parse(""), None);
+        assert_eq!(ItemId::parse("017f22e2-79b0-7cc3-98c4-dc0c0c07398"), None);
+        assert_eq!(ItemId::parse("017f22e2-79b0-7cc3-98c4-dc0c0c07398g"), None);
+    }
+
+    #[test]
     fn item_id_clock_boundaries_clamp_without_changing_random_bits() {
         let random = [0xAB; 16];
         let earliest = ItemId::version_seven_at(UNIX_EPOCH - Duration::from_millis(1), random);
@@ -1268,8 +1245,6 @@ mod tests {
         assert_eq!(beyond, maximum);
         assert_eq!(ItemId::version_seven(u128::MAX, random), maximum);
         assert_eq!(&maximum.as_bytes()[..6], &[0xFF; 6]);
-        // Clamping changes only the timestamp; version/variant masking and
-        // the supplied random bits remain identical at both bounds.
         assert_eq!(&earliest.as_bytes()[6..], &maximum.as_bytes()[6..]);
         assert_eq!(earliest.as_bytes()[6] >> 4, 7);
         assert_eq!(earliest.as_bytes()[8] >> 6, 2);
@@ -1277,8 +1252,6 @@ mod tests {
 
     #[test]
     fn a_sealed_chip_carries_its_own_uuid() {
-        // Identity is minted, not derived from content: identical text
-        // seals to two chips that are still distinguishable.
         let first = SealedChip::text(ChipId(1), "same text");
         let second = SealedChip::text(ChipId(2), "same text");
         assert_ne!(first.uuid(), second.uuid());
@@ -1286,10 +1259,8 @@ mod tests {
 
     #[test]
     fn single_line_excerpt_splits_sixty_forty() {
-        // 40 chars → budget min(24, 13) = 13; head ⌈7.8⌉ = 8, tail 5.
-        // PAT-shaped, assembled at runtime so the raw pattern never
-        // sits in the repository text (the secret-scan CI job reads
-        // the full history).
+        // 40 chars: budget 13, head 8, tail 5. Assembled at runtime so the
+        // secret scan never sees a PAT.
         let token = String::from("ghp_") + "4kQ9wXbGpT2mR8vLcY3n" + "Z6qF1sJde0H5jK7a";
         assert_eq!(token.chars().count(), 40);
         let (excerpt, label) = face(&token);
@@ -1334,9 +1305,6 @@ mod tests {
 
     #[test]
     fn trailing_newlines_do_not_shape_the_excerpt() {
-        // The excerpt is cut from the content, not from its terminator;
-        // the label is a class of the whole, so nothing about it can
-        // betray the newline either way.
         let (excerpt, label) = face("abc\n");
         assert_eq!(excerpt, "a…");
         assert_eq!(label, "tiny");
@@ -1379,16 +1347,64 @@ mod tests {
         assert_eq!(chip.size_label(), "small");
     }
 
-    /// The fixed stamp `ManualClock::new()` reports, so every title
-    /// test below reads the same placeholder.
+    /// `ManualClock::new()`'s stamp, 2023-11-14 22:13:20 UTC.
     const STAMP: u64 = 1_700_000_000_000;
 
-    fn title_of(line: &str) -> String {
-        derive_title(&[Segment::Ink(line.into())]).expect("this line derives a title")
+    #[test]
+    fn segment_debug_output_never_prints_its_ink() {
+        let segments = vec![
+            Segment::Ink("hunter2 🙂 deploy key".into()),
+            Segment::Chip(ChipId(7)),
+        ];
+        for printed in [format!("{segments:?}"), format!("{segments:#?}")] {
+            assert!(!printed.contains("hunter2"), "{printed}");
+            assert!(!printed.contains("deploy"), "{printed}");
+        }
+        assert_eq!(format!("{:?}", segments[0]), "Ink([REDACTED])");
+        assert_eq!(format!("{:?}", segments[1]), "Chip(ChipId(7))");
     }
 
-    /// A tab holding `page`, born at [`STAMP`] and never named: the
-    /// fixture the label resolution is read through.
+    #[test]
+    fn segment_ink_and_its_clone_have_independent_wiping_owners() {
+        let mut original = Segment::Ink("🙂\r\n尾".into());
+        let mut cloned = original.clone();
+        wiping_owner(&original);
+        wiping_owner(&cloned);
+        let Segment::Ink(text) = &mut original else {
+            unreachable!();
+        };
+        let pointer = text.as_ptr();
+        let capacity = text.capacity();
+        let Segment::Ink(copy) = &cloned else {
+            unreachable!();
+        };
+        assert_eq!(copy.capacity(), copy.len());
+        assert_ne!(pointer, copy.as_ptr());
+        text.as_mut_str().zeroize();
+        assert!(text.as_bytes().iter().all(|byte| *byte == 0));
+        original.zeroize();
+        let Segment::Ink(text) = &original else {
+            unreachable!();
+        };
+        assert!(text.is_empty());
+        assert_eq!(text.as_ptr(), pointer);
+        assert_eq!(text.capacity(), capacity);
+        assert_eq!(cloned, Segment::Ink("🙂\r\n尾".into()));
+        cloned.zeroize();
+        assert_eq!(cloned, Segment::Ink(String::new()));
+        let mut chip = Segment::Chip(ChipId(1));
+        chip.zeroize();
+        assert_eq!(chip, Segment::Chip(ChipId(1)));
+    }
+
+    fn title_of(line: &str) -> String {
+        derive_title(&[Segment::Ink(line.into())])
+            .expect("this line derives a title")
+            .as_str()
+            .to_owned()
+    }
+
+    /// An unnamed tab born at [`STAMP`].
     fn unnamed_tab(page: Option<Sheet>) -> Tab {
         Tab {
             id: TabId(1),
@@ -1400,12 +1416,90 @@ mod tests {
         }
     }
 
+    /// The tab's name, the page's derived title and the label built from either are wiping
+    /// owners (Law 0004, C13 to C15): the types say so, and a plain `String` would not compile.
+    #[test]
+    fn a_name_a_derived_title_and_a_label_are_wiping_owners() {
+        let mut page = bare_sheet(STAMP);
+        page.derived_title = Some(Zeroizing::new("deploy notes".into()));
+        let mut tab = unnamed_tab(Some(page));
+        tab.name = Some(Zeroizing::new("the vault".into()));
+        let name = tab.name.as_ref().unwrap();
+        wiping_owner(name);
+        let derived = tab.page.as_ref().unwrap().derived_title.as_ref().unwrap();
+        wiping_owner(derived);
+        let label = tab.label(0);
+        wiping_owner(&label);
+        assert_eq!(name.as_str(), "the vault");
+        assert_eq!(derived.as_str(), "deploy notes");
+        assert_eq!(label.as_str(), "the vault");
+        let fresh = derive_title(&[Segment::Ink("# first\nsecond".into())]).unwrap();
+        wiping_owner(&fresh);
+        assert_eq!(fresh.as_str(), "first");
+    }
+
+    /// The cap counts chars, not bytes, wherever it is taken, and `capped_title` allocates the
+    /// owner once at that size, for a derived title as for a name.
+    #[test]
+    fn the_cap_counts_chars_and_allocates_once() {
+        let long = "🧪".repeat(TITLE_CAP + 5);
+        let capped = capped_title(&long);
+        assert_eq!(capped.chars().count(), TITLE_CAP);
+        assert!(
+            capped.capacity() <= capped.len() + 4,
+            "the owner grew past its size"
+        );
+        assert_eq!(capped_title("short").as_str(), "short");
+        let derived = derive_title(&[Segment::Ink(long.clone())]).unwrap();
+        assert_eq!(derived.chars().count(), TITLE_CAP);
+        assert_eq!(derived.as_str(), capped.as_str());
+        assert!(
+            derived.capacity() <= derived.len() + 4,
+            "the resident title kept the line's capacity"
+        );
+    }
+
+    /// A sealed object's excerpt and typed name are wiping owners (Law 0004, C09, C10), and
+    /// the excerpt is joined once at its size from slices that never split a char.
+    #[test]
+    fn an_objects_excerpt_and_name_are_wiping_owners() {
+        let mut chip = SealedChip::text(ChipId(1), &"🧪".repeat(60));
+        chip.name = Some(Zeroizing::new("TOKEN".into()));
+        wiping_owner(&chip.excerpt);
+        wiping_owner(chip.name.as_ref().unwrap());
+        assert_eq!(chip.name(), Some("TOKEN"));
+        assert_eq!(
+            chip.excerpt().chars().count(),
+            20 + 1,
+            "budget 20, head 12, tail 8, one mark"
+        );
+        assert_eq!(
+            chip.excerpt.capacity(),
+            chip.excerpt.len(),
+            "the excerpt grew past its size"
+        );
+        let (excerpt, _, _) = text_face("🧪🧪🧪🧪🧪\nsecond line");
+        assert_eq!(excerpt.as_str(), "🧪🧪🧪🧪🧪…");
+        let (excerpt, _, _) = text_face(&("🧪".repeat(20) + "\nsecond"));
+        assert_eq!(
+            excerpt.as_str(),
+            "🧪".repeat(17) + "…",
+            "a multibyte first line cut at 17 chars"
+        );
+    }
+
     #[test]
     fn titles_strip_heading_markup_only_when_it_is_markup() {
         let segs = vec![Segment::Ink("### deploy friday\nrest".into())];
-        assert_eq!(derive_title(&segs).as_deref(), Some("deploy friday"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("deploy friday")
+        );
         let segs = vec![Segment::Ink("#hashtag stays".into())];
-        assert_eq!(derive_title(&segs).as_deref(), Some("#hashtag stays"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("#hashtag stays")
+        );
     }
 
     #[test]
@@ -1438,8 +1532,7 @@ mod tests {
     fn titles_cap_at_eighty_characters() {
         let long = "x".repeat(200);
         assert_eq!(title_of(&long).chars().count(), TITLE_CAP);
-        // Counted in chars, not bytes: a multibyte line caps at 80
-        // scalars and never splits one in half.
+        // Chars, not bytes.
         let multibyte = "é".repeat(200);
         let capped = title_of(&multibyte);
         assert_eq!(capped.chars().count(), TITLE_CAP);
@@ -1452,14 +1545,14 @@ mod tests {
             Segment::Chip(ChipId(9)),
             Segment::Ink("\n\n  \nerrands".into()),
         ];
-        assert_eq!(derive_title(&segs).as_deref(), Some("errands"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("errands")
+        );
     }
 
     #[test]
     fn a_body_with_no_line_to_take_derives_nothing_at_all() {
-        // The walk answers None rather than reaching for a stamp: the
-        // fallback belongs to the tab, which is the object that still
-        // exists once this page is gone (ADR-0017).
         assert_eq!(derive_title(&[]), None);
         let segs = vec![Segment::Ink("   \n".into()), Segment::Chip(ChipId(1))];
         assert_eq!(derive_title(&segs), None);
@@ -1467,91 +1560,74 @@ mod tests {
 
     #[test]
     fn a_label_resolves_name_then_derived_title_then_the_tabs_own_stamp() {
-        // 1_700_000_000_000 ms is 2023-11-14 22:13:20 UTC.
         let mut tab = unnamed_tab(None);
-        assert_eq!(tab.label(0), "1114-2213", "no name, no page");
+        assert_eq!(tab.label(0).as_str(), "1114-2213", "no name, no page");
         assert_eq!(tab.label_source(), LabelSource::Placeholder);
 
-        // A page with a first line supplies the middle step. The page's
-        // own birthday sits a day later than the tab's, which is what
-        // makes the last step's stamp visibly the tab's.
+        // The page is born a day after the tab.
         let day = 24 * 60 * 60 * 1000;
         let mut page = bare_sheet(STAMP + day);
-        page.derived_title = Some("deploy notes".into());
+        page.derived_title = Some(Zeroizing::new("deploy notes".into()));
         tab.page = Some(page);
-        assert_eq!(tab.label(0), "deploy notes");
+        assert_eq!(tab.label(0).as_str(), "deploy notes");
         assert_eq!(tab.label_source(), LabelSource::Derived);
 
-        // An untyped page falls straight through to the tab's stamp,
-        // never the page's.
         tab.page = Some(bare_sheet(STAMP + day));
-        assert_eq!(tab.label(0), "1114-2213");
+        assert_eq!(tab.label(0).as_str(), "1114-2213");
         assert_eq!(tab.label_source(), LabelSource::Placeholder);
 
-        // And a name the user typed wins over both.
-        tab.name = Some("the vault".into());
-        assert_eq!(tab.label(0), "the vault");
+        tab.name = Some(Zeroizing::new("the vault".into()));
+        assert_eq!(tab.label(0).as_str(), "the vault");
         assert_eq!(tab.label_source(), LabelSource::Name);
     }
 
     #[test]
     fn titles_step_over_fence_rules_and_take_the_code_as_typed() {
-        // The opening rule names a language and is markup, not a name:
-        // the title is the first line inside the fence, and code is
-        // taken as typed rather than stripped of emphasis it never had.
         let segs = vec![Segment::Ink(
             "```ruby\n  if Onetime::Utils.yes?(ENV.fetch('STDOUT_SYNC', false))\n```".into(),
         )];
         assert_eq!(
-            derive_title(&segs).as_deref(),
+            derive_title(&segs).as_deref().map(String::as_str),
             Some("if Onetime::Utils.yes?(ENV.fetch('STDOUT_SYNC', false))")
         );
-        // A closing rule is stepped over too, and the line after it is
-        // prose again, with its markup stripped.
         let segs = vec![Segment::Ink("```\n```\n## after the fence".into())];
-        assert_eq!(derive_title(&segs).as_deref(), Some("after the fence"));
-        // Tildes fence too.
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("after the fence")
+        );
         assert_eq!(title_of("~~~sh\nls -la"), "ls -la");
-        // A body that is nothing but a rule derives nothing at all.
         assert_eq!(derive_title(&[Segment::Ink("```ruby\n".into())]), None);
     }
 
     #[test]
     fn a_mismatched_inner_marker_does_not_close_the_outer_fence() {
-        // A backtick fence enclosing a `~~~` line keeps that line as
-        // code, because a closer must match the opener's marker. The
-        // derived title is the first line *inside* the outer fence,
-        // and the "## heading" past the outer closer is prose the walk
-        // never reaches, because the first non-empty line inside is
-        // already the title.
         let segs = vec![Segment::Ink(
             "```\ninner code\n~~~\nmore code\n```\n## after".into(),
         )];
-        assert_eq!(derive_title(&segs).as_deref(), Some("inner code"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("inner code")
+        );
     }
 
     #[test]
     fn a_fence_indented_four_spaces_is_prose_not_a_fence() {
-        // CommonMark treats four spaces as an indented code block, and
-        // a fence-looking line inside one does not open a fence. The
-        // walk stays outside, so the line after it is markdown that
-        // gets stripped rather than code taken as typed: "**bold**"
-        // becomes "bold" here, where an open fence would have taken it
-        // as "**bold**".
         let segs = vec![Segment::Ink("    ```\n**bold**".into())];
-        assert_eq!(derive_title(&segs).as_deref(), Some("bold"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("bold")
+        );
     }
 
     #[test]
     fn a_fence_closer_with_an_info_string_is_not_a_closer() {
-        // A closer must be nothing but marker and whitespace. `` ``` js
-        // `` looks like a close but carries an info string, which
-        // CommonMark forbids on closers, so the fence stays open and
-        // the walk keeps taking lines as code.
         let segs = vec![Segment::Ink(
             "```\nfirst line of code\n``` js\nstill code\n```".into(),
         )];
-        assert_eq!(derive_title(&segs).as_deref(), Some("first line of code"));
+        assert_eq!(
+            derive_title(&segs).as_deref().map(String::as_str),
+            Some("first line of code")
+        );
     }
 
     #[test]
@@ -1563,10 +1639,6 @@ mod tests {
         sheet.blocks.note_insert(6, "world");
         sheet.document.commit_at(36_000);
 
-        // An hour later the second line goes. A deletion is a change
-        // like any other, but it is the one kind that leaves no
-        // character behind to vote for it: the page's newest stamp
-        // rests on the log alone.
         sheet.document.delete(6, 5).unwrap();
         sheet.blocks.note_delete(6, 5);
         sheet.document.commit_at(39_600);
@@ -1574,10 +1646,6 @@ mod tests {
         sheet.settle_blocks();
         assert_eq!(sheet.modified_s(), Some(39_600));
 
-        // The ceremony destroys that log, so the frontier has to be
-        // read while it still exists. Modified is a stamp on a page a
-        // reader is looking at; it may not walk backwards because the
-        // evidence behind it expired on schedule.
         sheet.compact();
         assert_eq!(
             sheet.modified_s(),
@@ -1585,11 +1653,48 @@ mod tests {
             "the deletion's hour survives the boundary"
         );
 
-        // The floor is the page's, not a block's: no paragraph is made
-        // to claim a change that did not touch it.
+        // No block claims the deletion.
         let metas = sheet.blocks_meta();
         assert_eq!(metas[0].modified_s, Some(36_000));
         assert_eq!(metas[1].modified_s, None);
+    }
+
+    #[test]
+    fn settling_a_delete_that_ends_on_a_newline_keeps_every_block_name() {
+        let mut sheet = bare_sheet(STAMP);
+        sheet.document.insert(0, "one\ntwo\nthree").unwrap();
+        sheet.blocks.note_insert(0, "one\ntwo\nthree");
+        sheet.document.commit(None);
+        sheet.rebuild_segments();
+        sheet.settle_blocks();
+        let pasted = sheet.blocks.ids();
+        assert_eq!(pasted.len(), 1);
+
+        sheet.document.delete(8, 5).unwrap();
+        sheet.blocks.note_delete(8, 5);
+        sheet.document.commit(None);
+        sheet.rebuild_segments();
+        sheet.settle_blocks();
+
+        let settled = sheet.blocks.ids();
+        assert_eq!(settled.len(), 2, "the trailing paragraph is a block");
+        assert_eq!(settled[0], pasted[0], "no fresh identities for a newline");
+    }
+
+    #[test]
+    fn the_compaction_floor_survives_a_block_index_rebuild() {
+        let mut sheet = bare_sheet(STAMP);
+        sheet.blocks.note_compaction(Some(39_600));
+        let before = sheet.blocks.ids();
+
+        // Unnarrated, so the settle has to rebuild the index.
+        sheet.document.insert(0, "one\ntwo").unwrap();
+        sheet.document.commit(None);
+        sheet.rebuild_segments();
+        sheet.settle_blocks();
+
+        assert_ne!(sheet.blocks.ids()[0], before[0], "the index was rebuilt");
+        assert_eq!(sheet.blocks.compaction_frontier(), Some(39_600));
     }
 
     /// A page with nothing in it, born at `created_wall_ms`.
@@ -1605,6 +1710,7 @@ mod tests {
             segments: Vec::new(),
             blocks,
             chips: Vec::new(),
+            detached: Vec::new(),
             clock: SheetClock::Running {
                 deadline: Instant::now(),
             },
@@ -1632,9 +1738,6 @@ mod tests {
 
     #[test]
     fn the_placeholder_stamp_did_not_move() {
-        // Every case pinned above, restated after the day arithmetic
-        // came out of `placeholder_title` and into `local_day`. The
-        // label is on screen, so the rendering has to be what it was.
         assert_eq!(placeholder_title(STAMP, 0), "1114-2213");
         assert_eq!(placeholder_title(STAMP, -8 * 3600), "1114-1413");
         assert_eq!(placeholder_title(STAMP, 2 * 3600), "1115-0013");
@@ -1642,10 +1745,7 @@ mod tests {
         assert_eq!(placeholder_title(1_709_210_040_000, 0), "0229-1234");
         assert_eq!(placeholder_title(951_868_800_000, 0), "0301-0000");
 
-        // And the agreement is now structural rather than a
-        // coincidence of two spellings: the four digits the label opens
-        // with are the calendar reading of the very day `local_day`
-        // counts, for every case above.
+        // The label's MMDD is the calendar reading of `local_day`.
         for (wall, offset) in [
             (STAMP, 0),
             (STAMP, -8 * 3600),
@@ -1664,8 +1764,7 @@ mod tests {
 
     #[test]
     fn a_page_born_before_local_midnight_is_a_different_day_from_one_after() {
-        // [`STAMP`] is 2023-11-14T22:13:20Z, an hour and three quarters
-        // short of midnight.
+        // STAMP is 22:13:20Z.
         let hour = 60 * 60 * 1000;
         let eve = local_day(STAMP, 0);
         assert_eq!(local_day(STAMP + hour, 0), eve, "23:13 is still the 14th");
@@ -1674,7 +1773,6 @@ mod tests {
             eve + 1,
             "00:13 is the 15th, and one day is one day"
         );
-        // Which is the boundary the label crosses too.
         assert_eq!(placeholder_title(STAMP + hour, 0), "1114-2313");
         assert_eq!(placeholder_title(STAMP + 2 * hour, 0), "1115-0013");
     }
@@ -1686,16 +1784,10 @@ mod tests {
         assert_eq!(local_day(STAMP, 2 * 3600), utc + 1);
         // Eight hours west it is the middle of the afternoon.
         assert_eq!(local_day(STAMP, -8 * 3600), utc);
-        // And a stamp just past midnight UTC is still yesterday there:
-        // the negative offset is the case a truncating divide would get
-        // wrong for any stamp before the epoch, and the case a shell
-        // asking a system time zone would get wrong at the edges.
         let after_midnight = STAMP + 4 * 60 * 60 * 1000; // 2023-11-15T02:13:20Z
         assert_eq!(local_day(after_midnight, 0), utc + 1);
         assert_eq!(local_day(after_midnight, -8 * 3600), utc);
 
-        // The offset a store hands out is a clock's answer, not a
-        // constant, and this is the pair a caller reads it as.
         let clock = ManualClock::new().with_local_offset_seconds(2 * 3600);
         assert_eq!(
             local_day(clock.wall_ms(), clock.local_offset_seconds()),
@@ -1705,11 +1797,6 @@ mod tests {
 
     #[test]
     fn a_local_reading_before_the_epoch_rounds_the_way_the_calendar_does() {
-        // The stamp cannot be negative, but the local reading can: the
-        // first hours of 1970 seen from eight hours west of UTC are the
-        // last day of 1969. A truncating divide would round that
-        // towards zero and call it the first of January, and the label
-        // beside it already says otherwise.
         assert_eq!(local_day(0, -8 * 3600), -1);
         assert_eq!(placeholder_title(0, -8 * 3600), "1231-1600");
         assert_eq!(local_day(0, 0), 0);
@@ -1717,10 +1804,7 @@ mod tests {
 
     #[test]
     fn a_stamp_near_midnight_buckets_by_the_offset_it_is_read_with() {
-        // 2023-11-14T23:30:00Z. Nothing about the page changes here;
-        // the offset does, which is what a daylight-saving change does
-        // to a page already staged. The bucket moves with it, and so
-        // does the label, the property the placeholder always had.
+        // 2023-11-14T23:30:00Z; only the offset moves, as with a DST change.
         let near_midnight = 1_700_004_600_000;
         assert_eq!(
             local_day(near_midnight, 3600),
@@ -1732,9 +1816,7 @@ mod tests {
 
     #[test]
     fn a_pages_day_is_its_own_and_not_the_slots() {
-        // The slot was opened three days before the page standing in
-        // it, which is every reused tab: `open_page` mints today's page
-        // into a slot that is as old as it is.
+        // The slot is three days older than its page.
         let day = 24 * 60 * 60 * 1000;
         let mut tab = unnamed_tab(None);
         tab.page = Some(bare_sheet(STAMP + 3 * day));
@@ -1742,7 +1824,7 @@ mod tests {
         assert_eq!(tab.created_wall_ms(), STAMP);
         assert_eq!(page.local_day(0), local_day(STAMP, 0) + 3);
         assert_eq!(
-            tab.label(0),
+            tab.label(0).as_str(),
             "1114-2213",
             "and the label still reads the slot's stamp, which is the point of the split"
         );
@@ -1759,7 +1841,6 @@ mod tests {
                 "{blank:?} is not something a person did"
             );
         }
-        // One typed character is, wherever the blank lines fall.
         let mut sheet = bare_sheet(STAMP);
         sheet.segments = vec![Segment::Ink("\n\n  rotate the key  \n".into())];
         assert!(sheet.has_content());
@@ -1778,8 +1859,6 @@ mod tests {
 
     #[test]
     fn the_size_label_is_the_ledgers_bucket_never_a_count() {
-        // The label and the ledger read the same bytes through the
-        // same buckets, so the face can never say more than the record.
         for (text, class) in [
             ("ab".to_string(), "tiny"),
             ("x".repeat(64), "small"),

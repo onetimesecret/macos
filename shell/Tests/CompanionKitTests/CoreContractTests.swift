@@ -93,12 +93,15 @@ final class CoreContractTests: XCTestCase {
         XCTAssertTrue(client.tabs().isEmpty, "closing the tab took the slot too")
         let ledger = client.ledger()
 
-        // One record per lifecycle step: the page's creation, the seal,
-        // the page's discard. Nothing else in this test emits.
-        XCTAssertEqual(ledger.map(\.event), ["discarded", "sealed", "created"])
+        // The page's creation, the seal, then the close, which ends the chip
+        // and the page apart (Law 0001, lifecycle states). Nothing else in this test emits.
+        XCTAssertEqual(ledger.map(\.event), ["discarded", "discarded", "sealed", "created"])
         let discarded = try XCTUnwrap(ledger.first)
-        let sealed = ledger[1]
-        let created = ledger[2]
+        let chipDeath = ledger[1]
+        let sealed = ledger[2]
+        let created = ledger[3]
+        XCTAssertEqual(chipDeath.item, sealed.item, "the chip's own death")
+        XCTAssertEqual(chipDeath.title, "deploy friday")
         XCTAssertEqual(sealed.size, chip.sizeLabel)
         // Both sides read the core's one Display impl; the vocabulary
         // itself is pinned here so a renamed bucket cannot pass unseen.
@@ -112,7 +115,7 @@ final class CoreContractTests: XCTestCase {
             XCTAssertEqual(record.item, record.item.lowercased())
             XCTAssertGreaterThan(record.atMs, 0)
             XCTAssertGreaterThan(record.createdAtMs, 0)
-            XCTAssertTrue(["none", "clipboard", "link"].contains(record.destination))
+            XCTAssertTrue(["none", "clipboard", "link", "drag"].contains(record.destination))
         }
 
         // The title travels: the page was named by the time it died,

@@ -9,26 +9,6 @@ import XCTest
 /// every symbol name one this SDK actually has, since a misspelt SF
 /// Symbol renders as an empty toolbar item and reports nothing.
 final class SettingsTabTests: XCTestCase {
-    @MainActor
-    func testNativeSettingsSceneRedirectsAndCanBeOpenedAgain() async {
-        var opens = 0
-        let view = SettingsSceneRedirectView { opens += 1 }
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
-            styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = view
-        for _ in 0..<5 { await Task.yield() }
-        XCTAssertEqual(opens, 1)
-        XCTAssertFalse(window.isVisible)
-        XCTAssertFalse(window.isRestorable)
-        // Reuse the host: a native request can key the same scene again.
-        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
-        for _ in 0..<5 { await Task.yield() }
-        XCTAssertEqual(opens, 2)
-        XCTAssertFalse(window.isVisible)
-    }
-
     func testGeneralComesFirst() {
         XCTAssertEqual(SettingsTab.allCases.first, .general)
         XCTAssertEqual(SettingsTab.general.label, "General")
@@ -61,6 +41,27 @@ final class SettingsTabTests: XCTestCase {
     func testARefusedLedgerLandsOnGeneral() {
         XCTAssertEqual(SettingsTab.landing(current: .sync, ledgerRestoreRefused: true), .general)
         XCTAssertEqual(SettingsTab.landing(current: .connection, ledgerRestoreRefused: true), .general)
+    }
+
+    /// The surface names two tabs: the conceal sheet's Connection
+    /// Settings… and the pad switcher's Manage Pads….
+    func testEachPaneTheSurfaceNamesIsATab() {
+        XCTAssertEqual(SettingsTab(.connection), .connection)
+        XCTAssertEqual(SettingsTab(.pads), .pads)
+        XCTAssertEqual(SettingsTab.pads.label, "Pads")
+    }
+
+    /// A button that names a tab, the conceal sheet's Connection
+    /// Settings…, lands there over the last tab and over a refused ledger.
+    func testARequestedTabWins() {
+        for tab in SettingsTab.allCases {
+            XCTAssertEqual(
+                SettingsTab.landing(current: tab, requested: .connection, ledgerRestoreRefused: false),
+                .connection)
+        }
+        XCTAssertEqual(
+            SettingsTab.landing(current: .sync, requested: .connection, ledgerRestoreRefused: true),
+            .connection)
     }
 
     func testAnOrdinaryShowKeepsTheLastTab() {

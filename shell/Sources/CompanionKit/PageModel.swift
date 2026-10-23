@@ -22,6 +22,13 @@ public enum EditorEditIntent: UInt32, Sendable {
     case composition = 6
 }
 
+/// What a writing surface edits: a page or file by its sheet id, or a
+/// sealed object's note by its chip id, a counter that overlaps page ids.
+public enum InkDocument: Hashable, Sendable {
+    case sheet(UInt64)
+    case note(chip: UInt64)
+}
+
 /// The TextKit selection on both sides of one editor action.
 public struct EditorEditSelection: Equatable, Sendable {
     public let before: NSRange
@@ -258,6 +265,9 @@ public enum QuitSaveOutcome: Equatable, Sendable {
     /// work after the load, none of which was ever written. The writes
     /// that were owed, if any, settled.
     case unsavableWithContent
+    /// The drafts licence is withheld and a file has unsaved edits the
+    /// drafts leg left in memory. The other writes settled (issue #296).
+    case unsavableWithDrafts
 }
 
 /// What a navigation gesture can land on (issue #79).
@@ -302,8 +312,10 @@ public struct FileRenderSuggestion: Equatable, Sendable {
         self.mode = mode
     }
 
-    public var language: String {
-        if case .source(let language) = mode { return language.capitalized }
+    /// The name the offer shows, never the slug: `CodeLanguageName`'s
+    /// for a source language, the mode's own label otherwise.
+    public var languageName: String {
+        if case .source(let language) = mode { return CodeLanguageName.display(language) }
         return mode.formatLabel
     }
 }
@@ -376,13 +388,16 @@ public final class LanguageActionAvailability: ObservableObject {
     @Published public private(set) var canDetect = false
     @Published public private(set) var canChoose = false
     @Published public private(set) var selectionIsEmpty: Bool?
+    /// Whether Paste Without Detection has a surface holding the keys to paste into.
+    @Published public private(set) var canPaste = false
 
-    func stand(canDetect: Bool, canChoose: Bool, selectionIsEmpty: Bool?) {
+    func stand(canDetect: Bool, canChoose: Bool, selectionIsEmpty: Bool?, canPaste: Bool) {
         if self.canDetect != canDetect { self.canDetect = canDetect }
         if self.canChoose != canChoose { self.canChoose = canChoose }
         if self.selectionIsEmpty != selectionIsEmpty {
             self.selectionIsEmpty = selectionIsEmpty
         }
+        if self.canPaste != canPaste { self.canPaste = canPaste }
     }
 }
 
@@ -446,6 +461,8 @@ public final class PageModel: ObservableObject {
 
     /// The dirty file whose close request is awaiting an inline outcome.
     @Published public private(set) var pendingFileClose: PendingFileClose?
+    /// `openFile(at:)` refuses while this is true; the Finder's opens wait on it instead.
+    public var openRefusedForCloseDecision: Bool { pads.isEnabled && pendingFileClose != nil }
     private var selectionBeforePendingFileClose: UInt64?
     private var ledgerBeforePendingFileClose = false
 
@@ -629,7 +646,7 @@ public final class PageModel: ObservableObject {
     /// licence is withheld and nothing typed this session reaches disk.
     /// Persistent for the whole run, unlike a notice: it ends only
     /// through `clearUnreadableStateFile`, the user's own discard
-    /// (ADR-0016 section 7, issue #49).
+    /// (persistence decision background section 7, issue #49).
     @Published public private(set) var contentRestoreRefused = false
 
     /// The ledger file existed and would not open, so the trail is not
@@ -638,6 +655,10 @@ public final class PageModel: ObservableObject {
     /// for the same reason as the content flag; quieter in the surface
     /// because no page is at stake.
     @Published public private(set) var ledgerRestoreRefused = false
+
+    /// The drafts file existed and would not open, so the drafts licence is
+    /// withheld until a discard grants it (`clearUnreadableDraftsFile`).
+    @Published public private(set) var draftsRestoreRefused = false
 
     /// The write lifecycle the surface shows (issue #49). Moves in
     /// `markDirty` and `saveState` only, and deliberately not on the
@@ -698,6 +719,10 @@ public final class PageModel: ObservableObject {
     /// and this model never places document content itself. The owner's
     /// editor installs it (`routeSealedPaste(_:from:)`).
     public private(set) var performSealedPaste: (() -> Void)?
+
+    /// The clipboard slot's cut (sealed row spec): its page and faces, read
+    /// again on every `refresh()`; nil when no cut stands.
+    @Published public private(set) var activeCut: ActiveCut?
 
     /// The inline conceal confirmation, when one is open.
     @Published public var concealDraft: ConcealDraft?
@@ -775,6 +800,32 @@ public final class PageModel: ObservableObject {
         }
     }
     private static let previewRenderingKey = "previewRendering"
+    private static let pagePreviewKey = "pageMarkdownPreviewV2"
+    private var pagePreviewOverrides: [String: Bool] = [:]
+
+    private func pagePreviewIdentity(for id: UInt64) -> String? {
+        guard !id.isFileID else { return nil }
+        return tabs.first(where: { $0.pageID == id })?.pageUUID
+    }
+
+    /// Whether the page shows its builtin Markdown preview, a choice of its own apart
+    /// from `previewRendering`, which styles the editor and the quiet pages.
+    public func markdownPreviewEnabled(for id: UInt64) -> Bool {
+        guard let key = pagePreviewIdentity(for: id) else { return false }
+        return pagePreviewOverrides[key] ?? false
+    }
+
+    public func toggleMarkdownPreview(for id: UInt64) {
+        guard let key = pagePreviewIdentity(for: id) else { return }
+        objectWillChange.send()
+        pagePreviewOverrides[key] = !markdownPreviewEnabled(for: id)
+        defaults.set(pagePreviewOverrides, forKey: Self.pagePreviewKey)
+        // The V1 key was keyed by page id, which a relaunch re-mints; it is read nowhere now.
+        defaults.removeObject(forKey: Self.legacyPagePreviewKey)
+        invalidateQuietRenderings()
+    }
+
+    private static let legacyPagePreviewKey = "pageMarkdownPreviewV1"
 
     /// Posted when a rendering dependency (preview scope, syntax highlighting,
     /// typeface) moves and the quiet cache has been dropped. The roll listens
@@ -962,27 +1013,10 @@ public final class PageModel: ObservableObject {
 
     /// ⌥Z. A page whose lines all fit shows no difference, so the toggle
     /// says what it did rather than leaving the keystroke looking dead.
-    ///
-    /// Not reachable while pages are organized by day; see
-    /// `wrapIsFixedNotice` and the `.editorToggleWrap` arm of `perform`.
     public func toggleWrap() {
         wrapsLines.toggle()
         flash(wrapsLines ? "long lines wrap" : "long lines run on")
     }
-
-    /// What ⌥Z says instead, while pages are organized by day (issue
-    /// #79).
-    ///
-    /// The roll wraps every day whatever the preference says: a line
-    /// that ran off the side of one day would run off the side of the
-    /// roll, and a roll scrolling in two directions would have no honest
-    /// anchor. So the chord cannot do the one thing it is for, and both
-    /// of the alternatives to saying so are worse than a sentence, a
-    /// dead key, or the stored preference rewritten under a surface that
-    /// will not honour it, which hands horizontal mode back unwrapped
-    /// for a keystroke whose effect the user was never shown.
-    public static let wrapIsFixedNotice =
-        "long lines always wrap while the days are showing"
 
     /// The rule, as a pure decision on the two facts a launch knows, so
     /// the release branch is testable from a debug test binary: a debug
@@ -1052,6 +1086,12 @@ public final class PageModel: ObservableObject {
     /// What Edit → Seal Selected Content reads as the selection moves.
     public let sealActions = SealActionAvailability()
 
+    /// The keys moved where the editor cannot see them, as into a field in
+    /// another window: the Edit menu asks the editor again (Law 0007, keys row).
+    func editorKeysMayHaveMoved() {
+        (activeEditor as? InkTextView)?.coordinator?.keysMoved()
+    }
+
     /// Set by the app delegate; Esc routes here when no editor holds
     /// the keys (the controller re-keys the frontmost app's window).
     public var onHandBackKeys: (() -> Void)?
@@ -1059,6 +1099,20 @@ public final class PageModel: ObservableObject {
     /// Set by the app delegate; ⌘, routes here (the delegate owns the
     /// Settings window, the surface merely asks for it).
     public var onOpenSettings: (() -> Void)?
+
+    /// The Settings tabs the surface points to by name: the conceal
+    /// sheet's Connection Settings… and the pad switcher's Manage Pads….
+    public enum SettingsPane: Sendable {
+        case connection
+        case pads
+    }
+
+    /// Set by the app delegate: Settings opened on a named tab.
+    public var onOpenSettingsPane: ((SettingsPane) -> Void)?
+
+    public func openSettings(_ pane: SettingsPane) {
+        onOpenSettingsPane?(pane)
+    }
 
     /// Set by the roll while it is mounted: put the clip back on Day 0
     /// (issue #79). Nil in horizontal mode, where there is one page in
@@ -1282,6 +1336,25 @@ public final class PageModel: ObservableObject {
     /// be asserted without touching the developer's clipboard.
     private let clearClipboardIfOurs: @Sendable () -> Bool
 
+    /// Where ambient text such as a sealed object's name is copied: the
+    /// general pasteboard, or the one a test named.
+    let ambientPasteboard: NSPasteboard
+
+    /// How a cut writes its fragment onto `ambientPasteboard`; a test hands in one that refuses.
+    private let writeCutFragment: @MainActor (SealedFragment, NSPasteboard) -> Bool
+
+    /// Where a link the person opens goes: the shared workspace, or a test's recorder.
+    private let openURL: @MainActor (URL) -> Void
+
+    /// Where Quit Anyway asks for termination: `NSApp`, or a test's recorder.
+    private let requestTermination: @MainActor () -> Void
+
+    /// Opens a link outside the app through the seam above, for the editor's
+    /// links and the Help menu alike (issue #294).
+    public func openExternal(_ url: URL) {
+        openURL(url)
+    }
+
     /// The init's test seams, gathered into one struct so the shipping
     /// signature stays narrow however many seams the tests grow. Each
     /// member is optional and nil means the shipping value: a
@@ -1324,6 +1397,20 @@ public final class PageModel: ObservableObject {
         /// write is declined either way: the seam replaces the trap and
         /// never the verdict.
         let declinedPresentationWrite: (@MainActor (PresentationField, PresentationOwner) -> Void)?
+        /// A pasteboard of the test's own for ambient copies, so a suite
+        /// never writes the person's clipboard.
+        let ambientPasteboard: NSPasteboard?
+        /// A cut's fragment write that refuses, since no real board can be made to (Law 0002).
+        let writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)?
+        /// Where the system's wake is heard: a center of the test's own, so a
+        /// suite can post one; nil is the shared workspace's.
+        let wakeNotifications: NotificationCenter?
+        /// Where a link the person opens goes: a recorder of the test's own, so
+        /// a suite never starts a browser; nil is the shared workspace's.
+        let openURL: (@MainActor (URL) -> Void)?
+        /// Where Quit Anyway asks for termination: a recorder of the test's own, so
+        /// a suite never terminates its runner; nil is `NSApp`'s.
+        let requestTermination: (@MainActor () -> Void)?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1336,7 +1423,12 @@ public final class PageModel: ObservableObject {
             clearClipboardIfOurs: (@Sendable () -> Bool)? = nil,
             declinedPresentationWrite: (
                 @MainActor (PresentationField, PresentationOwner) -> Void
-            )? = nil
+            )? = nil,
+            ambientPasteboard: NSPasteboard? = nil,
+            writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)? = nil,
+            wakeNotifications: NotificationCenter? = nil,
+            openURL: (@MainActor (URL) -> Void)? = nil,
+            requestTermination: (@MainActor () -> Void)? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1347,6 +1439,11 @@ public final class PageModel: ObservableObject {
             self.clipboardClearDebounce = clipboardClearDebounce
             self.clearClipboardIfOurs = clearClipboardIfOurs
             self.declinedPresentationWrite = declinedPresentationWrite
+            self.ambientPasteboard = ambientPasteboard
+            self.writeCutFragment = writeCutFragment
+            self.wakeNotifications = wakeNotifications
+            self.openURL = openURL
+            self.requestTermination = requestTermination
         }
     }
 
@@ -1427,6 +1524,11 @@ public final class PageModel: ObservableObject {
         saveRetryDebounce = seams.saveRetryDebounce ?? Self.saveRetryDebounce
         clipboardClearDebounce = seams.clipboardClearDebounce
         declinedPresentationWrite = seams.declinedPresentationWrite
+        ambientPasteboard = seams.ambientPasteboard ?? .general
+        writeCutFragment = seams.writeCutFragment ?? { $0.write(to: $1) }
+        openURL = seams.openURL ?? { NSWorkspace.shared.open($0) }
+        requestTermination = seams.requestTermination ?? { NSApp?.terminate(nil) }
+        wakeCenter = seams.wakeNotifications ?? NSWorkspace.shared.notificationCenter
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         ownershipLogger = Logger(subsystem: formFactor.loggerSubsystem, category: "ownership")
         // Resolved once, here, so the surface and the page's text view
@@ -1439,8 +1541,7 @@ public final class PageModel: ObservableObject {
         keymap.report(subsystem: formFactor.loggerSubsystem)
         // Unset → float on top, matching the original behavior.
         floatsOnTop = defaults.object(forKey: Self.floatsKey) as? Bool ?? true
-        // Unset → wrap, which is how every plain-text editor opens and
-        // the only sane default for a card this narrow.
+        // Unset → wrap.
         wrapsLines = defaults.object(forKey: Self.wrapKey) as? Bool ?? true
         // Unset → off. Technical build details stay in About until explicitly
         // requested in the menu-bar menu.
@@ -1456,6 +1557,7 @@ public final class PageModel: ObservableObject {
         // eye expects of a page it can already read.
         previewRendering = (defaults.string(forKey: Self.previewRenderingKey)
             .flatMap(PreviewRenderingScope.init(rawValue:))) ?? .allPages
+        pagePreviewOverrides = defaults.dictionary(forKey: Self.pagePreviewKey) as? [String: Bool] ?? [:]
         languageDetectionEnabled =
             defaults.object(forKey: Self.languageDetectionKey) as? Bool ?? false
         automaticallyFencePastes =
@@ -1514,13 +1616,8 @@ public final class PageModel: ObservableObject {
         connection = self.client.connectionInfo()
         sync = SyncController(client: client, defaults: defaults)
         sync.serverUrlProvider = { [weak self] in self?.connection?.serverUrl ?? "" }
-        // A peer's edit both shows and persists: the refresh redraws
-        // what the core now holds, and the dirty mark schedules the
-        // sealed write exactly as a local keystroke would.
-        sync.onRemoteChange = { [weak self] in
-            self?.markDirty()
-            self?.refresh()
-        }
+        sync.onRemoteChange = { [weak self] pages in self?.settleRemoteEdits(on: pages) }
+        sync.onEnrolRefused = { [weak self] page in self?.settleRefusal(sheet: page, told: true) }
         lastPadID = pads.activeID
         lastPadsEnabled = pads.isEnabled
         pads.onChange = { [weak self] in self?.padCatalogChanged() }
@@ -1532,6 +1629,12 @@ public final class PageModel: ObservableObject {
             // panel's answer is not processed yet; its gesture drains the
             // owed check instead, after it has finished with that answer.
             MainActor.assumeIsolated { self?.consumeOwedActivationCheck() }
+        }
+        // The event timer does not count sleep, so a wake settles as the timer would (Law 0001, expiry row).
+        wakeObserver = wakeCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { _ = self?.settleCoreEvent() }
         }
     }
 
@@ -1559,6 +1662,9 @@ public final class PageModel: ObservableObject {
     // removeObserver is thread-safe; every other access is main-actor
     // isolated, but Swift 6 deinit is nonisolated.
     private nonisolated(unsafe) var modalEndObserver: NSObjectProtocol?
+    /// The wake's observer, on the center it was added to; removed in deinit as above.
+    private nonisolated(unsafe) var wakeObserver: NSObjectProtocol?
+    private let wakeCenter: NotificationCenter
 
     /// Whether the drafts file owes a write.
     ///
@@ -1570,7 +1676,8 @@ public final class PageModel: ObservableObject {
     ///
     /// Readable so the cancelled quit's line can tell a drafts leg
     /// that failed from one that landed before another leg refused.
-    private(set) var draftsDirty = false
+    /// Published, so the header's drafts word redraws with it.
+    @Published private(set) var draftsDirty = false
 
     /// Whether the first reveal has run — restore is attempted once.
     private var stateLoaded = false
@@ -1613,8 +1720,13 @@ public final class PageModel: ObservableObject {
     /// is not a refusal at all: a ledger payload from a version this app
     /// itself once wrote and has replaced is disposed of by the seam
     /// during the restore, before the probe below runs, so the file is
-    /// gone and the licence is granted fresh (ADR-0016 section 9).
+    /// gone and the licence is granted fresh (persistence decision
+    /// background section 9).
     private var ledgerLicence = false
+
+    /// The drafts file's licence by the same truth table: false until `restoreDrafts`
+    /// has run, withheld over a drafts file that would not open (issue #296).
+    private var draftsLicence = false
 
     /// The persistence trail in the unified log: restore refusals and
     /// save failures, never content — the file is ciphertext and
@@ -1704,11 +1816,18 @@ public final class PageModel: ObservableObject {
         if client.emptiness()?.hasNoTabs == true {
             newTab()
         }
+        // `refresh()` seats the selection: the strip's rule lands it on
+        // the first live slot, and the day mode's rule then lets it
+        // fall to the newest visible page. Nothing is written over it
+        // here. A launch that reset it to the first strip slot undid
+        // that fall whenever the first slot held no page, which is
+        // every morning after an overnight expiry: the rail lit no
+        // node, the roll parked the editor, and nothing reconciled
+        // again until the next edit or expiry happened along.
         refresh()
-        selection = navigationTabs.first?.id
         if pads.isEnabled { restorePadSelection() }
         // The third sealed file, after the pages and after the
-        // selection settles. It is licensed by nothing: a state file
+        // selection settles. It is licensed on its own: a state file
         // that would not open says nothing about the drafts, which are
         // a different file that either opens or does not, and refusing
         // to read them because of the other one would lose a person's
@@ -1739,9 +1858,10 @@ public final class PageModel: ObservableObject {
     /// was there and would not open", which is the one combination that
     /// withholds the licence: the install would then refuse to write for
     /// every session after the update, which is exactly the permanently
-    /// unwritable install ADR-0016 section 9 exists to prevent. Probed
-    /// afterwards, the dropped file reads as "no file", which is what it
-    /// now is, and the session starts clean with its licence.
+    /// unwritable install the persistence decision background section 9
+    /// exists to prevent. Probed afterwards, the dropped file reads as
+    /// "no file", which is what it now is, and the session starts clean
+    /// with its licence.
     ///
     /// Every other failure leaves the file exactly where it is, and each
     /// one still withholds: a missing key, a failed authentication, a
@@ -1780,9 +1900,9 @@ public final class PageModel: ObservableObject {
     /// pad whose pages have all expired still has a strip to reseal,
     /// and dropping the file there would destroy exactly what the
     /// expiry was supposed to leave standing. The other predicate has
-    /// its own job, ADR-0016 section 6's key rotation, and the core
-    /// answers both in one call so neither can be recomputed into
-    /// disagreement.
+    /// its own job, persistence decision background section 6's key
+    /// rotation, and the core answers both in one call so neither can be
+    /// recomputed into disagreement.
     ///
     /// All three conditions are the write's own preconditions, restated
     /// because deleting a file is the one thing that cannot be taken
@@ -1805,8 +1925,8 @@ public final class PageModel: ObservableObject {
     /// Whether this write should rotate both content key halves and
     /// reseal the strip under the new ones rather than seal over the old
     /// ones: the other predicate's job, and the one that makes an
-    /// emptied pad a forgetting (ADR-0016 section 6's first rotation
-    /// trigger, ADR-0017).
+    /// emptied pad a forgetting (persistence decision background section
+    /// 6's first rotation trigger, ADR-0017).
     ///
     /// **`holdsNoPage` is "no tab holds a page" and never "no tabs
     /// remain".** Taking the second here would leave the install on one
@@ -1832,8 +1952,8 @@ public final class PageModel: ObservableObject {
     /// that remembered whether the last write had already rotated
     /// would be a second source of truth about what is on disk, and it
     /// would be wrong in exactly the case that matters, a write that
-    /// failed after the rotation landed. ADR-0016 section 6 records
-    /// the choice.
+    /// failed after the rotation was written. The persistence decision
+    /// background section 6 records the choice.
     public nonisolated static func rotatesContentKey(
         loaded: Bool, contentLicence: Bool, holdsNoPage: Bool, noTabsRemain: Bool
     ) -> Bool {
@@ -1872,8 +1992,9 @@ public final class PageModel: ObservableObject {
         (content: content, ledger: true)
     }
 
-    /// The mirror rule for the content side (ADR-0016 section 7's
-    /// required work): the pair of licences after the user discards the
+    /// The mirror rule for the content side (persistence decision
+    /// background section 7's required work): the pair of licences after
+    /// the user discards the
     /// unreadable state file. The content licence comes back
     /// unconditionally, on the same reasoning as the ledger's re-grant:
     /// the discard is the user saying the file may go, which is a
@@ -1894,6 +2015,9 @@ public final class PageModel: ObservableObject {
     private static let shareDomainKey = "connection.shareDomain"
 
     #if DEBUG
+    /// The termination latch's depth, for the tests that pin when a hold stands.
+    var terminationHolds: Int { terminationLatch.depth }
+
     /// How many times a mutation has asked for a write, counted before
     /// the licence guard. The invariant test for issue #52 reads this,
     /// because a test session never loads a state file and the guard
@@ -1963,6 +2087,29 @@ public final class PageModel: ObservableObject {
     private func markFilesDirty() {
         draftsDirty = true
         mutatedSinceLoad = true
+        // The hold stands under a withheld licence too, so logout asks first;
+        // `saveState` keeps it while `draftsHeld` (issue #296).
+        guard draftsLicence else {
+            terminationLatch.acquire()
+            // No save settles a session that writes neither sealed file, so the mark does,
+            // against the core's roster: the published one trails an edit.
+            if !Self.writesEitherFile(
+                loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence)
+            {
+                terminationLatch.settle(saved: !draftsHeldInCore())
+            } else {
+                // A sealed file is written, so its save settles the hold; no saving word.
+                // Per-reason latch accounting would spare the write; out of scope for #296.
+                scheduleSave(after: saveDebounce)
+            }
+            return
+        }
+        armDraftsWrite()
+    }
+
+    /// The hold, the saving word and the timer for a licensed drafts write,
+    /// at a mark or where the licence arrives over edits already in memory.
+    private func armDraftsWrite() {
         terminationLatch.acquire()
         if saveStatus != .failed { saveStatus = .saving }
         scheduleSave(after: saveDebounce)
@@ -1984,8 +2131,9 @@ public final class PageModel: ObservableObject {
                 self.saveState()
             }
         }
-        RunLoop.main.add(timer, forMode: mode)
+        // Stored before it is scheduled, the clear timer's order.
         saveTimer = timer
+        RunLoop.main.add(timer, forMode: mode)
     }
 
     /// Arm the clear-after-copy (D-29, D-32; ADR-0012): one shot, the
@@ -2000,15 +2148,23 @@ public final class PageModel: ObservableObject {
         clipboardClearTimer?.invalidate()
         let interval =
             clipboardClearDebounce ?? TimeInterval(CompanionClient.clipboardClearSeconds())
-        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
+        // Inline on the main run loop, not through a Task hop: a hop
+        // lets a copy land between fire and clear, and the clear then
+        // takes the newer copy at once.
+        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] timer in
+            let fired = ObjectIdentifier(timer)
+            MainActor.assumeIsolated {
+                guard let self, let armed = self.clipboardClearTimer,
+                      ObjectIdentifier(armed) == fired
+                else { return }
                 self.clipboardClearTimer = nil
                 _ = self.clearClipboardIfOurs()
             }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        // Stored before it is scheduled, so a near-zero test interval
+        // under a nested run loop still finds itself armed.
         clipboardClearTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     /// Seal the store into its two files: live pages and their chips
@@ -2058,7 +2214,10 @@ public final class PageModel: ObservableObject {
         )
         // Drafts owe a write on their own terms, so this stands down
         // only when neither of the two has anything to do.
-        guard licensed || draftsDirty else { return true }
+        guard licensed || (draftsDirty && draftsLicence) else {
+            terminationLatch.settle(saved: !draftsHeldInCore())
+            return true
+        }
         // Both files rest in this directory, so one preparation covers
         // them: it is created if missing, and marked so Time Machine
         // leaves the ciphertext generations alone (`.noindex` in the
@@ -2163,7 +2322,8 @@ public final class PageModel: ObservableObject {
             // stays taken either way: holding is not writing.
             scheduleSave(after: saveRetryDebounce, mode: .default)
         }
-        terminationLatch.settle(saved: settled)
+        // A file's edits that no drafts write may reach keep the hold until saved or discarded.
+        terminationLatch.settle(saved: settled && !draftsHeldInCore())
         return settled
     }
 
@@ -2185,8 +2345,12 @@ public final class PageModel: ObservableObject {
     /// or a rotation will not find them.
     private func saveDrafts(in directory: URL) -> Bool {
         guard draftsDirty else { return true }
+        // Read before write, as for the state file: settled, not refused,
+        // and the dirtiness stays with the edits in memory (issue #296).
+        guard draftsLicence else { return true }
         let path = FormFactor.draftsFileURL(in: directory).path
-        let wrote = openFiles.isEmpty
+        // The core's roster, which the published one trails: erase only with no file open there.
+        let wrote = client.fileRoster().isEmpty
             ? client.draftsErase(at: path)
             : client.draftsSave(to: path)
         if wrote {
@@ -2231,12 +2395,26 @@ public final class PageModel: ObservableObject {
     /// file that came back from a disk copy that had changed while the
     /// app was away.
     private func restoreDrafts() {
-        guard client.draftsRestore(from: draftsFileURL.path) else {
-            padFileRosterReady = !FileManager.default.fileExists(atPath: draftsFileURL.path)
-            if padFileRosterReady { pads.reconcileFiles([]) }
+        let path = draftsFileURL.path
+        let restored = client.draftsRestore(from: path)
+        // Probed after the restore, as for the other two files.
+        draftsLicence = Self.grantsSaveLicence(
+            fileExists: FileManager.default.fileExists(atPath: path), restored: restored
+        )
+        padFileRosterReady = draftsLicence
+        draftsRestoreRefused = !draftsLicence
+        guard restored else {
+            if draftsLicence {
+                pads.reconcileFiles([])
+                // Edits typed before the restore owe the write it grants.
+                if draftsDirty { armDraftsWrite() }
+            } else {
+                logger.error(
+                    "restore failed over an existing drafts file; withholding the drafts write"
+                )
+            }
             return
         }
-        padFileRosterReady = true
         // Whether the roster in memory came to differ from the one the
         // drafts file holds, which decides at the end whether a write
         // is owed.
@@ -2593,6 +2771,7 @@ public final class PageModel: ObservableObject {
     /// as saving: a record that misses this write is mended again at
     /// the next launch, and nothing a person typed rides on it.
     private func markDraftsRecordMoved() {
+        guard draftsLicence else { return }
         draftsDirty = true
         scheduleSave(after: saveDebounce)
     }
@@ -2620,14 +2799,47 @@ public final class PageModel: ObservableObject {
     /// quit regardless of the licence. A settled flush over a withheld
     /// content licence also cancels it when the session accumulated work
     /// after load; an untouched session under a withheld licence may
-    /// terminate. What a cancelled quit does next is `QuitPrompt`'s.
+    /// terminate. The drafts arm follows the content arm (issue #296). What a
+    /// cancelled quit does next is `QuitPrompt`'s.
     public nonisolated static func quitOutcome(
-        settled: Bool, contentLicence: Bool, loaded: Bool, mutatedSinceLoad: Bool
+        settled: Bool, contentLicence: Bool, loaded: Bool, mutatedSinceLoad: Bool,
+        draftsHeld: Bool
     ) -> QuitSaveOutcome {
         if !settled { return .refused }
         if loaded && !contentLicence && mutatedSinceLoad { return .unsavableWithContent }
+        if loaded && draftsHeld { return .unsavableWithDrafts }
         return .settled
     }
+
+    /// Whether a file's unsaved edits are in memory only: a loaded session, the
+    /// drafts licence withheld and a dirty file open (issue #296).
+    public nonisolated static func draftsHeld(
+        loaded: Bool, draftsLicence: Bool, draftsDirty: Bool, files: [FileSummary]
+    ) -> Bool {
+        loaded && !draftsLicence && draftsDirty && files.contains(where: \.holdsUnsavedEdits)
+    }
+
+    /// `draftsHeld` for this session now, read by the header's drafts word.
+    public var draftsHeldInMemory: Bool {
+        Self.draftsHeld(
+            loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
+            files: openFiles)
+    }
+
+    /// `draftsHeld` against the core's roster, which the published one trails by an
+    /// edit (issue #296). The roster is asked only when the licence leaves it open.
+    private func draftsHeldInCore() -> Bool {
+        guard stateLoaded, !draftsLicence, draftsDirty else { return false }
+        return Self.draftsHeld(
+            loaded: true, draftsLicence: false, draftsDirty: true, files: client.fileRoster())
+    }
+
+    /// The core roster the last quit flush read, until the published roster is restated.
+    private var quitRoster: [FileSummary]?
+
+    /// The files the cancelled quit's line reads: the quit's own snapshot while the
+    /// published roster trails it.
+    public var quitLineFiles: [FileSummary] { quitRoster ?? openFiles }
 
     /// The terminate path's flush: `saveState` plus the one question it
     /// cannot answer alone, whether a settled flush still left this
@@ -2636,16 +2848,27 @@ public final class PageModel: ObservableObject {
     /// write, everything recorded since the load is exactly what the
     /// quit loses, and the empty page launch itself mints is not.
     public func saveStateForQuit() -> QuitSaveOutcome {
+        // One core snapshot for the outcome, the offer and the line, with none of a
+        // roster restatement's side effects on a quit that may be cancelled.
+        let roster = client.fileRoster()
+        quitRoster = roster
         let settled = saveState()
         return Self.quitOutcome(
             settled: settled,
             contentLicence: saveLicence,
             loaded: stateLoaded,
-            mutatedSinceLoad: mutatedSinceLoad
+            mutatedSinceLoad: mutatedSinceLoad,
+            draftsHeld: Self.draftsHeld(
+                loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
+                files: roster)
         )
     }
 
-    public var quitAnywayOffered: Bool { quitRefusal != nil }
+    /// Whether a quit request whose flush came to `outcome` answers the standing
+    /// line: the line stands, and names that outcome. The line reads the live roster.
+    public func quitAnywayAnswers(_ outcome: QuitSaveOutcome) -> Bool {
+        quitRefusal == outcome
+    }
 
     /// The standing line's button, answered.
     ///
@@ -2658,11 +2881,9 @@ public final class PageModel: ObservableObject {
     /// other action on the status stack goes through the model, and the
     /// quit path is the one that can least afford a second route.
     ///
-    /// `NSApp` is read optionally because a filtered test run has no
-    /// application object, and a status action that traps the runner is
-    /// worse than one that does nothing there.
+    /// The request goes through the `requestTermination` seam, `NSApp` read optionally by default.
     public func requestQuitAnyway() {
-        NSApp?.terminate(nil)
+        requestTermination()
     }
 
     /// The cancelled quit's standing line goes up. A settled outcome is
@@ -2713,7 +2934,41 @@ public final class PageModel: ObservableObject {
             return "the sealed state file was not written, so this session's \(loss) will not survive the quit"
         case .unsavableWithContent:
             return "nothing typed this session is on disk, so its \(loss) will not survive the quit"
+        case .unsavableWithDrafts:
+            let dirty = files.filter(\.holdsUnsavedEdits).map(\.name)
+            let object = dirty.isEmpty
+                ? "unsaved changes to open files" : "the unsaved changes to \(englishList(dirty))"
+            return "the drafts file would not open and was not written over, so \(object) will not survive the quit"
         }
+    }
+
+    /// Whether the offer survives the user's discard of the unreadable
+    /// drafts file. The mirror of the content rule above.
+    public nonisolated static func quitOfferAfterDraftsClear(
+        offer: QuitSaveOutcome?
+    ) -> QuitSaveOutcome? {
+        offer == .unsavableWithDrafts ? nil : offer
+    }
+
+    /// Whether the offer survives a change to the open files: the drafts
+    /// arm's line stands only while a file's edits are held in memory.
+    public nonisolated static func quitOfferAfterFiles(
+        offer: QuitSaveOutcome?, draftsHeld: Bool
+    ) -> QuitSaveOutcome? {
+        offer == .unsavableWithDrafts && !draftsHeld ? nil : offer
+    }
+
+    /// What the quit anyway button says it costs, the loss its line names: the drafts
+    /// arm names the files alone, because its pages are on disk.
+    public nonisolated static func quitAnywayHelp(
+        _ outcome: QuitSaveOutcome, files: [FileSummary], draftsUnwritten: Bool
+    ) -> String {
+        if outcome != .unsavableWithDrafts {
+            return "Quits now. This session's \(lostAtQuit(files: files, draftsUnwritten: draftsUnwritten)) are lost."
+        }
+        let dirty = files.filter(\.holdsUnsavedEdits).map(\.name)
+        guard !dirty.isEmpty else { return "Quits now." }
+        return "Quits now. Unsaved changes to \(englishList(dirty)) are lost."
     }
 
     /// What a cancelled quit takes, as the object of the standing line.
@@ -2727,11 +2982,13 @@ public final class PageModel: ObservableObject {
 
     deinit {
         if let modalEndObserver { NotificationCenter.default.removeObserver(modalEndObserver) }
+        if let wakeObserver { wakeCenter.removeObserver(wakeObserver) }
         eventTimer?.invalidate()
         redrawTimer?.invalidate()
         if clipboardClearTimer != nil {
             _ = clearClipboardIfOurs()
             clipboardClearTimer?.invalidate()
+            clipboardClearTimer = nil
         }
         // A pending write dies with the model. In practice the model
         // outlives everything but the process, and the process's own
@@ -2880,12 +3137,19 @@ public final class PageModel: ObservableObject {
             PadCatalog.normalizedPath($0.path) == pads.rememberedFile(for: pads.activeID)
         }?.id
     }
-    public func toggleDaySort() { pads.toggleDaySort(for: pads.activeID) }
+    public func toggleDaySort() { setDaySort(pads.daySortDirection(for: pads.activeID).next) }
+    public func setDaySort(_ direction: PadSortDirection) {
+        pads.setDaySort(direction, for: pads.activeID)
+    }
     public func toggleCheckpointSort(dayBucket: Int) {
+        setCheckpointSort(pads.checkpointSortDirection(for: pads.activeID,
+            onDate: dateKey(forDayBucket: dayBucket)).next, dayBucket: dayBucket)
+    }
+    public func setCheckpointSort(_ direction: PadSortDirection, dayBucket: Int) {
         // A read spanning a day boundary supplies no unambiguous date for its
         // relative offsets. Wait for the next stable refresh before writing.
         guard padRosterDate != nil else { return }
-        pads.toggleCheckpointSort(for: pads.activeID, onDate: dateKey(forDayBucket: dayBucket))
+        pads.setCheckpointSort(direction, for: pads.activeID, onDate: dateKey(forDayBucket: dayBucket))
     }
     public func dateKey(forDayBucket bucket: Int) -> String {
         // The roster's offsets and this reference must describe the same day.
@@ -2922,9 +3186,12 @@ public final class PageModel: ObservableObject {
     private func sortedPadProjection(_ projection: TimeUnitProjection) -> TimeUnitProjection {
         guard pads.isEnabled else { return projection }
         let summaries = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
-        var units = projection.units.map { unit in
+        let dayDirection = pads.daySortDirection(for: pads.activeID)
+        let grouped = dayDirection == .natural ? projection.inNaturalOrder(tabs: navigationTabs) : projection
+        var units = grouped.units.map { unit in
             let direction = pads.checkpointSortDirection(for: pads.activeID, onDate: dateKey(forDayBucket: unit.bucket))
-            let ordered = zip(unit.tabIDs, unit.pageIDs).sorted { a, b in
+            let natural = Array(zip(unit.tabIDs, unit.pageIDs))
+            let ordered = direction == .natural ? natural : natural.sorted { a, b in
                 let lhs = summaries[a.0]?.pageCreatedMs ?? 0, rhs = summaries[b.0]?.pageCreatedMs ?? 0
                 if lhs == rhs {
                     let left = summaries[a.0]?.uuid ?? String(a.0)
@@ -2936,9 +3203,10 @@ public final class PageModel: ObservableObject {
             return TimeUnitProjection.Unit(bucket: unit.bucket, label: unit.label, spokenLabel: unit.spokenLabel,
                 railLabel: unit.railLabel, pageIDs: ordered.map { $0.1 }, tabIDs: ordered.map { $0.0 },
                 fractionRemaining: unit.fractionRemaining, paused: unit.paused, toppedUp: unit.toppedUp,
-                lastHour: unit.lastHour, remainingLabel: unit.remainingLabel, spokenRemaining: unit.spokenRemaining)
+                lastHour: unit.lastHour, remainingLabel: unit.remainingLabel, spokenRemaining: unit.spokenRemaining,
+                sequenceID: unit.sequenceID)
         }
-        if pads.daySortDirection(for: pads.activeID) == .chronological { units.reverse() }
+        if dayDirection == .chronological { units.reverse() }
         return TimeUnitProjection(units: units, hiddenBlankPages: projection.hiddenBlankPages)
     }
 
@@ -2952,6 +3220,9 @@ public final class PageModel: ObservableObject {
         // died. The menu's two items are asked again on every one of
         // them rather than at a list of paths someone has to keep.
         refreshEditSteps()
+        // A cut ends at a paste, an undo, a burn or its page's death; the core says which.
+        let cut = client.activeCut()
+        if cut != activeCut { activeCut = cut }
         let rosterCalendar = Calendar.current
         let readStartedAt = Date()
         tabs = client.tabs()
@@ -2970,6 +3241,14 @@ public final class PageModel: ObservableObject {
                 }
             }
             pads.reconcileTabs(Set(tabs.compactMap(\.uuid)), checkpointKeys: checkpointKeys)
+        }
+        if stateLoaded && saveLicence {
+            let previewKeys = Set(tabs.compactMap { $0.pageID.flatMap(pagePreviewIdentity(for:)) })
+            let retained = pagePreviewOverrides.filter { previewKeys.contains($0.key) }
+            if retained != pagePreviewOverrides {
+                pagePreviewOverrides = retained
+                defaults.set(retained, forKey: Self.pagePreviewKey)
+            }
         }
         let livePages = livePageIDs
         // A dead page's ink lives on only in the ledger; drop the
@@ -3000,6 +3279,8 @@ public final class PageModel: ObservableObject {
         // ink an expiry is supposed to take away.
         quietRenderings = quietRenderings.filter { livePages.contains($0.key) }
         fenceRenderingLanguages = fenceRenderingLanguages.filter { livePages.contains($0.key) }
+        // A removal's Undo has nothing to step back once its page is gone.
+        if let stamp = removalStamp, !livePages.contains(stamp.sheet) { retireRemovalUndo() }
         selection = Self.reconciledSelection(current: selection, live: navigationTabs.map(\.id))
         // When pages are organized by day, a slot holding no page is not on
         // the rail at all, so a selection left on one would be pointing
@@ -3011,7 +3292,7 @@ public final class PageModel: ObservableObject {
         }
         // A conceal whose subject died — expiry, mostly; `close`
         // clears its own — must not keep the confirmation standing:
-        // ↩ lands on "Create link", and a stale draft would answer a
+        // ↩ lands on Create Link, and a stale draft would answer a
         // stray keystroke with a network call over a page (or a chip's
         // page) that no longer exists (issue #19). A chip is orphaned
         // when it survives on no live page: its host page has gone,
@@ -3109,11 +3390,33 @@ public final class PageModel: ObservableObject {
     /// too, so a mistake here fails loudly rather than reading page
     /// zero.
     private func runs(of id: UInt64) -> [RestoredRun] {
-        id.isFileID ? client.fileRuns(id) : client.documentRuns(sheet: id)
+        id.isFileID ? client.fileRuns(id) : pageRuns(id)
+    }
+
+    /// A page's runs for a projection, with any U+FFFC it held as ink taken out first.
+    private func pageRuns(_ sheet: UInt64) -> [RestoredRun] {
+        takeOutObjectCharacters(sheet: sheet)
+        return client.documentRuns(sheet: sheet)
+    }
+
+    /// A U+FFFC a page holds as ink, a peer's or an earlier build's, leaves it as an edit
+    /// its peers receive (Law 0001); the save is marked a turn later. True when one left.
+    @discardableResult
+    private func takeOutObjectCharacters(sheet: UInt64) -> Bool {
+        guard client.takeOutObjectCharacters(sheet: sheet) else { return false }
+        countEdit(.sheet(sheet))
+        invalidateQuietRendering(for: sheet)
+        // A projection can run inside a view update, where publishing is refused.
+        DispatchQueue.main.async { [weak self] in self?.markDirty() }
+        return true
     }
 
     public func storage(for id: UInt64) -> NSTextStorage {
-        if let existing = storages[id] { return existing }
+        if let existing = storages[id] {
+            // A page shown again from the storage it kept loses one a peer left since.
+            if !id.isFileID, takeOutObjectCharacters(sheet: id) { restateStorage(sheet: id) }
+            return existing
+        }
         let created = NSTextStorage()
         for run in runs(of: id) {
             switch run {
@@ -3176,7 +3479,7 @@ public final class PageModel: ObservableObject {
     public func quietRendering(for id: UInt64) -> QuietRendering {
         if let existing = quietRenderings[id] { return existing }
         let rendered = NSMutableAttributedString()
-        for run in client.documentRuns(sheet: id) {
+        for run in pageRuns(id) {
             switch run {
             case .ink(let text):
                 rendered.append(NSAttributedString(
@@ -3195,15 +3498,16 @@ public final class PageModel: ObservableObject {
         // stamps and their reserved paragraph spacing are both suppressed.
         // The payload carries the fence regions the styling walk returned
         // so a quiet region's `InkLayoutManager` can paint the same slab
-        // the editor would. `.focusedOnly` and `.never` return plain ink.
-        if previewRendering == .allPages, !id.isFileID {
+        // the editor would. `.focusedOnly` and `.never` return plain ink, and
+        // so does a page whose preview renders the ink itself; the toggle
+        // invalidates this cache either way.
+        if previewRendering == .allPages, !id.isFileID, !markdownPreviewEnabled(for: id) {
             // A throwaway storage keeps the styling pass off any layout
             // manager: the roll copies the result into its own storage,
             // and the copy is what the region draws (ADR-0006).
             let scratch = NSTextStorage(attributedString: rendered)
             let (regions, _, _) = InkEditorView.Coordinator.applyMarkdownStyling(
                 to: scratch,
-                sheet: id,
                 blockMetas: [],
                 syntaxHighlightingEnabled: syntaxHighlightingEnabled,
                 fenceRenderingLanguages: fenceRenderingLanguages(for: id),
@@ -3237,6 +3541,27 @@ public final class PageModel: ObservableObject {
     /// back is not the one its region was seeded from.
     public func invalidateQuietRendering(for id: UInt64) {
         quietRenderings[id] = nil
+    }
+
+    /// Stands the core's face for `chip` in for the one its block on page
+    /// `sheet` draws, without restating the page around it.
+    func restateChipFace(_ chip: UInt64, sheet: UInt64) {
+        let face = client.documentRuns(sheet: sheet).lazy.compactMap { run -> ChipInfo? in
+            if case .chip(let info) = run, info.chipId == chip { return info }
+            return nil
+        }.first
+        guard let face, let storage = storages[sheet] else { return }
+        let whole = NSRange(location: 0, length: storage.length)
+        storage.enumerateAttribute(.attachment, in: whole) { value, range, stop in
+            guard let attachment = value as? ChipAttachment, attachment.info.chipId == chip
+            else { return }
+            attachment.info = face
+            for manager in storage.layoutManagers {
+                manager.invalidateDisplay(forCharacterRange: range)
+            }
+            stop.pointee = true
+        }
+        invalidateQuietRendering(for: sheet)
     }
 
     /// Snapshot of the fence-language labels a page carries in its
@@ -3375,6 +3700,12 @@ public final class PageModel: ObservableObject {
             return (old.path, new.path)
         })
         openFiles = files
+        quitRoster = nil
+        quitRefusal = Self.quitOfferAfterFiles(
+            offer: quitRefusal,
+            draftsHeld: Self.draftsHeld(
+                loaded: stateLoaded, draftsLicence: draftsLicence, draftsDirty: draftsDirty,
+                files: files))
         if stateLoaded && padFileRosterReady { pads.reconcileFiles(Set(files.map(\.path))) }
         if let pending = pendingFileClose {
             if let file = files.first(where: { $0.id == pending.fileID }) {
@@ -3603,7 +3934,7 @@ public final class PageModel: ObservableObject {
     /// reads the file afresh. One that is still held is refused by the
     /// core, and the refusal is said like any other.
     public func openFile(at url: URL) {
-        if pads.isEnabled, pendingFileClose != nil {
+        if openRefusedForCloseDecision {
             flash("Finish the file close decision before opening another file.")
             return
         }
@@ -4566,7 +4897,7 @@ public final class PageModel: ObservableObject {
     }
 
     public nonisolated static func unresolvedConflictNotice(name: String) -> String {
-        "\(name) changed on disk. Choose keep mine, take theirs, or Save As before saving."
+        "\(name) changed on disk. Choose Keep Mine, Take Theirs, or Save As… before saving."
     }
 
     /// The refused save's sentence for the conflict the file is
@@ -4578,11 +4909,11 @@ public final class PageModel: ObservableObject {
     public nonisolated static func unresolvedConflictNotice(for file: FileSummary) -> String {
         if file.accessRefused {
             return "\(file.name) cannot be read at its path. "
-                + "Choose Locate, keep mine, or Save As before saving."
+                + "Choose Locate…, Keep Mine, or Save As… before saving."
         }
         if file.conflict == .missing {
             return "\(file.name) is no longer at its path. "
-                + "Choose Locate, keep mine, or Save As before saving."
+                + "Choose Locate…, Keep Mine, or Save As… before saving."
         }
         return unresolvedConflictNotice(name: file.name)
     }
@@ -4720,6 +5051,20 @@ public final class PageModel: ObservableObject {
         let dirty = files.filter(\.holdsUnsavedEdits).map(\.name)
         guard !dirty.isEmpty else { return nil }
         return "Unsaved changes to \(englishList(dirty)) go with it."
+    }
+
+    /// The state discard's help, naming the drafts file while its banner stands (issue #296).
+    /// No file's edits are at risk: the discard rewrites the drafts from memory.
+    public nonisolated static func stateDiscardHelp(draftsRefused: Bool) -> String {
+        var sentences = [
+            "Deletes the sealed file this session could not read and starts saving this "
+                + "session's pages in its place. The unreadable file cannot be recovered afterwards."
+        ]
+        if draftsRefused {
+            sentences.append(
+                "The drafts file this session could not read goes too, and this session's drafts take its place.")
+        }
+        return sentences.joined(separator: " ")
     }
 
     /// A list a person reads out loud, which is the only reason this
@@ -4930,7 +5275,8 @@ public final class PageModel: ObservableObject {
     }
 
     /// Discard the state file this session could not read and start
-    /// saving (the banner's one action; ADR-0016 section 7, issue #49).
+    /// saving (the banner's one action; persistence decision background
+    /// section 7, issue #49).
     /// The ledger clear's shape, ported to the content side, and like
     /// it this is the user's gesture only: nothing auto-clears a
     /// refused restore.
@@ -4952,7 +5298,8 @@ public final class PageModel: ObservableObject {
     /// erase there would drop a file this session can and does write.
     public func clearUnreadableStateFile() {
         guard stateLoaded, !saveLicence else { return }
-        if !client.persistErase(at: stateFileURL.path) {
+        let erased = client.persistErase(at: stateFileURL.path)
+        if !erased {
             logger.error(
                 "the unreadable state file could not be dropped on a user discard; the reseal will try to replace it instead"
             )
@@ -4962,10 +5309,44 @@ public final class PageModel: ObservableObject {
         )
         saveLicence = licences.content
         ledgerLicence = licences.ledger
+        // The erase may leave drafts under halves nobody has, refused or after a failed
+        // reseal, so the write `markDirty` arms restates them from the roster in memory.
+        draftsDirty = true
+        if !draftsLicence { grantDraftsLicence() }
         contentRestoreRefused = false
-        quitRefusal = Self.quitOfferAfterContentClear(offer: quitRefusal)
+        quitRefusal = Self.quitOfferAfterDraftsClear(
+            offer: Self.quitOfferAfterContentClear(offer: quitRefusal))
         markDirty()
         refresh()
+    }
+
+    /// The drafts banner's one action (issue #296): drop the drafts file this
+    /// session could not read, by path, and grant the licence on the user's word.
+    public func clearUnreadableDraftsFile() {
+        guard stateLoaded, !draftsLicence else { return }
+        if !client.draftsErase(at: draftsFileURL.path) {
+            logger.error(
+                "the unreadable drafts file could not be dropped on a user discard; the next drafts write will try to replace it instead"
+            )
+        }
+        // The write the grant arms drops or replaces the file whatever the erase answered.
+        draftsDirty = true
+        // Restated as the sibling discards restate theirs, dropping the last quit's snapshot.
+        refreshOpenFiles()
+        grantDraftsLicence()
+        quitRefusal = Self.quitOfferAfterDraftsClear(offer: quitRefusal)
+    }
+
+    /// The drafts licence back, with the pad roster it gates, the standing
+    /// line that said it was withheld, and the write any edits in memory owe.
+    private func grantDraftsLicence() {
+        draftsLicence = true
+        draftsRestoreRefused = false
+        if !padFileRosterReady {
+            padFileRosterReady = true
+            pads.reconcileFiles(Set(openFiles.map(\.path)))
+        }
+        if draftsDirty { armDraftsWrite() }
     }
 
     /// The ◌ tab is a toggle: click to visit the ledger, click again
@@ -5030,8 +5411,9 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// The editor to hand the keys to, or nil when the one the model is
-    /// holding has already left the window.
+    /// The editor to hand the keys to, or the selected page's read only
+    /// preview where one stands over the editor, or nil when the one the
+    /// model keeps has already left the window.
     ///
     /// `activeEditor` is weak, which answers the question of whether the
     /// view still exists and not the question the hand-off is actually
@@ -5051,6 +5433,10 @@ public final class PageModel: ObservableObject {
         // Ownership can transfer before SwiftUI replaces the old mount.
         // A focus request for one window must wait for its own editor.
         if let targetWindow, editor.window !== targetWindow { return nil }
+        // Mid switch the hidden editor and the selection can disagree; the editor then stands in.
+        if editor.isHidden, let stack = editor.superview as? DayStackView {
+            return stack.selectedPreview ?? editor
+        }
         return editor
     }
 
@@ -5067,8 +5453,87 @@ public final class PageModel: ObservableObject {
         let dwell = action == nil ? Self.noticeDwell : Self.noticeDwellWithAction
         DispatchQueue.main.asyncAfter(deadline: .now() + dwell) { [weak self] in
             guard let self, self.noticeGeneration == generation else { return }
-            self.notice = nil
-            self.noticeAction = nil
+            self.showHeldOrNothing()
+        }
+    }
+
+    /// A line `holdNotice` put up, named so that only its own release ends it.
+    public struct NoticeHold: Equatable, Sendable {
+        fileprivate let serial: Int
+    }
+
+    /// The held line, which a flash stands in front of and a clear returns to.
+    private var held: (hold: NoticeHold, message: String, tone: NoticeTone)?
+    private var holdSerial = 0
+    /// The generation at which the held line was last put on screen.
+    private var heldGeneration: Int?
+
+    /// Holds `message` under the page while a field stays open (Law 0007,
+    /// Refusing; D-14); given the standing hold, it changes that hold's words.
+    @discardableResult
+    public func holdNotice(
+        _ message: String, tone: NoticeTone = .actionable, replacing standing: NoticeHold? = nil
+    ) -> NoticeHold {
+        if let standing, held?.hold == standing {
+            held = (standing, message, tone)
+            if heldGeneration == noticeGeneration {
+                notice = message
+                noticeTone = tone
+            }
+            return standing
+        }
+        holdSerial += 1
+        let hold = NoticeHold(serial: holdSerial)
+        held = (hold, message, tone)
+        clearNotice()
+        return hold
+    }
+
+    /// Ends a hold. Its line goes if it is on screen; a flash in front of
+    /// it keeps its dwell and then leaves the line empty.
+    public func releaseNotice(_ hold: NoticeHold) {
+        guard held?.hold == hold else { return }
+        held = nil
+        if heldGeneration == noticeGeneration { clearNotice() }
+        heldGeneration = nil
+    }
+
+    /// Takes down what the line says, back to the held line if one stands.
+    private func clearNotice() {
+        noticeGeneration += 1
+        showHeldOrNothing()
+    }
+
+    private func showHeldOrNothing() {
+        noticeAction = nil
+        guard let held else {
+            notice = nil
+            return
+        }
+        notice = held.message
+        noticeTone = held.tone
+        heldGeneration = noticeGeneration
+    }
+
+    /// A field's refusal in the line under the page (Law 0007, Refusing),
+    /// held once and given new words only when they change.
+    @MainActor
+    struct HeldRefusal {
+        private var hold: NoticeHold?
+        private var message: String?
+
+        var isStanding: Bool { hold != nil }
+
+        mutating func say(_ message: String, in model: PageModel) {
+            guard hold == nil || message != self.message else { return }
+            hold = model.holdNotice(message, replacing: hold)
+            self.message = message
+        }
+
+        mutating func release(in model: PageModel) {
+            if let hold { model.releaseNotice(hold) }
+            hold = nil
+            message = nil
         }
     }
 
@@ -5076,9 +5541,7 @@ public final class PageModel: ObservableObject {
     /// with it, since what it offered has been done.
     public func performNoticeAction() {
         guard let action = noticeAction else { return }
-        noticeGeneration += 1
-        notice = nil
-        noticeAction = nil
+        clearNotice()
         action.perform()
     }
 
@@ -5120,11 +5583,81 @@ public final class PageModel: ObservableObject {
         return id
     }
 
-    /// A new page (⌘N or the + tab). It cannot be refused for room:
-    /// the strip has no cap, and a tenth tab opens like the ninth
-    /// (issue #158).
+    /// Timeline creation splits the current page at its caret; Tabs opens a blank page.
     public func newPage() {
-        notice = nil
+        let insertionTab = showsTimeUnits && selectedFile == nil && !showingLedger ? selection : nil
+        guard let insertionTab,
+              let source = tabs.first(where: { $0.id == insertionTab })?.pageID else {
+            createBlankPage()
+            return
+        }
+        let sourceDay = tabs.first { $0.id == insertionTab }?.pageDayOffset
+        let sourceLength = client.documentRuns(sheet: source).reduce(0) { length, run in
+            switch run {
+            case .ink(let text): return length + text.utf16.count
+            case .chip: return length + 1
+            }
+        }
+        let editor = (activeEditor as? InkTextView).flatMap { view in
+            view.coordinator?.currentSheet == source ? view : nil
+        }
+        if editor?.hasMarkedText() == true {
+            flash("finish composing text before inserting a checkpoint")
+            return
+        }
+        let caret = editor?.selectedRange() ?? viewStates.carets[source]
+            ?? NSRange(location: sourceLength, length: 0)
+        let splitAt = min(max(caret.location, 0), sourceLength)
+        guard let created = mintTab() else { return }
+        if let dest = tabs.first(where: { $0.id == created })?.pageID {
+            let naturalTabs = tabs.filter { $0.id != created }
+            guard let sourceIndex = naturalTabs.firstIndex(where: { $0.id == insertionTab }),
+                  client.moveTab(id: created, to: UInt64(sourceIndex + 1)) else {
+                _ = client.closeTab(id: created)
+                refresh()
+                flash("the checkpoint could not be inserted")
+                return
+            }
+            // A caret at the very start asks for a blank checkpoint, not
+            // for the whole page to move and leave an empty one behind.
+            if splitAt > 0, splitAt < sourceLength {
+                let tail = NSRange(location: splitAt, length: sourceLength - splitAt)
+                guard dropRange(tail, sheet: source, onto: dest, at: 0) != nil else {
+                    _ = client.closeTab(id: created)
+                    refresh()
+                    flash("the checkpoint could not be inserted")
+                    return
+                }
+            } else {
+                refresh()
+            }
+            editor?.setSelectedRange(NSRange(location: splitAt, length: 0))
+            viewStates.saveCaret(NSRange(location: splitAt, length: 0), for: source)
+            viewStates.saveCaret(NSRange(location: 0, length: 0), for: dest)
+            if pads.isEnabled, padRosterDate != nil {
+                pads.setCheckpointSort(.natural, for: pads.activeID,
+                    onDate: dateKey(forDayBucket: 0))
+                if let sourceDay, sourceDay < 0 {
+                    pads.setDaySort(.natural, for: pads.activeID)
+                    pads.setCheckpointSort(.natural, for: pads.activeID,
+                        onDate: dateKey(forDayBucket: sourceDay))
+                }
+            }
+        }
+        adoptCreatedTab(created)
+    }
+
+    /// A blank page at the ladder's top rung, selected. Never splits
+    /// anything: Tabs mode, a page asked for from the ledger or a file,
+    /// and today's place all take this path.
+    private func createBlankPage() {
+        guard let created = mintTab() else { return }
+        adoptCreatedTab(created)
+    }
+
+    /// Ask the core for a new tab and refresh. Nil when the core could not answer.
+    private func mintTab() -> UInt64? {
+        clearNotice()
         clearPendingFileClose()
         // A page asked for now is a page to look at now, so the file
         // that was showing gives way to it.
@@ -5135,64 +5668,32 @@ public final class PageModel: ObservableObject {
             flash(Self.newPageFailed)
         }
         refresh()
-        if created != 0 {
-            // A new page cannot borrow a plain tab switch's assumption
-            // that the editor still holds the keys (issue #22). A switch
-            // keeps one persistent editor focused and swaps its content
-            // beneath it, so `select` refocuses only when it leaves the
-            // ledger. Conjuring a page can instead tear the mount whole:
-            // an empty window's catcher gives way to a freshly built
-            // editor, and the + tab is chrome whose click resigns first
-            // responder before we arrive. Left to `select`'s conditional
-            // refocus alone the page mounts with nothing focused and every
-            // keystroke beeps, so this path always hands the editor the
-            // keys once it appears. Set selection inline rather than
-            // through `select`, whose own leaving-ledger refocus would
-            // otherwise schedule a second, redundant focus poll here.
-            // `refocusEditorIfKeyed` only ever accepts, staying a quiet
-            // no-op on the switch paths where focus never left.
-            showingLedger = false
-            selection = created
-            if pads.isEnabled { pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID) }
-            refocusEditorIfKeyed()
-        }
+        return created == 0 ? nil : created
     }
 
-    /// ⌘N while pages are organized by day: go to today's page, make
-    /// one when today has none, and make another when the person is
-    /// already on today's page (issues #79, #158).
-    ///
-    /// Three arms, none of them a new mint policy. When today holds a
-    /// live page and the selection is elsewhere this is a plain
-    /// `select(_:)`, the jump, which cannot mint into an occupied slot.
-    /// When today holds none it is `newPage()`, the same path ⌘N takes
-    /// with the strip showing, which opens a fresh slot at this form
-    /// factor's rung and hands its editor the keys. And when the
-    /// selection already stands on one of today's pages it is
-    /// `newPage()` again: first press jumps, second press creates, and
-    /// the projection files the new page under today beside the first,
-    /// in strip order. Every mint stamps the clock's own reading of
-    /// now, so the page it makes lands on today by construction rather
-    /// than by being filed there.
-    ///
-    /// Blank or not makes no difference, exactly as on the strip: ⌘N
-    /// there opens a slot whether or not the last one was written on,
-    /// and a person on today's page who asks for another gets another.
-    /// A bar on content would be a second mint policy dressed as a
-    /// courtesy, and it was tried and taken out (issue #158).
-    ///
-    /// What it will not do is reach for some arbitrary empty tab to put
-    /// today's page in. That would be opinionated in exactly the place
-    /// the issue asked for unopinionated, and it has a real cost:
-    /// flipping back to the strip would show a tab the user named
-    /// holding today's typing. Nothing here can be refused for room:
-    /// the strip has no cap (issue #158).
-    ///
-    /// Reached from ⌘N and ⌘T only. The gestures that name today as a
-    /// place, the roll's empty region and the rail's Today row, take
-    /// `startToday()`, which never mints a second page. Nothing calls
-    /// either from `refresh()`, from a mount or from the toggle: what is
-    /// displayed is not thereby minted (ADR-0017).
+    private func adoptCreatedTab(_ created: UInt64) {
+        // A new page cannot borrow a plain tab switch's assumption
+        // that the editor still holds the keys (issue #22). A switch
+        // keeps one persistent editor focused and swaps its content
+        // beneath it, so `select` refocuses only when it leaves the
+        // ledger. Conjuring a page can instead tear the mount whole:
+        // an empty window's catcher gives way to a freshly built
+        // editor, and the + tab is chrome whose click resigns first
+        // responder before we arrive. Left to `select`'s conditional
+        // refocus alone the page mounts with nothing focused and every
+        // keystroke beeps, so this path always hands the editor the
+        // keys once it appears. Set selection inline rather than
+        // through `select`, whose own leaving-ledger refocus would
+        // otherwise schedule a second, redundant focus poll here.
+        // `refocusEditorIfKeyed` only ever accepts, staying a quiet
+        // no-op on the switch paths where focus never left.
+        showingLedger = false
+        selection = created
+        if pads.isEnabled { pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID) }
+        refocusEditorIfKeyed()
+    }
+
+    /// Legacy day-navigation helper; creation commands now use `newPage()` directly.
     public func openToday() {
         // Bucket 0 is today and there is exactly one of it: the
         // projection folds a page stamped ahead of now into today rather
@@ -5231,13 +5732,14 @@ public final class PageModel: ObservableObject {
     /// appeared, a double click on the region, a chord landing during
     /// the relayout, and a place that made a page a moment ago must
     /// find that page and select it rather than stack a blank one
-    /// beside it. ⌘N is the gesture that asks for another; this is not.
+    /// beside it. ⌘N is the gesture that asks for another; this is not,
+    /// so it never takes ⌘N's checkpoint split of the selected page.
     public func startToday() {
         if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first {
             select(tab)
             return
         }
-        newPage()
+        createBlankPage()
     }
 
     /// A summon: put the surface back on today (issue #79).
@@ -5339,10 +5841,10 @@ public final class PageModel: ObservableObject {
     /// may no longer hold. Explicit close is the one thing that ends a
     /// tab (ADR-0017), and it takes the slot with the page.
     public func close(_ id: UInt64) {
-        notice = nil
+        clearNotice()
         // A draft aimed at this page — or at a chip riding on it —
         // dies with it. Left standing, the confirmation would still
-        // answer ↩ ("Create link" carries the default action) with a
+        // answer ↩ (Create Link carries the default action) with a
         // network call over a page that no longer exists (issue #19).
         // The chips must be asked for *before* the close; a dead page
         // replays no runs.
@@ -5398,6 +5900,11 @@ public final class PageModel: ObservableObject {
         Set(client.documentRuns(sheet: id).compactMap {
             if case .chip(let info) = $0 { info.chipId } else { nil }
         })
+    }
+
+    /// The live page object `chip` stands on, asked of the core; nil when none holds it.
+    private func pageHolding(_ chip: UInt64) -> UInt64? {
+        livePageIDs.first { chipIds(onSheet: $0).contains(chip) }
     }
 
     /// ⌘W closes what's showing, the macOS convention: the ledger view
@@ -5508,20 +6015,44 @@ public final class PageModel: ObservableObject {
     /// not clear is said out loud: a paste that leaves the secret on
     /// the board is the failure this route exists to prevent.
     public func sealPasteboard(replacing range: NSRange) -> ChipInfo? {
-        notice = nil
-        guard let sheet = selectedPageID, let (at, length) = Self.wireRange(range) else { return nil }
+        clearNotice()
+        guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
+        guard !boardHoldsOwnCopy else {
+            pasteboardOffer = false
+            flash(Self.ownCopySealLine)
+            return nil
+        }
         let (chip, cleared) = client.sealFromPasteboard(sheet: sheet, at: at, length: length)
         guard let chip else {
             flash("nothing to seal")
             return nil
         }
         pasteboardOffer = false
+        countEdit(.sheet(sheet))
         markDirty()
         flash(
             cleared
                 ? "sealed; the clipboard is clear"
                 : "sealed, but the clipboard changed mid-take and was left untouched")
         return chip
+    }
+
+    /// The page the three seal routes write into, or nil while a file
+    /// or the ledger shows, the same pair `canExpandPage` refuses.
+    ///
+    /// Not `selectedPageID` on its own. The selection names a slot, and
+    /// `selectFile` deliberately leaves it on the slot the person left,
+    /// so while a file is the active target `selectedPageID` is still
+    /// the page behind the file. A seal routed on it would delete the
+    /// captured range from that hidden page and stand a chip there,
+    /// clear the clipboard, and leave the file's storage showing a chip
+    /// the file's own document does not hold. A file is never a seal
+    /// target (ADR-0028): the menu's `sealableSelection` already says
+    /// so, and the chord, the offer button and the drop take the same
+    /// answer from here.
+    public var sealTarget: UInt64? {
+        guard selectedFile == nil, !showingLedger else { return nil }
+        return selectedPageID
     }
 
     /// An `NSRange` as the seam's `u32` pair, refused rather than
@@ -5540,8 +6071,20 @@ public final class PageModel: ObservableObject {
     /// page, so only the owner makes one.
     public func refreshPasteboardOffer(from surface: PresentationOwner) {
         guard admits(.pasteboardOffer, from: surface) else { return }
-        pasteboardOffer = client.pasteboardHasContent()
+        pasteboardOffer = !boardHoldsOwnCopy && client.pasteboardHasContent()
     }
+
+    /// Whether an item on the board carries any build's sealed fragment: a copy
+    /// or cut of ours, which ⌘V pastes and which holds nothing to seal.
+    var boardHoldsOwnCopy: Bool { SealedFragment.anyBuildsItem(on: ambientPasteboard) }
+
+    /// The line when ⇧⌘V or the offer's button meets this app's own copy on the board.
+    public static let ownCopySealLine =
+        "nothing to seal: the clipboard holds this app's own copy, which ⌘V pastes."
+
+    /// The line when the offer's button meets a name or note holding the keys (Law 0007, keys row).
+    public static let sealWaitsLine =
+        "a name or note is being written, so the clipboard was not sealed."
 
     /// Withdrawing is a release and asks nobody: an offer nobody is
     /// making is the safe state, and the surface that made this one may
@@ -5568,22 +6111,68 @@ public final class PageModel: ObservableObject {
     /// dropped bytes never transit this process. `range` is the drop
     /// point (zero length) or the selection the drop replaces.
     public func sealDrag(replacing range: NSRange) -> ChipInfo? {
-        notice = nil
-        guard let sheet = selectedPageID, let (at, length) = Self.wireRange(range) else { return nil }
-        let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
-        if chip == nil { flash("nothing to seal") } else { markDirty() }
+        clearNotice()
+        guard let sheet = sealTarget, let chip = sealFromDrag(sheet: sheet, replacing: range) else {
+            return nil
+        }
+        countEdit(.sheet(sheet))
+        markDirty()
         return chip
     }
+
+    /// Drop-to-seal at `index` of a named page, the tab's route (issue 254). The page's own
+    /// route places the face itself; this one restates the page as a transfer does.
+    @discardableResult
+    func sealDrag(onto sheet: UInt64, at index: Int) -> ChipInfo? {
+        clearNotice()
+        guard !sheet.isFileID,
+              let chip = sealFromDrag(sheet: sheet, replacing: NSRange(location: index, length: 0))
+        else { return nil }
+        settleTransfer(sheet)
+        return chip
+    }
+
+    /// The core's read of the drag board into `sheet`. A seal is not among the routes the
+    /// core refuses past the deadline, so a late timer settles first (Law 0001, expiry row).
+    private func sealFromDrag(sheet: UInt64, replacing range: NSRange) -> ChipInfo? {
+        guard !settleIfDue(sheet: sheet) else {
+            flash(Self.pageExpiredLine)
+            return nil
+        }
+        guard let (at, length) = Self.wireRange(range) else { return nil }
+        let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
+        if chip == nil { flash("nothing to seal") }
+        return chip
+    }
+
+    /// The end of `sheet`'s body in UTF-16 units, where a drop on its tab is placed (issue 254),
+    /// read from the core's runs as they stand: it edits nothing and builds no storage.
+    func bodyLength(of sheet: UInt64) -> Int {
+        client.documentRuns(sheet: sheet).reduce(0) { length, run in
+            switch run {
+            case .ink(let text): length + text.utf16.count
+            case .chip: length + 1
+            }
+        }
+    }
+
+    #if DEBUG
+    /// Whether a storage is cached for `id`; a drop on a tab must build none (issue 254).
+    func hasStorage(for id: UInt64) -> Bool { storages[id] != nil }
+    #endif
 
     /// ⌘↩: seal visible ink the editor already holds. The core deletes
     /// `range` from its body and stands the sentinel there in the same
     /// locked call (ADR-0013); the editor then updates its projection
     /// to match rather than performing an edit of its own.
     public func sealText(_ text: String, replacing range: NSRange) -> ChipInfo? {
-        notice = nil
-        guard let sheet = selectedPageID, let (at, length) = Self.wireRange(range) else { return nil }
+        clearNotice()
+        guard let sheet = sealTarget, let (at, length) = Self.wireRange(range) else { return nil }
         let chip = client.sealText(sheet: sheet, text, at: at, length: length)
-        if chip != nil { markDirty() }
+        if chip != nil {
+            countEdit(.sheet(sheet))
+            markDirty()
+        }
         return chip
     }
 
@@ -5592,11 +6181,463 @@ public final class PageModel: ObservableObject {
     /// not read-only: a successful copy appends a sent record to the
     /// ledger, and that record is lost unless a write is armed for it
     /// (issue #52).
-    public func copyOutChip(_ id: UInt64, size: String? = nil) {
-        guard client.copyOutChip(id: id) else { return }
+    @discardableResult
+    public func copyOutChip(_ id: UInt64, size: String? = nil) -> Bool {
+        guard client.copyOutChip(id: id) else {
+            settleRefusal(chip: id, otherwise: Self.copyRefusedLine)
+            return false
+        }
         markDirty()
         armClipboardClear()
         flash(Self.copiedLine(clearsIn: CompanionClient.clipboardClearSeconds(), size: size))
+        return true
+    }
+
+    /// Copy `NAME=<plaintext>` by copy decrypted's route (Law 0001, `=` zone row),
+    /// with copy out's clear and line (sealed row spec, The page's line).
+    @discardableResult
+    public func copyChipNameValue(_ id: UInt64, size: String? = nil) -> Bool {
+        guard client.copyNameValue(chip: id) else {
+            settleRefusal(chip: id, otherwise: Self.copyRefusedLine)
+            return false
+        }
+        markDirty()
+        armClipboardClear()
+        flash(Self.copiedLine(clearsIn: CompanionClient.clipboardClearSeconds(), size: size))
+        return true
+    }
+
+    /// Names a sealed object on page `sheet`, or clears its name given a
+    /// blank draft, and redraws its block; false when the core refused,
+    /// which settles as a refusal does (Law 0001, expiry row).
+    @discardableResult
+    public func setChipName(_ name: String, chip: UInt64, sheet: UInt64) -> Bool {
+        guard client.setChipName(name, chip: chip) else {
+            settleRefusal(chip: chip, otherwise: nil)
+            return false
+        }
+        markDirty()
+        restateChipFace(chip, sheet: sheet)
+        return true
+    }
+
+    // MARK: A sealed object's note, keyed by chip, never by page (core interface, The note's routes)
+
+    /// The note's text as the core holds it; empty without a note, nil where
+    /// the core refuses it, as for a page past its deadline (Law 0001, expiry row).
+    public func noteText(chip: UInt64) -> String? {
+        client.noteRuns(chip: chip)?.reduce(into: "") { text, run in
+            if case .ink(let ink) = run { text += ink }
+        }
+    }
+
+    /// One edit to the note; false means the core refused it whole.
+    @discardableResult
+    public func applyNoteOps(
+        chip: UInt64, json: String, intent: EditorEditIntent, selection: EditorEditSelection?
+    ) -> Bool {
+        countEdit(.note(chip: chip))
+        guard client.applyNoteOps(chip: chip, json: json, intent: intent, selection: selection)
+        else { return false }
+        markDirty()
+        return true
+    }
+
+    /// One step of the note's own stack, which the page's ⌘Z never reaches.
+    /// A refusal settles as a refusal does and answers `.refused` (Law 0001, expiry row).
+    public func stepNote(chip: UInt64, back: Bool) -> StepOutcome {
+        guard let outcome = back ? client.undoNote(chip: chip) : client.redoNote(chip: chip)
+        else {
+            settleRefusal(chip: chip, otherwise: nil)
+            return .refused
+        }
+        guard outcome.applied else { return .nothing }
+        countEdit(.note(chip: chip))
+        markDirty()
+        return StepOutcome(applied: true, selection: outcome.selection)
+    }
+
+    public func canStepNote(chip: UInt64, back: Bool) -> Bool {
+        back ? client.canUndoNote(chip: chip) : client.canRedoNote(chip: chip)
+    }
+
+    public func noteStepName(chip: UInt64, back: Bool) -> String? {
+        back ? client.undoNoteActionName(chip: chip) : client.redoNoteActionName(chip: chip)
+    }
+
+    /// Ends the note's coalescing run, as leaving the note does.
+    public func finishNoteEditingGroup(chip: UInt64) {
+        _ = client.finishNoteEditingGroup(chip: chip)
+    }
+
+    /// The line after *Copy Name* (sealed row spec, The page's line).
+    public static let copiedNameLine = "copied the name."
+
+    /// Copy a sealed object's name, which is ambient ink (Law 0001), to
+    /// the ordinary pasteboard. No clear is armed and nothing is recorded.
+    /// The name is part of its page `sheet`, which is asked first (Law 0001, expiry row).
+    @discardableResult
+    public func copyChipName(_ name: String, onPage sheet: UInt64) -> Bool {
+        guard givesOut(sheet: sheet) else { return false }
+        ambientPasteboard.clearContents()
+        guard ambientPasteboard.setString(name, forType: .string) else { return false }
+        flash(Self.copiedNameLine)
+        return true
+    }
+
+    /// The line when a selection of several stretches holds a sealed object.
+    public static let severalStretchesLine = "sealed objects copy from one selection, not several."
+
+    /// A page's selected ranges as the core composes them (ADR-0045 point 2).
+    public enum SelectionComposition: Equatable, Sendable {
+        case composed(SealedFragment)
+        /// One envelope holds one range, so several stretches carry no object.
+        case severalStretchesHoldAnObject
+        /// The page was past its deadline, and the settle took it (Law 0001, expiry row).
+        case pageExpired
+        /// Its envelope would pass a cap the paste keeps (Law 0001, copy row).
+        case pastCap(FragmentRefusal)
+        case refused
+    }
+
+    /// Compose what a preview shows of its page's selection, each stretch as the rendered
+    /// text between its objects and each object by chip id (Law 0001, the preview's copy
+    /// row); writes nothing, and a refusal settles as the timer would (the expiry row).
+    public func composeShownSelection(
+        _ stretches: [[CompanionClient.ShownRun]], sheet: UInt64
+    ) -> SelectionComposition {
+        guard !sheet.isFileID, !stretches.isEmpty else { return .refused }
+        var fragments: [SealedFragment] = []
+        for shown in stretches {
+            switch client.composeShownFragmentResult(sheet: sheet, shown: shown) {
+            case .success(let fragment):
+                fragments.append(fragment)
+            case .failure(.refused):
+                return settleIfDue(sheet: sheet) ? .pageExpired : .refused
+            case .failure(let cap):
+                return .pastCap(cap)
+            }
+        }
+        guard fragments.count > 1 else { return .composed(fragments[0]) }
+        guard fragments.allSatisfy({ $0.envelope == nil }) else {
+            return .severalStretchesHoldAnObject
+        }
+        return .composed(SealedFragment(joining: fragments))
+    }
+
+    /// Copy what a preview shows of its page's selection to the ordinary pasteboard as
+    /// the core composes it; nothing is written if it is refused.
+    @discardableResult
+    public func copyShownSelection(_ stretches: [[CompanionClient.ShownRun]], sheet: UInt64) -> Bool {
+        let composition = composeShownSelection(stretches, sheet: sheet)
+        guard case .composed(let fragment) = composition else {
+            if let line = Self.refusalLine(for: composition, .copy) { flash(line) }
+            return false
+        }
+        return fragment.write(to: ambientPasteboard)
+    }
+
+    /// Compose a page's selected ranges for a copy or a service; writes nothing,
+    /// and a refusal settles as the timer would (Law 0001, expiry row).
+    public func composeSelection(_ ranges: [NSRange], sheet: UInt64) -> SelectionComposition {
+        guard !sheet.isFileID, !ranges.isEmpty else { return .refused }
+        var fragments: [SealedFragment] = []
+        for range in ranges {
+            switch client.copyFragmentResult(sheet: sheet, range: range) {
+            case .success(let fragment):
+                fragments.append(fragment)
+            case .failure(.refused):
+                return settleIfDue(sheet: sheet) ? .pageExpired : .refused
+            case .failure(let cap):
+                return .pastCap(cap)
+            }
+        }
+        guard fragments.count > 1 else { return .composed(fragments[0]) }
+        guard fragments.allSatisfy({ $0.envelope == nil }) else {
+            return .severalStretchesHoldAnObject
+        }
+        return .composed(SealedFragment(joining: fragments))
+    }
+
+    /// What a person asked of a page's selection, for the line its refusal shows.
+    public enum SelectionAct: Sendable {
+        case copy, cut, drag
+
+        var outcome: String {
+            switch self {
+            case .copy: "nothing was copied"
+            case .cut: "nothing was cut"
+            case .drag: "the drag did not start"
+            }
+        }
+    }
+
+    /// The line a refused composition shows whoever asked for `act`: several stretches,
+    /// a page past its deadline, or a cap and the core's limit (Law 0001, expiry and copy rows).
+    public static func refusalLine(
+        for composition: SelectionComposition, _ act: SelectionAct
+    ) -> String? {
+        switch composition {
+        case .composed, .refused, .pastCap(.refused):
+            return nil
+        case .severalStretchesHoldAnObject:
+            switch act {
+            case .copy: return severalStretchesLine
+            case .cut: return severalStretchesCutLine
+            case .drag: return severalStretchesDragLine
+            }
+        case .pageExpired:
+            return pageExpiredLine
+        case .pastCap(.tooLarge(let limit)):
+            let size = sizePhrase(bytes: UInt64(clamping: limit))
+            return "a selection holding sealed objects can be at most \(size), so \(act.outcome)."
+        case .pastCap(.tooManyObjects(let limit)):
+            return "a selection can hold at most \(limit) sealed objects, so \(act.outcome)."
+        }
+    }
+
+    /// Copy a page's selected ranges to the ordinary pasteboard as the core
+    /// composes them (ADR-0045 point 2); nothing is written if one is refused.
+    @discardableResult
+    public func copySelection(_ ranges: [NSRange], sheet: UInt64) -> Bool {
+        let composition = composeSelection(ranges, sheet: sheet)
+        guard case .composed(let fragment) = composition else {
+            if let line = Self.refusalLine(for: composition, .copy) { flash(line) }
+            return false
+        }
+        return fragment.write(to: ambientPasteboard)
+    }
+
+    /// The line when a cut's several stretches hold a sealed object.
+    public static let severalStretchesCutLine = "sealed objects cut from one selection, not several."
+
+    /// The line when the board refused a cut's fragment and the core took the cut back.
+    public static let cutPutBackLine = "the clipboard refused the cut, so it was put back."
+
+    /// The line when the slot's button meets a name or note holding the keys (Law 0007, keys row).
+    public static let placeWaitsLine = "a name or note is being written, so the cut was not placed."
+
+    /// What a page's cut did, for the editor to settle.
+    public enum CutOutcome: Equatable, Sendable {
+        /// The core rewrote the page; the editor stands `selecting`.
+        case cut(selecting: NSRange)
+        /// Several stretches of ink alone, which AppKit cuts as it always has.
+        case inkStretches
+        /// Nothing changed.
+        case refused
+    }
+
+    /// Cut a page's selection through the core as one undo step (ADR-0046 point 3)
+    /// and write its fragment; several stretches holding an object cut nothing.
+    @discardableResult
+    public func cutSelection(_ ranges: [NSRange], sheet: UInt64) -> CutOutcome {
+        guard !sheet.isFileID, let range = ranges.first else { return .refused }
+        guard ranges.count == 1 else {
+            let composition = composeSelection(ranges, sheet: sheet)
+            if case .composed = composition { return .inkStretches }
+            if let line = Self.refusalLine(for: composition, .cut) { flash(line) }
+            return .refused
+        }
+        let fragment: SealedFragment
+        switch client.cutFragmentResult(sheet: sheet, range: range) {
+        case .success(let cut):
+            fragment = cut
+        case .failure(.refused):
+            settleRefusal(sheet: sheet, told: true)
+            return .refused
+        case .failure(let cap):
+            if let line = Self.refusalLine(for: .pastCap(cap), .cut) { flash(line) }
+            return .refused
+        }
+        var selecting = NSRange(location: range.location, length: 0)
+        if !writeCutFragment(fragment, ambientPasteboard) {
+            // The core deleted the range already; its undo stands it again.
+            if client.undo(sheet: sheet) { selecting = range }
+            flash(Self.cutPutBackLine, tone: .actionable)
+        }
+        settleTransfer(sheet)
+        return .cut(selecting: selecting)
+    }
+
+    /// The slot's route: place the active cut over the selection on `sheet`
+    /// (sealed row spec). Nil when the core refuses, settled as `settlingRefusal` says.
+    @discardableResult
+    public func placeActiveCut(sheet: UInt64, ranges: [NSRange]) -> PlacedFragment? {
+        guard !sheet.isFileID, let range = pasteRange(ranges) else { return nil }
+        guard let placed = settlingRefusal({ client.pasteActiveCut(sheet: sheet, range: range) })
+        else {
+            if !livePageIDs.contains(sheet) { flash(Self.pageExpiredLine) }
+            return nil
+        }
+        settleTransfer(sheet)
+        return placed
+    }
+
+    /// The slot's button: place the active cut at the owner's caret.
+    public func placeActiveCutAtCaret() {
+        (activeEditor as? InkTextView)?.coordinator?.placeActiveCut()
+    }
+
+    /// The line when an envelope this build cannot read pasted its public text (ADR-0045 point 3).
+    public static let pastedPublicTextLine =
+        "this build cannot read the copied sealed content, so its text was pasted."
+
+    /// The line when the core placed nothing for a fragment on the board.
+    public static let pasteRefusedLine = "the paste could not be placed."
+
+    /// What a paste of a board did, for the editor to settle.
+    public enum PasteOutcome: Equatable, Sendable {
+        /// No item carries a fragment, or the page is a file: the ordinary paste reads the board.
+        case ordinary
+        /// The core placed this run; the editor stands its caret after it.
+        case placed(PlacedFragment)
+        /// The board held a fragment and the core placed nothing.
+        case refused
+    }
+
+    /// The line when a fragment meets a selection of several stretches.
+    public static let severalStretchesPasteLine =
+        "sealed objects paste into one selection, not several."
+
+    /// The one range a paste places over; several stretches refuse with their line, since
+    /// the core places one range as copy, cut and drag compose one (Law 0001, paste row).
+    private func pasteRange(_ ranges: [NSRange]) -> NSRange? {
+        guard ranges.count > 1 else { return ranges.first }
+        flash(Self.severalStretchesPasteLine)
+        return nil
+    }
+
+    /// Paste the fragment on `pasteboard` over the selection's one range through the core
+    /// as one undo step (Law 0001, paste row), with its item's text as the fallback.
+    @discardableResult
+    public func pasteFragment(
+        from pasteboard: NSPasteboard, sheet: UInt64, ranges: [NSRange]
+    ) -> PasteOutcome {
+        // A file takes the public text, as another app does.
+        guard !sheet.isFileID, let item = SealedFragment.item(on: pasteboard) else { return .ordinary }
+        guard let range = pasteRange(ranges) else { return .refused }
+        // Data the item names but cannot give is an envelope this build cannot read (Law 0001, paste row).
+        let envelope = item.data(forType: SealedFragment.pasteboardType) ?? Data()
+        guard let placed = settlingRefusal({
+            client.pasteFragment(
+                sheet: sheet, range: range, envelope: envelope,
+                plainText: item.string(forType: .string))
+        }) else {
+            flash(livePageIDs.contains(sheet) ? Self.pasteRefusedLine : Self.pageExpiredLine)
+            return .refused
+        }
+        settleTransfer(sheet)
+        if placed.unreadable { flash(Self.pastedPublicTextLine) }
+        return .placed(placed)
+    }
+
+    /// The line when a drag's several stretches hold a sealed object.
+    public static let severalStretchesDragLine = "sealed objects drag from one selection, not several."
+
+    /// The line when a drop meets a name or note holding the keys (Law 0007, keys row).
+    public static let dropWaitsLine = "a name or note is being written, so the drop was not placed."
+
+    /// A page's range as its drag carries it: the copy's fragment (Law 0001, drag row).
+    public func dragFragment(sheet: UInt64, range: NSRange) -> SealedFragment? {
+        let composition = composeSelection([range], sheet: sheet)
+        guard case .composed(let fragment) = composition else {
+            if let line = Self.refusalLine(for: composition, .drag) { flash(line) }
+            return nil
+        }
+        return fragment
+    }
+
+    /// A page's own drag dropped on it at `index`: the range moved, or cloned for ⌥,
+    /// through the core as one step (Law 0001, drag and ⌥ drag rows). Nil on a refusal.
+    @discardableResult
+    public func dropRange(
+        _ range: NSRange, sheet: UInt64, at index: Int, cloning: Bool
+    ) -> PlacedFragment? {
+        guard !sheet.isFileID else { return nil }
+        let placed = settlingRefusal {
+            cloning
+                ? client.cloneRange(sheet: sheet, range: range, to: index)
+                : client.moveRange(sheet: sheet, range: range, to: index)
+        }
+        guard let placed else { return nil }
+        settleTransfer(sheet)
+        return placed
+    }
+
+    /// A page's drag dropped on page `dest` at `index`: the range moved there through the
+    /// core keeping every object, and both pages restated (Law 0001, drag row). Nil on a refusal.
+    @discardableResult
+    public func dropRange(
+        _ range: NSRange, sheet: UInt64, onto dest: UInt64, at index: Int
+    ) -> PlacedFragment? {
+        guard !sheet.isFileID, !dest.isFileID else { return nil }
+        guard let placed = settlingRefusal({
+            client.moveRange(sheet: sheet, range: range, toSheet: dest, at: index)
+        }) else {
+            // A page past its deadline at either end refuses, and the settle takes it (Law 0001, expiry row).
+            if !livePageIDs.contains(sheet) || !livePageIDs.contains(dest) {
+                flash(Self.pageExpiredLine)
+            }
+            return nil
+        }
+        settleTransfer(sheet, dest)
+        return placed
+    }
+
+    /// The line when the decrypted drag meets a name or note holding the keys (Law 0007, keys row).
+    public static let decryptedDragWaitsLine =
+        "a name or note is being written, so the drag did not start."
+
+    /// The decrypted drag, asked by a destination: the core writes the chip's payload
+    /// into `item` and records one `sent` to `drag` (Law 0001, decrypted drag row), so a write
+    /// is armed. A refusal settles with no line, since the destination asked (Law 0001, expiry row).
+    @discardableResult
+    public func provideDecryptedDrag(
+        chip: UInt64, pasteboard: NSPasteboard, item: NSPasteboardItem,
+        type: NSPasteboard.PasteboardType
+    ) -> Bool {
+        guard client.provideDecryptedDrag(
+            chip: chip, pasteboard: pasteboard, item: item, type: type.rawValue)
+        else {
+            settleRefusal(told: false)
+            return false
+        }
+        markDirty()
+        return true
+    }
+
+    /// The slot's words: each cut object by its name, or as sealed content,
+    /// and its size class, leaving the excerpt out. Nil for a cut holding nothing.
+    public nonisolated static func cutSlotSentence(for cut: ActiveCut) -> String? {
+        guard !cut.objects.isEmpty else { return nil }
+        let faces = cut.objects.map {
+            "\($0.name ?? "sealed content") · \(SealedBlockCell.displayedSizeClass($0.sizeLabel))"
+        }
+        return "cut, waiting to be placed: " + faces.joined(separator: ", ")
+    }
+
+    /// Whether the slot's line stands: under the owner's page (ADR-0033), where
+    /// its button reaches a caret, and never over a file or the ledger.
+    public nonisolated static func shouldShowCutSlot(
+        cutStands: Bool, hasPage: Bool, fileShowing: Bool, ledgerShowing: Bool,
+        ownsPresentation: Bool
+    ) -> Bool {
+        ownsPresentation && cutStands && hasPage && !fileShowing && !ledgerShowing
+    }
+
+    /// After the core rewrote pages by a transfer: restate each, then settle as
+    /// the event timer does, since a paste may have swept due pages (Law 0001, expiry row).
+    private func settleTransfer(_ sheets: UInt64...) {
+        for sheet in sheets {
+            countEdit(.sheet(sheet))
+            restateStorage(sheet: sheet)
+            invalidateQuietRendering(for: sheet)
+        }
+        markDirty()
+        refresh()
+        #if DEBUG
+        for sheet in sheets { assertProjectionParity(sheet: sheet) }
+        #endif
     }
 
     /// The confirmation after a copy-out (D-29): what happened, how
@@ -5614,31 +6655,103 @@ public final class PageModel: ObservableObject {
     }
 
     /// The line after a sealed object is removed from the page, in the
-    /// design's words. Its Undo is owed to issue 170: today the core
-    /// zeroizes an object the moment the document stops referencing it,
-    /// so an Undo would put back a reference to nothing, and the
-    /// button is not offered until the detached state exists to
-    /// reattach from (D-30, D-33).
-    public static let removedLine = "protected content removed."
+    /// design's words (D-30).
+    public static let removedLine = "sealed content removed."
 
-    /// Whether a removal's Undo is offered beside `removedLine`. False
-    /// until issue 170 lands the detached state; the button and the
-    /// plumbing are ready for it.
-    public static let offersRemovalUndo = false
+    /// The line when a rewrite of the selection, such as a spelling change, would take an object.
+    public static let rewriteRefusedLine = "the change would replace a sealed object, so it was not made."
 
-    /// After a removal: the line, with Undo beside it once the core can
-    /// honour one.
-    public func noteRemoval(undo: @escaping @MainActor () -> Void) {
+    /// Whether a removal's Undo is offered beside `removedLine`: the core
+    /// keeps a removed object detached to reattach from (ADR-0046 point 1).
+    public static let offersRemovalUndo = true
+
+    /// The removal line's Undo, pressed while a name or the note holds the keys (Law 0007, keys row).
+    public static let undoWaitsLine = "a name or note is being written, so the removal was not undone."
+
+    /// How many edits this model has sent the core for each document, from any surface.
+    private var editGenerations: [InkDocument: UInt64] = [:]
+
+    /// The page and its count of edits just after a removal, while the line offers Undo.
+    private var removalStamp: (sheet: UInt64, generation: UInt64)?
+
+    /// The count of edits sent for `document`, which only grows.
+    private func editGeneration(_ document: InkDocument) -> UInt64 {
+        editGenerations[document, default: 0]
+    }
+
+    /// Whether the removal is still the latest edit sent for its page.
+    private var removalUndoStands: Bool {
+        guard let stamp = removalStamp else { return false }
+        return stamp.generation == editGeneration(.sheet(stamp.sheet))
+    }
+
+    /// Counts an edit sent for each of `documents`; one on a removal's page retires its Undo.
+    private func countEdit(_ documents: InkDocument...) {
+        for document in documents { editGenerations[document, default: 0] &+= 1 }
+        if removalStamp != nil, !removalUndoStands { retireRemovalUndo() }
+    }
+
+    /// After a removal on `sheet`: the line, with an Undo the model answers itself.
+    func noteRemoval(sheet: UInt64) {
+        removalStamp = (sheet, editGeneration(.sheet(sheet)))
         flash(
             Self.removedLine,
-            action: Self.offersRemovalUndo ? NoticeAction(label: "Undo", perform: undo) : nil
+            action: Self.offersRemovalUndo
+                ? NoticeAction(label: "Undo") { [weak self] in self?.undoRemoval() } : nil
         )
+    }
+
+    /// The removal line's Undo: one step back on its page while the removal is the
+    /// latest edit sent for it, through the surface showing the page when one does.
+    private func undoRemoval() {
+        guard removalUndoStands, let stamp = removalStamp else { return }
+        // A surface showing the page takes the step, so it meets Coordinator.step's editability gate.
+        let shown = surface(showing: stamp.sheet)
+        // With the page shown nowhere, the owner's editor or the key window's text view answers.
+        let waits = (shown ?? activeEditor as? InkTextView).map { !$0.answersChords }
+            ?? (NSApp?.keyWindow?.firstResponder is NSTextView)
+        guard !waits else {
+            flash(Self.undoWaitsLine)
+            return
+        }
+        removalStamp = nil
+        if let shown {
+            shown.coordinator?.step(back: true)
+        } else {
+            stepEdit(.sheet(stamp.sheet), back: true)
+        }
+    }
+
+    /// The page surface whose layout reads `sheet`'s storage, when one shows the page.
+    func surface(showing sheet: UInt64) -> InkTextView? {
+        storages[sheet]?.layoutManagers.lazy.flatMap(\.textContainers)
+            .compactMap { $0.textView as? InkTextView }.first
+    }
+
+    /// A surface mounted `sheet`: a removal's Undo on any other page goes.
+    func surfaceMounted(page sheet: UInt64) {
+        if let stamp = removalStamp, stamp.sheet != sheet { retireRemovalUndo() }
+    }
+
+    private func retireRemovalUndo() {
+        removalStamp = nil
+        withdrawRemovalUndo()
+    }
+
+    /// Takes the removal's Undo off its line once the page has moved past the removal.
+    public func withdrawRemovalUndo() {
+        guard notice == Self.removedLine, noticeAction != nil else { return }
+        noticeAction = nil
     }
 
     /// The line after a one-time link is made, in the design's words:
     /// the link is on the board, and what to do with it.
     public static let linkCopiedLine =
         "the link is on the clipboard — paste it where it needs to go."
+
+    /// The error line when no reason comes back; the sheet speaks it without
+    /// its failure prefix (issue #295).
+    nonisolated public static let linkFailedLine = "the link was not created"
 
     /// True while the shell is writing the projection itself: a
     /// page-switch rebuild, a seal's chip-face insertion, a recovery
@@ -5667,13 +6780,16 @@ public final class PageModel: ObservableObject {
     /// wholesale rewrite every offset a step holds describes nothing.
     ///
     /// `intent` tells the core which editing gesture produced the batch. The
-    /// core owns the grouping rules and both undo stacks.
+    /// core owns the grouping rules and both undo stacks. True when the
+    /// core took the batch; a refused one has already been restated.
+    @discardableResult
     public func applyOps(
         sheet: UInt64,
         opsJSON: String,
         intent: EditorEditIntent = .typing,
         selection: EditorEditSelection? = nil
-    ) {
+    ) -> Bool {
+        countEdit(.sheet(sheet))
         // Files route first, on the tag and nothing else. A file has no
         // quiet rendering on the roll, no chips to reap, and its
         // dirtiness is the file's own rather than the sealed store's,
@@ -5688,7 +6804,7 @@ public final class PageModel: ObservableObject {
                 logger.error("the core rejected a file edit batch; restating the file whole")
                 restateStorage(sheet: sheet)
             }
-            return
+            return accepted
         }
         let accepted = client.applyOps(
             sheet: sheet, json: opsJSON, intent: intent, selection: selection)
@@ -5708,6 +6824,55 @@ public final class PageModel: ObservableObject {
         #if DEBUG
         assertProjectionParity(sheet: sheet)
         #endif
+        return accepted
+    }
+
+    // MARK: One route per document a writing surface edits (ADR-0044 point 2)
+
+    /// One batch to the page, file or note `document` names. False when the
+    /// core refused it; a page or file is restated here, a note by its surface.
+    @discardableResult
+    public func applyOps(
+        to document: InkDocument, json: String, intent: EditorEditIntent,
+        selection: EditorEditSelection?
+    ) -> Bool {
+        switch document {
+        case .sheet(let sheet):
+            applyOps(sheet: sheet, opsJSON: json, intent: intent, selection: selection)
+        case .note(let chip):
+            applyNoteOps(chip: chip, json: json, intent: intent, selection: selection)
+        }
+    }
+
+    /// One step of `document`'s own stack, the way ⌘Z or ⇧⌘Z asks for it.
+    @discardableResult
+    public func stepEdit(_ document: InkDocument, back: Bool) -> StepOutcome {
+        switch document {
+        case .sheet(let sheet): back ? undoEdit(sheet: sheet) : redoEdit(sheet: sheet)
+        case .note(let chip): stepNote(chip: chip, back: back)
+        }
+    }
+
+    public func canStepEdit(_ document: InkDocument, back: Bool) -> Bool {
+        switch document {
+        case .sheet(let sheet): back ? canUndoEdit(sheet: sheet) : canRedoEdit(sheet: sheet)
+        case .note(let chip): canStepNote(chip: chip, back: back)
+        }
+    }
+
+    public func editStepName(_ document: InkDocument, back: Bool) -> String? {
+        switch document {
+        case .sheet(let sheet): back ? undoActionName(sheet: sheet) : redoActionName(sheet: sheet)
+        case .note(let chip): noteStepName(chip: chip, back: back)
+        }
+    }
+
+    /// Ends `document`'s coalescing run; a note's takes no selection.
+    public func finishEditingGroup(_ document: InkDocument, selection: NSRange?) {
+        switch document {
+        case .sheet(let sheet): finishEditingGroup(sheet: sheet, selection: selection)
+        case .note(let chip): finishNoteEditingGroup(chip: chip)
+        }
     }
 
     /// End the current coalescing run without creating an undo item.
@@ -5729,10 +6894,20 @@ public final class PageModel: ObservableObject {
         /// The selection restored by the step, or nil when the step carried
         /// no selection and the editor should leave its range alone.
         public let selection: NSRange?
+        /// True when the core refused the step, as for a note past its page's
+        /// deadline (Law 0001, expiry row), rather than finding none to take.
+        public let refused: Bool
+
+        public init(applied: Bool, selection: NSRange?, refused: Bool = false) {
+            self.applied = applied
+            self.selection = selection
+            self.refused = refused
+        }
 
         public var caret: Int? { selection?.location }
 
         public static let nothing = StepOutcome(applied: false, selection: nil)
+        public static let refused = StepOutcome(applied: false, selection: nil, refused: true)
     }
 
     /// Take back the page's last local edit through the core's stack,
@@ -5743,7 +6918,8 @@ public final class PageModel: ObservableObject {
     /// is bound to the document's own peer and refuses another peer's
     /// operations by design; and a device that joined a page at a key
     /// frame never received the operations an away-device undo would
-    /// have to invert (ADR-0021 section 5). So ⌘Z here is undo that is
+    /// have to invert (relay decision background section 5). So ⌘Z here
+    /// is undo that is
     /// safe beside another device's edits, never undo that reaches
     /// across them, and it should not grow into the latter without the
     /// key-frame law being reopened first.
@@ -5774,6 +6950,7 @@ public final class PageModel: ObservableObject {
     /// there is no second call for the caret: the outcome carries it.
     private func fileStep(_ file: UInt64, _ take: () -> CompanionKit.StepOutcome?) -> StepOutcome {
         guard let outcome = take(), outcome.applied else { return .nothing }
+        countEdit(.sheet(file))
         restateStorage(sheet: file)
         markFilesDirty()
         refreshOpenFiles()
@@ -5857,6 +7034,7 @@ public final class PageModel: ObservableObject {
     /// as operations would apply the step twice.
     private func step(sheet: UInt64, _ take: () -> Bool) -> StepOutcome {
         guard take() else { return .nothing }
+        countEdit(.sheet(sheet))
         restateStorage(sheet: sheet)
         invalidateQuietRendering(for: sheet)
         markDirty()
@@ -5876,6 +7054,14 @@ public final class PageModel: ObservableObject {
     /// core cleared or moved it before this was called.
     private func restateStorage(sheet: UInt64) {
         guard let storage = storages[sheet] else { return }
+        let rebuilt = rebuiltRuns(of: sheet)
+        applyingProjection {
+            storage.setAttributedString(rebuilt)
+        }
+    }
+
+    /// The page's runs as a storage shows them: ink in the base style, each object as its chip.
+    private func rebuiltRuns(of sheet: UInt64) -> NSMutableAttributedString {
         let rebuilt = NSMutableAttributedString()
         for run in runs(of: sheet) {
             switch run {
@@ -5888,18 +7074,173 @@ public final class PageModel: ObservableObject {
                 rebuilt.append(NSAttributedString(attachment: ChipAttachment(info: info)))
             }
         }
-        applyingProjection {
-            storage.setAttributedString(rebuilt)
+        return rebuilt
+    }
+
+    /// A peer's edit merged into the storage `shown` lays out, one stretch at a time, so the
+    /// caret, the selection and the reading place outside each stretch stand where they were and
+    /// the next local edit is read from the merged text (#276). A rewrite past `mergeDiffLimit`
+    /// units or `mergeStretchLimit` stretches is replaced as one stretch instead. Each stretch is
+    /// its own storage edit on purpose: a begin and end editing pair would fold them into one
+    /// edited range, and the selection fixups AppKit makes per edit with them.
+    private func mergeIntoShownStorage(sheet: UInt64, shown: InkTextView) {
+        guard let storage = storages[sheet] else { return }
+        // A composition in flight is the input method's provisional text, not the core's: the
+        // comparison reads the storage as it stood before it, and only an edit that changed
+        // something drops it, since its commit would be read against a storage the merge moved.
+        let coordinator = shown.coordinator
+        let composed = coordinator?.compositionFreeCopy(of: storage)
+        let rebuilt = rebuiltRuns(of: sheet)
+        let old = Self.units(of: composed ?? storage)
+        let new = Self.units(of: rebuilt)
+        let head = zip(old, new).lazy.prefix { $0 == $1 }.count
+        let room = min(old.count, new.count) - head
+        let tail = zip(old.reversed(), new.reversed()).lazy.prefix { $0 == $1 }.prefix(room).count
+        let oldMiddle = Array(old[head..<(old.count - tail)])
+        let newMiddle = Array(new[head..<(new.count - tail)])
+        guard !oldMiddle.isEmpty || !newMiddle.isEmpty else { return }
+        if shown.hasMarkedText() { coordinator?.abandonComposition() }
+        // Offsets in UTF-16 units: the head's, and each middle unit's start within its middle.
+        let headOffset = Self.width(of: old.prefix(head))
+        let oldStarts = Self.starts(of: oldMiddle)
+        let newStarts = Self.starts(of: newMiddle)
+        var stretches: (removals: [Range<Int>], insertions: [Range<Int>])?
+        if oldMiddle.count <= Self.mergeDiffLimit, newMiddle.count <= Self.mergeDiffLimit {
+            let difference = newMiddle.difference(from: oldMiddle)
+            let removals = Self.runs(of: Self.offsets(of: difference.removals))
+            let insertions = Self.runs(of: Self.offsets(of: difference.insertions))
+            if removals.count + insertions.count <= Self.mergeStretchLimit {
+                stretches = (removals, insertions)
+            }
         }
+        applyingProjection {
+            guard let stretches else {
+                storage.replaceCharacters(
+                    in: NSRange(location: headOffset, length: oldStarts[oldMiddle.count]),
+                    with: rebuilt.attributedSubstring(
+                        from: NSRange(location: headOffset, length: newStarts[newMiddle.count])))
+                return
+            }
+            for run in stretches.removals.reversed() {
+                storage.deleteCharacters(in: NSRange(
+                    location: headOffset + oldStarts[run.lowerBound],
+                    length: oldStarts[run.upperBound] - oldStarts[run.lowerBound]))
+            }
+            for run in stretches.insertions {
+                let at = headOffset + newStarts[run.lowerBound]
+                let length = newStarts[run.upperBound] - newStarts[run.lowerBound]
+                storage.insert(rebuilt.attributedSubstring(from: NSRange(location: at, length: length)), at: at)
+            }
+        }
+        #if DEBUG
+            assertProjectionParity(sheet: sheet)
+        #endif
+    }
+
+    /// The diff costs the middle's length times its edit distance, quadratic when the two share
+    /// little, and each stretch is a layout pass.
+    private static let mergeDiffLimit = 2_048
+    private static let mergeStretchLimit = 64
+
+    /// One character, a surrogate pair as one so no edit leaves half of it standing, or the
+    /// object standing there, so two objects never read as one character; an object is its id,
+    /// since no edit a peer sends changes a face.
+    private enum ProjectionUnit: Equatable {
+        case character(unichar)
+        case pair(unichar, unichar)
+        case object(UInt64)
+
+        var width: Int {
+            if case .pair = self { return 2 }
+            return 1
+        }
+    }
+
+    private static func units(of text: NSAttributedString) -> [ProjectionUnit] {
+        let string = text.string as NSString
+        var buffer = [unichar](repeating: 0, count: string.length)
+        string.getCharacters(&buffer, range: NSRange(location: 0, length: string.length))
+        var objects: [Int: UInt64] = [:]
+        text.enumerateAttribute(.attachment, in: NSRange(location: 0, length: string.length)) { value, range, _ in
+            guard let chip = value as? ChipAttachment else { return }
+            for index in range.location..<NSMaxRange(range) { objects[index] = chip.info.chipId }
+        }
+        var units: [ProjectionUnit] = []
+        units.reserveCapacity(buffer.count)
+        var index = 0
+        while index < buffer.count {
+            if let object = objects[index] {
+                units.append(.object(object))
+            } else if UTF16.isLeadSurrogate(buffer[index]), index + 1 < buffer.count,
+                      UTF16.isTrailSurrogate(buffer[index + 1]) {
+                units.append(.pair(buffer[index], buffer[index + 1]))
+                index += 1
+            } else {
+                units.append(.character(buffer[index]))
+            }
+            index += 1
+        }
+        return units
+    }
+
+    private static func width(of units: some Sequence<ProjectionUnit>) -> Int {
+        units.reduce(0) { $0 + $1.width }
+    }
+
+    /// Each unit's UTF-16 offset from the first, with the total at the end.
+    private static func starts(of units: [ProjectionUnit]) -> [Int] {
+        var starts = [0]
+        starts.reserveCapacity(units.count + 1)
+        for unit in units { starts.append(starts[starts.count - 1] + unit.width) }
+        return starts
+    }
+
+    /// The changes' offsets, ascending, which `runs(of:)` relies on.
+    private static func offsets(of changes: [CollectionDifference<ProjectionUnit>.Change]) -> [Int] {
+        changes.map { change in
+            switch change {
+            case .insert(let offset, _, _), .remove(let offset, _, _): return offset
+            }
+        }.sorted()
+    }
+
+    /// Consecutive offsets as ranges, in order.
+    private static func runs(of offsets: [Int]) -> [Range<Int>] {
+        var runs: [Range<Int>] = []
+        for offset in offsets {
+            if let last = runs.last, last.upperBound == offset {
+                runs[runs.count - 1] = last.lowerBound..<(offset + 1)
+            } else {
+                runs.append(offset..<(offset + 1))
+            }
+        }
+        return runs
+    }
+
+    /// A pump's applied edits: the pages they moved are read again from the core, merged into
+    /// the one a surface shows, and the dirty mark schedules the sealed write as a local
+    /// keystroke would.
+    func settleRemoteEdits(on pages: Set<UInt64>) {
+        for page in pages {
+            invalidateQuietRendering(for: page)
+            if let shown = surface(showing: page) {
+                mergeIntoShownStorage(sheet: page, shown: shown)
+            } else {
+                restateStorage(sheet: page)
+            }
+        }
+        markDirty()
+        refresh()
     }
 
     /// Mirror the page's document to the core wholesale: the recovery
     /// path (still authoritative for chip liveness: a chip the
-    /// snapshot omits was deleted in the editor and is zeroized
-    /// there). The rejected-batch route arrives via
+    /// snapshot omits was removed in the editor and is detached
+    /// there, ADR-0046 point 1). The rejected-batch route arrives via
     /// `recoverProjection`; programmatic rewrites (a burn) come here
     /// directly.
     public func syncDocument(sheet: UInt64, runs: [DocumentRun]) {
+        countEdit(.sheet(sheet))
         // A file has no wholesale mirror. The core has no
         // companion_file_sync_document, deliberately: the mirror exists
         // for chip liveness after a refused batch, and a file holds no
@@ -5936,7 +7277,9 @@ public final class PageModel: ObservableObject {
     /// liveness. So first strip any chip glyph the core no longer
     /// owns; the one way a well-formed batch is refused is an undo
     /// re-inserting a dead chip's attachment, and undo never un-seals
-    /// (ADR-0009), so the glyph goes silently, no notice. Then mirror
+    /// (ADR-0009), so the glyph goes silently, no notice, as does a
+    /// U+FFFC no object stands on, an object's second index included,
+    /// the first kept (Law 0001). Then mirror
     /// the storage whole and drop the page's undo history, which after
     /// a rewrite holds ranges that describe nothing.
     private func recoverProjection(sheet: UInt64) {
@@ -5946,16 +7289,18 @@ public final class PageModel: ObservableObject {
         }
         let live = chipIds(onSheet: sheet)
         applyingProjection {
-            var dead: [NSRange] = []
-            storage.enumerateAttribute(
-                .attachment, in: NSRange(location: 0, length: storage.length)
-            ) { value, range, _ in
+            let whole = NSRange(location: 0, length: storage.length)
+            var dead = IndexSet()
+            for range in InkEditorView.Coordinator.strayObjectCharacters(in: storage, whole) {
+                dead.insert(integersIn: Range(range) ?? 0..<0)
+            }
+            storage.enumerateAttribute(.attachment, in: whole) { value, range, _ in
                 if let chip = value as? ChipAttachment, !live.contains(chip.info.chipId) {
-                    dead.append(range)
+                    dead.insert(integersIn: Range(range) ?? 0..<0)
                 }
             }
-            for range in dead.reversed() {
-                storage.replaceCharacters(in: range, with: "")
+            for range in dead.rangeView.reversed() {
+                storage.replaceCharacters(in: NSRange(range), with: "")
             }
         }
         syncDocument(sheet: sheet, runs: InkEditorView.Coordinator.runs(of: storage))
@@ -5970,20 +7315,46 @@ public final class PageModel: ObservableObject {
         guard let storage = storages[sheet] else { return }
         let shell = InkEditorView.Coordinator.runs(of: storage)
         let core = client.documentRuns(sheet: sheet)
-        var matches = shell.count == core.count
-        if matches {
-            for (ours, theirs) in zip(shell, core) {
-                switch (ours, theirs) {
-                case (.ink(let a), .ink(let b)) where a == b: continue
-                case (.chip(let a), .chip(let b)) where a == b.chipId: continue
-                default:
-                    matches = false
-                }
-            }
+        guard let breach = Self.parityBreach(editor: shell, core: core) else { return }
+        // A trap hangs xctest with no output, so a test run ends here and says why.
+        if FormFactor.runningUnderTests {
+            FileHandle.standardError.write(Data("\(breach)\n".utf8))
+            exit(EXIT_FAILURE)
         }
-        assert(matches, "the editor and the core disagree about the page")
+        assertionFailure(breach)
     }
     #endif
+
+    /// Nil while the editor and the core spell the same page; otherwise the line
+    /// that says how they differ, by kinds and lengths, never the ink itself.
+    nonisolated static func parityBreach(editor: [DocumentRun], core: [RestoredRun]) -> String? {
+        let theirs = core.map { run -> DocumentRun in
+            switch run {
+            case .ink(let text): .ink(text)
+            case .chip(let info): .chip(info.chipId)
+            }
+        }
+        let same = editor.count == theirs.count && zip(editor, theirs).allSatisfy { pair in
+            switch pair {
+            case (.ink(let a), .ink(let b)): a == b
+            case (.chip(let a), .chip(let b)): a == b
+            default: false
+            }
+        }
+        guard !same else { return nil }
+        return "the editor and the core disagree about the page: "
+            + "editor \(paritySketch(editor)), core \(paritySketch(theirs))"
+    }
+
+    /// Runs as kinds and lengths alone, for a line a log may keep.
+    private nonisolated static func paritySketch(_ runs: [DocumentRun]) -> String {
+        runs.map { run in
+            switch run {
+            case .ink(let text): "ink(\(text.utf16.count))"
+            case .chip(let id): "chip(\(id))"
+            }
+        }.joined(separator: " ")
+    }
 
     // MARK: Conceal — the exit ramp
 
@@ -5991,7 +7362,7 @@ public final class PageModel: ObservableObject {
     /// ↗ page. Everything after this is in-place: no modal, and the
     /// network boundary is the one confirming click.
     public func beginConceal(_ target: ConcealDraft.Target) {
-        notice = nil
+        clearNotice()
         // The draft opens on the link's own default. Which page the
         // target sits on, and how long that page has left, is not
         // consulted (ADR-0026).
@@ -6001,7 +7372,7 @@ public final class PageModel: ObservableObject {
     /// The confirming click: one POST, off the main actor — the core
     /// releases its lock during the round-trip, so the surface stays
     /// live. On success the link is on the clipboard (written
-    /// core-side) and the confirmation offers Burn local copy.
+    /// core-side) and the confirmation offers Burn Local Copy.
     public func confirmConceal() {
         guard var draft = concealDraft, !draft.inFlight else { return }
         draft.inFlight = true
@@ -6035,6 +7406,13 @@ public final class PageModel: ObservableObject {
         // clear belongs to that egress, not to whichever draft the UI is
         // showing when the response returns.
         if outcome.ok { armClipboardClear() }
+        // A refusal may be a page past its deadline (Law 0001, expiry row): settle as the timer would.
+        if !outcome.ok {
+            switch target {
+            case .page(let id): settleRefusal(sheet: id, told: true)
+            case .chip(let id): settleRefusal(chip: id, otherwise: nil)
+            }
+        }
         // The confirmation may have been dismissed — or reopened on a
         // new offer for the same target — while the call was out; a stale outcome
         // must not land on someone else's draft. (On success the link
@@ -6047,7 +7425,7 @@ public final class PageModel: ObservableObject {
             flash(Self.linkCopiedLine)
         } else {
             // Inline, with retry; content never left the sheet.
-            draft.error = outcome.error ?? "the conceal failed"
+            draft.error = outcome.error ?? Self.linkFailedLine
         }
         concealDraft = draft
         refresh()
@@ -6070,6 +7448,7 @@ public final class PageModel: ObservableObject {
             // the number key are the arrangement they built, which only
             // a close may end (ADR-0017).
             _ = client.discardPage(id: id)
+            countEdit(.sheet(id))
             markDirty()
             refresh()
         }
@@ -6093,9 +7472,12 @@ public final class PageModel: ObservableObject {
         // day the editor has never visited: that page has a rendering on
         // the roll and no storage at all, so the loop would find nothing
         // and the burned chip would go on being drawn there.
-        let host = livePageIDs.first { chipIds(onSheet: $0).contains(chipId) }
+        let host = pageHolding(chipId)
         _ = client.deleteChip(id: chipId)
-        if let host { invalidateQuietRendering(for: host) }
+        if let host {
+            countEdit(.sheet(host))
+            invalidateQuietRendering(for: host)
+        }
         for storage in storages.values {
             var found: NSRange?
             storage.enumerateAttribute(
@@ -6426,9 +7808,65 @@ public final class PageModel: ObservableObject {
     /// to fire on its own, and this is the one mutation site whose mark
     /// nothing else in the app would ever make good: a lapse the user
     /// never saw, over a file that would stay stale until they typed.
-    func settleCoreEvent() {
-        _ = client.expireDue()
+    @discardableResult
+    func settleCoreEvent() -> UInt64 {
+        let expired = client.expireDue()
         markDirty()
         refresh() // re-arms for the next event
+        return expired
+    }
+
+    /// Run a core transfer, which may sweep before it refuses (Law 0001, expiry row); a refusal
+    /// settles as the timer would only when an event was due as it began.
+    private func settlingRefusal<T>(_ route: () -> T?) -> T? {
+        let wasDue = client.nextEventMs() == 0
+        let result = route()
+        if result == nil, wasDue { settleCoreEvent() }
+        return result
+    }
+
+    /// When the core's next event is due its timer is late, so settle as it fires.
+    /// True when `sheet` went, or, with no page named, when any page went.
+    @discardableResult
+    func settleIfDue(sheet: UInt64? = nil) -> Bool {
+        guard client.nextEventMs() == 0 else { return false }
+        let expired = settleCoreEvent() > 0
+        guard let sheet else { return expired }
+        return expired && !livePageIDs.contains(sheet)
+    }
+
+    /// The line when a page past its deadline refused what a person asked of it (Law 0001, expiry row).
+    public static let pageExpiredLine = "this page has expired."
+
+    /// A core route refused to give a page out: settle as the timer would, since a page
+    /// past its deadline refuses (Law 0001, expiry row), and tell a person who acted.
+    func settleRefusal(sheet: UInt64? = nil, told: Bool) {
+        if settleIfDue(sheet: sheet), told { flash(Self.pageExpiredLine) }
+    }
+
+    /// The line when the core refused to copy an object whose page still stands.
+    public static let copyRefusedLine = "the sealed content could not be copied."
+
+    /// A core route refused object `chip`: settle, and say the page expired only when the
+    /// object stood and its own page went with it (Law 0001, expiry row); otherwise `line`, when there is one.
+    func settleRefusal(chip: UInt64, otherwise line: String?) {
+        let stood = client.chipStands(chip)
+        if settleIfDue(), stood, !client.chipStands(chip) {
+            flash(Self.pageExpiredLine)
+        } else if let line {
+            flash(line)
+        }
+    }
+
+    /// Whether text the shell already shows from page `sheet` may leave by AppKit, which
+    /// no core route sees (Law 0001, expiry row): a late timer settles first, and a page gone says so.
+    func givesOut(sheet: UInt64) -> Bool {
+        guard !sheet.isFileID else { return true }
+        settleIfDue()
+        guard livePageIDs.contains(sheet) else {
+            flash(Self.pageExpiredLine)
+            return false
+        }
+        return true
     }
 }

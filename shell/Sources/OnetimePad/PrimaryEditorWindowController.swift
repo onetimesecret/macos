@@ -38,6 +38,7 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     private var switchingToAmbientPanel = false
     private var captureObserver: AnyCancellable?
     private var ownerObserver: AnyCancellable?
+    private var padsObserver: AnyCancellable?
 
     /// The defaults key the frame rests under between runs. State
     /// restoration is off (`isRestorable`), so this is the only thing
@@ -51,6 +52,11 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
 
     /// Actual visibility, used by presentation handoff checks.
     var isVisible: Bool { window?.isVisible == true }
+
+    /// Whether a window is this one, for ⌘W (#201).
+    func owns(_ candidate: NSWindow) -> Bool {
+        window === candidate
+    }
 
     /// Close and release the editor for a deliberate ambient switch. The
     /// switch supplies the next key window, so close must not deactivate later.
@@ -91,6 +97,21 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         // Mission Control and the window list, which is further than
         // `sharingType` covers, so no page title or content goes in it.
         window.title = BackdropAppDelegate.productName
+        // One editor window (ADR-0033): no Show Tab Bar on the View menu.
+        window.tabbingMode = .disallowed
+        // One unified band: the pad picker and the expand control are
+        // toolbar items. With pads on the picker stands where the title
+        // would and the title is hidden, still the app's name in the
+        // Window menu and Mission Control.
+        window.toolbarStyle = .unified
+        let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+        padsObserver = model.pages.pads.$isEnabled.sink { [weak window] enabled in
+            window?.titleVisibility = Self.titleVisibility(padsEnabled: enabled)
+        }
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 360, height: 280)
         // No saved application state: restoration would write a
@@ -228,7 +249,9 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         let closingWindowID = window.map(ObjectIdentifier.init)
         captureObserver = nil
         ownerObserver = nil
+        padsObserver = nil
         window?.delegate = nil
+        window?.toolbar = nil
         model.editorWindowClosed()
         window?.contentView = nil
         window = nil
@@ -327,23 +350,16 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
 /// The editor window's face: the shared page surface in a plain stack,
 /// with whichever page picker the person has chosen, where they chose
 /// to have it. The archived panel's `WindowRootView` is the skeleton;
-/// the title bar stands in for its header.
+/// the toolbar stands in for its header, the pad picker and the expand
+/// control included (`EditorToolbarPadPicker`).
 private struct PrimaryEditorRootView: View {
     @ObservedObject var pages: PageModel
 
     var body: some View {
         VStack(spacing: 0) {
-            if pages.pads.isEnabled {
-                PadPickerView(model: pages)
-                Divider()
-            }
             HStack(spacing: 0) {
                 if pages.showsPagesDownSide && !pages.isPageExpanded {
-                    if pages.showsTimeUnits {
-                        TimeRailView(model: pages)
-                    } else {
-                        SlotRailView(model: pages)
-                    }
+                    TimeRailView(model: pages, readOnly: false)
                     Divider()
                 }
                 content
@@ -351,11 +367,7 @@ private struct PrimaryEditorRootView: View {
             PageStatusStack(model: pages)
             if !pages.showsPagesDownSide && !pages.isPageExpanded {
                 Divider()
-                if pages.showsTimeUnits {
-                    TimeStripView(model: pages)
-                } else {
-                    TabStripView(model: pages)
-                }
+                TabStripView(model: pages, readOnly: false)
             }
         }
         .background(Color.panelBackground)
@@ -371,10 +383,107 @@ private struct PrimaryEditorRootView: View {
     @ViewBuilder
     private var content: some View {
         if pages.owner == .editorWindow {
-            PageContentView(model: pages, emptyHint: "click or ↩ to start one")
+            PageContentView(
+                model: pages, emptyHint: "click or ↩ to start one", showsExpandControl: false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+}
+
+/// The pad picker as the editor window's leading toolbar item, drawn
+/// only while pads are on.
+private struct EditorToolbarPadPicker: View {
+    @ObservedObject var pages: PageModel
+    @ObservedObject var pads: PadCatalog
+
+    var body: some View {
+        if pads.isEnabled {
+            PadPickerView(model: pages, placement: .toolbar)
+                .environment(\.presentationSurface, .editorWindow)
+        }
+    }
+}
+
+// MARK: - The toolbar
+
+extension NSToolbarItem.Identifier {
+    static let editorPadPicker = NSToolbarItem.Identifier("PrimaryEditor.padPicker")
+    static let editorExpandPage = NSToolbarItem.Identifier("PrimaryEditor.expandPage")
+}
+
+extension PrimaryEditorWindowController: NSToolbarDelegate, NSToolbarItemValidation {
+    static let toolbarIdentifier = "PrimaryEditorToolbar"
+
+    /// The pad picker leads, where the title would stand, and the expand
+    /// control trails.
+    nonisolated static let toolbarItems: [NSToolbarItem.Identifier] = [
+        .editorPadPicker, .flexibleSpace, .editorExpandPage,
+    ]
+
+    /// The title's text is hidden while the pad picker stands in its place.
+    nonisolated static func titleVisibility(padsEnabled: Bool) -> NSWindow.TitleVisibility {
+        padsEnabled ? .hidden : .visible
+    }
+
+    nonisolated func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        Self.toolbarItems
+    }
+
+    nonisolated func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        Self.toolbarItems
+    }
+
+    nonisolated func toolbar(
+        _ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        MainActor.assumeIsolated { makeToolbarItem(identifier) }
+    }
+
+    private func makeToolbarItem(_ identifier: NSToolbarItem.Identifier) -> NSToolbarItem? {
+        switch identifier {
+        case .editorPadPicker:
+            let item = NSToolbarItem(itemIdentifier: identifier)
+            item.label = "Pad"
+            item.view = NSHostingView(rootView: EditorToolbarPadPicker(
+                pages: model.pages, pads: model.pages.pads))
+            item.visibilityPriority = .high
+            return item
+        case .editorExpandPage:
+            let item = NSToolbarItem(itemIdentifier: identifier)
+            item.isBordered = true
+            item.target = self
+            item.action = #selector(toggleExpandPage(_:))
+            describe(item, expanded: false)
+            return item
+        default:
+            return nil
+        }
+    }
+
+    @objc private func toggleExpandPage(_ sender: Any?) {
+        model.pages.togglePageExpansion()
+    }
+
+    /// The expand item says what its next press does, and is live only
+    /// while there is a page here to expand.
+    nonisolated func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        MainActor.assumeIsolated {
+            guard item.itemIdentifier == .editorExpandPage else { return true }
+            let pages = model.pages
+            describe(item, expanded: pages.isPageExpanded)
+            return pages.owner == .editorWindow && pages.canExpandPage
+        }
+    }
+
+    private func describe(_ item: NSToolbarItem, expanded: Bool) {
+        let label = PageContentView.expandLabel(expanded: expanded)
+        item.label = label
+        item.toolTip = PageContentView.expandHelp(expanded: expanded)
+        item.image = NSImage(
+            systemSymbolName: PageContentView.expandSymbol, accessibilityDescription: label)
+        item.image?.isTemplate = true
     }
 }

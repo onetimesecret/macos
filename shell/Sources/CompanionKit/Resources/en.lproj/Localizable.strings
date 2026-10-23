@@ -21,35 +21,36 @@
 
 /* Experimental pad selection, associations, and local metadata disclosure. */
 "pad.picker.current" = "Choose pad, current pad %@";
-"pad.picker.heading" = "PADS";
-"pad.new.title" = "New pad";
-"pad.new.menu" = "New pad…";
+"pad.picker.heading" = "Pads";
+"pad.new.title" = "New Pad";
+"pad.new.menu" = "New Pad…";
+"pad.manage.menu" = "Manage Pads…";
 "pad.name" = "Pad name";
 "pad.name.empty" = "Enter a pad name.";
 "pad.name.long" = "Use 80 characters or fewer for the pad name.";
 "pad.name.failed" = "The pad could not be saved. Finish any pending file decision and try again.";
 "pad.create" = "Create";
 "pad.cancel" = "Cancel";
-"pad.rename.title" = "Rename pad";
-"pad.rename" = "Rename";
-"pad.rename.menu" = "Rename pad…";
+"pad.rename.menu" = "Rename";
 "pad.remove.title" = "Remove %@?";
-"pad.remove" = "Remove pad";
-"pad.remove.menu" = "Remove pad…";
+"pad.remove" = "Remove Pad";
+"pad.remove.menu" = "Remove Pad…";
 "pad.remove.explanation" = "Pages and open files move to Scratch. Their content remains. Folder and app associations, and this pad’s sort preferences, are removed.";
 "pad.actions" = "Actions for %@";
+"pad.move.up" = "Move %@ up";
+"pad.move.down" = "Move %@ down";
+"pad.settings.order" = "Use the arrow buttons to reorder pads and their keyboard shortcuts. Scratch stays first.";
 "pad.scratch.expiry" = "Usual page expiry across restarts.";
 "pad.folder.one" = "%ld folder";
 "pad.folder.many" = "%ld folders";
 "pad.folder.none" = "No folder linked";
-"pad.folder.add" = "Add folder…";
+"pad.folder.add" = "Add Folder…";
 "pad.folder.remove" = "Remove %@ from %@";
 "pad.folder.associate" = "Associate";
 "pad.folder.owned" = "This folder is already associated with a pad.";
 "pad.app.enabled" = "App associations";
 "pad.app.caption" = "Use application context to suggest recent pads.";
-"pad.app.menu" = "Applications…";
-"pad.app.remove" = "Remove %@";
+"pad.app.menu" = "Applications";
 "pad.app.switch" = "Switch to %@";
 "pad.app.notRunningName" = "%@ is not running";
 "pad.app.notRunning" = "This associated application is not running.";
@@ -61,17 +62,26 @@
 "pad.catalog.unreadable" = "Pad metadata could not be read. The saved catalog has been preserved.";
 "pad.switch.pendingClose" = "Finish the file close decision before switching pads.";
 
-/* Timeline ordering: value is current order; hint names the next action. */
-"pad.timeline.heading" = "TIMELINE";
+/* Timeline sort menus: explicit choices and the current order. */
+"pad.timeline.heading" = "Timeline";
 "pad.sort.days" = "days";
 "pad.sort.checkpoints" = "%@ checkpoints";
 "pad.sort.label" = "%@ sort order";
+"pad.sort.natural" = "Natural order";
 "pad.sort.oldest" = "Oldest first";
 "pad.sort.newest" = "Newest first";
-"pad.sort.toNewest" = "Activate to sort %@ newest first";
-"pad.sort.toOldest" = "Activate to sort %@ oldest first";
+"pad.sort.help" = "%@: %@";
 "pad.page.new" = "New page";
 "pad.page.newPlaceholder" = "New page…";
-"pad.files.heading" = "FILES";
-"pad.settings.layout" = "Tabs shows named pages along the bottom at full page width. Timeline groups live pages by day with independent day and checkpoint ordering, taking %ld points from the page. Lines wrap and older blank pages are counted rather than drawn.";
+"pad.files.heading" = "Files";
+"pad.settings.layout" = "Tabs shows named pages along the bottom at full page width. Timeline groups live pages by day with independent day and checkpoint ordering, taking %ld points from the page. Lines wrap and older blank pages are hidden.";
 "pad.remove.failed" = "The pad could not be removed. Finish any pending file decision and try again.";
+
+/* A sealed object's name field, and its refusals in the line under the page (Law 0007, ADR-0042 point 1). */
+"chip.name.field" = "Name";
+"chip.name.long" = "Use 64 characters or fewer for the name.";
+"chip.name.charset" = "Use the letters A to Z, digits and underscores for the name, and start it with a letter or an underscore.";
+
+/* The two handles on a sealed block's top row, as VoiceOver names them (Law 0001, move drag and decrypted drag rows). */
+"chip.handle.move" = "Move";
+"chip.handle.decrypted" = "Drag decrypted";

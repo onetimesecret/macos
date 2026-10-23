@@ -1,61 +1,11 @@
-//! Device pairing: two devices come to trust each other directly, with
-//! their own key exchange and a verification a human performs — never
-//! through the account (ADR-0021 section 3, issue #97).
-//!
-//! The account answers "may this client attach to this channel" and
-//! nothing else; anything that can obtain a token — a phished session,
-//! a leaked refresh token, the provider itself — must still win
-//! nothing here. So trust is established between the devices
-//! themselves, with the relay as an untrusted carrier, in the shape
-//! the BYOE local-service assessment already argued for
-//! (docs/spec/feature/byoe/local-service.md): a per-device Ed25519
-//! identity key, a challenge the counterparty must answer before any
-//! secret moves, and — because two devices with two screens can do
-//! better than a service can — a short authentication string the user
-//! compares on both screens and is able to fail.
-//!
-//! The ceremony, message by message (inviter A holds the channel
-//! secret; joiner B wants in):
-//!
-//! 1. **Commitment** (A → B): `SHA-256(eph_A ‖ identity_A ‖ blind)`.
-//!    Committing before seeing B's contribution means a machine in the
-//!    middle gets exactly one guess at the short string rather than a
-//!    grinding attack against it.
-//! 2. **Offer** (B → A): B's identity public key and ephemeral X25519
-//!    public key.
-//! 3. **Reveal** (A → B): A's identity and ephemeral public keys, the
-//!    blind, and A's Ed25519 signature over the transcript. B checks
-//!    the commitment opens and the signature verifies.
-//! 4. Both sides run X25519, hash the whole exchange into a
-//!    transcript, and derive the **short authentication string**: six
-//!    digits on both screens. A human compares them; on mismatch —
-//!    a machine in the middle substituting keys moves the transcript,
-//!    and the string with it — either side aborts by dropping its
-//!    state, and nothing has been stored on either device.
-//! 5. **Acceptance** (B → A): B's signature over the transcript, so
-//!    the inviter binds the joiner's long-term identity to this
-//!    exchange (revocation needs a name to revoke).
-//! 6. **Grant** (A → B): the channel secret, sealed under a key
-//!    derived from the X25519 shared secret and the transcript. The
-//!    relay carries only this ciphertext; the ephemeral private keys
-//!    that could open it never leave their devices, which is why the
-//!    relay structurally cannot hold, distribute or escrow a content
-//!    key — there is no message in this ceremony it could take one
-//!    from.
-//!
-//! What the joiner receives is the **channel secret**, the root of the
-//! per GOP transport chain ([`crate::gop`]); the content key stays on
-//! its device, unshared, exactly as ADR-0021 section 8 requires.
-//! Revocation composes with the ceremony: removing a device removes it
-//! from the next ceremony's entropy delivery, and the chain leaves it
-//! behind at the next boundary at the latest
-//! ([`crate::gop::GopKeyChain::advance`]).
-//!
-//! Pairing secrets rest in the key-material credential store under
-//! their own accounts, separate from the conceal credentials: clearing
-//! pairing ([`clear_pairing`]) never touches the API token, the
-//! content halves or the ledger key, and clearing those never touches
-//! pairing.
+//! Device pairing: two devices trust each other directly, through their
+//! own key exchange and a short authentication string a human compares
+//! and can fail, never through the account (relay decision background
+//! section 3; issue #97). The joiner receives the channel secret, never
+//! the content key (relay decision background section 8). Pairing
+//! secrets rest under their own key-material accounts, apart from the
+//! conceal credentials. Ceremony and rules: client protocol §9;
+//! revocation: §7.9.
 
 use companion_credentials::{CredentialError, CredentialStore};
 use ring::hkdf::{HKDF_SHA256, Salt};
@@ -77,14 +27,14 @@ const DEVICE_IDENTITY_ACCOUNT: &str = "sync-device-identity";
 /// root of the per GOP transport chain ([`crate::gop`]). Delivered
 /// only by this module's ceremony; `ThisDeviceOnly` like every key in
 /// the key-material store, so it never rides iCloud Keychain
-/// (ADR-0016 section 3, ADR-0021 section 8).
+/// (persistence decision background section 3, relay decision
+/// background section 8).
 const CHANNEL_SECRET_ACCOUNT: &str = "sync-channel-secret";
 
-/// Versioned signing context for transcript signatures: the identity
-/// key signs `context ‖ transcript`, never the bare 32-byte hash —
-/// which is also a plausible X25519 public key, and an uncontexted
-/// signature over it would double as a key package's
-/// ([`crate::sync_session::KeyPackage`]).
+/// Versioned signing context for transcript signatures (client
+/// protocol Appendix A): a bare 32-byte transcript hash is also a
+/// plausible X25519 public key, so an uncontexted signature over it
+/// would double as a key package's.
 const TRANSCRIPT_SIGN_CONTEXT: &[u8] = b"ots-companion-pairing-transcript-v1";
 
 /// Versioned HKDF info string for the short authentication string.
@@ -481,13 +431,10 @@ pub fn store_channel_secret(credentials: &dyn CredentialStore, secret: &[u8]) ->
             .is_ok()
 }
 
-/// Clear this device's pairing: the identity key, the channel secret,
-/// and the peer records — the pairing accounts, nothing else. The
-/// conceal credentials — the API token — and the content and ledger
-/// keys are other accounts and are never touched here, exactly as
-/// clearing them never touches these: sync trust and conceal trust
-/// are revoked independently (ADR-0021 section 3). Returns whether
-/// every delete was accepted.
+/// Clear this device's pairing: the identity key, the channel secret
+/// and the peer records, nothing else; sync trust and conceal trust are
+/// revoked independently (relay decision background section 3). True
+/// when every delete was accepted.
 #[must_use]
 pub fn clear_pairing(credentials: &dyn CredentialStore) -> bool {
     let keys = credentials.key_material_store();
@@ -515,11 +462,10 @@ pub fn device_fingerprint(credentials: &dyn CredentialStore) -> Option<String> {
     Some(identity_fingerprint(pair.public_key().as_ref()))
 }
 
-/// The Ed25519 identity public keys whose signed claims this device
-/// honors: its own, and each paired peer's from the records — the
-/// set a terminal marker must verify under. A revoked peer's key is
-/// gone from the records and so from this set, which is what makes
-/// revocation bite on the one destructive claim a peer can publish.
+/// The Ed25519 identity public keys whose terminal markers this device
+/// honours: its own, and each paired peer's from the records. A revoked
+/// peer's key leaves this set with its record; unsigned envelopes are
+/// not covered (client protocol §7.9).
 #[must_use]
 pub fn trusted_identities(credentials: &dyn CredentialStore) -> Vec<Vec<u8>> {
     let mut keys: Vec<Vec<u8>> = Vec::new();
@@ -560,10 +506,8 @@ const PEER_RECORDS_ACCOUNT: &str = "sync-peer-records";
 
 /// One peer a human verified on this device: what
 /// [`Settled::peer_identity`] handed over at the ceremony's end, and
-/// what a revocation later removes. Removal is the revocation: a
-/// device with no record gets nothing sealed to it at the next
-/// ceremony, and the chain leaves it behind at that boundary
-/// ([`crate::gop::GopKeyChain::advance`]).
+/// what a revocation later removes. A device with no record gets
+/// nothing sealed to it by this device (client protocol §7.9).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeerRecord {
     /// [`identity_fingerprint`] of the identity below.
@@ -627,8 +571,9 @@ pub fn peer_records(credentials: &dyn CredentialStore) -> Vec<PeerRecord> {
 }
 
 /// Remove one peer's record: the revocation gesture. True when the
-/// fingerprint was recorded and the removal was stored; the device
-/// loses access at the next ceremony at the latest.
+/// fingerprint was recorded and the removal was stored. This device
+/// then seals nothing new to that peer and honours none of its
+/// markers; it starts no ceremony (client protocol §7.9).
 #[must_use]
 pub fn revoke_peer(credentials: &dyn CredentialStore, fingerprint: &str) -> bool {
     let mut records = peer_records(credentials);

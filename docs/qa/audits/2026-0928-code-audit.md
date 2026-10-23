@@ -22,8 +22,8 @@ not in this report:
   the rationale for `panic = "unwind"` in the workspace `Cargo.toml`.
 - `UreqTransport` in `crates/transport/src/lib.rs` sets no connect or
   read timeouts, so a half-open connection hangs a conceal or sync call.
-- CONTRIBUTING.md, `docs/spec/design/07-repo-skeleton.md` and
-  `docs/spec/design/05-technical-direction.md` disagree with the code
+- CONTRIBUTING.md, `docs/spec/design/2026-0707-repo-skeleton.md` and
+  `docs/spec/design/2026-0707-technical-direction.md` disagree with the code
   and with each other on where `unsafe` may appear, on persistence
   across restart, and on content inspection.
 
@@ -176,7 +176,7 @@ not in this report:
 - **Category:** transitive-dependency
 - **Why it matters:** In ureq 3.3.0, `features = ["rustls"]` pulls in `rustls-webpki-roots`, so TLS to the OTS server and the relay is verified against the compiled-in webpki-roots 1.0.8 bundle. As a result:
   1. CA changes reach users only through app releases.
-  2. Self-hosted instances behind a private or enterprise CA fail with no override. This conflicts with the self-hosting goal the verifiers cite from `docs/spec/design/05-technical-direction.md:146-148`, whose wording should be confirmed there.
+  2. Self-hosted instances behind a private or enterprise CA fail with no override. This conflicts with the self-hosting goal the verifiers cite from `docs/spec/design/2026-0707-technical-direction.md:146-148`, whose wording should be confirmed there.
   3. Keychain trust settings and macOS revocation/CT policy are bypassed.
 - **Suggested fix:** Switch to `features = ["rustls-no-provider", "platform-verifier"]` with the ring provider, set the verifier in the agent config, and then drop webpki-roots and the CDLA allowance from `deny.toml`. If pinned roots are intentional, record that decision and its consequence for self-hosted CAs in an ADR, and add a test that asserts which verifier is in use.
 - **Consensus:** 3/3 verifiers

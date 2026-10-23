@@ -45,7 +45,7 @@ public enum LaunchAtLogin {
 /// The caption a settings section carries above its rows. Every
 /// section in the three forms wears the same small secondary text, so
 /// the style lives once rather than beside each `Section`.
-private struct SettingsCaption: View {
+struct SettingsCaption: View {
     let text: String
 
     init(_ text: String) {
@@ -55,7 +55,7 @@ private struct SettingsCaption: View {
     var body: some View {
         Text(text)
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.secondaryInk)
             .lineLimit(nil)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -142,14 +142,14 @@ public struct GeneralSettingsView: View {
                         )
                         .help("Makes the ambient panel available through its hotkey and the Show Ambient Panel command.")
                     }
-                    Button("Reset to default position and size", action: resetSurface)
+                    Button("Reset to Default Position and Size", action: resetSurface)
                 } header: {
                     Text("Surface")
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
                         if ambientPanelEnabled != nil {
                             SettingsCaption(
-                                "The ambient panel rests at the desktop. Use Show Ambient Panel in the Window menu or your configured shortcut to raise it. When disabled, the shortcut and menu bar item open the primary editor window instead."
+                                "The card that rests at the desktop and rises on ⌃⌥Space. Off shows only the primary editor window; the hotkey and the menu bar item open that window instead."
                             )
                         }
                         if keepsAbove != nil {
@@ -207,19 +207,6 @@ public struct GeneralSettingsView: View {
             } header: {
                 SettingsCaption(Self.pageLayoutCaption(experimental: model.pads.isEnabled))
             }
-            Section {
-                Toggle(CompanionL10n.string("pad.settings.enabled"), isOn: Binding(
-                    get: { model.pads.isEnabled }, set: { model.pads.isEnabled = $0 }
-                ))
-                .disabled(model.pads.loadFailure != nil)
-                if let failure = model.pads.loadFailure {
-                    Text(failure).font(.caption).foregroundStyle(Color.emberText)
-                }
-            } header: {
-                SettingsCaption(CompanionL10n.string("pad.settings.caption"))
-            } footer: {
-                SettingsCaption(CompanionL10n.string("pad.settings.storage"))
-            }
             // Timeline exposes the time-specific preferences.
             if model.showsTimeUnits {
                 Section {
@@ -275,13 +262,13 @@ public struct GeneralSettingsView: View {
             // disappearance is the receipt.
             if HiddenUI.showsLedgerClear(ledgerRestoreRefused: model.ledgerRestoreRefused) {
                 Section {
-                    Button("Clear the ledger", role: .destructive) { confirmingLedgerClear = true }
+                    Button("Clear the Ledger", role: .destructive) { confirmingLedgerClear = true }
                         .confirmationDialog(
                             "Clear the ledger?",
                             isPresented: $confirmingLedgerClear,
                             titleVisibility: .visible
                         ) {
-                            Button("Clear the ledger", role: .destructive) { clearLedger() }
+                            Button("Clear the Ledger", role: .destructive) { clearLedger() }
                             Button("Cancel", role: .cancel) {}
                         } message: {
                             Text("Every record goes, and there is no undo. Pages and sealed chips are untouched.")
@@ -336,7 +323,7 @@ public struct GeneralSettingsView: View {
         return "Tabs shows named pages along the bottom at full page width. Timeline is a prototype "
             + "that groups live pages by the day they were written, newest first, down the "
             + "side, taking \(Int(TimeRailView.width(experimental: experimental))) points from the page; lines always wrap and older blank pages "
-            + "are counted rather than drawn. Changing this moves no content and writes "
+            + "are hidden. Changing this moves no content and writes "
             + "nothing new to disk."
     }
 
@@ -525,22 +512,22 @@ public struct ConnectionSettingsView: View {
                 TextField("Server URL", text: $serverUrl, prompt: Text("https://eu.onetimesecret.com"))
                 TextField("Share domain", text: $shareDomain, prompt: Text("optional; defaults to the server's host"))
             } header: {
-                SettingsCaption("Where a conceal goes, over https only.")
+                SettingsCaption(Self.serverCaption)
             }
             Section {
-                TextField("Organization extid", text: $extid, prompt: Text("empty for guest conceals"))
+                TextField("Organization ID", text: $extid, prompt: Text(Self.guestPrompt))
                 SecureField("API token", text: $token, prompt: Text(tokenPrompt))
                 if model.connection?.hasToken == true {
-                    Button("Clear stored token", role: .destructive) { confirmingClear = true }
+                    Button("Clear Stored Token", role: .destructive) { confirmingClear = true }
                         .confirmationDialog(
                             "Clear the stored API token?",
                             isPresented: $confirmingClear,
                             titleVisibility: .visible
                         ) {
-                            Button("Clear token", role: .destructive) { clearToken() }
+                            Button("Clear Token", role: .destructive) { clearToken() }
                             Button("Cancel", role: .cancel) {}
                         } message: {
-                            Text("Conceals fall back to guest links until you enter a new token.")
+                            Text(Self.clearTokenMessage)
                         }
                 }
             } header: {
@@ -555,7 +542,7 @@ public struct ConnectionSettingsView: View {
                 if let status {
                     Text(status)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(statusIsError ? Color.emberText : Color.secondary)
+                        .foregroundStyle(statusIsError ? Color.emberText : Color.secondaryInk)
                 }
                 Spacer()
                 Button("Save") { save() }
@@ -598,6 +585,13 @@ public struct ConnectionSettingsView: View {
     nonisolated static func saveStatus(accepted: Bool) -> String {
         accepted ? "saved" : "refused: the server URL must be https://…"
     }
+
+    /// The server section's words in one-time link vocabulary (ADR-0055
+    /// rule 3, issue #295): conceal is the server's verb, not the reader's.
+    nonisolated static let serverCaption = "where one-time links are created, over https only."
+    nonisolated static let guestPrompt = "empty for guest links"
+    nonisolated static let clearTokenMessage =
+        "One-time links are created as guest links until you enter a new token."
 
     private func clearToken() {
         let cleared = model.clearToken()

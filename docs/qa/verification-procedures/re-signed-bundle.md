@@ -84,7 +84,7 @@ in `SUPERSEDED_MAGICS`, never on a key failure
 5. Type a line on the page that opens, wait past the debounce, and press
    ⌘Q. Confirm the app stays running, no alert or other app-owned
    surface appears, and the quit anyway line stands under the recovery
-   line. Press ⌘Q again, or click "quit anyway (⌘Q)", and confirm the
+   line. Press ⌘Q again, or click "Quit Anyway (⌘Q)", and confirm the
    app quits.
 6. Re read the evidence from step 2.
 
@@ -109,7 +109,7 @@ in `SUPERSEDED_MAGICS`, never on a key failure
 - The `ots-companion-key-half-<32 hex>` file is still present and
   unchanged, and the `state-key` keychain item still exists. Nothing
   rotated: rotation has two triggers and a refusal is neither
-  (ADR-0016 section 6).
+  ([persistence decision background](../../plans/trustworthy-persistence-decision-background.md) section 6).
 - The first ⌘Q cancels termination and no quit alert appears; the quit
   anyway line stands beside the existing inline recovery state, and the
   second ⌘Q quits.

@@ -1,77 +1,9 @@
-//! Explicit persistence: the store's live content as one plaintext
-//! snapshot buffer, and the ledger as a second, independent one, for the
-//! seam above to encrypt and keep across launches.
+//! Explicit persistence: the store's content and its ledger as two
+//! independent plaintext snapshots, for the seam above to seal
+//! (ADR-0012, ADR-0016). Both are handed out only in [`Zeroizing`].
 //!
-//! Rev C's founding law read "memory-only; exit is total amnesia".
-//! Lived experience overruled the absolutism the same way it did for
-//! the [`ledger`](crate::ledger): a companion that opens empty every
-//! morning surprises the person who parked pages in it the night
-//! before. The amendment stays narrow:
-//!
-//! - **Explicit.** Nothing here runs on its own. The shell asks for a
-//!   [`SheetStore::snapshot`] on its own debounced write path and hands
-//!   it back to [`SheetStore::restore`] at launch. This module starts no
-//!   timer and keeps no shadow copy. Retention is explicit for the same
-//!   reason: no timer sweeps the ledger, so the write path evicts
-//!   ([`SheetStore::evict_ledger`]) before it snapshots, and the load
-//!   path evicts as it reads.
-//! - **Two snapshots, two lifetimes.** Content and ledger are separate
-//!   buffers with separate magics, so the shell can seal them to
-//!   separate files under separate keys: the content under the
-//!   boot-bound key that dies with the machine's uptime, the ledger
-//!   under a long-lived one, because a record of what happened is meant
-//!   to outlive the thing it happened to (ADR-0012).
-//! - **Never plaintext at rest.** Both buffers are *plaintext* and are
-//!   only ever handed out in [`Zeroizing`]. The FFI seam encrypts before
-//!   anything touches disk (`ChaCha20-Poly1305`, key in the OS keychain)
-//!   and the plaintext wipes on drop either side. The ledger buffer
-//!   holds no sealed bytes, but it does hold titles, and a title is
-//!   derived from content: the single documented exception, treated here
-//!   as content.
-//! - **The clock keeps its promise.** Wall time that passed while the
-//!   app was closed drains every countdown exactly as if it had been
-//!   open; pages due by restore time expire into the ledger on the
-//!   caller's next [`SheetStore::expire_due`].
-//! - **No counter is ever written down.** [`TabId`], [`SheetId`] and
-//!   [`ChipId`] are in-process ordering handles, nothing more. The
-//!   snapshot carries the random [`ItemId`] instead, and restore
-//!   re-mints the counters densely in read order. That is safe
-//!   precisely because a restore only ever runs before the shell has
-//!   read anything out of the store, so no id has escaped to be reused.
-//! - **The durable half carries nothing the app derived.** A tab
-//!   record holds a name the user typed or no name at all; the page's
-//!   derived title is not written and is recomputed from the restored
-//!   segments on the way back in (ADR-0017), the same discipline that
-//!   already refuses to store a chip's excerpt.
-//!
-//! The format is a versioned, length-prefixed binary layout, written
-//! into one exact-size buffer: growing a buffer reallocates, and
-//! reallocation strands sealed bytes in freed, unwiped heap (the same
-//! discipline as [`SheetStore::sheet_payload`]). A chip's mechanical
-//! face (excerpt, size label, meta) is deliberately *not* stored — it
-//! is recomputed from the bytes by the same functions that built it,
-//! so the snapshot cannot smuggle a divergent rendering back in. Every
-//! length read is bounds-checked against the bytes actually remaining,
-//! so a truncated or hostile buffer errors instead of panicking or
-//! allocating on a number it chose.
-//!
-//! A page sits inside its tab's record, which is why an orphan page is
-//! not a case this module checks: no byte sequence encodes one. The
-//! layout refuses it rather than the reader.
-//!
-//! Every repeated record states its own byte length before its fields:
-//! the tab record, the page record nested inside it, the chip records
-//! inside that, the materialized block record, and the ledger record. A
-//! reader takes the fields it knows
-//! and then reaches the next record by that length rather than by
-//! wherever its own field walk stopped, so a file written by a build
-//! that added a trailing field still reads here, minus the field this
-//! build has never heard of. That is the whole of what the rule buys
-//! (issue #54). It does not survive a field that moved, changed width,
-//! or changed meaning, and it does not cover what sits outside a
-//! record: the magics, the counts, and the sections that trail a
-//! record list. Those still take a new magic, and a new magic still
-//! refuses every existing file.
+//! Every repeated record is length-prefixed, so a field a later build
+//! appends is skipped; any other change takes a new magic (issue #54).
 
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
@@ -82,65 +14,42 @@ use crate::blocks::{BlockIndex, MaterializedMeta, PersistedBlock};
 use crate::clock::Clock;
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
+use crate::note::Note;
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock,
-    SheetId, TITLE_CAP, Tab, TabId, derive_title,
+    SheetId, Tab, TabId, capped_title, derive_title, judge_name,
 };
 use crate::store::{HOLD_FIRST, HOLD_TOPUP, SheetStore};
+use crate::transfer::ActiveCut;
 use crate::ttl::Ttl;
 
-/// Magic + version prefix of a plaintext content snapshot. A format
-/// change gets a new final byte; old builds refuse rather than misread.
-/// `3` replaced the segments section with the sheet's full Loro
-/// document blob (ADR-0013). `4` gives every repeated record its own
-/// length prefix (issue #54), which is why it is the last break a
-/// trailing field will ever cost. It is the one break ADR-0016 section
-/// 9 and ADR-0017 ride too, so a `4` file is readable only by a build
-/// carrying all three. There is no reader and no downgrade writer for
-/// any earlier version: `1`, `2` and `3` files refuse as unknown,
-/// deliberately.
+/// Magic and version of a plaintext content snapshot. Earlier versions
+/// refuse as unknown; there is no downgrade writer.
 const MAGIC: &[u8; 8] = b"OTSSNAP4";
 
-/// Magic + version prefix of a plaintext ledger snapshot. Separate from
-/// [`MAGIC`] so the two files can never be mistaken for each other. `2`
-/// takes the same per-record length prefix as the content snapshot,
-/// because one encoding rule in this module is the point. The ledger
-/// file survives on its own long-lived key and would otherwise have sat
-/// out this break, so `1` refusing costs the retained history once, and
-/// that is announced with the content loss rather than under it.
+/// Magic and version of a plaintext ledger snapshot.
 const LEDGER_MAGIC: &[u8; 8] = b"OTSLEDR2";
 
-/// Ledger payload magics this module once wrote and has since replaced.
-/// A file carrying one of these opens under the ledger envelope and the
-/// long-lived ledger key exactly as a current one does, and only then
-/// meets a reader that does not exist, so refusing it as unknown would
-/// leave the file on disk and the ledger licence withheld on every
-/// launch after the break (ADR-0016 section 9). [`restore_ledger`]
-/// names the case as [`RestoreError::Superseded`] instead, so the caller
-/// that owns the file can dispose of it. This set grows by one entry per
-/// ledger break, and `OTSLEDR0` is not in it: it is no version this
-/// module ever wrote. The content snapshot has no counterpart, because
-/// a superseded snapshot magic never reaches [`SheetStore::restore`]: its
-/// envelope is superseded with it and refuses first.
-///
-/// [`restore_ledger`]: SheetStore::restore_ledger
+/// Ledger magics this module once wrote, refused as
+/// [`RestoreError::Superseded`] so the caller can dispose of the file
+/// (persistence decision background section 9).
 const SUPERSEDED_LEDGER_MAGICS: [&[u8; 8]; 1] = [b"OTSLEDR1"];
 
-/// Ceiling on any span read back from a snapshot (30 days — well past
-/// the 7-day rung and the 24-hour hold). Keeps `Instant` arithmetic
-/// safely away from overflow no matter what the buffer claims.
+/// Ceiling on any span read back, keeping `Instant` arithmetic from
+/// overflow.
 const MAX_SPAN_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 
-/// Slack above the wall clock allowed for a materialized stamp before
-/// the clamp takes it: the document's recorder rounds to the nearest
-/// second while the wall reading truncates, so an honest stamp can sit
-/// one second ahead of the clock that judges it.
+/// Slack for a stamp ahead of the wall clock: the recorder rounds to the
+/// second while the wall reading truncates.
 const STAMP_SLACK_S: i64 = 2;
 
-/// A persisted Unix-second stamp, clamped into the sane range on the
-/// way in: positive, and no later than the wall clock plus
-/// [`STAMP_SLACK_S`]. A stamp is trusted arithmetic downstream, so a
-/// hand-edited file must not choose its value freely.
+/// The same slack in milliseconds, for the ledger's wall stamps.
+const STAMP_SLACK_MS: u64 = 2_000;
+
+/// 2026-10-01T00:00:00Z; below it the ledger's stamp clamp stands aside (Law 0006).
+const WALL_CLOCK_FLOOR_MS: u64 = 1_790_812_800_000;
+
+/// A persisted Unix-second stamp, clamped to `1..=wall + STAMP_SLACK_S`.
 fn clamp_stamp(claimed: u64, wall_ms: u64) -> i64 {
     let ceiling = i64::try_from(wall_ms / 1000)
         .unwrap_or(i64::MAX)
@@ -154,17 +63,11 @@ fn clamp_stamp(claimed: u64, wall_ms: u64) -> i64 {
 pub enum RestoreError {
     /// Not a snapshot, or a version this build does not read.
     UnknownFormat,
-    /// A version this build once wrote and has since replaced. Nothing
-    /// in it can be read and the store is left exactly as it was, the
-    /// same as [`UnknownFormat`](Self::UnknownFormat); the difference is
-    /// that the caller holding the file is told it may dispose of it
-    /// (ADR-0016 section 9). Only the ledger reports this today, see
-    /// [`SUPERSEDED_LEDGER_MAGICS`].
+    /// A version this build once wrote and has replaced; the caller may
+    /// dispose of the file (persistence decision background section 9).
+    /// The store is untouched.
     Superseded,
-    /// The layout is damaged: truncated, trailing bytes, invalid UTF-8,
-    /// an off-ladder rung, a document blob that does not import, or a
-    /// chip roster the document's marks do not match one to one. The
-    /// store is left exactly as it was.
+    /// The layout is damaged. The store is left exactly as it was.
     Malformed,
 }
 
@@ -183,91 +86,51 @@ impl std::fmt::Display for RestoreError {
 impl std::error::Error for RestoreError {}
 
 impl<C: Clock> SheetStore<C> {
-    /// Serialize the store's content, meaning the strip of tabs with
-    /// their names and rungs, and inside them the pages, chips (bytes
-    /// included) and clocks, into one plaintext buffer, stamped with
-    /// `wall_ms` (Unix epoch milliseconds at save) so restore can
-    /// account for time away. The ledger is *not* here; it has its own
-    /// snapshot, [`SheetStore::ledger_snapshot`]. The buffer wipes on
-    /// drop; the caller encrypts it and lets it fall.
+    /// Serialize the strip (tabs, pages, chips, clocks) into one plaintext
+    /// buffer stamped with `wall_ms`. The ledger has its own snapshot.
     #[must_use]
     pub fn snapshot(&self, wall_ms: u64) -> Zeroizing<Vec<u8>> {
         let now = self.clock.now();
-        // Each document is exported exactly once, into a zeroizing
-        // buffer both passes copy from. The sizing pass must never
-        // trigger a second export: two exports could disagree in length
-        // and the write would grow the buffer, stranding sealed bytes
-        // in freed, unwiped heap.
-        let blobs: Vec<Zeroizing<Vec<u8>>> = self
-            .sheets()
-            .map(|sheet| sheet.document.export_snapshot())
-            .collect();
-        // The materialized sections are encoded once too, and zeroizing
-        // for the same reason as the blobs: a frozen origin is content.
-        let metas: Vec<Zeroizing<Vec<u8>>> = self
-            .sheets()
-            .map(|sheet| encode_materialized(&sheet.blocks, &sheet.document))
-            .collect();
+        // Exported once, so both passes see the same bytes (Law 0004).
+        let pages: Vec<PageExport> = self.sheets().map(PageExport::of).collect();
         let mut sizer = Sizer(0);
-        emit(self, &blobs, &metas, now, wall_ms, &mut sizer);
+        emit(self, &pages, now, wall_ms, &mut sizer);
         let mut buffer = Zeroizing::new(Vec::with_capacity(sizer.0));
-        emit(self, &blobs, &metas, now, wall_ms, &mut Writer(&mut buffer));
+        emit(self, &pages, now, wall_ms, &mut Writer(&mut buffer));
         debug_assert_eq!(buffer.len(), sizer.0, "sizing pass drifted from the write");
         buffer
     }
 
-    /// Replace this store's strip with a snapshot's, draining every
-    /// countdown by the wall time that passed since it was taken
-    /// (`wall_ms` is Unix epoch milliseconds now). Meant for startup,
-    /// before the store has issued anything: the sequential ids are
-    /// re-minted densely from 1 in read order, which is only sound
-    /// because nothing has yet read an id out of this store. Tab, page
-    /// and chip identity across the relaunch is carried by the stored
-    /// [`ItemId`], not by the counter.
-    ///
-    /// The ledger is untouched: restore it separately with
-    /// [`SheetStore::restore_ledger`]. On error the store is untouched.
-    /// Pages already due are *kept*: call [`SheetStore::expire_due`]
-    /// right after to entomb them, so they leave ledger residue like any
-    /// other death, and so the tabs they were standing in are left
-    /// empty rather than refilled.
-    ///
-    /// Returns the number of live **pages** restored, which is not the
-    /// width of the strip. The two diverge the moment a tab outlives
-    /// its page (ADR-0017): a file holding nine named tabs and no
-    /// content restores nine slots and answers zero. Callers that want
-    /// the strip read [`SheetStore::tabs`], and callers asking whether
-    /// anything is left read [`SheetStore::holds_no_page`] or
-    /// [`SheetStore::has_no_tabs`], which are different questions.
+    /// Replace the strip with a snapshot's, draining countdowns by the wall
+    /// time since it was taken. Run before the store has issued any id:
+    /// ids are re-minted from 1. Pages already due are kept; call
+    /// [`SheetStore::expire_due`] next. Returns the live page count, not
+    /// the tab count.
     ///
     /// # Errors
     ///
-    /// [`RestoreError::UnknownFormat`] for a buffer that is not a
-    /// snapshot this build reads; [`RestoreError::Malformed`] for one
-    /// that is damaged.
+    /// [`RestoreError::UnknownFormat`] or [`RestoreError::Malformed`]; the
+    /// store is untouched on error.
     pub fn restore(&mut self, bytes: &[u8], wall_ms: u64) -> Result<usize, RestoreError> {
         let mut reader = Reader { buf: bytes, pos: 0 };
         if reader.raw(MAGIC.len()) != Some(MAGIC.as_slice()) {
             return Err(RestoreError::UnknownFormat);
         }
         let saved_wall = reader.u64().ok_or(RestoreError::Malformed)?;
-        // A wall clock that moved backwards while away reads as no time
-        // passed — the countdown never gains life from clock skew.
+        // A wall clock that moved backwards grants no life.
         let away = span(wall_ms.saturating_sub(saved_wall));
         let now = self.clock.now();
 
         let tab_count = count(&mut reader)?;
-        // No width check: the strip has no cap (issue #158), so a file
-        // is as wide as the writer left it. `count()` rejects a claimed
-        // count larger than the bytes remaining, and a missing frame
-        // below is malformed; together they bound the walk by the file.
+        // No width cap (issue #158); `count` bounds the walk by the file.
         let mut tabs = Vec::new();
         let mut next_tab_id = 1;
         let mut next_sheet_id = 1;
         let mut next_chip_id = 1;
+        let mut active_cut = None;
         for _ in 0..tab_count {
             let mut record = reader.framed().ok_or(RestoreError::Malformed)?;
-            tabs.push(read_tab(
+            let (tab, cut) = read_tab(
                 &mut record,
                 now,
                 away,
@@ -275,12 +138,11 @@ impl<C: Clock> SheetStore<C> {
                 &mut next_tab_id,
                 &mut next_sheet_id,
                 &mut next_chip_id,
-            )?);
+            )?;
+            tabs.push(tab);
+            // One cut stands at a time; a second record of one is not believed.
+            active_cut = active_cut.or(cut);
         }
-        // The envelope stays strict even though the records do not: a
-        // tail after the last record is outside every frame, so nothing
-        // states how long it is or promises it was ever meant to be
-        // here.
         if !reader.done() {
             return Err(RestoreError::Malformed);
         }
@@ -290,22 +152,12 @@ impl<C: Clock> SheetStore<C> {
         self.next_tab_id = next_tab_id;
         self.next_sheet_id = next_sheet_id;
         self.next_chip_id = next_chip_id;
+        self.active_cut = active_cut;
         Ok(restored)
     }
 
-    /// Serialize the ledger into its own plaintext buffer. Records carry
-    /// absolute wall-clock time, not an age relative to any `Instant`,
-    /// because a ledger outlives the reboot that makes an `Instant`
-    /// meaningless. No sealed bytes are written; the titles are, and are
-    /// treated as content.
-    ///
-    /// This is a `&self` read and evicts nothing: it writes down exactly
-    /// the records the store is holding. The retention window is only a
-    /// real bound on the write path if the caller sweeps first, so the
-    /// seam above calls [`SheetStore::evict_ledger`] with the current
-    /// wall time immediately before this, in the same critical section.
-    /// Skip that and a session that never appends a record re-persists
-    /// titles past 90 days under the long-lived key (ADR-0012).
+    /// Serialize the ledger into its own plaintext buffer, with wall-clock
+    /// stamps. Evicts nothing: call [`SheetStore::evict_ledger`] first.
     #[must_use]
     pub fn ledger_snapshot(&self) -> Zeroizing<Vec<u8>> {
         let mut sizer = Sizer(0);
@@ -316,31 +168,17 @@ impl<C: Clock> SheetStore<C> {
         buffer
     }
 
-    /// Merge a ledger snapshot's records into this store's, dropping
-    /// records that have aged out of the retention window by `wall_ms`
-    /// (Unix epoch milliseconds now). Sheets are untouched. On error the
-    /// store is untouched.
-    ///
-    /// **Merge, not replace, because the store may already know
-    /// something the file cannot.** The shell's launch order is the
-    /// content file first and the ledger file second, and the content
-    /// restore entombs every death that fell due while the app was
-    /// closed ([`SheetStore::expire_due`]). By the time this call
-    /// arrives the deque can already be holding records written minutes
-    /// ago that no file has ever seen — an overnight expiry, which is
-    /// the one death the user never witnesses and therefore the one the
-    /// trail owes them most. Replacing the deque dropped it before it
-    /// could reach a reader or the next save.
-    ///
-    /// Returns the number of records the ledger holds afterwards.
+    /// Merge a ledger snapshot's records into this store's, then evict
+    /// what is past retention at `wall_ms`. Merged, not replaced: the
+    /// content restore may already have recorded overnight expiries.
+    /// Returns the number of records held afterwards.
     ///
     /// # Errors
     ///
-    /// [`RestoreError::Superseded`] for a ledger snapshot in a version
-    /// this module once wrote and no longer reads
-    /// ([`SUPERSEDED_LEDGER_MAGICS`]); [`RestoreError::UnknownFormat`]
-    /// for any other buffer that is not a ledger snapshot this build
-    /// reads; [`RestoreError::Malformed`] for one that is damaged.
+    /// [`RestoreError::Superseded`] for a magic in
+    /// [`SUPERSEDED_LEDGER_MAGICS`], [`RestoreError::UnknownFormat`] for any
+    /// other, [`RestoreError::Malformed`] for damage. The store is
+    /// untouched on error.
     pub fn restore_ledger(&mut self, bytes: &[u8], wall_ms: u64) -> Result<usize, RestoreError> {
         let mut reader = Reader { buf: bytes, pos: 0 };
         let magic = reader.raw(LEDGER_MAGIC.len());
@@ -357,42 +195,27 @@ impl<C: Clock> SheetStore<C> {
             });
         }
         let record_count = count(&mut reader)?;
+        // Future stamps clamp to the clock, above the floor only (Law 0006).
+        let ceiling = if wall_ms < WALL_CLOCK_FLOOR_MS {
+            u64::MAX
+        } else {
+            wall_ms.saturating_add(STAMP_SLACK_MS)
+        };
         let mut loaded = Vec::new();
         for _ in 0..record_count {
             let mut record = reader.framed().ok_or(RestoreError::Malformed)?;
-            loaded.push(read_record(&mut record)?);
+            let mut record = read_record(&mut record)?;
+            record.at_wall_ms = record.at_wall_ms.min(ceiling);
+            record.item_created_wall_ms = record.item_created_wall_ms.min(ceiling);
+            loaded.push(record);
         }
         if !reader.done() {
             return Err(RestoreError::Malformed);
         }
-        // Nothing above this line has touched the store, so a refusal
-        // still leaves it exactly as it was.
-        //
-        // The order needs no sort. The ledger runs newest first (an
-        // append is a `push_front`), what is already in hand was
-        // recorded by this session, and the file's records were
-        // recorded by earlier ones, so laying the file's list after the
-        // live one is precisely what a `push_front` per record would
-        // have produced. Sorting on the stamp instead would rearrange a
-        // file written by a session whose wall clock stepped, which is
-        // not this call's business to correct.
+        // Newest first: the file's records come from earlier sessions, so
+        // they go after the live ones, unsorted.
         let mut merged: Vec<LedgerRecord> = self.ledger.drain(..).collect();
-        // The merge is a multiset union: every copy the file and the
-        // deque both hold cancels one for one, and any copy only the
-        // file holds is kept. So reading one file twice, or reading a
-        // file saved after this same merge, reads back as one trail
-        // rather than two, while a file that genuinely holds more copies
-        // of an event than the deque does keeps the surplus. The deque's
-        // records are indexed by the two fields any twin must agree on,
-        // so the equality test only ever weighs the handful that could
-        // be the same event; the test itself is the whole record, so a
-        // field added later joins it for free. A match consumes the live
-        // record it spent, removing its position, so a second identical
-        // file record cannot cancel against the same deque record twice.
-        // The file is never deduplicated against itself: two identical
-        // records a session genuinely wrote down are two things that
-        // happened, and the loaded list is never indexed here, only the
-        // deque.
+        // A multiset union, never deduplicated against itself (Law 0006).
         let mut held: HashMap<(u64, ItemId), Vec<usize>> = HashMap::new();
         for (index, record) in merged.iter().enumerate() {
             held.entry((record.at_wall_ms, record.item))
@@ -415,8 +238,6 @@ impl<C: Clock> SheetStore<C> {
             merged.push(record);
         }
         let mut ledger: VecDeque<LedgerRecord> = merged.into();
-        // Retention runs on load, where the ledger is already in hand: a
-        // record sitting in a closed file is inert until someone reads it.
         evict_expired(&mut ledger, wall_ms);
         let kept = ledger.len();
         self.ledger = ledger;
@@ -424,10 +245,7 @@ impl<C: Clock> SheetStore<C> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Encoding — one walk, two sinks (a sizing pass, then the write), so the
-// exact-size preallocation cannot drift from what is written.
-// ---------------------------------------------------------------------------
+// Encoding: one walk, run as a sizing pass and then the write.
 
 pub(crate) trait Sink {
     fn raw(&mut self, bytes: &[u8]);
@@ -472,17 +290,8 @@ impl Sink for Writer<'_> {
     }
 }
 
-/// Write one record as its own byte length followed by its fields, so a
-/// reader holding fewer fields than the writer wrote can still find
-/// where the next record starts.
-///
-/// The length comes from running the same body through a [`Sizer`]
-/// first, which is exact for the same reason the outer two-pass write
-/// is, and which costs no intermediate buffer. That matters here rather
-/// than only being tidy: a page record carries sealed bytes, and a
-/// second copy of those is a second allocation that has to be wiped.
-/// The body is therefore called twice and must be a pure function of
-/// what it captures.
+/// Write a record as its byte length, then its fields. The body runs
+/// twice (sized, then written) and must be pure.
 pub(crate) fn framed(out: &mut dyn Sink, body: impl Fn(&mut dyn Sink)) {
     let mut sizer = Sizer(0);
     body(&mut sizer);
@@ -490,10 +299,45 @@ pub(crate) fn framed(out: &mut dyn Sink, body: impl Fn(&mut dyn Sink)) {
     body(out);
 }
 
+/// What a live page writes that a walk must not produce twice (Law 0004).
+struct PageExport {
+    /// The whole document, history included.
+    blob: Zeroizing<Vec<u8>>,
+    /// The block section (ADR-0013).
+    meta: Zeroizing<Vec<u8>>,
+    /// Each chip's note text, in chip order; an empty note writes none.
+    notes: Vec<Option<Zeroizing<String>>>,
+    /// The same for the detached chips (ADR-0046 point 1).
+    detached_notes: Vec<Option<Zeroizing<String>>>,
+}
+
+impl PageExport {
+    fn of(sheet: &Sheet) -> Self {
+        Self {
+            blob: sheet.document.export_snapshot(),
+            meta: encode_materialized(&sheet.blocks, &sheet.document),
+            notes: notes_of(&sheet.chips),
+            detached_notes: notes_of(&sheet.detached),
+        }
+    }
+}
+
+/// Each chip's note text, taken once at its exact size (Law 0004).
+fn notes_of(chips: &[SealedChip]) -> Vec<Option<Zeroizing<String>>> {
+    chips
+        .iter()
+        .map(|chip| {
+            chip.note
+                .as_ref()
+                .map(Note::text)
+                .filter(|text| !text.is_empty())
+        })
+        .collect()
+}
+
 fn emit<C: Clock>(
     store: &SheetStore<C>,
-    blobs: &[Zeroizing<Vec<u8>>],
-    metas: &[Zeroizing<Vec<u8>>],
+    pages: &[PageExport],
     now: Instant,
     wall_ms: u64,
     out: &mut dyn Sink,
@@ -501,29 +345,29 @@ fn emit<C: Clock>(
     out.raw(MAGIC);
     out.u64(wall_ms);
     out.u64(store.tabs.len() as u64);
-    // The blobs and the materialized sections were exported per live
-    // page, in strip order, so one walk of the tabs consumes them in
-    // the order they were made. The step happens out here rather than
-    // inside the framed body, which is called twice and must stay a
-    // pure function of what it captures.
-    let mut pages = blobs.iter().zip(metas);
+    // Consumed out here because the framed body runs twice.
+    let mut pages = pages.iter();
     for tab in &store.tabs {
         let page = tab.page.as_ref().map(|sheet| {
-            let (blob, meta) = pages.next().expect("one export per live page");
-            (sheet, blob.as_slice(), meta.as_slice())
+            let export = pages.next().expect("one export per live page");
+            // The active cut rides with the page it came from (core interface, At rest).
+            let cut = store
+                .active_cut
+                .as_ref()
+                .filter(|cut| cut.page == sheet.id)
+                .map(|cut| cut.envelope.as_slice());
+            (sheet, export, cut)
         });
         framed(&mut *out, |out| emit_tab(tab, page, now, out));
     }
 }
 
-/// One tab record, framed by its caller: identity, the slot's birthday,
-/// the name the user typed if they typed one, the rung, and then the
-/// page it holds, framed again inside this frame.
-///
-/// The page-present flag is written even when it is `1`, so that a tab
-/// with a page and a tab without one differ by a byte rather than by a
-/// length the reader would have to infer.
-fn emit_tab(tab: &Tab, page: Option<(&Sheet, &[u8], &[u8])>, now: Instant, out: &mut dyn Sink) {
+/// A live page, what it writes once, and the active cut's envelope if the
+/// cut came from it.
+type PageWrite<'a> = (&'a Sheet, &'a PageExport, Option<&'a [u8]>);
+
+/// One tab record: identity, birthday, name, rung, then the framed page.
+fn emit_tab(tab: &Tab, page: Option<PageWrite<'_>>, now: Instant, out: &mut dyn Sink) {
     // Identity, not the in-process counter (ADR-0012).
     out.raw(tab.uuid.as_bytes());
     out.u64(tab.created_wall_ms);
@@ -537,30 +381,21 @@ fn emit_tab(tab: &Tab, page: Option<(&Sheet, &[u8], &[u8])>, now: Instant, out: 
     out.u64(tab.rung.duration().as_secs());
     match page {
         None => out.u8(0),
-        Some((sheet, blob, meta)) => {
+        Some(page) => {
             out.u8(1);
-            framed(&mut *out, |out| emit_sheet(sheet, blob, meta, now, out));
+            framed(&mut *out, |out| emit_sheet(page, now, out));
         }
     }
 }
 
-/// One page record, framed by its caller: identity, clock, the chip
-/// roster, the document blob, and the materialized slot.
-///
-/// No title. The page's derived title is a string the app made from the
-/// body, so it is recomputed at restore from the restored segments
-/// rather than written down (ADR-0017), and the rung it used to carry
-/// belongs to the tab above.
-fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut dyn Sink) {
+/// One page record. No title: it is derived and recomputed at restore
+/// (ADR-0017).
+fn emit_sheet((sheet, export, cut): PageWrite<'_>, now: Instant, out: &mut dyn Sink) {
     // Identity, not the in-process counter (ADR-0012).
     out.raw(sheet.uuid.as_bytes());
     out.u64(sheet.created_wall_ms);
     match sheet.clock {
-        // Only a hold still standing at `now` is written as one. Two
-        // tags, one payload: the tier is what decides whether the next
-        // pause press tops the hold up or releases it, so it has to
-        // survive a relaunch. A build that predates the release refuses
-        // tag 2 outright rather than misreading it as a first hold.
+        // Tag 2 is a topped-up hold; the tier decides the next pause press.
         SheetClock::Held {
             until,
             frozen_remaining,
@@ -571,15 +406,7 @@ fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut d
             out.u64(ms(until.saturating_duration_since(now)));
             out.u64(ms(frozen_remaining));
         }
-        // Everything else is a countdown running down, and
-        // [`Sheet::remaining`] is the whole of what it has left. A hold
-        // that lapsed before this snapshot was taken belongs here and
-        // not above: the life that drained since it lapsed is spent,
-        // and writing the frozen span down verbatim would hand every
-        // hour of it back at the next launch. `store::normalize` makes
-        // the same conversion on the live clock, but only from the
-        // paths that hold `&mut self`, and a snapshot is a `&self` read
-        // that has to be honest without it.
+        // A lapsed hold is written as a countdown: its drained life is spent.
         _ => {
             out.u8(0);
             out.u64(ms(sheet.remaining(now)));
@@ -588,52 +415,43 @@ fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut d
     // total_held(now) folds a live hold's span in; restore restarts the
     // live hold's accounting from its own `now`.
     out.u64(ms(sheet.total_held(now)));
-    // Chips before the document blob, so the reader has every chip
-    // identity in hand before a mark asks it to resolve one.
+    // Chips first, so every identity is known before a mark resolves one.
     out.u64(sheet.chips.len() as u64);
-    for chip in &sheet.chips {
-        framed(&mut *out, |out| emit_chip(chip, out));
+    for (chip, note) in sheet.chips.iter().zip(&export.notes) {
+        let note = note.as_ref().map(|text| text.as_str());
+        framed(&mut *out, |out| emit_chip(chip, note, out));
     }
-    // The whole document, history included: the projection is not
-    // written because the document is its source of truth, and a
-    // snapshot that carried both could smuggle a divergent projection
-    // back in.
-    out.bytes(blob);
-    // The materialized-metadata section, filled by the compaction
-    // ceremony (ADR-0013): each block that carries a frozen summary
-    // writes its identity, its anchor, its stamps, and its origin. The
-    // slot was reserved in stage 4, so a compacted file differs from an
-    // uncompacted one only by this section's contents.
-    out.bytes(meta);
-    // The page's own half of graduation, trailing every field above it
-    // because that is what a trailing field costs here (issue #54): the
-    // log frontier the last ceremony captured, which no block can carry
-    // because the change it stamps may have been a deletion, and a
-    // deletion leaves no character behind to vote for it. A reader that
-    // has never heard of this field stops at the one before it and
-    // reaches the next record by the page record's length, and a file
-    // written before the field existed simply ends where the reader
-    // learns to expect nothing.
+    // The whole document, history included; the projection derives from it.
+    out.bytes(&export.blob);
+    // Materialized metadata from the compaction ceremony (ADR-0013).
+    out.bytes(&export.meta);
+    // Trailing page-level floor: a deletion's stamp, which no block can
+    // carry.
     match sheet.blocks.compaction_frontier() {
         None => out.u8(0),
         Some(frontier_s) => {
             out.u8(1);
-            // Positive by construction, the frontier being a committed
-            // timestamp the derivation already refused to read at zero.
-            // The `max(0)` is only a guard against a negative that
-            // cannot arise; were it ever to floor a value to zero, the
-            // reader's `clamp_stamp` would hand it back as one second,
-            // an off-by-a-second lie for an input that never happens and
-            // harmless if it did, since a zero stamp is forbidden
-            // downstream anyway.
             out.u64(frontier_s.max(0) as u64);
+        }
+    }
+    // Trailing: the chips the body no longer shows, framed as attached ones are.
+    out.u64(sheet.detached.len() as u64);
+    for (chip, note) in sheet.detached.iter().zip(&export.detached_notes) {
+        let note = note.as_ref().map(|text| text.as_str());
+        framed(&mut *out, |out| emit_chip(chip, note, out));
+    }
+    // Then the active cut's envelope, on the page it came from.
+    match cut {
+        None => out.u8(0),
+        Some(envelope) => {
+            out.u8(1);
+            out.bytes(envelope);
         }
     }
 }
 
-/// One chip record, framed by its caller. The face (excerpt, size
-/// label) is absent on purpose: it is recomputed on the way back in.
-fn emit_chip(chip: &SealedChip, out: &mut dyn Sink) {
+/// One chip record. The face is recomputed on the way back in.
+fn emit_chip(chip: &SealedChip, note: Option<&str>, out: &mut dyn Sink) {
     out.raw(chip.uuid.as_bytes());
     out.u8(match chip.meta {
         ChipMeta::Text { .. } => 0,
@@ -647,17 +465,25 @@ fn emit_chip(chip: &SealedChip, out: &mut dyn Sink) {
         }
     }
     out.bytes(chip.bytes.expose());
+    // Trailing, so a build that predates them skips both (ADR-0043 point 4).
+    match &chip.name {
+        None => out.u8(0),
+        Some(name) => {
+            out.u8(1);
+            out.bytes(name.as_bytes());
+        }
+    }
+    match note {
+        None => out.u8(0),
+        Some(text) => {
+            out.u8(1);
+            out.bytes(text.as_bytes());
+        }
+    }
 }
 
-/// Encode a sheet's block section into its own buffer, sized exactly
-/// the same way as the outer snapshot: growing a buffer reallocates,
-/// and a frozen origin is content that must not strand in unwiped heap.
-/// The section carries the materialized summaries the compaction
-/// ceremony froze, and after them the block grouping, so a pasted
-/// passage comes back as the one block it was written as rather than
-/// scattering into a line per paragraph. A sheet with nothing frozen
-/// and nothing grouped encodes to the empty slice, byte for byte the
-/// slot stage 4 wrote.
+/// Encode a sheet's block section (frozen summaries, then grouping) into
+/// an exact-size buffer. Nothing frozen or grouped encodes to empty.
 fn encode_materialized(blocks: &BlockIndex, doc: &SheetDocument) -> Zeroizing<Vec<u8>> {
     let spans = blocks.spans(doc);
     let grouped = spans.iter().any(|span| *span > 1);
@@ -690,13 +516,10 @@ fn emit_materialized(blocks: &BlockIndex, spans: &[usize], grouped: bool, out: &
     out.u64(frozen.len() as u64);
     for (record, meta) in frozen {
         framed(&mut *out, |out| {
-            // The block's identity, then the anchor that must still
-            // resolve for the record to be believed on the way back in.
+            // Identity, then the anchor that must still resolve on restore.
             out.raw(record.id.as_bytes());
             out.bytes(&record.anchor);
-            // Stamps are positive by construction (derivation skips the
-            // epoch-stamped rebuild), so the sign bit never survives
-            // the round trip through u64.
+            // Positive by construction, so the cast loses nothing.
             out.u64(meta.created_s.max(0) as u64);
             out.u64(meta.modified_s.max(0) as u64);
             match &meta.origin {
@@ -708,10 +531,7 @@ fn emit_materialized(blocks: &BlockIndex, spans: &[usize], grouped: bool, out: &
             }
         });
     }
-    // The grouping, written only when there is grouping to write: a
-    // page whose blocks are its paragraphs one for one restores the
-    // same either way, and a file that says nothing here is exactly
-    // what every build before this one wrote.
+    // Written only when grouped; absent means one block per paragraph.
     if grouped {
         out.u64(spans.len() as u64);
         for span in spans {
@@ -734,8 +554,6 @@ fn emit_ledger<C: Clock>(store: &SheetStore<C>, out: &mut dyn Sink) {
             });
             out.raw(record.item.as_bytes());
             out.bytes(record.title.as_bytes());
-            // Wall-clock, not an age relative to some `now`: a record
-            // outlives the reboot that makes an `Instant` meaningless.
             out.u64(record.at_wall_ms);
             out.u64(record.item_created_wall_ms);
             out.u8(match record.size {
@@ -749,6 +567,7 @@ fn emit_ledger<C: Clock>(store: &SheetStore<C>, out: &mut dyn Sink) {
                 DestinationClass::None => 0,
                 DestinationClass::Clipboard => 1,
                 DestinationClass::OneTimeLink => 2,
+                DestinationClass::Drag => 3,
             });
         });
     }
@@ -758,10 +577,8 @@ fn ms(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
-// ---------------------------------------------------------------------------
-// Decoding — bounds-checked throughout; any damage rejects the whole
-// snapshot before the store is touched.
-// ---------------------------------------------------------------------------
+// Decoding: bounds-checked; damage rejects the whole snapshot before the
+// store is touched.
 
 pub(crate) struct Reader<'a> {
     pub(crate) buf: &'a [u8],
@@ -802,13 +619,8 @@ impl<'a> Reader<'a> {
         Some(ItemId::from_bytes(raw))
     }
 
-    /// A reader bounded to the next length-prefixed record. Fields this
-    /// build does not know are left behind inside that bound, and this
-    /// reader is already standing at the record after it: nothing has
-    /// to seek, because the length was consumed to make the bound. The
-    /// returned reader is deliberately never asked whether it is
-    /// [`done`](Reader::done) — an unread tail is the rule working, not
-    /// damage.
+    /// A reader bounded to the next length-prefixed record. Its unread
+    /// tail is fields this build does not know, not damage.
     pub(crate) fn framed(&mut self) -> Option<Reader<'a>> {
         Some(Reader {
             buf: self.bytes()?,
@@ -821,8 +633,8 @@ impl<'a> Reader<'a> {
     }
 }
 
-/// A count field. Each counted element is at least one byte, so a count
-/// beyond the buffer's remainder is damage — reject before allocating.
+/// A count field. Each element is at least one byte, so a count beyond the
+/// remainder is refused before allocating.
 pub(crate) fn count(reader: &mut Reader<'_>) -> Result<usize, RestoreError> {
     let value = usize::try_from(reader.u64().ok_or(RestoreError::Malformed)?)
         .map_err(|_| RestoreError::Malformed)?;
@@ -837,13 +649,7 @@ fn span(claimed_ms: u64) -> Duration {
     Duration::from_millis(claimed_ms.min(MAX_SPAN_MS))
 }
 
-/// One tab record, read from its own framed sub-reader: the durable
-/// half of the object graph, and then the page it holds if it holds
-/// one.
-///
-/// The rung is validated against the ladder here rather than in the
-/// page arm, because it moved to the tab and its validation moved with
-/// it: an off-ladder number is damage wherever it is written.
+/// One tab record, from its own framed sub-reader.
 fn read_tab(
     reader: &mut Reader<'_>,
     now: Instant,
@@ -852,40 +658,26 @@ fn read_tab(
     next_tab_id: &mut u64,
     next_sheet_id: &mut u64,
     next_chip_id: &mut u64,
-) -> Result<Tab, RestoreError> {
+) -> Result<(Tab, Option<ActiveCut>), RestoreError> {
     use RestoreError::Malformed;
     let uuid = reader.uuid().ok_or(Malformed)?;
     let created_wall_ms = reader.u64().ok_or(Malformed)?;
     let name = match reader.u8().ok_or(Malformed)? {
         0 => None,
-        // Re-cap on the way in: a hand-edited file must not smuggle a
-        // label longer than the strip and the ledger agreed to carry.
-        // The cap matters more here than it did on the page's title,
-        // because this string is durable and reaches the ledger through
-        // every record the tab's pages produce.
-        1 => Some(
-            reader
-                .str()
-                .ok_or(Malformed)?
-                .chars()
-                .take(TITLE_CAP)
-                .collect(),
-        ),
+        // Re-capped: the name is durable and reaches the ledger.
+        1 => Some(capped_title(reader.str().ok_or(Malformed)?)),
         _ => return Err(Malformed),
     };
     let rung = Ttl::from_secs(reader.u64().ok_or(Malformed)?).ok_or(Malformed)?;
-    let page = match reader.u8().ok_or(Malformed)? {
-        0 => None,
+    let (page, cut) = match reader.u8().ok_or(Malformed)? {
+        0 => (None, None),
         1 => {
             let mut body = reader.framed().ok_or(Malformed)?;
-            // A flag that promises a page and a frame that carries no
-            // bytes disagree, and the disagreement is the damage: an
-            // empty body would otherwise fail field by field and read
-            // as a truncation somewhere deeper.
+            // A page flag over an empty frame is damage.
             if body.buf.is_empty() {
                 return Err(Malformed);
             }
-            Some(read_page(
+            let (page, cut) = read_page(
                 &mut body,
                 now,
                 away,
@@ -893,7 +685,8 @@ fn read_tab(
                 rung.longest_life(),
                 next_sheet_id,
                 next_chip_id,
-            )?)
+            )?;
+            (Some(page), cut)
         }
         _ => return Err(Malformed),
     };
@@ -901,30 +694,20 @@ fn read_tab(
     let id = TabId::from_raw(*next_tab_id);
     *next_tab_id += 1;
 
-    Ok(Tab {
+    let tab = Tab {
         id,
         uuid,
         created_wall_ms,
         name,
         rung,
         page,
-    })
+    };
+    Ok((tab, cut))
 }
 
-/// One page record. `ceiling` is the longest life the rung its tab was
-/// read at can give a page ([`Ttl::longest_life`]: the nominal duration
-/// plus the most the boundary snap may add, ADR-0011 section 4), and it
-/// bounds every life span this record can claim: eight days is the most
-/// a restored page on the 7d rung may come back holding, whatever the
-/// bytes say (ADR-0016 section 10, case 7). A hold is bounded too, but
-/// by the ceiling the pause gesture sets rather than by the rung, since
-/// a suspension is not life the ladder measures. On the honest write
-/// path the bound holds by construction, since a rung click sets the
-/// deadline to at most that life and restore only ever subtracts. It is
-/// a file nobody in this process wrote that the clamp is for: a stale or
-/// hand-edited span is the one number a replayed generation can move
-/// (ADR-0016 section 8), and the ladder's ceiling is what it must not
-/// move past.
+/// One page record. `ceiling` ([`Ttl::longest_life`]) bounds every life
+/// span it records, whatever the bytes say (persistence decision
+/// background sections 8, 10).
 fn read_page(
     reader: &mut Reader<'_>,
     now: Instant,
@@ -933,24 +716,12 @@ fn read_page(
     ceiling: Duration,
     next_sheet_id: &mut u64,
     next_chip_id: &mut u64,
-) -> Result<Sheet, RestoreError> {
+) -> Result<(Sheet, Option<ActiveCut>), RestoreError> {
     use RestoreError::Malformed;
     let uuid = reader.uuid().ok_or(Malformed)?;
     let created_wall_ms = reader.u64().ok_or(Malformed)?;
-    // Time away drains the clock as if the app had stayed open: a hold
-    // absorbs it first (that is what a hold is for), then the countdown.
-    // Tag 1 is a first hold, tag 2 a hold already topped up to its 24
-    // hour ceiling; the two carry the same payload and differ only in
-    // what the next pause press does.
-    //
-    // The hold's own span is not the rung's to bound: a hold is a
-    // suspension rather than life, and clamping it to the rung would
-    // shorten an honest 24 hour hold on the 1h rung. It is bounded all
-    // the same, against the ceiling the pause gesture itself would have
-    // set, because a hold read at face value is a way past the rung
-    // that costs nothing to write. A held page's countdown does not
-    // run, so a file claiming a month of hold keeps its plaintext for a
-    // month on the one hour rung.
+    // Time away drains a hold first, then the countdown. A hold is bounded
+    // by the pause gesture's ceiling, not the rung.
     let (clock, held_while_away) = match reader.u8().ok_or(Malformed)? {
         0 => {
             let remaining = span(reader.u64().ok_or(Malformed)?).min(ceiling);
@@ -984,82 +755,58 @@ fn read_page(
     };
     let total_held = span(reader.u64().ok_or(Malformed)?) + held_while_away;
 
-    let chip_count = count(reader)?;
-    let mut chips = Vec::new();
-    for _ in 0..chip_count {
-        let mut record = reader.framed().ok_or(Malformed)?;
-        let chip_uuid = record.uuid().ok_or(Malformed)?;
-        let kind = record.u8().ok_or(Malformed)?;
-        let conceal = match record.u8().ok_or(Malformed)? {
-            0 => None,
-            1 => Some(Conceal {
-                receipt_id: record.str().ok_or(Malformed)?.to_string(),
-            }),
-            _ => return Err(Malformed),
-        };
-        let bytes = record.bytes().ok_or(Malformed)?;
-        let chip_id = ChipId::from_raw(*next_chip_id);
-        *next_chip_id += 1;
-        // Rebuild through the same constructors that sealed it: the
-        // face (excerpt, size label, meta) is recomputed, never trusted
-        // from the snapshot. Only the identity is carried through.
-        let mut chip = match kind {
-            0 => SealedChip::text_with_uuid(
-                chip_id,
-                chip_uuid,
-                std::str::from_utf8(bytes).map_err(|_| Malformed)?,
-            ),
-            1 => SealedChip::image_with_uuid(chip_id, chip_uuid, bytes.to_vec()),
-            _ => return Err(Malformed),
-        };
-        chip.conceal = conceal;
-        chips.push(chip);
-    }
+    let chips = read_chips(reader, next_chip_id)?;
 
-    // The document blob, history included, then the materialized
-    // metadata slot the compaction ceremony fills (ADR-0013). The slot
-    // is parsed after the document imports, because its records are
-    // believed only against the document they claim to describe.
+    // The materialized slot is believed only against the imported document.
     let blob = reader.bytes().ok_or(Malformed)?;
     let metadata = reader.bytes().ok_or(Malformed)?;
-    // The page-level modified floor, a trailing field on this record
-    // (issue #54). A file written before it existed ends here, and its
-    // absence is not damage: the page comes back resting on its block
-    // summaries alone, exactly as it did before the field was written.
+    // Trailing field; a file written before it ends here.
     let frontier_s = if reader.done() {
         None
     } else {
         match reader.u8().ok_or(Malformed)? {
             0 => None,
             1 => Some(clamp_stamp(reader.u64().ok_or(Malformed)?, wall_ms)),
-            // The field's absence is forgiven above, a reader older than
-            // the field ending before it. An unknown tag inside the
-            // field is a different thing and is not forgiven: every
-            // tagged value in this format rejects a byte it cannot read,
-            // the clock tags included, and a floor in a shape we do not
-            // know is damage rather than a newer dialect to skip.
+            // An unknown tag is damage, not a newer dialect.
+            _ => return Err(Malformed),
+        }
+    };
+    // And the detached chips (ADR-0046 point 1), which a file written
+    // before them lacks.
+    let detached = if reader.done() {
+        Vec::new()
+    } else {
+        read_chips(reader, next_chip_id)?
+    };
+    let mut identities: Vec<ItemId> = chips.iter().chain(&detached).map(|c| c.uuid).collect();
+    identities.sort_unstable();
+    identities.dedup();
+    if identities.len() != chips.len() + detached.len() {
+        return Err(Malformed);
+    }
+    // And the active cut's envelope, on the page it came from.
+    let cut = if reader.done() {
+        None
+    } else {
+        match reader.u8().ok_or(Malformed)? {
+            0 => None,
+            1 => Some(reader.bytes().ok_or(Malformed)?),
             _ => return Err(Malformed),
         }
     };
 
-    // The document is reborn whole, under a fresh peer identity that
-    // never reaches any surface: the counters the store hands out are
-    // re-minted below, exactly as before.
     let document = SheetDocument::new();
     document.import_snapshot(blob)?;
 
-    // The sync_document invariant, re-checked at this trust boundary:
-    // every chip mark in the document resolves to a chip record, no
-    // record is claimed twice, and no record goes unclaimed. A dangling
-    // mark, a duplicate, or an orphan record is damage, and damage
-    // rejects the whole snapshot before the store is touched. The
-    // projection is rebuilt from the same walk, so it cannot disagree
-    // with the document it mirrors.
+    // Each chip mark resolves to exactly one record and every record is
+    // claimed; anything else is damage.
     let mut segments = Vec::new();
     let mut referenced: Vec<ChipId> = Vec::new();
     for run in document.runs() {
         match run {
-            DocRun::Ink(text) => segments.push(Segment::Ink(text)),
+            DocRun::Ink(mut text) => {
+                segments.push(Segment::Ink(std::mem::take(&mut *text)));
+            }
             DocRun::Chip(wanted) => {
                 let chip = chips.iter().find(|c| c.uuid() == wanted).ok_or(Malformed)?;
                 if referenced.contains(&chip.id) {
@@ -1074,36 +821,20 @@ fn read_page(
         return Err(Malformed);
     }
 
-    // The block index is rebuilt from the imported document with fresh
-    // identities. The rebuild knows only paragraphs, so the recorded
-    // grouping goes back over it first, refused whole unless it
-    // accounts for exactly the paragraphs this document has, and the
-    // materialized records are adopted onto the blocks that result:
-    // validated rather than trusted, a record believed only when its
-    // anchor still resolves to the start of a block, its stamps clamped
-    // to sane values on the way in. Everything else is dropped, which
-    // leaves the affected block on the fresh identity the rebuild
-    // minted (ADR-0013).
+    // Fresh block identities; the recorded grouping and summaries are
+    // validated against the document and dropped on failure (ADR-0013).
     let (frozen, spans) = read_materialized(metadata, wall_ms)?;
     let mut blocks = BlockIndex::for_document(&document);
     blocks.regroup(&document, &spans);
     blocks.adopt(&document, frozen);
-    // The page-level floor rides back in beside the summaries: it is
-    // the stamp of a change no surviving character can prove, so
-    // nothing else in this file could reconstruct it.
     blocks.note_compaction(frontier_s);
 
     let id = SheetId::from_raw(*next_sheet_id);
     *next_sheet_id += 1;
 
-    // The derived title is recomputed rather than read: it is never
-    // written, so this is the only place it can come from, and it comes
-    // from the segments the walk above just rebuilt (ADR-0017). No
-    // clock reading is involved, because the placeholder is the tab's
-    // business and this is the page's.
     let derived_title = derive_title(&segments);
 
-    Ok(Sheet {
+    let sheet = Sheet {
         id,
         uuid,
         derived_title,
@@ -1112,27 +843,91 @@ fn read_page(
         segments,
         blocks,
         chips,
+        detached,
         clock,
         total_held,
-        // Never persisted: a sync session does not survive a restart,
-        // so every restored page compacts inline until the engine
-        // re-defers it on attach (issue #101).
+        // Not persisted: no sync session survives a restart (issue #101).
         ceremony: CeremonyState::Immediate,
-    })
+    };
+    // A cut whose objects are not all detached here restores as no cut.
+    let cut = cut.and_then(|envelope| ActiveCut::restored(&sheet, envelope));
+    Ok((sheet, cut))
 }
 
-/// Decode a sheet's block slot into candidate records for
-/// [`BlockIndex::adopt`] to judge and the block grouping for
-/// [`BlockIndex::regroup`] to check. Structural damage rejects the
-/// whole snapshot like damage anywhere else; semantic doubt is handled
-/// by validation instead. Timestamps are clamped into the sane range
-/// (positive, no later than the wall clock now, modified never before
-/// created), because a stamp is trusted arithmetic downstream and a
-/// hand-edited file must not choose its values freely. The grouping
-/// trails the records and is optional: a file whose blocks were its
-/// paragraphs writes none, and neither did any build before grouping
-/// existed, so an empty slot and a records-only slot both decode
-/// cleanly.
+/// A count, then that many framed chip records; ids are minted in order.
+fn read_chips(
+    reader: &mut Reader<'_>,
+    next_chip_id: &mut u64,
+) -> Result<Vec<SealedChip>, RestoreError> {
+    let chip_count = count(reader)?;
+    let mut chips = Vec::new();
+    for _ in 0..chip_count {
+        let mut record = reader.framed().ok_or(RestoreError::Malformed)?;
+        chips.push(read_chip(&mut record, next_chip_id)?);
+    }
+    Ok(chips)
+}
+
+/// One chip record. The face is rebuilt by the sealing constructors, never
+/// trusted.
+fn read_chip(record: &mut Reader<'_>, next_chip_id: &mut u64) -> Result<SealedChip, RestoreError> {
+    use RestoreError::Malformed;
+    let chip_uuid = record.uuid().ok_or(Malformed)?;
+    let kind = record.u8().ok_or(Malformed)?;
+    let conceal = match record.u8().ok_or(Malformed)? {
+        0 => None,
+        1 => Some(Conceal {
+            receipt_id: record.str().ok_or(Malformed)?.to_string(),
+        }),
+        _ => return Err(Malformed),
+    };
+    let bytes = record.bytes().ok_or(Malformed)?;
+    // A record written before the name ends here (ADR-0043 point 4).
+    let name = if record.done() {
+        None
+    } else {
+        match record.u8().ok_or(Malformed)? {
+            0 => None,
+            // A name this build's rule refuses is dropped, not damage.
+            1 => judge_name(record.str().ok_or(Malformed)?)
+                .ok()
+                .flatten()
+                .map(|name| Zeroizing::new(name.to_owned())),
+            _ => return Err(Malformed),
+        }
+    };
+    // And one written before the note ends here; its undo starts empty.
+    let note = if record.done() {
+        None
+    } else {
+        match record.u8().ok_or(Malformed)? {
+            0 => None,
+            1 => Some(Note::holding(record.str().ok_or(Malformed)?)),
+            _ => return Err(Malformed),
+        }
+    };
+    let chip_id = ChipId::from_raw(*next_chip_id);
+    *next_chip_id += 1;
+    let mut chip = match kind {
+        0 => SealedChip::text_with_uuid(
+            chip_id,
+            chip_uuid,
+            std::str::from_utf8(bytes).map_err(|_| Malformed)?,
+        ),
+        1 => SealedChip::image_with_uuid(chip_id, chip_uuid, bytes.to_vec()),
+        _ => return Err(Malformed),
+    };
+    chip.conceal = conceal;
+    chip.name = name;
+    chip.note = note;
+    // A written chip stood when it was written; its seal is long past.
+    chip.stood = true;
+    Ok(chip)
+}
+
+/// Decode a sheet's block slot into candidates for [`BlockIndex::adopt`]
+/// and a grouping for [`BlockIndex::regroup`]. Stamps are clamped; the
+/// grouping is optional.
 fn read_materialized(
     bytes: &[u8],
     wall_ms: u64,
@@ -1153,7 +948,7 @@ fn read_materialized(
         let modified_s = clamp(record.u64().ok_or(Malformed)?).max(created_s);
         let origin = match record.u8().ok_or(Malformed)? {
             0 => None,
-            1 => Some(record.str().ok_or(Malformed)?.to_string()),
+            1 => Some(Zeroizing::new(record.str().ok_or(Malformed)?.to_owned())),
             _ => return Err(Malformed),
         };
         records.push(PersistedBlock {
@@ -1166,9 +961,7 @@ fn read_materialized(
             },
         });
     }
-    // Grown as each span decodes rather than reserved from the claimed
-    // count: eight bytes are read per block, so a count the buffer
-    // cannot cover must not reserve for what it promises.
+    // Grown per span, not reserved from the claimed count.
     let mut spans = Vec::new();
     if !reader.done() {
         let block_count = count(&mut reader)?;
@@ -1193,12 +986,7 @@ fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
         _ => return Err(Malformed),
     };
     let item = reader.uuid().ok_or(Malformed)?;
-    let title: String = reader
-        .str()
-        .ok_or(Malformed)?
-        .chars()
-        .take(TITLE_CAP)
-        .collect();
+    let title = capped_title(reader.str().ok_or(Malformed)?);
     let at_wall_ms = reader.u64().ok_or(Malformed)?;
     let item_created_wall_ms = reader.u64().ok_or(Malformed)?;
     let size = match reader.u8().ok_or(Malformed)? {
@@ -1213,6 +1001,7 @@ fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
         0 => DestinationClass::None,
         1 => DestinationClass::Clipboard,
         2 => DestinationClass::OneTimeLink,
+        3 => DestinationClass::Drag,
         _ => return Err(Malformed),
     };
     Ok(LedgerRecord {
@@ -1230,15 +1019,10 @@ fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
 mod tests {
     use super::*;
     use crate::clock::ManualClock;
+    use crate::sheet::TITLE_CAP;
 
     const HOUR: Duration = Duration::from_secs(60 * 60);
 
-    /// A store on `clock` with the boundary snap off, so a rung's
-    /// nominal duration is what every clock assertion below reads, and
-    /// with new tabs on the eight hour rung the time-away arithmetic was
-    /// written against (ADR-0011 section 3 moved the default to the
-    /// ceiling; the store's own tests cover that). The snap's own
-    /// round trip is `a_snapped_deadline_survives_the_round_trip`.
     fn store_on(clock: ManualClock) -> SheetStore<ManualClock> {
         SheetStore::new(clock)
             .with_grace_snap(false)
@@ -1250,7 +1034,6 @@ mod tests {
         (store_on(clock.clone()), clock)
     }
 
-    /// The slot a page stands in, for the tab-addressed routes.
     fn slot(store: &SheetStore<ManualClock>, page: SheetId) -> TabId {
         store
             .tabs()
@@ -1259,16 +1042,6 @@ mod tests {
             .id()
     }
 
-    /// A populated store: two pages — ink + text chip (concealed) + image
-    /// chip on the first, plain ink on the second — and a closed page in
-    /// the ledger. The trailing ink carries an astral character so every
-    /// test over this fixture crosses a surrogate pair.
-    ///
-    /// The first line carries emphasis inside a word on purpose. The
-    /// title it derives to, "deploy notes", is then a string the
-    /// derivation produces and the ink does not contain, so a scan for
-    /// it over the snapshot bytes answers exactly one question: whether
-    /// the file wrote the derived title down.
     fn populated() -> (SheetStore<ManualClock>, ManualClock, SheetId, SheetId) {
         let (mut store, clock) = store();
         let first = store.new_tab().1;
@@ -1277,6 +1050,28 @@ mod tests {
             .seal_image(first, vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3])
             .unwrap();
         assert!(store.mark_chip_concealed(token, "receipt-42".into()));
+        store.set_chip_name(token, "DEPLOY_TOKEN").unwrap();
+        assert!(store.apply_note_ops(
+            token,
+            &[crate::store::EditOp::Insert {
+                pos_u16: 0,
+                text: "rotate after \u{1F511} the audit".into(),
+            }],
+            crate::document::EditIntent::Typing,
+            None,
+        ));
+        let removed = store.seal_text(first, "removed but kept").unwrap();
+        store.set_chip_name(removed, "KEPT").unwrap();
+        assert!(store.apply_note_ops(
+            removed,
+            &[crate::store::EditOp::Insert {
+                pos_u16: 0,
+                text: "detached \u{1F511} note".into(),
+            }],
+            crate::document::EditIntent::Typing,
+            None,
+        ));
+        assert!(store.sync_document(first, vec![Segment::Chip(removed)]));
         assert!(store.sync_document(
             first,
             vec![
@@ -1286,6 +1081,7 @@ mod tests {
                 Segment::Chip(image),
             ],
         ));
+        assert_eq!(store.sheet(first).unwrap().detached().count(), 1);
         let second = store.new_tab().1;
         assert!(store.sync_document(second, vec![Segment::Ink("errands".into())]));
         let doomed = store.new_tab().1;
@@ -1306,9 +1102,6 @@ mod tests {
         let order: Vec<SheetId> = revived.sheets().map(Sheet::id).collect();
         assert_eq!(order, vec![first, second]);
 
-        // OTSSNAP4 stores no content-derived title at all: the string
-        // is absent from the bytes and comes back recomputed from the
-        // restored segments (ADR-0017).
         assert!(
             contains(&snapshot, b"dep**loy** notes"),
             "the control: the line it derives from is in the blob"
@@ -1320,7 +1113,7 @@ mod tests {
         let sheet = revived.sheet(first).unwrap();
         assert_eq!(sheet.derived_title(), Some("deploy notes"));
         assert_eq!(
-            revived.tabs().next().unwrap().label(0),
+            revived.tabs().next().unwrap().label(0).as_str(),
             "deploy notes",
             "the label falls through to it, this tab having no name"
         );
@@ -1342,16 +1135,23 @@ mod tests {
                 .excerpt()
         );
         assert_eq!(chips[0].conceal().unwrap().receipt_id, "receipt-42");
+        assert_eq!(chips[0].name(), Some("DEPLOY_TOKEN"));
+        assert_eq!(
+            &**revived.note_text(chips[0].id()).unwrap(),
+            "rotate after \u{1F511} the audit"
+        );
+        assert!(
+            !revived.note_can_undo(chips[0].id()),
+            "a note's undo starts empty after a restore"
+        );
         assert_eq!(chips[1].excerpt(), "PNG image");
         assert!(chips[1].conceal().is_none());
+        assert_eq!(chips[1].name(), None);
+        assert!(!chips[1].has_note());
 
-        // The sealed bytes themselves made the trip.
         let (bytes, _) = revived.copy_out_chip(chips[0].id()).unwrap();
         assert_eq!(&*bytes, b"ghp_expected-to-survive");
 
-        // Provenance made the trip too: the change that produced the
-        // body's first character keeps its commit timestamp, because
-        // the blob carries the document's history rather than a replay.
         let stamped = original
             .sheet(first)
             .unwrap()
@@ -1363,16 +1163,83 @@ mod tests {
         );
         assert_eq!(sheet.document.first_change_timestamp(), stamped);
 
-        // The content snapshot carries no ledger.
         assert_eq!(revived.ledger().count(), 0);
+    }
+
+    #[test]
+    fn a_detached_chip_comes_back_detached_with_its_name_and_note() {
+        let (original, clock, first, _) = populated();
+        let kept = original.sheet(first).unwrap().detached().next().unwrap();
+        let uuid = kept.uuid();
+        let snapshot = original.snapshot(1_000_000);
+
+        let mut revived = store_on(clock.clone());
+        revived.restore(&snapshot, 1_000_000).unwrap();
+        let sheet = revived.sheet(first).unwrap();
+        let back: Vec<&SealedChip> = sheet.detached().collect();
+        assert_eq!(back.len(), 1, "kept apart, on the page's clock");
+        assert_eq!(back[0].uuid(), uuid);
+        assert_eq!(back[0].name(), Some("KEPT"));
+        let id = back[0].id();
+        assert!(
+            revived.note_text(id).is_none(),
+            "the note's routes reach only a standing object"
+        );
+        assert!(sheet.chips().all(|chip| chip.uuid() != uuid));
+
+        // A restate naming it stands it again, payload and note intact.
+        assert!(revived.sync_document(first, vec![Segment::Chip(id)]));
+        assert_eq!(&**revived.copy_out_chip(id).unwrap().0, b"removed but kept");
+        assert_eq!(&**revived.note_text(id).unwrap(), "detached \u{1F511} note");
+    }
+
+    #[test]
+    fn a_page_written_before_detached_chips_existed_restores_with_none() {
+        let (store, clock, id) = page_cut_after_it_was_written();
+        let wall = real_wall_ms();
+        let snapshot = store.snapshot(wall);
+        let tab = first_tab(&snapshot);
+        let page_len = le_u64(&tab[UNNAMED_TAB_PREFIX..]);
+        let page_at = UNNAMED_TAB_PREFIX + 8;
+        let page = &tab[page_at..page_at + page_len];
+        // An empty detached list, eight bytes, then a cut flag of one.
+        for (older_by, what) in [(9, "both fields"), (1, "the cut flag")] {
+            let mut rebuilt_tab = tab[..UNNAMED_TAB_PREFIX].to_vec();
+            rebuilt_tab.extend_from_slice(&frame(&page[..page.len() - older_by]));
+            let older = with_first_tab(&snapshot, &rebuilt_tab);
+
+            let mut revived = store_on(clock.clone());
+            assert_eq!(revived.restore(&older, wall).unwrap(), 1, "without {what}");
+            let sheet = revived.sheets().next().unwrap();
+            assert_eq!(sheet.detached().count(), 0);
+            assert_eq!(sheet.segments(), store.sheet(id).unwrap().segments());
+            assert!(revived.active_cut().is_none());
+        }
+    }
+
+    #[test]
+    fn a_detached_chip_repeating_an_identity_is_malformed() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, "standing", 0, 0).unwrap();
+        let twin = store.seal_text_at(id, "its twin", 1, 0).unwrap();
+        // The twin detaches, then takes the standing chip's identity.
+        assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
+        let uuid = store.sheet(id).unwrap().chip(chip).unwrap().uuid();
+        let sheet = store.tabs[0].page.as_mut().unwrap();
+        let index = sheet.detached.iter().position(|c| c.id == twin).unwrap();
+        sheet.detached[index].uuid = uuid;
+        let snapshot = store.snapshot(0);
+
+        let mut revived = store_on(clock);
+        assert_eq!(revived.restore(&snapshot, 0), Err(RestoreError::Malformed));
+        assert!(revived.has_no_tabs(), "the store is untouched");
     }
 
     #[test]
     fn the_origin_message_survives_the_round_trip() {
         let (mut store, clock) = store();
         let id = store.new_tab().1;
-        // A URL-bearing paste, sealed at the caret: the origin persists
-        // as the seal commit's message and nowhere else.
         let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
         store
             .seal_text_at_with_origin(id, "the pasted secret", 0, 0, Some(origin))
@@ -1399,8 +1266,6 @@ mod tests {
             "the origin message rides the blob through the round trip"
         );
 
-        // The ledger snapshot, by contrast, must not know the URL: the
-        // origin is content and lives only in the sealed content file.
         let ledger = store.ledger_snapshot();
         let needle = b"origin.example.test";
         assert!(
@@ -1409,17 +1274,10 @@ mod tests {
         );
     }
 
-    /// Whether `needle` occurs anywhere in `haystack`: the byte scan
-    /// the compaction ceremony's discard claims are audited with.
     fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         haystack.windows(needle.len()).any(|w| w == needle)
     }
 
-    /// A page whose newest change was a deletion, past the ceremony:
-    /// two lines written at 10:00, the second cut at 11:00, and the
-    /// history discarded. The stamps are injected rather than raced off
-    /// the wall clock, because the whole question is which of two hours
-    /// the page comes back holding.
     fn page_cut_after_it_was_written() -> (SheetStore<ManualClock>, ManualClock, SheetId) {
         let (mut store, clock) = store();
         let id = store.new_tab().1;
@@ -1445,9 +1303,6 @@ mod tests {
         let wall = real_wall_ms();
         let snapshot = store.snapshot(wall);
 
-        // The ceremony destroyed the ops that proved the 11:00 cut and
-        // no surviving character can vote for it, so the file is the
-        // only place that stamp can live between launches.
         let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
         let sheet = revived.sheets().next().unwrap();
@@ -1457,8 +1312,6 @@ mod tests {
             "the page's newest change survived the relaunch"
         );
 
-        // And it stayed the page's: no paragraph was made to claim a
-        // change that never touched it (ADR-0013).
         let metas = sheet.blocks_meta();
         assert_eq!(metas[0].modified_s, Some(36_000));
         assert_eq!(metas[1].modified_s, None);
@@ -1471,11 +1324,6 @@ mod tests {
         let snapshot = store.snapshot(wall);
         let honest = store.sheet(id).unwrap().blocks_meta();
 
-        // The trailing field cut away: what an installed build wrote,
-        // and what this one now reads as absent. The file must open
-        // rather than refuse — refusing costs the reader the page,
-        // which is a far worse answer than costing them an hour on a
-        // timestamp.
         let older = without_the_page_floor(&snapshot, floor_len(store.sheet(id).unwrap()));
         let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&older, wall).unwrap(), 1);
@@ -1486,9 +1334,6 @@ mod tests {
             metas[0], honest[0],
             "the frozen block's identity and stamps are the file's, floor or no floor"
         );
-        // The trailing empty paragraph froze nothing, so it has no
-        // record to be adopted from and comes back newly named, exactly
-        // as it does from a file this build wrote.
         assert_eq!(metas.len(), honest.len());
         assert_eq!(metas[1].created_s, None);
         assert_eq!(
@@ -1499,9 +1344,28 @@ mod tests {
         );
     }
 
-    /// Unix epoch milliseconds now, for tests over materialized stamps:
-    /// the document's commits are stamped by the real wall clock, so the
-    /// restore ceiling they are clamped against must be real too.
+    #[test]
+    fn an_unknown_page_floor_tag_is_malformed() {
+        let (store, clock, id) = page_cut_after_it_was_written();
+        let wall = real_wall_ms();
+        let snapshot = store.snapshot(wall);
+        let tab = first_tab(&snapshot);
+        let page_len = le_u64(&tab[UNNAMED_TAB_PREFIX..]);
+        let page_at = UNNAMED_TAB_PREFIX + 8;
+        let page = &tab[page_at..page_at + page_len];
+        let mut body = page[..page.len() - floor_len(store.sheet(id).unwrap())].to_vec();
+        body.push(9);
+        let mut rebuilt_tab = tab[..UNNAMED_TAB_PREFIX].to_vec();
+        rebuilt_tab.extend_from_slice(&frame(&body));
+        let damaged = with_first_tab(&snapshot, &rebuilt_tab);
+        let mut revived = store_on(clock);
+        assert_eq!(
+            revived.restore(&damaged, wall),
+            Err(RestoreError::Malformed)
+        );
+        assert!(revived.has_no_tabs());
+    }
+
     fn real_wall_ms() -> u64 {
         u64::try_from(
             std::time::SystemTime::now()
@@ -1515,6 +1379,7 @@ mod tests {
     #[test]
     fn a_compacted_store_round_trips_materialized_metadata_and_origin() {
         use crate::store::EditOp;
+        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
         let (mut store, clock) = store();
         let id = store.new_tab().1;
         let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
@@ -1537,8 +1402,6 @@ mod tests {
         ));
         let old_peer = store.tabs[0].page.as_ref().unwrap().document.peer_id();
 
-        // The rung gesture runs the ceremony; everything after asserts
-        // against the compacted page.
         store.cycle_rung(slot(&store, id)).unwrap();
         let sheet = store.sheet(id).unwrap();
         let segments = sheet.segments().to_vec();
@@ -1548,9 +1411,6 @@ mod tests {
 
         let wall = real_wall_ms();
         let snapshot = store.snapshot(wall);
-        // The persisted content sheds the trail and keeps the summary:
-        // no deleted fragment, no old actor id, and the origin standing
-        // in the materialized slot, sealed file only.
         assert!(!contains(&snapshot, b"DOOMED"));
         assert!(!contains(&snapshot, &old_peer.to_le_bytes()));
         assert!(
@@ -1568,15 +1428,24 @@ mod tests {
             "block identities and stamps are adopted from the slot, not re-minted"
         );
         assert_eq!(sheet.modified_s(), modified);
+        let restored = sheet.blocks.records()[0]
+            .materialized
+            .as_ref()
+            .unwrap()
+            .origin
+            .as_ref()
+            .unwrap();
         assert_eq!(
-            sheet.blocks.records()[0]
-                .materialized
-                .as_ref()
-                .unwrap()
-                .origin
-                .as_deref(),
-            Some(origin),
+            restored.as_str(),
+            origin,
             "the origin rides the materialized record through the round trip"
+        );
+        // A wiping owner whose capacity is its length (C17).
+        wiping_owner(restored);
+        assert_eq!(
+            restored.capacity(),
+            restored.len(),
+            "the restored origin grew"
         );
     }
 
@@ -1600,8 +1469,6 @@ mod tests {
         let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
 
-        // A rebuild knows only paragraphs; the recorded grouping is what
-        // keeps the paste from scattering into a stamp per line.
         let after = revived.sheets().next().unwrap().blocks_meta();
         assert_eq!(after.len(), 1, "the grouping survived the round trip");
         assert_eq!(after[0].paragraphs, 3);
@@ -1629,9 +1496,6 @@ mod tests {
         store.cycle_rung(slot(&store, id)).unwrap();
         let honest = store.sheet(id).unwrap().blocks_meta();
 
-        // Tamper the way a hand-edited file would: stamps from the far
-        // future and the deep past on block 0, and an anchor on block 1
-        // that resolves nowhere.
         {
             let records = store.tabs[0].page.as_mut().unwrap().blocks.records_mut();
             let frozen = records[0].materialized.as_mut().unwrap();
@@ -1645,18 +1509,11 @@ mod tests {
         assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
         let metas = revived.sheets().next().unwrap().blocks_meta();
 
-        // Block 0's record still adopts (identity and anchor are
-        // honest) but its stamps are clamped into the sane range: never
-        // later than the wall clock now (plus the rounding slack),
-        // modified never before created.
         let ceiling = i64::try_from(wall / 1000).unwrap() + STAMP_SLACK_S;
         assert_eq!(metas[0].id, honest[0].id);
         assert_eq!(metas[0].created_s, Some(ceiling));
         assert_eq!(metas[0].modified_s, Some(ceiling));
 
-        // Block 1's record cannot prove it names a block, so it drops
-        // whole: a fresh identity and no inherited provenance, the same
-        // answer a file with no records would get.
         assert_ne!(metas[1].id, honest[1].id);
         assert_eq!(metas[1].created_s, None);
         assert_eq!(metas[1].modified_s, None);
@@ -1664,9 +1521,6 @@ mod tests {
 
     #[test]
     fn a_tab_name_is_written_down_and_the_pages_own_title_is_not() {
-        // The two strings the split separates, in one file. One is the
-        // user's and is durable; the other is the app's and dies with
-        // the page it was made from.
         let (mut store, clock) = store();
         let id = store.new_tab().1;
         assert!(store.set_title(slot(&store, id), "quarterly numbers"));
@@ -1690,7 +1544,7 @@ mod tests {
         revived.restore(&snapshot, 0).unwrap();
         let tab = revived.tabs().next().unwrap();
         assert_eq!(tab.name(), Some("quarterly numbers"));
-        assert_eq!(tab.label(0), "quarterly numbers");
+        assert_eq!(tab.label(0).as_str(), "quarterly numbers");
         assert_eq!(
             tab.page().unwrap().derived_title(),
             Some("something else"),
@@ -1698,14 +1552,8 @@ mod tests {
         );
     }
 
-    /// A snapped deadline honestly exceeds its rung's nominal duration,
-    /// and the restore clamp admits it: the ceiling is the rung's
-    /// longest life, not the rung (ADR-0011 section 4). Time away still
-    /// drains it like any other span.
     #[test]
     fn a_snapped_deadline_survives_the_round_trip() {
-        // 2026-06-10 16:20 UTC, 09:20 in Los Angeles: 7d snaps to the
-        // midnight 14h40m past nominal.
         let clock = ManualClock::new()
             .with_wall_ms(1_781_108_400_000)
             .with_local_offset_seconds(-7 * 3600);
@@ -1741,21 +1589,20 @@ mod tests {
         assert_eq!(tabs.len(), 2);
         assert_eq!(tabs[0].name(), Some("quarterly numbers"));
         assert_eq!(tabs[0].rung(), Ttl::MIN);
-        assert_eq!(tabs[0].label(0), "quarterly numbers");
+        assert_eq!(tabs[0].label(0).as_str(), "quarterly numbers");
         assert_eq!(tabs[1].name(), None, "an unnamed tab stays unnamed");
         assert_eq!(tabs[1].rung(), Ttl::from_secs(8 * 60 * 60).unwrap());
-        assert_eq!(tabs[1].label(0), "errands", "its page supplies the label");
-        // Identity is what persists, for the slot as much as the page.
+        assert_eq!(
+            tabs[1].label(0).as_str(),
+            "errands",
+            "its page supplies the label"
+        );
         let before: Vec<ItemId> = store.tabs().map(Tab::uuid).collect();
         assert_eq!(revived.tabs().map(Tab::uuid).collect::<Vec<_>>(), before);
     }
 
     #[test]
     fn an_emptied_strip_reseals_as_names_rungs_and_order_with_no_content() {
-        // ADR-0016 section 6's first rotation trigger, from the file's
-        // side: when the last page expires and tabs remain, emptying
-        // the pad writes a file rather than removing one, and what it
-        // writes is the strip and nothing else.
         let (mut store, clock) = store();
         let first = store.new_tab().1;
         let second = store.new_tab().1;
@@ -1795,9 +1642,6 @@ mod tests {
 
     #[test]
     fn a_tab_that_holds_no_page_restores_as_an_empty_slot() {
-        // Nothing in this build writes an absent page yet, so the file
-        // is assembled by hand: the flag is the whole of the difference
-        // between a slot with a page and a slot without one.
         let (mut store, survivor) = occupied();
         let empty = empty_tab_snapshot(Some("payroll"));
         assert_eq!(store.restore(&empty, 0).unwrap(), 0, "no live page");
@@ -1805,13 +1649,12 @@ mod tests {
         assert_eq!(tabs.len(), 1, "the slot itself came back");
         assert!(tabs[0].page().is_none());
         assert_eq!(tabs[0].name(), Some("payroll"));
-        assert_eq!(tabs[0].label(0), "payroll");
+        assert_eq!(tabs[0].label(0).as_str(), "payroll");
         assert_eq!(tabs[0].rung(), Ttl::from_secs(8 * 60 * 60).unwrap());
         assert!(
             store.sheet(survivor).is_none(),
             "the restore replaced the strip, as any restore does"
         );
-        // A tab with no page schedules nothing.
         assert_eq!(store.next_event(), None);
     }
 
@@ -1835,15 +1678,11 @@ mod tests {
 
     #[test]
     fn a_page_present_flag_over_an_empty_body_is_malformed() {
-        // The flag promises a page and the frame carries no bytes. The
-        // two disagree, and the disagreement is the damage.
         let (mut store, survivor) = occupied();
         let mut hostile = empty_tab_snapshot(Some("payroll"));
         let flag = hostile.len() - 1;
         hostile[flag] = 1;
         hostile.extend_from_slice(&0u64.to_le_bytes()); // an empty frame
-        // Both enclosing lengths have to admit the eight new bytes, or
-        // the reject would be about the frame rather than the flag.
         widen_first_tab(&mut hostile, 8);
         assert_eq!(store.restore(&hostile, 0), Err(RestoreError::Malformed));
         let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
@@ -1852,9 +1691,6 @@ mod tests {
 
     #[test]
     fn a_hand_edited_tab_name_is_recapped_at_eighty_characters() {
-        // The re-cap is load-bearing after the split: this string is
-        // durable and reaches the ledger through every record the tab's
-        // pages produce, so a file must not smuggle a longer one in.
         let (mut store, _survivor) = occupied();
         let long: String = "é".repeat(200);
         let snapshot = empty_tab_snapshot(Some(&long));
@@ -1866,10 +1702,6 @@ mod tests {
 
     #[test]
     fn a_strip_of_any_width_restores_and_a_short_one_is_malformed() {
-        // The strip has no cap (issue #158), so a file is as wide as
-        // the writer left it: twelve tabs come back as twelve. What
-        // still refuses is a count the bytes cannot honour, which fails
-        // at the first missing frame and leaves the store untouched.
         let (mut store, survivor) = occupied();
         let mut short = Vec::new();
         short.extend_from_slice(MAGIC);
@@ -1900,17 +1732,16 @@ mod tests {
         let expected: Vec<LedgerRecord> = original.ledger().cloned().collect();
 
         let mut revived = store_on(clock.clone());
-        let restored = revived.restore_ledger(&ledger, 0).unwrap();
+        let restored = revived.restore_ledger(&ledger, clock.wall_ms()).unwrap();
         assert_eq!(restored, expected.len());
         let records: Vec<LedgerRecord> = revived.ledger().cloned().collect();
         assert_eq!(records, expected);
         assert_eq!(records[0].title(), "old thoughts");
         assert_eq!(records[0].event(), LedgerEvent::Discarded);
 
-        // A ledger restore leaves the strip alone, in both directions.
         assert!(revived.has_no_tabs());
         assert_eq!(
-            revived.restore_ledger(&original.snapshot(0), 0),
+            revived.restore_ledger(&original.snapshot(0), clock.wall_ms()),
             Err(RestoreError::UnknownFormat),
             "a content snapshot is not a ledger snapshot"
         );
@@ -1921,18 +1752,37 @@ mod tests {
         );
     }
 
-    /// A ledger file arrives second at launch, after the content
-    /// restore has already entombed the deaths that fell due while the
-    /// app was closed. Those records are in the deque and in no file,
-    /// so the load has to join them rather than write over them.
+    #[test]
+    fn every_destination_class_round_trips_in_the_ledger() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let chip = store.seal_text_at(id, "sent three ways", 0, 0).unwrap();
+        let classes = [
+            DestinationClass::Clipboard,
+            DestinationClass::OneTimeLink,
+            DestinationClass::Drag,
+        ];
+        for class in classes {
+            assert!(store.record_sent(chip, class));
+        }
+        let mut revived = store_on(clock.clone());
+        revived
+            .restore_ledger(&store.ledger_snapshot(), clock.wall_ms())
+            .unwrap();
+        let sent: Vec<DestinationClass> = revived
+            .ledger()
+            .filter(|record| record.event() == LedgerEvent::Sent)
+            .map(LedgerRecord::destination)
+            .collect();
+        assert_eq!(sent, [classes[2], classes[1], classes[0]], "newest first");
+    }
+
     #[test]
     fn a_ledger_restore_keeps_the_records_the_store_already_holds() {
         let (original, clock, ..) = populated();
         let file = original.ledger_snapshot();
         let earlier: Vec<LedgerRecord> = original.ledger().cloned().collect();
 
-        // A death recorded before the file lands, which is the shape of
-        // what `expire_due` leaves behind on the way in.
         let mut revived = store_on(clock.clone());
         let doomed = revived.new_tab().1;
         assert!(revived.sync_document(doomed, vec![Segment::Ink("overnight".into())]));
@@ -1940,7 +1790,7 @@ mod tests {
         let overnight: Vec<LedgerRecord> = revived.ledger().cloned().collect();
         assert_eq!(overnight.len(), 2, "the page was created, then it died");
 
-        let kept = revived.restore_ledger(&file, 0).unwrap();
+        let kept = revived.restore_ledger(&file, clock.wall_ms()).unwrap();
         assert_eq!(kept, overnight.len() + earlier.len());
         let records: Vec<LedgerRecord> = revived.ledger().cloned().collect();
         assert_eq!(
@@ -1949,20 +1799,18 @@ mod tests {
             "the trail reads newest first, with the file's own order kept"
         );
 
-        // The same file twice is the same trail: nothing already in
-        // hand is taken from it a second time.
-        assert_eq!(revived.restore_ledger(&file, 0).unwrap(), kept);
+        assert_eq!(
+            revived.restore_ledger(&file, clock.wall_ms()).unwrap(),
+            kept
+        );
         assert_eq!(revived.ledger().cloned().collect::<Vec<_>>(), records);
     }
 
-    /// One ledger record, every field pinned so two calls with the same
-    /// arguments compare fully equal. The identity is passed in rather
-    /// than minted so a caller can hand the same page's id to several.
     fn ledger_record(item: ItemId, at_wall_ms: u64) -> LedgerRecord {
         LedgerRecord {
             event: LedgerEvent::Sent,
             item,
-            title: String::from("a page"),
+            title: Zeroizing::new(String::from("a page")),
             at_wall_ms,
             item_created_wall_ms: at_wall_ms,
             size: SizeClass::Tiny,
@@ -1970,7 +1818,6 @@ mod tests {
         }
     }
 
-    /// A ledger file carrying exactly the given records, in order.
     fn ledger_file(records: &[LedgerRecord]) -> Zeroizing<Vec<u8>> {
         let (mut store, _) = store();
         store.ledger = records.iter().cloned().collect();
@@ -1979,21 +1826,16 @@ mod tests {
 
     #[test]
     fn a_ledger_restore_unions_duplicate_records_as_a_multiset() {
-        // Two byte-identical records (same millisecond, same item,
-        // equal in every field) are two things that happened, and a
-        // merge must keep both rather than collapse them to one. The
-        // deque starts holding one copy; a file of two then adds the
-        // surplus, spending its single live twin and keeping the other,
-        // the way a multiset union does.
         let item = ItemId::random();
-        let r = ledger_record(item, 1_800_000_000_000);
+        let now = 1_800_000_000_000;
+        let r = ledger_record(item, now);
         let one = ledger_file(std::slice::from_ref(&r));
         let two = ledger_file(&[r.clone(), r.clone()]);
 
         let (mut store, _) = store();
-        assert_eq!(store.restore_ledger(&one, 0).unwrap(), 1);
+        assert_eq!(store.restore_ledger(&one, now).unwrap(), 1);
         assert_eq!(
-            store.restore_ledger(&two, 0).unwrap(),
+            store.restore_ledger(&two, now).unwrap(),
             2,
             "the surplus copy the deque lacked was kept, not deduplicated away"
         );
@@ -2002,6 +1844,51 @@ mod tests {
             records,
             vec![r.clone(), r],
             "both copies survived the union"
+        );
+    }
+
+    #[test]
+    fn a_future_stamped_ledger_record_is_clamped_to_the_clock_on_load() {
+        let now = 1_800_000_000_000;
+        let year = 365 * 24 * 60 * 60 * 1000;
+        let ahead = ledger_record(ItemId::random(), now + year);
+        let file = ledger_file(std::slice::from_ref(&ahead));
+
+        let (mut revived, _) = store();
+        assert_eq!(revived.restore_ledger(&file, now).unwrap(), 1);
+        let record = revived.ledger().next().unwrap().clone();
+        assert!(
+            record.at_wall_ms() <= now + STAMP_SLACK_MS,
+            "the stamp was clamped to the clock: {}",
+            record.at_wall_ms()
+        );
+        assert!(record.item_created_wall_ms() <= now + STAMP_SLACK_MS);
+
+        let clamped = ledger_file(std::slice::from_ref(&record));
+        let (mut later, _) = store();
+        let past_window = record.at_wall_ms() + crate::ledger::LEDGER_RETENTION_MS + 1;
+        assert_eq!(later.restore_ledger(&clamped, past_window).unwrap(), 0);
+    }
+
+    #[test]
+    fn a_clock_that_reads_before_the_floor_leaves_ledger_stamps_alone() {
+        let stamped = 1_800_000_000_000;
+        let record = ledger_record(ItemId::random(), stamped);
+        let file = ledger_file(std::slice::from_ref(&record));
+
+        let (mut revived, _) = store();
+        assert_eq!(revived.restore_ledger(&file, 5_000).unwrap(), 1);
+        let kept = revived.ledger().next().unwrap().clone();
+        assert_eq!(kept.at_wall_ms(), stamped);
+
+        let (mut corrected, _) = store();
+        let rewritten = ledger_file(std::slice::from_ref(&kept));
+        assert_eq!(
+            corrected
+                .restore_ledger(&rewritten, stamped + 1_000)
+                .unwrap(),
+            1,
+            "the record survives the clock coming right"
         );
     }
 
@@ -2020,11 +1907,6 @@ mod tests {
 
     #[test]
     fn the_write_path_evicts_an_aged_title_with_no_new_event_recorded() {
-        // The scenario the append-only sweep never covered: a menu-bar
-        // app up for months, a page staged on day 0, and nothing since
-        // but ink edits, which record nothing. Without a sweep on the
-        // write path the title keeps being re-persisted under the
-        // long-lived key forever.
         const TITLE: &str = "prod DB credentials";
         let (mut store, clock) = store();
         let id = store.new_tab().1;
@@ -2039,9 +1921,6 @@ mod tests {
         assert_eq!(store.ledger().count(), 2, "created, sealed");
         assert!(held(&store.ledger_snapshot()), "the control");
 
-        // Ninety days and a millisecond pass with the app still up. The
-        // user keeps typing; no record is ever appended, so nothing on
-        // the append path can sweep.
         clock.advance(Duration::from_millis(crate::LEDGER_RETENTION_MS + 1));
         assert!(store.sync_document(
             id,
@@ -2052,16 +1931,12 @@ mod tests {
         ));
         assert_eq!(store.ledger().count(), 2, "nothing was recorded");
 
-        // The write path sweeps, and only then does the snapshot stop
-        // carrying the aged title.
         assert_eq!(store.evict_ledger(clock.wall_ms()), 2, "both fell off");
         assert_eq!(store.ledger().count(), 0);
         assert!(
             !held(&store.ledger_snapshot()),
             "an aged title was re-persisted past the retention window"
         );
-        // The page itself is untouched: eviction is a ledger sweep, not
-        // a death.
         assert_eq!(store.len(), 1);
         assert_eq!(store.sheet(id).unwrap().chip_count(), 1);
     }
@@ -2072,23 +1947,17 @@ mod tests {
         store.new_tab();
         clock.advance(Duration::from_millis(crate::LEDGER_RETENTION_MS));
         store.new_tab();
-        // Exactly 90 days old is inside the window, as on load.
         assert_eq!(store.evict_ledger(clock.wall_ms()), 0);
         assert_eq!(store.ledger().count(), 2);
         clock.advance(Duration::from_millis(1));
         assert_eq!(store.evict_ledger(clock.wall_ms()), 1);
         assert_eq!(store.ledger().count(), 1);
-        // A sweep on an empty ledger, or one wholly inside the window,
-        // is a no-op rather than an error.
         assert_eq!(store.evict_ledger(clock.wall_ms()), 0);
     }
 
     #[test]
     fn restored_ids_are_reissued_densely_and_uuids_survive() {
         let (mut store, clock) = store();
-        // Push the in-process counters far past dense, the way a long
-        // session does, so a restore visibly re-mints rather than
-        // carrying anything over.
         store.next_tab_id = 7_700;
         store.next_sheet_id = 4_242;
         store.next_chip_id = 9_100;
@@ -2119,7 +1988,6 @@ mod tests {
             .collect();
         assert_eq!(chip_ids, vec![1, 2, 3]);
 
-        // Identity is what actually persists.
         assert_eq!(
             revived.sheets().map(Sheet::uuid).collect::<Vec<_>>(),
             sheet_uuids
@@ -2132,7 +2000,6 @@ mod tests {
             chip_uuids
         );
 
-        // And the next id issued does not collide with a restored one.
         let fresh = revived.new_tab().1;
         assert_eq!(fresh.raw(), 3);
         assert_eq!(revived.tabs().last().unwrap().id().raw(), 3);
@@ -2140,15 +2007,12 @@ mod tests {
         assert_eq!(fresh_chip.raw(), 4);
     }
 
-    /// A record as the writer frames it: its own byte length, then its
-    /// fields.
     fn frame(record: &[u8]) -> Vec<u8> {
         let mut out = (record.len() as u64).to_le_bytes().to_vec();
         out.extend_from_slice(record);
         out
     }
 
-    /// The `u64` length at the front of `bytes`, as a usize.
     fn le_u64(bytes: &[u8]) -> usize {
         usize::try_from(u64::from_le_bytes(
             bytes[..8].try_into().expect("eight bytes"),
@@ -2156,11 +2020,6 @@ mod tests {
         .expect("a length this test wrote")
     }
 
-    /// The same bytes, written the way a later build that appended one
-    /// field to the first record would write them: `header` is the
-    /// preamble before that record's length prefix, and the new field
-    /// lands inside the record's own length, where this build's reader
-    /// must step over it to reach the record after.
     fn with_trailing_field(bytes: &[u8], header: usize, extra: &[u8]) -> Vec<u8> {
         let len = le_u64(&bytes[header..]);
         let start = header + 8;
@@ -2172,9 +2031,6 @@ mod tests {
         out
     }
 
-    /// The same, for the first page record, which sits inside its
-    /// tab's frame: the field lands inside the page's own length, and
-    /// the tab's length is re-stated to cover it.
     fn with_page_tail(snapshot: &[u8], extra: &[u8]) -> Vec<u8> {
         let tab = first_tab(snapshot);
         let mut rebuilt = tab[..UNNAMED_TAB_PREFIX].to_vec();
@@ -2182,12 +2038,6 @@ mod tests {
         with_first_tab(snapshot, &rebuilt)
     }
 
-    /// The same, for the first materialized record, which sits four
-    /// lengths deep: its own, the metadata slot's, the page record's
-    /// and the tab record's. The slot is located from the end of the
-    /// page record, stepping back over the page-level floor field that
-    /// trails it and then over `meta_len`, and the floor is put back
-    /// where it was.
     fn with_materialized_tail(
         snapshot: &[u8],
         meta_len: usize,
@@ -2199,7 +2049,6 @@ mod tests {
         let page_at = UNNAMED_TAB_PREFIX + 8;
         let page = &tab[page_at..page_at + page_len];
         let slot_at = page.len() - floor_len - meta_len;
-        // The slot's own preamble is a record count, then the records.
         let slot = with_trailing_field(&page[slot_at..page.len() - floor_len], 8, extra);
         let mut rebuilt_page = page[..slot_at - 8].to_vec();
         rebuilt_page.extend_from_slice(&frame(&slot));
@@ -2209,9 +2058,6 @@ mod tests {
         with_first_tab(snapshot, &rebuilt_tab)
     }
 
-    /// The same page record with its trailing floor field cut away:
-    /// the file a build that never wrote that field would have left
-    /// behind, which this build must still open.
     fn without_the_page_floor(snapshot: &[u8], floor_len: usize) -> Vec<u8> {
         let tab = first_tab(snapshot);
         let page_len = le_u64(&tab[UNNAMED_TAB_PREFIX..]);
@@ -2222,31 +2068,19 @@ mod tests {
         with_first_tab(snapshot, &rebuilt_tab)
     }
 
-    /// How wide the page record's trailing floor field is as the writer
-    /// just wrote it: one tag byte, and eight more behind it when the
-    /// tag says a stamp follows.
+    /// The floor and the fields after it, for a page holding no detached chip
+    /// and no cut.
     fn floor_len(sheet: &Sheet) -> usize {
-        1 + usize::from(sheet.blocks.compaction_frontier().is_some()) * 8
+        assert!(sheet.detached.is_empty(), "the helper counts an empty list");
+        1 + usize::from(sheet.blocks.compaction_frontier().is_some()) * 8 + 8 + 1
     }
 
-    /// The fixed span at the front of a tab record for a tab nobody
-    /// named: identity, the slot's birthday, the absent-name flag, the
-    /// rung, and the page-present flag. The page's own frame starts
-    /// straight after it, which is how the tests below reach in.
     const UNNAMED_TAB_PREFIX: usize = 16 + 8 + 1 + 8 + 1;
 
-    /// One hand-assembled tab record: a name when the user typed one,
-    /// and a page body when the slot holds one. The writer cannot
-    /// produce a roster that disagrees with its own document, nor (in
-    /// this stage) a slot holding nothing, so the trust-boundary tests
-    /// build their bytes by hand.
     fn tab_record(name: Option<&str>, page: Option<&[u8]>) -> Vec<u8> {
         tab_record_with_rung(name, 8 * 60 * 60, page)
     }
 
-    /// The same, on a rung the test chooses: the rung is what bounds
-    /// the life the page inside it may claim, so a test about that
-    /// bound has to be able to write a short one.
     fn tab_record_with_rung(name: Option<&str>, rung_secs: u64, page: Option<&[u8]>) -> Vec<u8> {
         let mut tab = Vec::new();
         tab.extend_from_slice(ItemId::random().as_bytes());
@@ -2270,7 +2104,6 @@ mod tests {
         tab
     }
 
-    /// A whole v4 snapshot holding exactly one tab record.
     fn one_tab_snapshot(tab: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(MAGIC);
@@ -2280,15 +2113,10 @@ mod tests {
         out
     }
 
-    /// A snapshot holding one tab that holds no page.
     fn empty_tab_snapshot(name: Option<&str>) -> Vec<u8> {
         one_tab_snapshot(&tab_record(name, None))
     }
 
-    /// One hand-assembled page record carrying the clock bytes the test
-    /// wrote: no chips, the given document blob, an empty metadata slot.
-    /// The writer can only ever emit a clock it computed itself, so a
-    /// test about a clock nobody in this process wrote builds its own.
     fn page_record(clock: &[u8], blob: &[u8]) -> Vec<u8> {
         let mut page = Vec::new();
         page.extend_from_slice(ItemId::random().as_bytes());
@@ -2302,15 +2130,10 @@ mod tests {
         page
     }
 
-    /// A hand-assembled v4 snapshot holding one unnamed tab and, inside
-    /// it, one page: the given chip records, the given document blob,
-    /// and an empty metadata slot.
     fn sheet_snapshot(chips: &[(ItemId, &str)], blob: &[u8]) -> Vec<u8> {
         sheet_snapshot_with_tails(chips, blob, &[])
     }
 
-    /// The same, written the way a later build that added a field to
-    /// the end of every chip record would write it.
     fn sheet_snapshot_with_tails(
         chips: &[(ItemId, &str)],
         blob: &[u8],
@@ -2340,24 +2163,18 @@ mod tests {
         one_tab_snapshot(&tab_record(None, Some(&page)))
     }
 
-    /// Grow the first tab record's stated length by `extra`, for a test
-    /// that appended bytes inside it: the record's own frame is the one
-    /// length that has to admit them.
     fn widen_first_tab(snapshot: &mut [u8], extra: usize) {
         let at = MAGIC.len() + 16;
         let len = le_u64(&snapshot[at..]) + extra;
         snapshot[at..at + 8].copy_from_slice(&(len as u64).to_le_bytes());
     }
 
-    /// The first tab's record, without its length prefix.
     fn first_tab(snapshot: &[u8]) -> &[u8] {
         let at = MAGIC.len() + 16;
         let len = le_u64(&snapshot[at..]);
         &snapshot[at + 8..at + 8 + len]
     }
 
-    /// The same snapshot with the first tab's record replaced, which
-    /// re-states its length for whatever the replacement did inside it.
     fn with_first_tab(snapshot: &[u8], rebuilt: &[u8]) -> Vec<u8> {
         let at = MAGIC.len() + 16;
         let len = le_u64(&snapshot[at..]);
@@ -2367,20 +2184,11 @@ mod tests {
         out
     }
 
-    /// A store holding one live page, and that page's id: the fixture
-    /// every rejection test asserts survived the failed restore.
     fn occupied() -> (SheetStore<ManualClock>, SheetId) {
         let (mut store, _clock) = store();
         let survivor = store.new_tab().1;
         (store, survivor)
     }
-
-    // The skip rule, once per record kind (issue #54). Each test writes
-    // the buffer a later build would write, with one field this build
-    // has never heard of on the end of the first record, and asserts
-    // that the record after it is still found. Refusing here is the
-    // failure the rule exists to prevent: it would mean the next added
-    // field costs everyone their staged content again.
 
     #[test]
     fn a_trailing_field_on_a_tab_record_is_skipped_not_refused() {
@@ -2396,7 +2204,10 @@ mod tests {
             vec![first, second],
             "the tab after the unknown field was not found"
         );
-        assert_eq!(revived.tabs().next().unwrap().label(0), "deploy notes");
+        assert_eq!(
+            revived.tabs().next().unwrap().label(0).as_str(),
+            "deploy notes"
+        );
     }
 
     #[test]
@@ -2414,8 +2225,6 @@ mod tests {
             "the tab after the extended page was not found"
         );
 
-        // The known fields of the extended record read exactly as they
-        // did, sealed bytes included: the tail is skipped, not absorbed.
         let sheet = revived.sheet(first).unwrap();
         assert_eq!(sheet.derived_title(), Some("deploy notes"));
         assert_eq!(sheet.segments(), original.sheet(first).unwrap().segments());
@@ -2433,19 +2242,200 @@ mod tests {
         doc.insert_chip(0, uuid).unwrap();
         doc.insert(1, " and ink \u{1F600}").unwrap();
         doc.commit(None);
-        let snapshot = sheet_snapshot_with_tails(
-            &[(uuid, "ghp_still-here")],
-            &doc.export_snapshot(),
-            b"a chip field from 2027",
-        );
+        // No name, no note, then the field this build does not know.
+        let tail = [&[0u8, 0][..], b"a chip field from 2027"].concat();
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_still-here")], &doc.export_snapshot(), &tail);
 
         assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
         let chip = store.sheets().next().unwrap().chips().next().unwrap();
         assert_eq!(chip.uuid(), uuid);
-        // The document blob follows the chip roster, so a reader that
-        // walked into the unknown field would have lost the blob too.
         let (bytes, _) = store.copy_out_chip(chip.id()).unwrap();
         assert_eq!(&*bytes, b"ghp_still-here");
+    }
+
+    fn one_chip_document(uuid: ItemId) -> Zeroizing<Vec<u8>> {
+        let doc = SheetDocument::new();
+        doc.insert_chip(0, uuid).unwrap();
+        doc.commit(None);
+        doc.export_snapshot()
+    }
+
+    /// A present name or note: flag 1, then the length prefixed text.
+    fn text_field(text: &str) -> Vec<u8> {
+        let mut field = vec![1u8];
+        field.extend_from_slice(&(text.len() as u64).to_le_bytes());
+        field.extend_from_slice(text.as_bytes());
+        field
+    }
+
+    #[test]
+    fn a_chip_written_before_names_existed_restores_unnamed() {
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let snapshot = sheet_snapshot(&[(uuid, "ghp_older-build")], &one_chip_document(uuid));
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert_eq!(chip.name(), None);
+        let (bytes, _) = store.copy_out_chip(chip.id()).unwrap();
+        assert_eq!(&*bytes, b"ghp_older-build");
+    }
+
+    #[test]
+    fn a_written_name_comes_back_and_one_the_rule_refuses_is_dropped() {
+        let uuid = ItemId::random();
+        let document = one_chip_document(uuid);
+        for (written, expected) in [
+            ("API_KEY", Some("API_KEY")),
+            ("my.key", None),
+            ("9lives", None),
+            (&"A".repeat(65)[..], None),
+        ] {
+            let (mut store, _clock) = store();
+            let snapshot = sheet_snapshot_with_tails(
+                &[(uuid, "ghp_named-or-not")],
+                &document,
+                &text_field(written),
+            );
+            assert_eq!(store.restore(&snapshot, 0).unwrap(), 1, "{written}");
+            let chip = store.sheets().next().unwrap().chips().next().unwrap();
+            assert_eq!(chip.name(), expected, "{written}");
+            let (bytes, _) = store.copy_out_chip(chip.id()).unwrap();
+            assert_eq!(&*bytes, b"ghp_named-or-not", "the chip outlived its name");
+        }
+    }
+
+    #[test]
+    fn a_chip_written_before_notes_existed_keeps_its_name_and_has_no_note() {
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let snapshot = sheet_snapshot_with_tails(
+            &[(uuid, "ghp_named-only")],
+            &one_chip_document(uuid),
+            &text_field("API_KEY"),
+        );
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert_eq!(chip.name(), Some("API_KEY"));
+        assert!(!chip.has_note());
+        assert_eq!(&**store.note_text(chip.id()).unwrap(), "");
+    }
+
+    #[test]
+    fn a_written_note_comes_back_beside_its_name() {
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let mut tail = vec![0u8]; // no name
+        tail.extend_from_slice(&text_field("kept \u{1F600} beside it"));
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert_eq!(chip.name(), None);
+        assert!(chip.has_note());
+        assert_eq!(
+            &**store.note_text(chip.id()).unwrap(),
+            "kept \u{1F600} beside it"
+        );
+    }
+
+    /// A chip record's name and note each come back as one wiping copy at its exact size,
+    /// and the note makes no document until it is edited (Law 0004, C31).
+    #[test]
+    fn a_restored_name_and_note_rest_as_wiping_copies_until_the_note_is_edited() {
+        fn wiping_owner<T: zeroize::ZeroizeOnDrop>(_: &T) {}
+
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let mut tail = text_field("API_KEY");
+        tail.extend_from_slice(&text_field("kept \u{1F600} beside it"));
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        let name = chip.name.as_ref().expect("the name came back");
+        wiping_owner(name);
+        assert_eq!(name.capacity(), name.len(), "the name grew past its size");
+        let note = chip
+            .note
+            .as_ref()
+            .and_then(Note::resting)
+            .expect("the restore made the note a document");
+        wiping_owner(note);
+        assert_eq!(note.capacity(), note.len(), "the note grew past its size");
+        assert_eq!(note.as_str(), "kept \u{1F600} beside it");
+
+        let id = chip.id();
+        let quoted = [crate::store::EditOp::Insert {
+            pos_u16: 0,
+            text: "> ".into(),
+        }];
+        assert!(store.apply_note_ops(id, &quoted, crate::document::EditIntent::Typing, None));
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert!(
+            chip.note.as_ref().and_then(Note::resting).is_none(),
+            "the edit never reached a document"
+        );
+        assert_eq!(
+            &**store.note_text(id).unwrap(),
+            "> kept \u{1F600} beside it"
+        );
+    }
+
+    /// A note that rests is written back as the field it came from, and rests again after
+    /// the next restore (Law 0004, C31).
+    #[test]
+    fn a_resting_note_is_written_back_as_it_came_and_rests_after_the_next_restore() {
+        let (mut store, clock) = store();
+        let uuid = ItemId::random();
+        let note = "kept \u{1F600} beside it";
+        let mut tail = vec![0u8]; // no name
+        tail.extend_from_slice(&text_field(note));
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
+        assert_eq!(store.restore(&snapshot, 1_000_000).unwrap(), 1);
+        let written = store.snapshot(1_000_000);
+        assert!(
+            contains(&written, &tail),
+            "the note's field changed on the way back"
+        );
+
+        let mut revived = store_on(clock.clone());
+        assert_eq!(revived.restore(&written, 1_000_000).unwrap(), 1);
+        let chip = revived.sheets().next().unwrap().chips().next().unwrap();
+        let rests = chip.note.as_ref().and_then(Note::resting);
+        assert_eq!(
+            rests.map(|text| text.as_str()),
+            Some(note),
+            "it no longer rests"
+        );
+        assert_eq!(
+            *revived.snapshot(1_000_000),
+            *written,
+            "a second round trip moved the bytes"
+        );
+    }
+
+    #[test]
+    fn an_unknown_note_flag_is_malformed_and_the_store_is_untouched() {
+        let (mut store, survivor) = occupied();
+        let uuid = ItemId::random();
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_flagged")], &one_chip_document(uuid), &[0, 7]);
+        assert_eq!(store.restore(&snapshot, 0), Err(RestoreError::Malformed));
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
+    }
+
+    #[test]
+    fn an_unknown_name_flag_is_malformed_and_the_store_is_untouched() {
+        let (mut store, survivor) = occupied();
+        let uuid = ItemId::random();
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_flagged")], &one_chip_document(uuid), &[2]);
+        assert_eq!(store.restore(&snapshot, 0), Err(RestoreError::Malformed));
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
     }
 
     #[test]
@@ -2507,7 +2497,7 @@ mod tests {
 
         let mut revived = store_on(clock.clone());
         assert_eq!(
-            revived.restore_ledger(&extended, 0).unwrap(),
+            revived.restore_ledger(&extended, clock.wall_ms()).unwrap(),
             expected.len()
         );
         assert_eq!(revived.ledger().cloned().collect::<Vec<_>>(), expected);
@@ -2580,9 +2570,6 @@ mod tests {
 
     #[test]
     fn no_sequential_counter_appears_in_either_snapshot() {
-        // ADR-0012 line 32: no sequential counter reaches a persisted
-        // artifact. Ids chosen so their little-endian bytes cannot occur
-        // by chance in a length, a span, or a wall stamp.
         const SHEET_RAW: u64 = 0x1234_5678_9ABC_DEF0;
         const CHIP_RAW: u64 = 0x0FED_CBA9_8765_4321;
         const TAB_RAW: u64 = 0x2143_6587_A9CB_ED0F;
@@ -2615,10 +2602,6 @@ mod tests {
             );
         }
 
-        // The document's peer identity is confined the same way
-        // (ADR-0013): the content blob names its authoring peer by
-        // construction, which is the control that makes the ledger
-        // scan meaningful, and the ledger must never carry it.
         let peer = store
             .sheets()
             .next()
@@ -2638,10 +2621,6 @@ mod tests {
 
     #[test]
     fn the_ledger_snapshot_never_contains_page_ink() {
-        // The token sits on a later line on purpose: a title is derived
-        // from the first line and does reach the ledger, which is the
-        // ADR's single documented content exception. Everything else the
-        // page holds must stay out.
         const TOKEN: &str = "ghp_never-in-the-ledger";
         const DELETED: &str = "ghp_typed-then-deleted";
         let (mut store, _clock) = store();
@@ -2654,8 +2633,6 @@ mod tests {
                 Segment::Chip(chip),
             ],
         ));
-        // The second token is typed and then removed, so from here on it
-        // exists only as tombstones in the document's history.
         assert!(store.sync_document(
             id,
             vec![
@@ -2665,11 +2642,6 @@ mod tests {
         ));
         assert!(store.record_sent(chip, DestinationClass::OneTimeLink));
 
-        // The control: the live token is in the content snapshot, twice
-        // over, which is exactly why the two files get different keys.
-        // The deleted token is in there too, carried by the blob's
-        // tombstones, which is why the blob must never approach the
-        // ledger.
         let needle = TOKEN.as_bytes();
         let ghost = DELETED.as_bytes();
         let content = store.snapshot(0);
@@ -2699,8 +2671,6 @@ mod tests {
         let id = store.new_tab().1; // 8h default rung
         let snapshot = store.snapshot(0);
 
-        // Two hours pass while the app is closed (wall time only — the
-        // monotonic test clock stays put, as a reboot would leave it).
         let two_hours_ms = 2 * 60 * 60 * 1000;
         let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, two_hours_ms).unwrap();
@@ -2721,8 +2691,6 @@ mod tests {
         revived.restore(&snapshot, nine_hours_ms).unwrap();
         let expired = revived.expire_due();
         assert_eq!(expired, vec![id]);
-        // The page is gone and its slot is still standing, which is
-        // what an overnight expiry looks like at the 09:00 relaunch.
         assert!(revived.holds_no_page());
         assert_eq!(revived.tabs().count(), 1);
         let record = revived.ledger().next().unwrap();
@@ -2737,7 +2705,6 @@ mod tests {
         assert!(store.pause_press(slot(&store, id))); // 1h hold, 8h frozen
         let snapshot = store.snapshot(0);
 
-        // Away 30 minutes: still held, hold shrunk, frozen life intact.
         let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, 30 * 60 * 1000).unwrap();
         let now = revived.now();
@@ -2746,8 +2713,6 @@ mod tests {
         assert_eq!(sheet.hold_remaining(now), Duration::from_secs(30 * 60));
         assert_eq!(sheet.remaining(now), 8 * HOUR);
 
-        // Away 3 hours: the hold lapsed 2h ago; the countdown drained
-        // from where it froze.
         let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, 3 * 60 * 60 * 1000).unwrap();
         let now = revived.now();
@@ -2756,14 +2721,6 @@ mod tests {
         assert_eq!(sheet.remaining(now), 6 * HOUR);
     }
 
-    /// A hold that lapsed while the app was still open is life the page
-    /// has already spent, and the snapshot has to say so. Writing the
-    /// held triple verbatim hands the frozen span back whole at the
-    /// next launch: the page reads dead on screen all evening, is saved
-    /// on quit like any other, and comes back in the morning with hours
-    /// of life it finished spending days ago. The writer owes what
-    /// every other reader of the clock already believes, which is
-    /// [`Sheet::remaining`].
     #[test]
     fn a_snapshot_of_a_lapsed_hold_keeps_the_life_it_already_drained() {
         let (mut store, clock) = store();
@@ -2775,8 +2732,6 @@ mod tests {
         assert_eq!(left, 3 * HOUR, "the live reading is not the thing on trial");
         let snapshot = store.snapshot(0);
 
-        // No time away at all, so what the page comes back holding is
-        // what the writer wrote down rather than what a gap charged it.
         let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, 0).unwrap();
         let now = revived.now();
@@ -2784,8 +2739,6 @@ mod tests {
         assert!(!sheet.is_held(now), "a hold that lapsed came back live");
         assert_eq!(sheet.remaining(now), left, "the overhang was handed back");
 
-        // And a page whose frozen life ran out under the lapsed hold
-        // comes back dead, rather than resurrected for a second span.
         clock.advance(3 * HOUR);
         assert_eq!(
             store.sheet(id).unwrap().remaining(store.now()),
@@ -2804,10 +2757,6 @@ mod tests {
 
     #[test]
     fn a_restored_hold_remembers_which_press_comes_next() {
-        // The tier is the whole reason the gesture is reversible: a
-        // topped-up hold that came back as a first hold would answer
-        // the next double-click with another 24 hours instead of the
-        // release the user asked for.
         let (mut store, clock) = store();
         let first = store.new_tab().1;
         let topped = store.new_tab().1;
@@ -2823,9 +2772,6 @@ mod tests {
         assert!(!revived.sheet(first).unwrap().hold_topped_up(now));
         assert!(revived.sheet(topped).unwrap().hold_topped_up(now));
 
-        // And the press that follows the restore does what the tier
-        // promises: the first-hold page tops up, the topped-up one
-        // releases.
         assert!(revived.pause_press(slot(&revived, first)));
         assert!(revived.pause_press(slot(&revived, topped)));
         let now = revived.now();
@@ -2846,17 +2792,6 @@ mod tests {
         assert_eq!(remaining, 6 * HOUR);
     }
 
-    /// Seven days is the top of the ladder, and a day is the most the
-    /// boundary snap may add to it (ADR-0011 section 4), so eight days
-    /// is the most life any restored page may hold, and a page on a
-    /// shorter rung may hold no more than that rung's own longest life
-    /// (ADR-0016 section 10, case 7). The honest write path satisfies
-    /// this by construction: every rung click sets the deadline to at
-    /// most that life and restore only ever subtracts. The file is
-    /// where it can stop being true, because the span is the one
-    /// number a stale or hand-edited generation can move (ADR-0016
-    /// section 8), so the span is read against the rung rather than at
-    /// face value.
     #[test]
     fn no_restored_page_comes_back_holding_more_life_than_its_rung() {
         let doc = SheetDocument::new();
@@ -2878,8 +2813,6 @@ mod tests {
             ))
         };
 
-        // The ladder's own ceiling, asked for by a file claiming a month:
-        // the week, plus the day the snap may have added to it.
         let (mut at_the_ceiling, _clock) = store();
         at_the_ceiling
             .restore(&on_rung(7 * 24 * 60 * 60, &running(thirty_days_ms)), 0)
@@ -2898,9 +2831,6 @@ mod tests {
             Duration::from_secs(8 * 24 * 60 * 60)
         );
 
-        // And the same page on the 1h rung is bounded by the rung it
-        // was actually written on, not merely by the top of the ladder:
-        // an hour, plus the hour the snap may add to a short rung.
         let (mut on_the_hour, _clock) = store();
         on_the_hour
             .restore(&on_rung(60 * 60, &running(thirty_days_ms)), 0)
@@ -2916,10 +2846,6 @@ mod tests {
         );
     }
 
-    /// The same ceiling on the held arm, which is the way past it that
-    /// costs nothing to write: a hold freezes a remaining span, and a
-    /// frozen span read at face value would hand a paused page a month
-    /// of life the moment its hold lapsed.
     #[test]
     fn no_restored_hold_freezes_more_life_than_its_rung() {
         let doc = SheetDocument::new();
@@ -2948,14 +2874,6 @@ mod tests {
         );
     }
 
-    /// A hold suspends the countdown, so a hold read at face value is
-    /// the cheapest way past the ladder there is: the frozen span can
-    /// be clamped to the rung and the plaintext still survives for as
-    /// long as the hold claims, because a held page is never due
-    /// (ADR-0016 section 8). The pause gesture is the only thing that
-    /// sets a hold, so a hold out of a file is read against the same
-    /// ceiling the gesture would have applied: one hour for a first
-    /// hold, 24 for one already topped up.
     #[test]
     fn no_restored_hold_outlasts_the_ceiling_the_pause_gesture_sets() {
         let doc = SheetDocument::new();
@@ -2975,11 +2893,6 @@ mod tests {
             ))
         };
 
-        // A first hold claiming a month, on the one hour rung: the hold
-        // comes back an hour long, and two hours after that the frozen
-        // span (itself bounded by the rung's longest life, an hour plus
-        // the hour a snap may add) runs out and the page is reaped
-        // rather than sitting on its plaintext for a month.
         let (mut first_hold, clock) = store();
         first_hold
             .restore(&held(1, a_month_ms, a_month_ms), 0)
@@ -3018,10 +2931,6 @@ mod tests {
             "the plaintext outlived the rung"
         );
 
-        // Tag 2 is a hold already topped up, and its ceiling is the
-        // top-up's 24 hours: the clamp must not shorten it to the first
-        // hold's hour, which is the honest 24 hour hold the rung has no
-        // business describing.
         let (mut topped_up, _clock) = store();
         topped_up
             .restore(&held(2, a_month_ms, a_month_ms), 0)
@@ -3039,15 +2948,6 @@ mod tests {
 
     #[test]
     fn superseded_and_unknown_magics_all_refuse_as_unknown_format() {
-        // The format break is clean and deliberate (decided 2026-08-07,
-        // taken again for v4): there is no reader for a superseded
-        // version and no downgrade writer, so every earlier magic and
-        // every unknown one refuses the same way, with the store
-        // untouched. The skip rule changes nothing here. It buys a
-        // trailing field inside a record and buys nothing across a
-        // version byte. The ledger's own superseded version is the one
-        // exception, and it is a different name for the same refusal,
-        // see the test after this one.
         let (original, _clock, ..) = populated();
         let (mut revived, survivor) = occupied();
         for magic in [
@@ -3068,8 +2968,6 @@ mod tests {
             assert_eq!(ids, vec![survivor], "the refused restore touched the store");
         }
 
-        // The ledger takes the same rule for a version this module never
-        // wrote: `OTSLEDR0` refuses as unknown, store untouched.
         let before: Vec<LedgerRecord> = revived.ledger().cloned().collect();
         let mut relabeled = original.ledger_snapshot().to_vec();
         relabeled[..8].copy_from_slice(b"OTSLEDR0");
@@ -3082,12 +2980,6 @@ mod tests {
         assert_eq!(before, after, "the refused restore touched the ledger");
     }
 
-    /// The one ledger version this module wrote and replaced is refused
-    /// too, there being no reader for it and no downgrade writer, but it
-    /// is refused by name, so the caller holding the file can dispose of
-    /// it instead of leaving it to withhold the ledger licence on every
-    /// launch after the break (ADR-0016 section 9). The store is as
-    /// untouched as for any other refusal.
     #[test]
     fn a_superseded_ledger_magic_refuses_as_superseded_with_the_ledger_untouched() {
         let (original, _clock, ..) = populated();
@@ -3102,8 +2994,6 @@ mod tests {
                 Err(RestoreError::Superseded),
                 "ledger magic {magic:?} did not refuse as superseded"
             );
-            // Superseded is a name for a refusal, not a reader: the
-            // bytes are not taken positionally or any other way.
             let after: Vec<LedgerRecord> = revived.ledger().cloned().collect();
             assert_eq!(before, after, "the refused restore touched the ledger");
         }
@@ -3120,7 +3010,6 @@ mod tests {
             Err(RestoreError::UnknownFormat)
         );
 
-        // Trailing garbage is damage.
         let mut padded = snapshot.to_vec();
         padded.push(0);
         assert_eq!(revived.restore(&padded, 0), Err(RestoreError::Malformed));
@@ -3131,7 +3020,6 @@ mod tests {
         );
         assert_eq!(revived.ledger().count(), 0);
 
-        // And the pristine snapshot still restores after all that.
         assert_eq!(revived.restore(&snapshot, 0).unwrap(), 2);
     }
 
@@ -3160,8 +3048,6 @@ mod tests {
             assert_eq!(revived.ledger().count(), 0);
         }
 
-        // Whole buffers still restore, so the loop proved rejection and
-        // not merely that nothing ever restores.
         assert_eq!(revived.restore(&snapshot, 7_000).unwrap(), 2);
         assert!(revived.restore_ledger(&ledger, 7_000).unwrap() > 0);
     }
@@ -3171,14 +3057,12 @@ mod tests {
         let (_, clock, ..) = populated();
         let mut revived = store_on(clock.clone());
 
-        // A tab count of u64::MAX, with no tabs behind it.
         let mut hostile = Vec::new();
         hostile.extend_from_slice(MAGIC);
         hostile.extend_from_slice(&0u64.to_le_bytes());
         hostile.extend_from_slice(&u64::MAX.to_le_bytes());
         assert_eq!(revived.restore(&hostile, 0), Err(RestoreError::Malformed));
 
-        // A record count of u64::MAX in a ledger snapshot.
         let mut hostile_ledger = Vec::new();
         hostile_ledger.extend_from_slice(LEDGER_MAGIC);
         hostile_ledger.extend_from_slice(&u64::MAX.to_le_bytes());
@@ -3187,9 +3071,6 @@ mod tests {
             Err(RestoreError::Malformed)
         );
 
-        // A tab record that claims u64::MAX bytes for itself. The
-        // frame is the first thing read per record and the first thing
-        // that has to disbelieve what it is told.
         let mut hostile_frame = Vec::new();
         hostile_frame.extend_from_slice(MAGIC);
         hostile_frame.extend_from_slice(&0u64.to_le_bytes());
@@ -3200,8 +3081,6 @@ mod tests {
             Err(RestoreError::Malformed)
         );
 
-        // And the page's own frame, one level in, told the same lie:
-        // the nesting must not turn a claim into an assumption.
         let mut inner = Vec::new();
         inner.extend_from_slice(ItemId::random().as_bytes());
         inner.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
@@ -3214,8 +3093,6 @@ mod tests {
             Err(RestoreError::Malformed)
         );
 
-        // A name length of u64::MAX inside an otherwise plausible tab
-        // record, so the lie is one the record's own frame contains.
         let mut tab = Vec::new();
         tab.extend_from_slice(ItemId::random().as_bytes());
         tab.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
@@ -3226,9 +3103,6 @@ mod tests {
             Err(RestoreError::Malformed)
         );
 
-        // A blob length of u64::MAX behind an otherwise plausible page.
-        // The hand-built sheet ends with the two length prefixes, so
-        // the lie is written straight over the blob's.
         let mut hostile_blob = sheet_snapshot(&[], b"");
         let len = hostile_blob.len();
         hostile_blob[len - 16..len - 8].copy_from_slice(&u64::MAX.to_le_bytes());
@@ -3237,7 +3111,6 @@ mod tests {
             Err(RestoreError::Malformed)
         );
 
-        // And the same lie in the materialized-metadata slot.
         let mut hostile_metadata = sheet_snapshot(&[], b"");
         let len = hostile_metadata.len();
         hostile_metadata[len - 8..].copy_from_slice(&u64::MAX.to_le_bytes());
@@ -3263,5 +3136,36 @@ mod tests {
             ledger.len(),
             "the ledger preallocation must not grow either"
         );
+    }
+
+    #[test]
+    fn the_block_section_is_written_at_its_exact_size() {
+        use crate::store::EditOp;
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let page = store.tabs[0].page.as_ref().unwrap();
+        assert!(encode_materialized(&page.blocks, &page.document).is_empty());
+
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "first\u{1F600}\n".into()
+                },
+                EditOp::Insert {
+                    pos_u16: 8,
+                    text: "second".into()
+                }
+            ]
+        ));
+        store.cycle_rung(slot(&store, id)).unwrap();
+        let page = store.tabs[0].page.as_ref().unwrap();
+        let section = encode_materialized(&page.blocks, &page.document);
+        assert!(
+            !section.is_empty(),
+            "the control: the ceremony froze both blocks"
+        );
+        assert_eq!(section.capacity(), section.len());
     }
 }

@@ -82,7 +82,7 @@ final class LanguageSuggestionTests: XCTestCase {
         XCTAssertNotNil(choose.submenu?.items.first { $0.title == "Swift" })
         XCTAssertTrue(model.languageActions.canChoose)
 
-        textView.chooseCodeLanguage("swift")
+        textView.chooseCodeLanguage(CodeLanguageChoice(language: "swift"))
 
         XCTAssertEqual(textView.string, "```swift\n\(source)\n```")
     }
@@ -204,7 +204,7 @@ final class LanguageSuggestionTests: XCTestCase {
         XCTAssertTrue(menu.items.contains { $0.title == "Suggested: Swift" })
         XCTAssertTrue(menu.items.contains { $0.title == "Dismiss Suggestion" })
         XCTAssertTrue(menu.items.contains { $0.title == "Paste Without Detection" })
-        let insert = try XCTUnwrap(menu.items.first { $0.title == "Insert swift in Fence" })
+        let insert = try XCTUnwrap(menu.items.first { $0.title == "Insert “swift” in Fence" })
         var emitted: [[DocumentEditOp]] = []
         coordinator.onEmit = { emitted.append($0) }
 
@@ -214,19 +214,30 @@ final class LanguageSuggestionTests: XCTestCase {
         XCTAssertEqual(emitted, [[.ins(at: 3, text: "swift")]])
     }
 
-    func testExplicitUnknownFenceAndCaretAfterClosedFenceAreNotTargets() throws {
+    func testDetectIsOfferedOnATargetAndGreyedInAnUnknownFenceOrPastAClosedOne() throws {
         let (_, coordinator, textView) = try makeEditor()
         let source = "```unknown\n++\n```\nafter"
         insert(source, into: textView)
 
-        textView.setSelectedRange(NSRange(location: 12, length: 0))
+        // `update()` runs the auto-enable pass a shown menu runs, which
+        // is what overwrote the explicit `isEnabled` before validation.
+        // The control first: the whole last line selected is a target.
+        textView.setSelectedRange(NSRange(location: 18, length: 5))
         var menu = NSMenu()
         coordinator.appendLanguageItems(to: menu)
-        XCTAssertEqual(menu.items.first { $0.title == "Detect Code Language…" }?.isEnabled, false)
+        menu.update()
+        XCTAssertEqual(menu.items.first { $0.title == "Detect Code Language" }?.isEnabled, true)
+
+        textView.setSelectedRange(NSRange(location: 12, length: 0))
+        menu = NSMenu()
+        coordinator.appendLanguageItems(to: menu)
+        menu.update()
+        XCTAssertEqual(menu.items.first { $0.title == "Detect Code Language" }?.isEnabled, false)
 
         textView.setSelectedRange(NSRange(location: 20, length: 0))
         menu = NSMenu()
         coordinator.appendLanguageItems(to: menu)
-        XCTAssertEqual(menu.items.first { $0.title == "Detect Code Language…" }?.isEnabled, false)
+        menu.update()
+        XCTAssertEqual(menu.items.first { $0.title == "Detect Code Language" }?.isEnabled, false)
     }
 }

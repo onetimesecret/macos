@@ -46,6 +46,9 @@ final class BundledKeymapTests: XCTestCase {
         // The one chord that puts plaintext on the board, over a
         // selected sealed object only (D-29).
         "cmd-shift-c": .chipCopyDecrypted,
+        // A sealed object's note grows to the card and back, answered by
+        // the note's own surface (issue #246).
+        "shift-escape": .noteToggleExpanded,
         // Undo names its chords here rather than leaving them to the
         // standard Edit menu, because the stack behind them is the
         // core's now and not AppKit's (issue #132).
@@ -59,6 +62,8 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-shift-s": .fileSaveAs,
         "cmd-s": .stateSaveNow,
         "cmd-,": .appSettings,
+        // The Help menu's product help item (issue #294), fired by that menu only.
+        "cmd-?": .appHelp,
         "escape": .surfaceHandBackKeys,
     ]
 
@@ -113,7 +118,7 @@ final class BundledKeymapTests: XCTestCase {
             Set(editorRoute),
             [
                 .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorToggleWrap,
-                .editorUndo, .editorRedo,
+                .editorUndo, .editorRedo, .noteToggleExpanded,
             ])
     }
 
@@ -175,6 +180,24 @@ final class BundledKeymapTests: XCTestCase {
         XCTAssertFalse(
             resolved.surfaceShortcuts().contains { $0.command == .windowClose },
             "window::Close must never be installed as a surface shortcut")
+    }
+
+    /// ⌘? is the Help menu's item (issue #294), offered to the menu and
+    /// never installed on the surface.
+    func testHelpIsMenuBoundAndNeverSurfaceInstalled() throws {
+        let resolved = try bundled()
+        XCTAssertEqual(resolved.menuKeystroke(for: .appHelp)?.canonical, "cmd-?")
+        XCTAssertFalse(resolved.surfaceShortcuts().contains { $0.command == .appHelp })
+    }
+
+    /// An override that takes ⌘? away leaves the Help item nothing to advertise.
+    func testUnbindingHelpLeavesTheMenuNothingToAdvertise() throws {
+        let defaultText = try XCTUnwrap(Keymap.bundledDefaultText())
+        let keymap = Keymap.resolve(
+            defaultText: defaultText,
+            overrideText: #"[{ "context": "Editor", "bindings": { "cmd-?": null } }]"#)
+        XCTAssertEqual(keymap.faults, [])
+        XCTAssertNil(keymap.menuKeystroke(for: .appHelp))
     }
 
     /// The Window menu carries the chord alone, so an override that

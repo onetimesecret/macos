@@ -1,0 +1,370 @@
+import AppKit
+
+/// AppKit's offers over a page's, a note's and a sealed name's text that read the
+/// selection where no gate sees it (Law 0001, the export, print, share row).
+@MainActor
+enum TextOffers {
+    /// Takes out the items that hold or read the selection where no gate sees it from the
+    /// menu's building on (Share…, Look Up, Translate, Speech, Spelling and Grammar, Search
+    /// With, Writing Tools, a link's Open With and Edit Link…), then folds the separators.
+    static func removeSelectionReaders(from menu: NSMenu) {
+        menu.items.filter {
+            isShare($0) || isLookUpOrTranslate($0) || isSpeech($0) || isSpelling($0)
+                || isWebSearch($0) || isWritingTools($0) || isOpenWith($0) || isEditLink($0)
+        }
+        .forEach(menu.removeItem)
+        var previousIsSeparator = true
+        for item in menu.items {
+            if item.isSeparatorItem, previousIsSeparator {
+                menu.removeItem(item)
+            } else {
+                previousIsSeparator = item.isSeparatorItem
+            }
+        }
+        if menu.items.last?.isSeparatorItem == true { menu.removeItem(at: menu.items.count - 1) }
+    }
+
+    /// AppKit's Share… carries its picker, already holding the selection, on the item.
+    static func isShare(_ item: NSMenuItem) -> Bool {
+        item.representedObject is NSSharingServicePicker
+            || item.action == Selector(("_performStandardShareMenuItem:"))
+    }
+
+    /// Look Up “…” and Translate “…”, Reveal items titled with the selection they hold.
+    static func isLookUpOrTranslate(_ item: NSMenuItem) -> Bool {
+        item.action.map(NSStringFromSelector)?.hasPrefix("_rvMenuItemAction") == true
+    }
+
+    /// The Speech submenu, whose Start Speaking reads the selection to the system's voice.
+    static func isSpeech(_ item: NSMenuItem) -> Bool {
+        item.submenu?.items.contains { $0.action == #selector(NSTextView.startSpeaking(_:)) } == true
+    }
+
+    /// Spelling and Grammar, and what AppKit heads the menu with over a misspelled word:
+    /// the spell server's guesses, Provide Feedback, Ignore Spelling and Learn Spelling.
+    static func isSpelling(_ item: NSMenuItem) -> Bool {
+        if let action = item.action.map(NSStringFromSelector),
+           spellingItems.contains(action) || action.hasPrefix("_invokeProofreadingFeedback")
+        {
+            return true
+        }
+        return item.submenu?.items.contains {
+            $0.action == #selector(NSText.checkSpelling(_:))
+                || $0.action == #selector(NSText.showGuessPanel(_:))
+        } == true
+    }
+
+    private static let spellingItems: Set<String> = [
+        "_changeSpellingFromMenu:", "_ignoreSpellingFromMenu:", "_learnSpellingFromMenu:",
+    ]
+
+    /// Takes out the Transformations AppKit adds past Make Upper Case, Make Lower Case and
+    /// Capitalize (Convert to Full Width and its kin), which a page's rewrite does not carry.
+    static func removeUncarriedTransformations(from menu: NSMenu) {
+        for submenu in menu.items.compactMap(\.submenu)
+        where submenu.items.contains(where: { $0.action == #selector(NSResponder.uppercaseWord(_:)) }) {
+            submenu.items.filter { item in
+                !item.isSeparatorItem && !carriedTransformations.contains { $0 == item.action }
+            }
+            .forEach(submenu.removeItem)
+        }
+    }
+
+    private static let carriedTransformations = [
+        #selector(NSResponder.uppercaseWord(_:)), #selector(NSResponder.lowercaseWord(_:)),
+        #selector(NSResponder.capitalizeWord(_:)),
+    ]
+
+    /// Search With Google, which hands the selection to the browser's search.
+    static func isWebSearch(_ item: NSMenuItem) -> Bool {
+        item.action.map(NSStringFromSelector)?.hasPrefix("_searchWith") == true
+    }
+
+    /// Writing Tools' items or a submenu of them, should AppKit add them where the view answers
+    /// Writing Tools with none. By name: its `#selector` needs macOS 15.2; the package targets 13.
+    static func isWritingTools(_ item: NSMenuItem) -> Bool {
+        item.action == showWritingToolsAction
+            || item.submenu?.items.contains { $0.action == showWritingToolsAction } == true
+    }
+
+    private static let showWritingToolsAction = NSSelectorFromString("showWritingTools:")
+
+    /// A link's Open With, whose applications AppKit hands the URL to with no delegate asked.
+    static func isOpenWith(_ item: NSMenuItem) -> Bool {
+        item.identifier?.rawValue == "__NSTextViewContextSubmenuIdentifierOpenWith"
+            || item.submenu?.items.contains {
+                ($0.representedObject as? URL)?.pathExtension == "app"
+            } == true
+    }
+
+    /// A link's Edit Link…, whose panel shows the URL in a field whose editor asks no gate.
+    static func isEditLink(_ item: NSMenuItem) -> Bool {
+        item.action == #selector(NSTextView.orderFrontLinkPanel(_:))
+    }
+
+    /// AppKit's Open Link over a link, which asks the delegate as a plain click does.
+    static let openLinkAction = Selector(("_openLinkFromMenu:"))
+
+    /// AppKit's Copy Link, which writes the link to the general pasteboard.
+    static let copyLinkAction = Selector(("copyLink:"))
+
+    /// Whether the spelling panel is up, whose Learn takes the word it shows to the spell
+    /// server by `NSSpellChecker` itself, with no text view asked.
+    static var spellingPanelShows: Bool {
+        NSSpellChecker.sharedSpellCheckerExists && NSSpellChecker.shared.spellingPanel.isVisible
+    }
+
+    /// The readers no click gates, which a file keeps and a page, note or name refuses: Writing
+    /// Tools, suggestions, predictions and data detectors, whose finds a later click hands out.
+    static func offerUngatedReaders(_ offers: Bool, on textView: NSTextView) {
+        if !offers { textView.isAutomaticDataDetectionEnabled = false }
+        textView.isAutomaticTextCompletionEnabled = offers
+        if #available(macOS 14.0, *) { textView.inlinePredictionType = offers ? .default : .no }
+        guard #available(macOS 15.0, *) else { return }
+        textView.writingToolsBehavior = offers ? .default : .none
+    }
+}
+
+/// A text view whose AppKit routes that read its text out of the process ask first,
+/// and whose text menu holds none that read it from the menu's building on (Law 0001).
+class AskingTextView: NSTextView {
+    /// Whether AppKit may read this view's text out now; every reader below asks it.
+    var mayReadOut: Bool { true }
+
+    /// Whether the text menu keeps the items that hold the selection, as a file's does.
+    var keepsSelectionReaders: Bool { false }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let menu = super.menu(for: event) else { return nil }
+        if !keepsSelectionReaders { TextOffers.removeSelectionReaders(from: menu) }
+        return menu
+    }
+
+    // MARK: Links in the text menu (ADR-0023, Law 0001)
+
+    /// The link a text menu item acts on, found under the pointer as the menu was built.
+    struct LinkTarget {
+        let link: Any
+        let index: Int
+    }
+
+    /// Where a link aimed from the text menu opens; a bare view opens none.
+    func openAimedLink(_ link: Any) {}
+
+    /// The board Copy Link writes on once this view may read out; nil writes nothing.
+    var linkBoard: NSPasteboard? { nil }
+
+    /// Whether Copy Link goes through the gate any copy asks; a file keeps AppKit's.
+    var aimsLinkItems: Bool { true }
+
+    /// Sends Open Link to `openAimedLink`, and Copy Link through the gate any copy asks
+    /// where `aimsLinkItems`; there, one with no link found under the pointer leaves.
+    func aimLinkItems(in menu: NSMenu, at point: NSPoint) {
+        let target = linkTarget(at: point)
+        let asks = aimsLinkItems
+        for item in menu.items {
+            let ours: Selector
+            switch item.action {
+            case TextOffers.openLinkAction: ours = #selector(openLinkFromMenu(_:))
+            case TextOffers.copyLinkAction where asks: ours = #selector(copyLinkFromMenu(_:))
+            default: continue
+            }
+            guard let target else {
+                if asks { menu.removeItem(item) }
+                continue
+            }
+            item.target = self
+            item.action = ours
+            item.representedObject = target
+        }
+    }
+
+    /// The link drawn under `point`, in this view's coordinates.
+    func linkTarget(at point: NSPoint) -> LinkTarget? {
+        guard let layout = layoutManager, let container = textContainer,
+              let storage = textStorage, storage.length > 0
+        else { return nil }
+        let local = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let glyph = layout.glyphIndex(for: local, in: container)
+        guard layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+            .contains(local)
+        else { return nil }
+        let index = layout.characterIndexForGlyph(at: glyph)
+        guard index < storage.length, let link = storage.attribute(.link, at: index, effectiveRange: nil)
+        else { return nil }
+        return LinkTarget(link: link, index: index)
+    }
+
+    /// Open Link, which opens as a ⌘-click does.
+    @objc func openLinkFromMenu(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? LinkTarget else { return }
+        openAimedLink(target.link)
+    }
+
+    /// Copy Link, which asks first like any copy and writes the URL on `linkBoard`.
+    @objc func copyLinkFromMenu(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? LinkTarget,
+              let url = (target.link as? URL) ?? (target.link as? String).flatMap(URL.init(string:)),
+              let board = linkBoard, mayReadOut
+        else { return }
+        let item = NSPasteboardItem()
+        item.setString(url.absoluteString, forType: .URL)
+        item.setString(url.absoluteString, forType: .string)
+        board.clearContents()
+        board.writeObjects([item])
+    }
+
+    /// Edit > Speech > Start Speaking reads the selection to the system's voice.
+    override func startSpeaking(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.startSpeaking(sender)
+    }
+
+    /// A force click or a three finger tap looks up the word under the pointer.
+    override func quickLook(with event: NSEvent) {
+        guard mayReadOut else { return }
+        super.quickLook(with: event)
+    }
+
+    /// Quick Look by key, which AppKit ends in a dictionary look up of the selection.
+    override func quickLookPreviewItems(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.quickLookPreviewItems(sender)
+    }
+
+    /// Where AppKit's look up of this view's text shows its definition.
+    override func showDefinition(for attrString: NSAttributedString?, at textBaselineOrigin: NSPoint) {
+        guard mayReadOut else { return }
+        super.showDefinition(for: attrString, at: textBaselineOrigin)
+    }
+
+    /// Where AppKit's look up of a range of this view's text shows its definition.
+    override func showDefinition(
+        for attrString: NSAttributedString?, range targetRange: NSRange,
+        options: [NSView.DefinitionOptionKey: Any]?,
+        baselineOriginProvider originProvider: ((NSRange) -> NSPoint)?
+    ) {
+        guard mayReadOut else { return }
+        super.showDefinition(
+            for: attrString, range: targetRange, options: options,
+            baselineOriginProvider: originProvider)
+    }
+
+    /// Quick Look Attachments, which previews what the selection links to.
+    override func toggleQuickLookPreviewPanel(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.toggleQuickLookPreviewPanel(sender)
+    }
+
+    /// ⌥Esc or F5, whose completions the spell server makes from the word at the caret.
+    override func complete(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.complete(sender)
+    }
+
+    /// Copy Style, onto the font board every process reads.
+    override func copyFont(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.copyFont(sender)
+    }
+
+    /// Copy Ruler, onto the ruler board every process reads.
+    override func copyRuler(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.copyRuler(sender)
+    }
+
+    /// AppKit's share picker over the selection, refused where Share… is (Law 0001).
+    override func orderFrontSharingServicePicker(_ sender: Any?) {
+        guard keepsSelectionReaders else { return }
+        super.orderFrontSharingServicePicker(sender)
+    }
+
+    /// Edit Link…, refused where the text menu holds none (Law 0001).
+    override func orderFrontLinkPanel(_ sender: Any?) {
+        guard keepsSelectionReaders else { return }
+        super.orderFrontLinkPanel(sender)
+    }
+
+    /// The typing suggestions `TextOffers.offerUngatedReaders` turned off stay off.
+    override func toggleAutomaticTextCompletion(_ sender: Any?) {
+        guard keepsSelectionReaders else { return }
+        super.toggleAutomaticTextCompletion(sender)
+    }
+
+    /// The data detectors `TextOffers.offerUngatedReaders` turned off stay off.
+    override func toggleAutomaticDataDetection(_ sender: Any?) {
+        guard keepsSelectionReaders else { return }
+        super.toggleAutomaticDataDetection(sender)
+    }
+
+    /// Show Spelling and Grammar and Edit Link… are unavailable where their panels never show.
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if !keepsSelectionReaders, Self.refusedPanels.contains(where: { $0 == item.action }) {
+            return false
+        }
+        return super.validateMenuItem(item)
+    }
+
+    private static let refusedPanels = [
+        #selector(NSText.showGuessPanel(_:)), #selector(NSTextView.orderFrontLinkPanel(_:)),
+    ]
+
+    // MARK: Spelling, grammar and text checking, which hand the text to the spell server
+
+    /// Check Document Now, and the spelling panel's Find Next, read the text whole; with the
+    /// panel up they would show a word of it there, which `showGuessPanel` refuses.
+    override func checkSpelling(_ sender: Any?) {
+        guard mayReadOut, keepsSelectionReaders || !TextOffers.spellingPanelShows else { return }
+        super.checkSpelling(sender)
+        // A hidden panel keeps the word for a later showing over a file; leave it none of ours.
+        if !keepsSelectionReaders { NSSpellChecker.shared.updateSpellingPanel(withMisspelledWord: "") }
+    }
+
+    /// Show Spelling and Grammar, never over a page's, a note's or a name's text: a panel
+    /// held open past the deadline gives its word to Learn, which asks nothing (Law 0001).
+    override func showGuessPanel(_ sender: Any?) {
+        guard keepsSelectionReaders, mayReadOut else { return }
+        super.showGuessPanel(sender)
+    }
+
+    /// The Substitutions panel's Replace All.
+    override func checkTextInDocument(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.checkTextInDocument(sender)
+    }
+
+    /// The Substitutions panel's Replace in Selection.
+    override func checkTextInSelection(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.checkTextInSelection(sender)
+    }
+
+    /// Check Spelling While Typing, after which AppKit checks every edit.
+    override func toggleContinuousSpellChecking(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.toggleContinuousSpellChecking(sender)
+    }
+
+    /// Check Grammar With Spelling, which sends whole sentences with each check.
+    override func toggleGrammarChecking(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.toggleGrammarChecking(sender)
+    }
+
+    /// The spelling panel's Ignore, which hands the word to the spell server.
+    override func ignoreSpelling(_ sender: Any?) {
+        guard mayReadOut else { return }
+        super.ignoreSpelling(sender)
+    }
+
+    /// Every check AppKit runs as the text changes (continuous spelling, text replacement,
+    /// smart quotes and the rest) and the ones the actions above start come through here.
+    override func checkText(
+        in range: NSRange, types checkingTypes: NSTextCheckingTypes,
+        options: [NSSpellChecker.OptionKey: Any] = [:]
+    ) {
+        guard mayReadOut else { return }
+        super.checkText(in: range, types: checkingTypes, options: options)
+    }
+}

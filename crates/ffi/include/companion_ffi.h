@@ -28,6 +28,17 @@
  * companion_next_event_ms() — it folds page expiries AND pause-hold
  * lapses; when it fires call companion_expire_due() and re-arm.
  * -1 means nothing to schedule.
+ *
+ * Deadline rule (Law 0001, expiry row): a page past its deadline gives
+ * nothing out, whether or not a sweep has taken it. Copy decrypted, copy
+ * NAME=value, the decrypted drag, the note's runs and the fragment's
+ * copy and cut refuse it as they refuse an unknown id; both conceals
+ * answer the error "this page has expired". Each writes, sends and
+ * records nothing. The timer can be late, so after any refusal call
+ * companion_expire_due() and settle as when the timer fires. Text the
+ * caller already holds, the open note's or a page's ink, never passes
+ * these routes, so the caller must not give it out past the deadline
+ * through AppKit's own copy, cut, drag or services either.
  */
 
 #ifndef COMPANION_FFI_H
@@ -177,6 +188,25 @@ bool companion_test_wire_stub(CompanionHandle *handle, uint16_t status,
  * with companion_string_free(). Test-util builds only (ADR-0018). */
 char *companion_test_wire_last_json(CompanionHandle *handle);
 
+/* Replace the handle's pasteboard with one in process memory, after
+ * taking back any write of ours on the old one, so a shell test's copy
+ * decrypted and name=value copies never reach the general pasteboard
+ * the person at the keyboard is using. Returns whether it was
+ * installed; null answers false. The symbol exists only in test-util
+ * builds of the core (ADR-0018), on the same terms as
+ * companion_new_ephemeral() above. */
+bool companion_test_memory_pasteboard(CompanionHandle *handle);
+
+/* Write `text` as ink at UTF-16 offset `pos_u16` of page `sheet`,
+ * below the guard that refuses U+FFFC and outside the undo stack, as
+ * a page an earlier build saved or a peer's batch lands it. Returns
+ * whether it landed; a file, an unknown page or a null answers false.
+ * The symbol exists only in test-util builds of the core (ADR-0018),
+ * on the same terms as companion_new_ephemeral() above. */
+bool companion_test_ink_below_the_guard(CompanionHandle *handle,
+                                        uint64_t sheet, uint32_t pos_u16,
+                                        const char *text);
+
 void companion_free(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */
@@ -227,8 +257,8 @@ bool companion_tab_close(CompanionHandle *handle, uint64_t tab);
 
 /*
  * Discard the page a slot holds and leave the slot standing: sealed
- * bytes zeroized, one discarded record in the ledger, and the tab keeps
- * its name, its rung, its position and its number key. Returns whether
+ * bytes zeroized, discarded recorded for the page and each object, and
+ * the tab keeps its name, rung, position and number key. Returns whether
  * a page by that id was standing. Page addressed because the burn
  * offered after a conceal names the content that travelled and not
  * the slot it travelled from.
@@ -275,6 +305,8 @@ bool companion_tab_set_title(CompanionHandle *handle, uint64_t tab,
  *   page_id (the PAGE's id, or null when has_page is false, what the
  *     sealing and document routes address, and what a shell-side
  *     storage map is keyed by),
+ *   page_uuid (string or null: the PAGE's Sheet.uuid() in lowercase
+ *     hyphenated UUID form; null when has_page is false),
  *   title (the tab's label, resolved three ways: the name the user
  *     typed; else the live page's derived title, its first non-empty
  *     ink line with markdown stripped, capped at 80 characters; else
@@ -358,7 +390,9 @@ bool companion_store_emptiness(CompanionHandle *handle,
  * Returns the chip's JSON (free with companion_string_free()):
  *   chip_id, kind ("text"|"image"), excerpt (the mechanical face —
  *   the only rendering the content ever gets), size_label (a size
- *   class, "tiny" through "huge", never a count), concealed (bool).
+ *   class, "tiny" through "huge", never a count), concealed (bool),
+ *   name (the typed name, or null; ADR-0043 point 1),
+ *   has_note (bool, true while the note holds anything but whitespace).
  * Null when the board is empty, the page unknown, content empty, or
  * the range not on the page.
  * at_utf16/len_utf16 name the selection the gesture replaces, in
@@ -435,7 +469,11 @@ char *companion_sheet_seal_from_drag(CompanionHandle *handle, uint64_t sheet,
  * the batch's earlier ops leave it. Parsing is reject-whole; a batch
  * that parses is validated whole against the page and applied
  * atomically or not at all. Chip liveness follows the document: a
- * delete that swallows a chip's sentinel zeroizes the chip. Returns
+ * delete that swallows a chip's sentinel detaches the chip, and a chip
+ * op naming one of the page's detached chips reattaches it
+ * (ADR-0046 point 1).
+ * An "ins" whose text holds U+FFFC refuses the batch whole: only a chip
+ * op stands that character (Law 0001). Returns
  * whether the batch applied; on false, restate the page through
  * companion_sheet_sync_document (the recovery path).
  */
@@ -522,19 +560,32 @@ int64_t companion_sheet_undo_selection_length_u16(CompanionHandle *handle,
  * this survives as the RECOVERY path: a page restated whole after a
  * rejected batch, at the price of that page's provenance. STILL
  * AUTHORITATIVE FOR CHIP LIVENESS: a chip the snapshot omits was
- * deleted in the editor and is zeroized here. Malformed snapshots (bad
- * JSON, foreign chip, duplicate reference) are rejected whole. Returns
- * acceptance.
+ * deleted in the editor and is detached here, and a detached chip it
+ * names reattaches (ADR-0046 point 1). Malformed snapshots
+ * (bad JSON, foreign chip, duplicate reference, ink holding U+FFFC) are
+ * rejected whole. Returns acceptance.
  */
 bool companion_sheet_sync_document(CompanionHandle *handle, uint64_t sheet,
                                    const char *json);
+
+/*
+ * Take every U+FFFC out of a page's ink, one a peer's batch or a page
+ * an earlier build saved left there (Law 0001), as an edit the page's
+ * peers receive and no undo puts back; a chip's sentinel stays.
+ * Returns whether any went: false for a file, an unknown page, a page
+ * holding none, or a null handle. The shell asks before it projects a
+ * page.
+ */
+bool companion_sheet_take_out_object_characters(CompanionHandle *handle,
+                                                uint64_t sheet);
 
 /*
  * A live page's document, replayed for a shell rebuilding its editor
  * after companion_persist_restore(): a JSON array of runs in document
  * order — {"ink": "text"} for visible ink, {"chip": {…}} where a chip
  * sits, the chip object carrying the same non-secret face the seal
- * routes return (chip_id, kind, excerpt, size_label, concealed). Ink
+ * routes return (chip_id, kind, excerpt, size_label, concealed, name,
+ * has_note). The note's own text is never here. Ink
  * renders anyway; a chip crosses as its face, never its bytes. Free
  * with companion_string_free(). Null for an unknown page.
  */
@@ -577,7 +628,8 @@ char *companion_sheet_blocks_json(CompanionHandle *handle, uint64_t sheet);
  * Copy a chip back out: the core writes the pasteboard itself, marked
  * transient AND ConcealedType (a chip is sealed by definition). Does
  * not consume the chip — multi-paste is a core moment. Returns whether
- * the chip existed.
+ * the chip existed; false, writing and recording nothing, for a page
+ * past its deadline (Law 0001, expiry row).
  *
  * A successful copy-out is an auditable egress: it leaves one "sent"
  * ledger record with destination "clipboard". The pasteboard is the
@@ -586,10 +638,273 @@ char *companion_sheet_blocks_json(CompanionHandle *handle, uint64_t sheet);
 bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
 
 /*
- * Remove a chip now, wiping its bytes (backspace removes it whole;
- * there is no resurrection path). Returns whether it existed.
+ * Copy NAME=<plaintext>: the name, "=", then the payload raw and
+ * unquoted (ADR-0047 point 1), by companion_chip_copy_out()'s
+ * route (Law 0001; ADR-0047 point 2). The core composes the
+ * bytes at their final size and writes them itself, transient and
+ * ConcealedType, keeps the receipt for companion_clear_clipboard_if_ours(),
+ * and leaves one "sent" record to "clipboard" at the payload's size
+ * class, titled with the tab's label as every record is, never the
+ * name. The shell never holds the bytes.
+ * Returns false, writing and recording nothing, for an unknown chip, an
+ * unnamed one, an image or a page past its deadline
+ * (Law 0001, expiry row).
+ */
+bool companion_chip_copy_name_value(CompanionHandle *handle, uint64_t chip);
+
+/*
+ * Whether a chip stands on a live page, past its deadline or not, as
+ * companion_chip_conceal() asks to word its error. False for an
+ * unknown chip or a null handle. The shell asks it before and after
+ * settling an object's refusal, and says the page expired only when
+ * the chip stood and then did not.
+ */
+bool companion_chip_stands(CompanionHandle *handle, uint64_t chip);
+
+/*
+ * Burn a chip, attached or detached: its bytes are wiped, its page's
+ * undo stack goes with it, and one `discarded` is recorded. A removal
+ * by backspace is not a burn; it detaches
+ * (ADR-0046 points 1 and 2). Returns whether it existed.
  */
 bool companion_chip_delete(CompanionHandle *handle, uint64_t chip);
+
+/*
+ * Judge a draft sealed name by the rule companion_chip_set_name()
+ * refuses with (ADR-0042 point 1). The draft is trimmed. 0
+ * takes it, and an empty draft is taken as clearing the name; 1 is
+ * longer than 64 characters; 2 is outside [A-Za-z_][A-Za-z0-9_]*,
+ * which is judged first. Null and non-UTF-8 answer 2. Stateless and
+ * handle free, so the shell can judge a draft as it is typed; the
+ * words for each code are the shell's.
+ */
+uint32_t companion_chip_name_refusal(const char *draft);
+
+/*
+ * Name a sealed object, or clear its name with an empty or blank draft.
+ * The name is page-owned ink beside the object: it rides the chip's
+ * face as "name" and reaches no ledger record. Returns false for an
+ * unknown chip, a page past its deadline (Law 0001, expiry row) or a
+ * draft companion_chip_name_refusal() refuses, and the name is then as
+ * it was.
+ */
+bool companion_chip_set_name(CompanionHandle *handle, uint64_t chip,
+                             const char *name);
+
+/* ------------------------------------------------------------------ */
+/* A sealed object's note (ADR-0043 point 2)                           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The note is ink of its own beside the object: a document that holds
+ * no chips, with an undo stack of its own and no clock. It goes with
+ * its chip: detached with it at a removal, destroyed with it at expiry,
+ * discard, close or a burn (ADR-0046 points 1 and 2), and no
+ * ledger record names it. These routes take a CHIP id and mirror the
+ * file routes; no page route reaches the note and no note route
+ * reaches a page, so the page's undo and the note's never cross.
+ */
+
+/*
+ * The note as document runs: [] without one, else [{"ink": text}], the
+ * shape companion_file_runs_json() answers. Null for an unknown chip or
+ * a page past its deadline (Law 0001, expiry row). Free with
+ * companion_string_free().
+ */
+char *companion_chip_note_runs_json(CompanionHandle *handle, uint64_t chip);
+
+/*
+ * Apply an edit batch to the note, with the TextKit gesture and
+ * selections companion_sheet_apply_ops_with_intent() takes. Whole or not
+ * at all; a chip op is refused, since sealed objects do not nest, and so
+ * is an "ins" whose text holds U+FFFC, and every batch for an unknown
+ * chip or a page past its deadline (Law 0001, expiry row). The first
+ * accepted batch makes the note.
+ */
+bool companion_chip_note_apply_ops_with_intent(CompanionHandle *handle,
+                                               uint64_t chip,
+                                               const char *json,
+                                               uint32_t intent,
+                                               uint32_t before_location,
+                                               uint32_t before_length,
+                                               uint32_t after_location,
+                                               uint32_t after_length);
+
+/*
+ * End the note's typing run without an undo item; UINT32_MAX twice for
+ * no selection. False for an unknown chip, a page past its deadline
+ * (Law 0001, expiry row) or a half-given selection.
+ */
+bool companion_chip_note_finish_editing_group(CompanionHandle *handle,
+                                              uint64_t chip, uint32_t location,
+                                              uint32_t length);
+
+/* Whether the note has a step of its own waiting in either direction. */
+bool companion_chip_note_can_undo(CompanionHandle *handle, uint64_t chip);
+bool companion_chip_note_can_redo(CompanionHandle *handle, uint64_t chip);
+
+/*
+ * Content-free label for the note's next step in either direction. Null
+ * when none waits. Free a non-null result with companion_string_free().
+ */
+char *companion_chip_note_undo_action_name(CompanionHandle *handle,
+                                           uint64_t chip);
+char *companion_chip_note_redo_action_name(CompanionHandle *handle,
+                                           uint64_t chip);
+
+/*
+ * Take back the note's last step, or put it back. Both return the
+ * StepOutcome the file routes below describe, or null for an unknown
+ * chip or a page past its deadline (Law 0001, expiry row). Free with
+ * companion_string_free().
+ */
+char *companion_chip_note_undo(CompanionHandle *handle, uint64_t chip);
+char *companion_chip_note_redo(CompanionHandle *handle, uint64_t chip);
+
+/* ------------------------------------------------------------------ */
+/* The sealed fragment: copy, cut, paste, drags (ADR-0045, ADR-0046)   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The core alone composes and reads the envelope the private type
+ * com.onetimesecret.onetimepad.sealed-fragment carries (".debug" in a
+ * debug build, the shell's choice): ordered ink and UUID references,
+ * each with the object's name and note, never payload. The shell
+ * writes and reads its bytes unread. Ranges are UTF-16 code units
+ * against the page's body. Every route below takes a page id, refuses
+ * a file id, and frees as companion_string_free().
+ */
+
+/*
+ * Copy a range: {"envelope": string|null, "plain": string}. The
+ * envelope is null for ink alone, so the shell writes plain text and an
+ * in-app paste keeps its ordinary path; "plain" is the ink with
+ * "[sealed content · <size class>]" for each object, the public
+ * representation. Null for an unknown page, a page past its deadline
+ * (Law 0001, expiry row) or an empty or bad range.
+ *
+ * An envelope past a cap the paste keeps (Law 0001, paste row) is
+ * refused whole, naming the cap and its limit (Law 0001, copy row):
+ *   {"error": "tooLarge", "limit": 8388608}       bytes
+ *   {"error": "tooManyObjects", "limit": 1024}    references
+ * Nothing is handed back to write, not even "plain". A selection of ink
+ * alone writes no envelope and meets no cap.
+ */
+char *companion_sheet_copy_fragment(CompanionHandle *handle, uint64_t sheet,
+                                    uint32_t at_utf16, uint32_t len_utf16);
+
+/*
+ * As companion_sheet_copy_fragment(), then delete the range as one undo
+ * step. Its objects detach on the page's clock as the store's one
+ * active cut, whose envelope names it; a later cut holding an object
+ * replaces it. Null, or the copy's cap refusal, where the copy or the
+ * page refuses; either changes nothing, and an earlier active cut
+ * stands.
+ */
+char *companion_sheet_cut_fragment(CompanionHandle *handle, uint64_t sheet,
+                                   uint32_t at_utf16, uint32_t len_utf16);
+
+/*
+ * Compose runs the shell shows of a page, a preview's rendered text
+ * between its objects and each object by chip id, in the synced
+ * document's shape:
+ *   [{"ink": "Heading\n"}, {"chip": 7}, {"ink": " cd"}]
+ * as companion_sheet_copy_fragment() composes a range: the shown text is
+ * the ink (Law 0001, the preview's rows). The same answer and the same
+ * refusals, and null also for an object off the page or `shown` that
+ * does not parse. Free with companion_string_free().
+ */
+char *companion_sheet_compose_fragment(CompanionHandle *handle, uint64_t sheet,
+                                       const char *shown);
+
+/*
+ * Paste envelope bytes over a range as one undo step. Each reference
+ * resolves in order: the active cut's objects, from its own envelope,
+ * reattach; any other live object is cloned with the envelope's name
+ * and note; else the ledger's newest terminal record places
+ * "[sealed content · expired]" or "[sealed content · burned]"; else
+ * "[sealed content · unavailable]". An envelope the core cannot read
+ * places `plain` (nullable) instead. The envelope's ink and notes and
+ * `plain` lose every U+FFFC, which only an object stands as (Law 0001).
+ * Before an envelope naming an
+ * object resolves, every page past its deadline is swept, as
+ * companion_expire_due() does (Law 0001, expiry row). Returns
+ *   {"location_utf16": u32, "length_utf16": u32, "reattached": n,
+ *    "cloned": n, "expired": n, "burned": n, "unavailable": n,
+ *    "unreadable": bool, "pages_expired": n}
+ * naming the placed run and the pages swept, or null, changing nothing,
+ * for an unknown page, a page past its deadline, a bad range or nothing
+ * to place. Restate the page from companion_sheet_document_json() after
+ * it, and settle as after companion_expire_due().
+ */
+char *companion_sheet_paste_fragment(CompanionHandle *handle, uint64_t sheet,
+                                     uint32_t at_utf16, uint32_t len_utf16,
+                                     const uint8_t *envelope,
+                                     size_t envelope_len, const char *plain);
+
+/*
+ * The clipboard slot's route: place the active cut over a range, as a
+ * paste of its own envelope. Null when no cut stands.
+ */
+char *companion_sheet_paste_active_cut(CompanionHandle *handle,
+                                       uint64_t sheet, uint32_t at_utf16,
+                                       uint32_t len_utf16);
+
+/*
+ * A drag inside a page: move a range to to_utf16, measured before the
+ * move, as one undo step that keeps every object's identity. Returns
+ * the placed JSON or null for a to_utf16 inside or at the range's edge,
+ * or a page past its deadline.
+ */
+char *companion_sheet_move_range(CompanionHandle *handle, uint64_t sheet,
+                                 uint32_t from_utf16, uint32_t len_utf16,
+                                 uint32_t to_utf16);
+
+/*
+ * A drag between pages (Law 0001, drag row): delete a range on source
+ * and stand it at at_utf16 on dest as one transaction, every object
+ * keeping its identity, name and note; nothing is recorded. dest takes
+ * one undo step, and a move holding an object clears source's undo.
+ * Returns the placed JSON, its run on dest, or null with neither page
+ * changed for one page, a file id, a bad range or point, or either page
+ * past its deadline. Both pages restate from the core after a move; the
+ * source deletes nothing itself. The option drag pastes the copy
+ * fragment.
+ */
+char *companion_sheet_move_range_to(CompanionHandle *handle, uint64_t source,
+                                    uint32_t from_utf16, uint32_t len_utf16,
+                                    uint64_t dest, uint32_t at_utf16);
+
+/*
+ * The option drag inside a page: insert a copy of a range at to_utf16,
+ * every object cloned, as one undo step. Returns the placed JSON or null.
+ */
+char *companion_sheet_clone_range(CompanionHandle *handle, uint64_t sheet,
+                                  uint32_t from_utf16, uint32_t len_utf16,
+                                  uint32_t to_utf16);
+
+/*
+ * The clipboard slot: {"page_id": u64|null, "objects": [face]}, the
+ * active cut's page and its objects' faces (the chip face of
+ * companion_sheet_document_json()) in order; null and [] when no cut
+ * stands. Faces only, never payload.
+ */
+char *companion_active_cut_json(CompanionHandle *handle);
+
+/*
+ * Decrypted drag, from the shell's NSPasteboardItemDataProvider: write
+ * a chip's payload into `item` (an NSPasteboardItem) on `pasteboard`
+ * (its NSPasteboard) under `type`, and record one "sent" to "drag". The
+ * core writes the bytes, as copy decrypted does; the shell never holds
+ * them. Returns false, writing and recording nothing, for an unknown
+ * or removed chip, a page past its deadline (Law 0001, expiry row), a
+ * null or foreign pointer, the general pasteboard, or a type other than
+ * the chip's own: "public.utf8-plain-text" for text, "public.png" for
+ * an image. Always false off macOS.
+ */
+bool companion_chip_provide_drag(CompanionHandle *handle, uint64_t chip,
+                                 void *pasteboard, void *item,
+                                 const char *type);
 
 /*
  * Clear the pasteboard iff it still holds our last copy-out (change-
@@ -682,7 +997,7 @@ bool companion_tab_pause_press(CompanionHandle *handle, uint64_t tab);
  *   created_at_ms when the item's page was created, epoch milliseconds
  *   size          "tiny"|"small"|"medium"|"large"|"huge", a coarse
  *                 bucket, never a byte count
- *   destination   "none"|"clipboard"|"link"
+ *   destination   "none"|"clipboard"|"link"|"drag"
  *
  * Records accumulate on ordinary use, not only on death: a page's
  * creation, each seal, each egress, each discard. Do not assume an
@@ -769,10 +1084,10 @@ bool companion_persist_save(CompanionHandle *handle, const char *path);
 
 /*
  * Rotate both content key halves and reseal the store under the new
- * ones: the write for the moment no tab holds a page (ADR-0016 section
- * 6's first rotation trigger, ADR-0017). Returns whether the file at
- * `path` now holds the store under halves nothing else has ever sealed
- * with.
+ * ones: the write for the moment no tab holds a page (persistence
+ * decision background section 6's first rotation trigger, ADR-0017).
+ * Returns whether the file at `path` now contains the store under
+ * halves nothing else has ever sealed with.
  *
  * The rotation is the forgetting and the reseal is what keeps the
  * strip. Erasing the file half makes every ciphertext generation this
@@ -814,7 +1129,8 @@ bool companion_persist_rotate_and_save(CompanionHandle *handle, const char *path
  * failure to open: a file carrying an envelope this build has REPLACED
  * is dropped and the licence granted, because nothing in it can ever
  * be read again and refusing it forever would present as an install
- * that had permanently stopped saving (ADR-0016 section 9).
+ * that had permanently stopped saving (persistence decision background
+ * section 9).
  *
  * Launch is also where stranded *.tmp generations in the state
  * directory are swept; nothing else ever clears that directory.
@@ -840,9 +1156,10 @@ bool companion_persist_restore(CompanionHandle *handle, const char *path);
  * ciphertext generation that key ever sealed undecryptable, including
  * the ones an atomic rename unlinked and nothing sweeps, and it is the
  * finishing step of a deletion the user already asked for: emptying the
- * pad, or clearing it (ADR-0016 section 6). It runs first, so what is
- * unlinked is already undecryptable, and a keychain that refuses the
- * delete is announced without cancelling the drop.
+ * pad, or clearing it (persistence decision background section 6). It
+ * runs first, so what is unlinked is already undecryptable, and a
+ * keychain that refuses the delete is announced without cancelling the
+ * drop.
  *
  * ONLY a content file takes the halves with it. This same call drops
  * the ledger file on a user's Clear, and that gesture asked nothing
@@ -919,7 +1236,9 @@ char *companion_connection_test(CompanionHandle *handle);
  * and only the receipt id stays on the chip. BLOCKS for the round-trip
  * — call from a background queue; the core mutex is released during
  * the network call. Returns {"ok": true, "receipt_id"} or
- * {"ok": false, "error"}; free with companion_string_free().
+ * {"ok": false, "error"}; free with companion_string_free(). A chip on
+ * a page past its deadline sends nothing and answers the error "this
+ * page has expired" (Law 0001, expiry row).
  */
 char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
                              const char *opts_json);
@@ -927,7 +1246,8 @@ char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
 /*
  * Conceal the whole page (the footer's ↗ page): ink verbatim, sealed
  * bytes inlined in document order. Refuses a page holding an image
- * chip. Options, blocking, and result shape as companion_chip_conceal.
+ * chip, and a page past its deadline as companion_chip_conceal does.
+ * Options, blocking, and result shape as companion_chip_conceal.
  * No per-chip mark is set, the link stands for the page, but the
  * egress is recorded: one "sent" record against the page's own
  * identity, destination "link", with a size class and no content.
@@ -945,109 +1265,86 @@ char *companion_sheet_conceal(CompanionHandle *handle, uint64_t sheet,
  *     "authorize_url": "https://…",  // required, https only
  *     "token_url": "https://…",      // required, https only
  *     "client_id": "…" }             // required, non-empty
- * Like the conceal connection this is not persisted core-side — the
- * shell re-sends it at launch — but configuring resumes the persisted
- * sign-in: the refresh token loads from its own Keychain account, so a
- * relaunch is signed in without a browser. Returns false on malformed
- * JSON, a missing field, or a non-https URL.
+ * Not persisted core-side (the shell re-sends it at launch);
+ * configuring resumes the persisted sign-in from its own Keychain
+ * account. Returns false on malformed JSON, a missing field, or a
+ * non-https URL.
  */
 bool companion_sync_configure(CompanionHandle *handle, const char *json);
 
 /*
  * Sync's standing state for Settings: {"configured", "signed_in",
  * "gate", "signin_pending", "attached", "epoch", "frame_present",
- * "enrolled", "pairing"}. Existence checks and in-memory reads only,
- * so rendering Settings never decrypts a credential, wedges on the
- * Keychain, or waits on the network.
- *
- * "attached" and a "gate" of "attached" are deliberately not the same
- * question. "attached" is the relay's answer: an attachment stands.
- * The gate additionally asks whether the next request can use it, and
- * a 401 on any route drops the access token, so the gate falls back to
- * "ready" while "attached" stays true until the refresh lands. So
- * {"attached": true, "gate": "ready"} is a legal and common pair, and
- * the gate is the one to switch on: it is the value that says whether
- * this client may attach, and "attached" is a fact about the last
- * round trip. Free with companion_string_free().
+ * "enrolled", "pairing"}, from existence checks and in-memory reads
+ * only, so it never decrypts, wedges on the Keychain or waits on the
+ * network. "attached" is the relay's last answer; the gate also asks
+ * whether the next request can use it, so {"attached": true, "gate":
+ * "ready"} is legal until a refresh lands. Switch on the gate. Free
+ * with companion_string_free().
  */
 char *companion_sync_status_json(CompanionHandle *handle);
 
 /*
- * Where the account gate stands, as one machine token (ADR-0027
- * section 5): "off", "signed_out", "signing_in", "refused",
- * "unreachable", "ready" or "attached". The same value the status
- * JSON carries as "gate", for a caller that wants the one word
- * without the rest. It says whether this client may attach to the
- * channel and nothing about content: passing this gate without
- * pairing downloads ciphertext that will not open.
+ * Where the account gate stands, as one machine token (account-auth
+ * decision background section 5): "off", "signed_out", "signing_in",
+ * "refused", "unreachable", "ready" or "attached", the status JSON's
+ * "gate". It says whether this client may attach and nothing about
+ * content (relay decision background section 3).
  *
- * Null on a null handle or a core that could not be read at all. Null
- * is not one of the seven states and must never be softened into one:
- * a gate that could not be read has not been passed, so a caller
- * treats it as "may not attach" rather than as no opinion. That is a
- * different fact from the status JSON simply carrying no "gate" key,
- * which is a core older or newer than the caller and does mean no
- * opinion; a caller reading the gate out of the status keeps whatever
- * it already believed. Free with companion_string_free().
+ * Null on a null handle or a poisoned lock: a gate that cannot be read
+ * has not been passed, so null means may not attach. A status JSON
+ * with no "gate" key is another core version and means no opinion.
+ * Free with companion_string_free().
  */
 char *companion_sync_gate(CompanionHandle *handle);
 
 /*
  * Begin the sign-in ceremony (account-auth.md section 1): bind the
  * one-shot loopback listener, mint the PKCE material, and return
- * {"ok": true, "authorize_url"} for the shell to open in the SYSTEM
- * browser — never a web view. Then call companion_sync_signin_finish
- * from a background queue. {"ok": false, "reason"} with "busy" while a
- * ceremony already waits for its finish OR a finish is out on the
- * browser, "not_configured", "port" (the listener could not bind), or
- * "no_entropy". A second listener bound behind the first browser trip
- * would leave two sockets open on one consent screen, so a begin
- * refuses rather than superseding; companion_sync_signin_cancel is the
- * way out. Free with companion_string_free().
+ * {"ok": true, "authorize_url"} for the SYSTEM browser, never a web
+ * view; then companion_sync_signin_finish from a background queue.
+ * {"ok": false, "reason"}: "busy" while a ceremony waits or a finish
+ * is out on the browser (companion_sync_signin_cancel is the way
+ * out), "not_configured", "port" (the listener could not bind) or
+ * "no_entropy". Free with companion_string_free().
  */
 char *companion_sync_signin_begin(CompanionHandle *handle);
 
 /*
- * Finish the sign-in ceremony: wait for the browser's one redirect,
- * redeem the code, and persist the rotated refresh token in its own
- * Keychain account. BLOCKS for up to patience_ms — call from a
- * background queue; account-auth.md section 5 budgets five minutes,
- * because the user is reading a consent screen. The core mutex is held
- * only at the edges; the pad never waits on this. Returns {"ok": true}
- * or {"ok": false, "reason"} with the section-5 tokens: "abandoned",
- * "state_mismatch", "no_code", "unreachable", "refused",
- * "no_ceremony", "busy", "keychain". Every failure leaves nothing
- * stored; retry is a fresh begin. A call made while another finish is
- * already out on the browser answers "busy" and leaves that ceremony
- * and the gate exactly as they were. "abandoned" also covers a
- * ceremony ended by companion_sync_signin_cancel or
- * companion_sync_signout while this call was out, including one ended
- * after the redirect landed: the grant is dropped rather than
- * persisted. A cancel that landed before this call ran leaves nothing
- * to find, and the answer is "no_ceremony": the flag went with the
- * ceremony it ended, so the surface is what remembers whose ending it
- * was. Free with companion_string_free().
+ * Finish the sign-in ceremony: wait up to patience_ms for the
+ * browser's redirect, redeem the code, exchange it, and persist the
+ * refresh token in its own Keychain account. BLOCKS for up to the
+ * whole patience: call from a background queue (account-auth.md
+ * section 5 budgets five minutes). The core mutex is held only at the
+ * edges. Returns {"ok": true} or {"ok": false, "reason"}: "abandoned"
+ * (no redirect, or a cancel or sign-out while this call was out, even
+ * after the redirect landed), "state_mismatch", "no_code",
+ * "unreachable", "refused", "no_ceremony" (none begun, or one
+ * cancelled before this call), "busy" (another finish is out; its
+ * ceremony and the gate stand), "keychain", "not_configured" (begun
+ * while the engine held the sign-in). Every failure stores nothing on
+ * this device; retry is a fresh begin. After a "not_configured" finish
+ * the issuer still holds the redeemed refresh token until it expires.
+ * Free with companion_string_free().
  */
 char *companion_sync_signin_finish(CompanionHandle *handle,
                                    uint64_t patience_ms);
 
 /*
- * Give up on the sign-in ceremony, whichever half it is in: one still
- * waiting for its finish drops with its listener, and one a finish is
- * already holding out on the browser is marked abandoned, which that
- * finish reads at every wait it has left and once more under the lock
- * that would have persisted the grant. The gate stops reading
- * "signing_in" at once. True when there was a ceremony to end.
+ * Give up on the sign-in ceremony, parked or out on the browser; the
+ * finish reads the abandon flag at every wait and once more before it
+ * persists. The gate stops saying "signing_in" at once; nothing is
+ * deleted and no request is sent. True when there was a ceremony to
+ * end.
  */
 bool companion_sync_signin_cancel(CompanionHandle *handle);
 
 /*
  * Sign sync out: drop the held tokens and delete the persisted refresh
- * token — exactly one Keychain account. The conceal token, the content
- * and ledger keys, and the pairing accounts all stand; the pad is
- * unaffected, which is the point. A sign-in ceremony still out on the
- * browser is ended with it, so a redirect landing afterwards persists
- * nothing. True when the delete was accepted.
+ * token, exactly one Keychain account; the conceal token, content and
+ * ledger keys, pairing accounts and the pad all stand (relay decision
+ * background section 3). A ceremony out on the browser ends with it.
+ * True when the delete was accepted.
  */
 bool companion_sync_signout(CompanionHandle *handle);
 
@@ -1056,57 +1353,59 @@ bool companion_sync_signout(CompanionHandle *handle);
 /* ------------------------------------------------------------------ */
 
 /*
- * Enrol a page into the sync channel, or withdraw it — per page and
- * off by default (relay protocol section 1). Enrolling defers the
- * page's compaction to the coordinated ceremony and starts its delta
- * cursor at the beginning, so the first publish carries the whole
- * page; withdrawing returns it to solo behaviour, performing any due
- * ceremony on the spot. page is the PAGE id.
+ * Enrol a page into the sync channel, or withdraw it; per page and off
+ * by default (relay protocol section 1). Enrolling defers its
+ * compaction to the coordinated ceremony and starts its cursor at the
+ * beginning; withdrawing performs any due ceremony on the spot. A page
+ * past its deadline does not enrol (Law 0001, expiry row). page is the
+ * PAGE id.
  */
 bool companion_sync_enrol_page(CompanionHandle *handle, uint64_t page,
                                bool enrolled);
 
 /*
- * Attach to the account's channel: ensure the device identity and
- * channel secret (the first device to enable sync founds the channel;
- * a joiner's secret arrives by pairing and overwrites), mint and
- * publish a fresh key package, adopt the relay's cursor. BLOCKS for
- * the round-trips — call from a background queue. Returns
+ * Attach to the account's channel, building the engine on first use
+ * (device identity, channel secret, key package; a joiner's secret
+ * arrives by pairing). A re-attach mints a pending package unless one
+ * already waits, which it resends (client protocol sections 4.3, 5.2).
+ * BLOCKS for the round-trips: call from a background queue. Returns
  * {"ok": true, "epoch", "frame_present", "peers"} or
  * {"ok": false, "reason"}: "not_configured", "signed_out",
- * "keychain", "unreachable", "refused". Free with
+ * "keychain", "unreachable", "refused", "busy" while another attach
+ * is in flight, among others ("poisoned", "not_attached"). Free with
  * companion_string_free().
  */
 char *companion_sync_attach(CompanionHandle *handle);
 
 /*
- * Detach: tell the relay (best effort; idle attachments age out
- * regardless) and dissolve the engine, keeping the sign-in. BLOCKS
- * briefly — call from a background queue. True when there was an
- * engine to dissolve.
+ * Detach from the channel: dissolve the engine, keeping the sign-in,
+ * and tell the relay, best effort (client protocol section 4.8).
+ * BLOCKS briefly for the one round-trip: call from a background
+ * queue. True when there was an engine to dissolve.
  */
 bool companion_sync_detach(CompanionHandle *handle);
 
 /*
- * One turn of the engine loop, run repeatedly from a background queue
- * while sync is on: sweep the enrolled pages into the outbox, publish
- * what the 2-second clock owes, long-poll the delta stream for up to
- * wait_seconds (section 8 budgets 25), walk the ballot patience, and
- * publish a committed ceremony's frame. BLOCKS for up to the whole
- * long-poll; the core mutex is held only between round-trips, so the
- * pad never waits on the network. Returns {"ok", "reason"?, "events":
- * [{"kind", "page"?}, ...], "state"} — kinds: applied,
+ * One turn of the engine loop, from a background queue while sync is
+ * on: sweep, walk the ballot patience, publish, long-poll for up to
+ * wait_seconds (held to 25), attach after a commit or when a package
+ * is owed, publish a committed frame (client protocol section 3).
+ * BLOCKS for the long-poll and the turn's other round trips, each
+ * under its own transport bound; the core mutex is held only between
+ * them. Returns
+ * {"ok", "reason"?, "events": [{"kind", "page"?, "page_id"?}, ...],
+ * "state"}: page is the cross-device identity, page_id the local id
+ * (null when no live page holds it here). Kinds: applied,
  * countdown_moved, terminal, rejoin_required, ceremony_proposed,
  * ceremony_committed, ceremony_required, epoch_conflict, unauthorized,
- * unreachable, protocol, signed_out. States, never sentences — the
- * surface owns the words. Free with companion_string_free().
+ * unreachable, protocol, signed_out. States, never sentences. Free
+ * with companion_string_free().
  */
 char *companion_sync_pump(CompanionHandle *handle, uint32_t wait_seconds);
 
 /*
- * The device list for Settings: every peer a human verified here,
- * joined with the attach roster's times, plus this device and any
- * attached-but-unverified stranger, labelled as exactly that.
+ * The device list for Settings: this device, every verified peer with
+ * its attach time, and any attached but unverified stranger, labelled.
  * {"devices": [{"fingerprint", "label", "this_device", "verified",
  * "paired_wall_ms", "attached_ms"}, ...]}. Free with
  * companion_string_free().
@@ -1114,10 +1413,11 @@ char *companion_sync_pump(CompanionHandle *handle, uint32_t wait_seconds);
 char *companion_sync_devices_json(CompanionHandle *handle);
 
 /*
- * Revoke a paired peer by fingerprint: its record goes, nothing is
- * ever sealed to it again, and the chain leaves it behind at the next
- * ceremony at the latest. True when the fingerprint was recorded and
- * the removal stored.
+ * Revoke a paired peer by fingerprint: its record goes, so this device
+ * seals nothing new to it and honours none of its markers. It starts
+ * no ceremony, and the peer keeps the current key until a ceremony
+ * that leaves it out commits (client protocol section 7.9). True when
+ * the fingerprint was recorded and the removal stored.
  */
 bool companion_sync_revoke_peer(CompanionHandle *handle,
                                 const char *fingerprint);
@@ -1140,9 +1440,8 @@ char *companion_sync_join_begin(CompanionHandle *handle);
 
 /*
  * One mailbox round of the pairing ceremony: post what is queued,
- * fetch the tail, advance, report. BLOCKS for the round-trips — call
- * from a background queue, on a timer while the enrolment sheet is
- * open. Returns {"stage", "sas"?, "reason"?}: "waiting" (keep
+ * fetch the tail, advance, report. BLOCKS for the round-trips: call
+ * from a background queue, on a timer while the sheet is open. Returns {"stage", "sas"?, "reason"?}: "waiting" (keep
  * polling), "sas" (show the six digits, ask the human, call confirm),
  * "confirmed" (this side confirmed; waiting for the peer), "done",
  * "failed", "idle" (no ceremony). Free with companion_string_free().
@@ -1151,17 +1450,16 @@ char *companion_sync_pairing_poll(CompanionHandle *handle);
 
 /*
  * The human's verdict on the short authentication string. A match
- * moves the ceremony forward; a mismatch aborts it whole with nothing
- * stored on this device — failing must always be possible. Returns
+ * moves the ceremony forward; a mismatch drops it whole with nothing
+ * stored on this device (relay decision background section 3). Returns
  * the stage as companion_sync_pairing_poll does. Free with
  * companion_string_free().
  */
 char *companion_sync_pairing_confirm(CompanionHandle *handle, bool matched);
 
 /*
- * Forget the pairing ceremony in flight, at any stage — a finished or
- * failed one whose sheet is being dismissed included. True when there
- * was one.
+ * Forget the pairing ceremony in flight, at any stage, finished and
+ * failed included. True when there was one.
  */
 bool companion_sync_pairing_cancel(CompanionHandle *handle);
 
@@ -1731,7 +2029,10 @@ bool companion_file_hydrate(CompanionHandle *handle, uint64_t file,
  */
 char *companion_drafts_notices_json(CompanionHandle *handle);
 
-/* Free an owned string returned by this library. Null is a no-op. */
+/* Wipe and free an owned string returned by this library. Null, a static
+ * version string and a pointer this library never handed out are left
+ * alone. Free each string once: a freed string's address may belong to a
+ * newer one. Do not read through s after the call. */
 void companion_string_free(char *s);
 
 #ifdef __cplusplus

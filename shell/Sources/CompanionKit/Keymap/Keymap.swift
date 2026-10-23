@@ -57,6 +57,9 @@ public enum KeymapDiagnostic: Equatable, Sendable {
     /// A binding in a context no surface consults yet. Legal, and inert
     /// until some surface starts asking.
     case contextNotConsulted(KeymapSource, context: KeymapContext, keystroke: String)
+    /// A window route command (`window::Close`, `app::Help`) bound where no
+    /// menu equivalent was asked for. Only a menu item fires those, so it is inert.
+    case windowCommandWithoutKeyEquivalents(KeymapSource, keystroke: String, command: CommandID)
 
     /// One line, plain enough to log and to show.
     public var summary: String {
@@ -79,6 +82,8 @@ public enum KeymapDiagnostic: Equatable, Sendable {
             return "\(source.rawValue) unbinds \"\(keystroke)\", which nothing had bound"
         case .contextNotConsulted(let source, let context, let keystroke):
             return "\(source.rawValue) binds \"\(keystroke)\" in \(context.rawValue), which no surface consults yet, so it will not fire"
+        case .windowCommandWithoutKeyEquivalents(let source, let keystroke, let command):
+            return "\(source.rawValue) binds \"\(keystroke)\" to \(command.rawValue) in a section without use_key_equivalents; only a menu item fires that command, so it will not fire"
         }
     }
 
@@ -89,11 +94,11 @@ public enum KeymapDiagnostic: Equatable, Sendable {
     }
 
     /// Whether this one cost the user a binding they asked for. The
-    /// rebindings and the unconsulted contexts are notes; the rest are
-    /// faults.
+    /// rebindings, the unconsulted contexts and the window commands
+    /// without a menu equivalent are notes; the rest are faults.
     public var isFault: Bool {
         switch self {
-        case .reboundKeystroke, .contextNotConsulted: return false
+        case .reboundKeystroke, .contextNotConsulted, .windowCommandWithoutKeyEquivalents: return false
         default: return true
         }
     }
@@ -488,6 +493,10 @@ public enum Keymap {
                             diagnostics.append(
                                 .contextNotConsulted(
                                     source, context: context, keystroke: keystroke.canonical))
+                        } else if command.dispatch == .window, !useKeyEquivalents {
+                            diagnostics.append(
+                                .windowCommandWithoutKeyEquivalents(
+                                    source, keystroke: keystroke.canonical, command: command))
                         }
                         table[context, default: [:]][keystroke] = ResolvedKeymap.Binding(
                             context: context,

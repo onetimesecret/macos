@@ -8,7 +8,7 @@ interpretations below describe that study.
 The current release packaging implementation instead compiles the saved
 [Icon Composer document](../../../artwork/OnetimePad-Glass.icon), which combines
 a white foreground, a separate fading southeast cast-shadow layer, and
-Composer's glass effects. See its [exported preview](../../../artwork/OnetimePad-Glass-CastShadow.png).
+Composer's glass effects. See its [exported rendering](../../../artwork/web/onetimepad-icon.png).
 `scripts/build-icons.sh --composer` exports source layers for manual import
 into that document; it does not update the saved composition. The renderer
 matrix below remains available for experiments.

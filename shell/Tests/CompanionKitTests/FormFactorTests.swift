@@ -54,66 +54,41 @@ final class FormFactorTests: XCTestCase {
             FormFactor.resolvedBundleIdentifier(fallback: "com.example.other"),
             "com.example.other"
         )
-
-        // And nothing leaks the runner's own identity into a path.
-        let runner = Bundle.main.bundleIdentifier ?? ""
-        if !runner.hasPrefix(FormFactor.panelBundleIdentifier) {
-            XCTAssertNotEqual(FormFactor.panel.credentialService, runner)
-            XCTAssertFalse(
-                FormFactor.panel.stateFileURL.path.contains("xctest"),
-                FormFactor.panel.stateFileURL.path
-            )
-        }
     }
 
-    /// The guards under the `Bundle.main` early return, which no test
-    /// could reach before: under xctest the running identifier is the
-    /// test runner's, so the fallback arm above is the only one the
-    /// shipping entry point ever takes here.
-    ///
-    /// What they hold up is case 4's shell consequence (ADR-0016
-    /// section 9). A dev copy and an installed release copy are two
-    /// apps to LaunchServices, and they must be two stores: two
-    /// processes resolving to one identifier would share a state
-    /// directory and a Keychain service, and two debounces would write
-    /// over one another's `state.sealed` on the same second. The rule
-    /// names its identifiers. The older one counted dots after the
-    /// fallback, and so could not tell a build configuration from a
-    /// sibling form factor whose id happened to extend the panel's; the
-    /// table pins that neither a suffix on the shipping id nor a
-    /// sibling's id is adopted any more, only the names the rule holds.
+    /// Identifier selection across packaged and foreign hosts.
     func testOnlyTheNamedIdentifiersAreAdopted() {
         let panel = FormFactor.panelBundleIdentifier
         let backdrop = FormFactor.backdropBundleIdentifier
         let local = FormFactor.localBundleIdentifier
         let dev = FormFactor.devBundleIdentifier
 
-        let cases: [(running: String?, fallback: String, resolved: String, why: String)] = [
-            (nil, panel, panel, "a bare binary has no identifier at all"),
+        let cases: [(running: String?, fallback: String, resolved: String?, why: String)] = [
+            (nil, panel, nil, "a bare binary has no identifier at all"),
             (panel, panel, panel, "the app's own identifier is itself"),
             (backdrop, backdrop, backdrop, "and so is the other form factor's"),
             (local, backdrop, local, "the local lane's own name is adopted over the backdrop"),
             (dev, backdrop, dev, "and so is the dev lane's"),
-            (local, panel, panel, "but neither over the panel, which has no such lanes"),
-            (dev, panel, panel, "in either case"),
+            (local, panel, nil, "but neither over the panel, which has no such lanes"),
+            (dev, panel, nil, "in either case"),
             (
-                local + ".release", backdrop, backdrop,
+                local + ".release", backdrop, nil,
                 "a suffix on the local id is not a lane, whatever it spells"
             ),
             (
-                backdrop + ".debug", backdrop, backdrop,
+                backdrop + ".debug", backdrop, nil,
                 "a suffix on the shipping id is not the dev lane, whatever it spells"
             ),
             (
-                "com.onetimesecret.companion.backdrop.debug", backdrop, backdrop,
+                "com.onetimesecret.companion.backdrop.debug", backdrop, nil,
                 "and neither is the retired legacy dev id"
             ),
             (
-                backdrop, panel, panel,
+                backdrop, panel, nil,
                 "a sibling form factor's id is never a configuration of this one"
             ),
-            (panel, backdrop, backdrop, "in either direction"),
-            ("com.example.other", panel, panel, "another vendor's process is never adopted"),
+            (panel, backdrop, nil, "in either direction"),
+            ("com.example.other", panel, nil, "another vendor's process is never adopted"),
         ]
         for probe in cases {
             XCTAssertEqual(

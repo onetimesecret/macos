@@ -4,21 +4,32 @@ import CompanionKit
 import SwiftUI
 
 /// The tabs of the Settings window, in toolbar order. General first,
-/// as every Apple app has it, then code presentation, followed by the
-/// two that reach outside the Mac: where a conceal goes, and how pages travel.
+/// as every Apple app has it, then code presentation and the pads,
+/// followed by the two that reach outside the Mac: where a conceal goes,
+/// and how pages travel.
 ///
 /// The symbol names are SF Symbols. A misspelt one draws nothing and
 /// complains nowhere, so `SettingsTabTests` resolves each of them.
 enum SettingsTab: Int, CaseIterable {
     case general
     case code
+    case pads
     case connection
     case sync
+
+    /// The tab a surface's button names (`PageModel.SettingsPane`).
+    init(_ pane: PageModel.SettingsPane) {
+        switch pane {
+        case .connection: self = .connection
+        case .pads: self = .pads
+        }
+    }
 
     var label: String {
         switch self {
         case .general: "General"
         case .code: "Code"
+        case .pads: "Pads"
         case .connection: "Connection"
         case .sync: "Sync"
         }
@@ -28,6 +39,7 @@ enum SettingsTab: Int, CaseIterable {
         switch self {
         case .general: "gearshape"
         case .code: "curlybraces"
+        case .pads: "square.stack"
         case .connection: "network"
         case .sync: "arrow.triangle.2.circlepath"
         }
@@ -42,9 +54,13 @@ enum SettingsTab: Int, CaseIterable {
     /// was open last, as Settings windows do, with one exception: the
     /// surface's banner for a ledger that will not open sends the user
     /// here to clear it, and the clear lives on General. Opening on
-    /// any other tab would turn that instruction into a search.
-    static func landing(current: SettingsTab, ledgerRestoreRefused: Bool) -> SettingsTab {
-        ledgerRestoreRefused ? .general : current
+    /// any other tab would turn that instruction into a search. A button
+    /// that names a tab, the conceal sheet's Connection Settings…, lands
+    /// on the tab it names.
+    static func landing(
+        current: SettingsTab, requested: SettingsTab? = nil, ledgerRestoreRefused: Bool
+    ) -> SettingsTab {
+        requested ?? (ledgerRestoreRefused ? .general : current)
     }
 }
 
@@ -58,7 +74,7 @@ enum SettingsTab: Int, CaseIterable {
 /// is the backdrop's and never the panel's (ADR-0010).
 @MainActor
 final class BackdropSettingsWindowController: NSObject {
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
     private var tabs: NSTabViewController?
     private let model: BackdropModel
 
@@ -79,21 +95,16 @@ final class BackdropSettingsWindowController: NSObject {
     /// switch appears, scrolls rather than pushing the window around.
     private static func height(of tab: SettingsTab) -> CGFloat {
         switch tab {
-        case .general: 700
+        case .general: 640
         case .code: 390
+        case .pads: 560
         case .connection: 360
         case .sync: 380
         }
     }
 
-    /// Keeps the Settings window's level in step with the surface while
-    /// it is open, and lets go when it closes. The same type follows
-    /// About (`CompanionLevelFollower`).
-    private let levelFollower: CompanionLevelFollower
-
     init(model: BackdropModel) {
         self.model = model
-        levelFollower = CompanionLevelFollower(model: model)
         super.init()
     }
 
@@ -103,7 +114,7 @@ final class BackdropSettingsWindowController: NSObject {
         window === candidate
     }
 
-    func show() {
+    func show(tab requested: SettingsTab? = nil) {
         if window == nil {
             let tabs = makeTabs()
             let window = NSWindow(contentViewController: tabs)
@@ -124,6 +135,7 @@ final class BackdropSettingsWindowController: NSObject {
             // every Apple app's Settings window draws them.
             window.toolbarStyle = .preference
             window.isReleasedWhenClosed = false
+            window.isRestorable = false
             // The window is built once and shown many times, so without
             // this it would keep the Space it was first opened on and
             // every later ⌘, would carry the user there instead of
@@ -141,25 +153,14 @@ final class BackdropSettingsWindowController: NSObject {
             let current = SettingsTab(rawValue: tabs.selectedTabViewItemIndex) ?? .general
             tabs.selectedTabViewItemIndex = SettingsTab.landing(
                 current: current,
+                requested: requested,
                 ledgerRestoreRefused: model.pages.ledgerRestoreRefused
             ).index
         }
-        // A raised card floats above normal windows, and so does a
-        // pinned resting one; a .normal-level Settings window would
-        // open key yet invisible beneath it, since level beats key
-        // status for stacking. The altitude comes from
-        // `BackdropAltitude.keylessAltitude` read as a companion level
-        // (ADR-0032, #188): Settings has no key status of its own to
-        // feed the resolver, so it reads the surface's keyless answer
-        // and maps desktop to normal (a titled window at desktop level
-        // could resolve behind the wallpaper as easily as the surface
-        // can). The follower writes it now and on every published
-        // change while the window is up, so a pin or a keep above
-        // switch flipped inside Settings moves the window at the moment
-        // the switch does.
-        if let window {
-            levelFollower.follow(window)
-        }
+        // Settings stays an ordinary window at normal level. A raised,
+        // pinned or kept above card would float over it, so the card
+        // lowers itself for as long as Settings has the keyboard
+        // (`BackdropAltitudeKeeper`, ADR-0032 Amendment 1, #293).
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
@@ -200,6 +201,8 @@ final class BackdropSettingsWindowController: NSObject {
             )
         case .code:
             hosted = host(CodeSettingsView(model: model.pages), for: tab)
+        case .pads:
+            hosted = host(PadSettingsView(model: model.pages), for: tab)
         case .connection:
             hosted = host(ConnectionSettingsView(model: model.pages), for: tab)
         case .sync:
@@ -222,56 +225,5 @@ final class BackdropSettingsWindowController: NSObject {
         hosted.sizingOptions = []
         hosted.preferredContentSize = NSSize(width: Self.width, height: Self.height(of: tab))
         return hosted
-    }
-}
-
-/// Route native SwiftUI Settings requests to the app's existing settings window.
-/// Replacing the menu command alone leaves the empty scene independently openable.
-struct SettingsSceneRedirect: NSViewRepresentable {
-    let openSettings: () -> Void
-
-    func makeNSView(context: Context) -> SettingsSceneRedirectView {
-        SettingsSceneRedirectView(openSettings: openSettings)
-    }
-
-    func updateNSView(_ view: SettingsSceneRedirectView, context: Context) {}
-}
-
-final class SettingsSceneRedirectView: NSView {
-    private let openSettings: () -> Void
-    private var redirectPending = false
-
-    init(openSettings: @escaping () -> Void) {
-        self.openSettings = openSettings
-        super.init(frame: .zero)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("not archived") }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        NotificationCenter.default.removeObserver(self)
-        guard let window else { return }
-        window.isRestorable = false
-        // SwiftUI can reuse the same scene window after closing it.
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(redirect),
-            name: NSWindow.didBecomeKeyNotification, object: window)
-        redirect()
-    }
-
-    @objc func redirect() {
-        guard let window, !redirectPending else { return }
-        redirectPending = true
-        window.orderOut(nil)
-        // Let SwiftUI finish presenting before closing its empty host.
-        DispatchQueue.main.async { [weak self, weak window] in
-            guard let self else { return }
-            self.redirectPending = false
-            guard let window, self.window === window else { return }
-            window.close()
-            self.openSettings()
-        }
     }
 }

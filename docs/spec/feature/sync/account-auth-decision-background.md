@@ -26,7 +26,7 @@ every other secret in that store, and rides no iCloud Keychain.
 ## Context
 
 Issue #98 asks for one thing: prove to the relay that the attaching
-client belongs to the account. ADR-0021 section 3 already fixed what
+client belongs to the account. The [relay decision background](relay-decision-background.md) section 3 already fixed what
 that proof may and may not buy. It admits a client to a channel. It
 says nothing about whether the device holding it was ever enrolled,
 and a token that could admit a device to content would collapse the
@@ -39,7 +39,7 @@ Three constraints bound the answer before any flow is chosen.
    (docs/design-brief.md). Every state this ADR names has to
    leave the pad fully usable.
 2. **The network boundary is two destinations, TLS only**
-   (docs/spec/design/05-technical-direction.md). Account auth
+   (docs/spec/design/2026-0707-technical-direction.md). Account auth
    adds no third: the token endpoint lives on the configured OTS
    server, which is destination one, and the relay is destination two.
    The driver's transport is built bounded to exactly those two hosts.
@@ -214,7 +214,7 @@ lifetimes are chosen for that shape rather than for a web session.
   never pre judges expiry against its own clock, so a skewed clock
   cannot invent an outage and a slow one cannot keep using a token the
   server has already retired. This is the same discipline the expiry
-  design follows for the opposite reason (ADR-0021 section 6): where a
+  design follows for the opposite reason ([relay decision background](relay-decision-background.md) section 6): where a
   deadline is the product, the client computes it; where a deadline is
   the server's to declare, the client asks.
 - **Expiry mid session is one refresh and one retry.** The relay
@@ -288,10 +288,10 @@ the user revoking the grant in their account settings, and it is the
 server's to improve.
 
 Issue #98's answer to open question 21
-(docs/spec/design/06-open-questions.md) stands: the desktop
+(docs/spec/design/2026-0707-open-questions.md) stands: the desktop
 app's requirement of v3 auth is a long idle refresh window and nothing
 else. It does not want a device claim inside the token, which would re
-entangle the two gates ADR-0021 section 3 separated.
+entangle the two gates the [relay decision background](relay-decision-background.md) section 3 separated.
 
 ### 3. Sync credentials are separate from conceal credentials
 
@@ -306,7 +306,7 @@ to be argued:
 
 - **A conceal is deliberate and foreground; sync is background.** One
   credential serving both would make a background act as powerful as
-  the deliberate one, which is ADR-0021 section 3's rule and the whole
+  the deliberate one, which is the [relay decision background](relay-decision-background.md) section 3's rule and the whole
   reason a conceal is a gesture rather than a setting.
 - **They fail at different times and want different answers.** A
   refused conceal is one gesture failing in front of the user, who can
@@ -360,8 +360,9 @@ name rather than a blank.
 
 The refresh token rests in `crates/credentials`' key material store,
 under `sync-oauth-refresh`, with the `ThisDeviceOnly` protection class
-every secret in that store carries (ADR-0016 section 3, ADR-0021
-section 8). The access token rests nowhere.
+every secret in that store carries ([persistence decision background](../../../plans/trustworthy-persistence-decision-background.md) section 3,
+[relay decision background](relay-decision-background.md) section 8).
+The access token rests nowhere.
 
 **Not under the rotating content key**, and the reasons are
 independent enough that any one of them decides it:
@@ -454,7 +455,7 @@ device that the account admitted.
 
 Nothing in this ADR gives any device the right to read content. A
 client that passes the account gate and has never paired downloads
-ciphertext it cannot open, which is ADR-0021 section 5's rule that
+ciphertext it cannot open, which is the [relay decision background](relay-decision-background.md) section 5's rule that
 authorization is cryptographic and never possession. The two gates
 fail independently and both must be passed. The gate state above is
 therefore a report about attachment only, and no key, no key frame and
@@ -545,7 +546,7 @@ ceremony is the duplicate merge the settled cursor exists to prevent.
   same thing from the other side.
 - **The relay stops accepting OTS issued tokens** and wants a
   credential of its own. That would make the relay an identity
-  provider, which contradicts ADR-0021 section 1's blindness, and the
+  provider, which contradicts the [relay decision background](relay-decision-background.md) section 1's blindness, and the
   right response is to argue the relay back to validation rather than
   to add a second account system.
 - **The relay needs more than the one scope**, because an endpoint

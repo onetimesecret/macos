@@ -81,7 +81,7 @@ written over it for the whole session.
    press ⌘Q. Confirm the app stays running, no alert or other app-owned
    surface appears, the surface is raised, and a second ember line
    stands under the recovery line: "nothing typed this session is on
-   disk, so its pages will not survive the quit" with a "quit anyway
+   disk, so its pages will not survive the quit" with a "Quit Anyway
    (⌘Q)" button. Press ⌘Q again. Confirm the app quits without a save
    licence having been granted. Clicking the button instead of the
    second ⌘Q is the same path.
@@ -129,7 +129,7 @@ half, a missing keychain item, a superseded disposal line
 
 **Pass:** both pages come back with their chips, drained by the elapsed
 wall clock. The withholding lasted the session and no longer, which is
-what ADR-0016 section 7 promises and prices.
+what the [persistence decision background](../../plans/trustworthy-persistence-decision-background.md) section 7 promises and prices.
 
 ## Case 2: the ACL prompt is denied
 

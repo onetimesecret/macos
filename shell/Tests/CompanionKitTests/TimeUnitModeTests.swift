@@ -153,7 +153,7 @@ final class TimeUnitModeTests: XCTestCase {
 
         XCTAssertEqual(
             model.dirtyMarks, marks,
-            "a presentation preference armed a ciphertext write (ADR-0016 section 6)")
+            "a presentation preference armed a ciphertext write (persistence decision background section 6)")
     }
 
     /// A model built over defaults that already carry the preference
@@ -543,7 +543,38 @@ final class TimeUnitModeTests: XCTestCase {
         XCTAssertFalse(model.tabs[1].hasPage, "the toggle minted into the slot it left")
         XCTAssertEqual(
             model.dirtyMarks, marks,
-            "a presentation preference armed a ciphertext write (ADR-0016 section 6)")
+            "a presentation preference armed a ciphertext write (persistence decision background section 6)")
+    }
+
+    /// And at launch. A pad that opens in the mode on a morning after
+    /// the first slot's page expired overnight is owed the same fall:
+    /// the launch used to write the first strip slot over the selection
+    /// `refresh()` had just reconciled, so the rail lit no node and the
+    /// roll parked the editor until some later edit or expiry happened
+    /// along to reconcile again.
+    func testALaunchKeepsTheFallFromAFirstSlotEmptiedOvernight() throws {
+        let (first, defaults) = try makeModel()
+        first.showsTimeUnits = true
+        let model = isolatedModel(defaults: defaults)
+        XCTAssertTrue(model.showsTimeUnits, "the fixture wanted the mode remembered on")
+        // What the launch reads: two slots, the first emptied by its
+        // expiry, the second holding a page born since. The aging seam
+        // re-mints ids, so nothing captured before it is compared after.
+        let doomed = model.coreClient.newTab()
+        XCTAssertNotEqual(doomed, 0)
+        model.coreClient.setRung(tab: doomed, rung: .oneHour)
+        model.coreClient.ageForTests(byMs: 2 * 60 * 60 * 1_000)
+        model.coreClient.expireDue()
+        XCTAssertNotEqual(model.coreClient.newTab(), 0)
+
+        model.loadStateIfNeeded()
+
+        XCTAssertEqual(model.tabs.count, 2, "the launch minted or closed something")
+        XCTAssertFalse(model.tabs[0].hasPage, "the fixture wanted the first slot emptied")
+        XCTAssertTrue(model.tabs[1].hasPage, "the fixture wanted a page in the second slot")
+        XCTAssertEqual(
+            model.selection, model.tabs[1].id,
+            "the launch reset the selection to a slot the rail draws no row for")
     }
 
     /// The other two directions, which must not move: a selection the
@@ -572,33 +603,42 @@ final class TimeUnitModeTests: XCTestCase {
             "leaving the mode fell a selection the strip draws perfectly well")
     }
 
-    // MARK: The chord the mode takes away
+    // MARK: Wrap command and preference
 
-    /// ⌥Z with pages organized by day. The roll wraps every day whatever
-    /// the preference says, so the chord cannot do what it is for, and
-    /// what it must not do instead is rewrite the stored preference
-    /// under a surface that will not honour it, which would leave the
-    /// flash claiming one thing while every line went on wrapping and
-    /// hand horizontal mode back unwrapped later. It says so instead,
-    /// and the same press with the mode off still does exactly what it
-    /// always did.
-    func testTheWrapChordIsRefusedInTheModeAndLeavesThePreferenceAlone() throws {
+    func testTheWrapCommandTogglesAndReportsItsStateInDayMode() throws {
         let (model, defaults) = try makeModel()
         model.loadStateIfNeeded()
-        let wrapped = model.wrapsLines
         model.showsTimeUnits = true
+        XCTAssertTrue(model.wrapsLines)
 
-        model.perform(.editorToggleWrap)
+        XCTAssertTrue(model.perform(.editorToggleWrap))
+        XCTAssertFalse(model.wrapsLines)
+        XCTAssertEqual(model.notice, "long lines run on")
+        XCTAssertEqual(model.noticeTone, .plain)
+        XCTAssertFalse(isolatedModel(defaults: defaults).wrapsLines)
 
-        XCTAssertEqual(model.wrapsLines, wrapped, "⌥Z rewrote a preference the roll does not read")
-        XCTAssertEqual(
-            isolatedModel(defaults: defaults).wrapsLines, wrapped,
-            "the stored preference moved under a surface that ignores it")
-        XCTAssertEqual(model.notice, PageModel.wrapIsFixedNotice, "the keystroke went out dead")
+        XCTAssertTrue(model.perform(.editorToggleWrap))
+        XCTAssertTrue(model.wrapsLines)
+        XCTAssertEqual(model.notice, "long lines wrap")
+        XCTAssertEqual(model.noticeTone, .plain)
+        XCTAssertTrue(isolatedModel(defaults: defaults).wrapsLines)
+    }
 
-        model.showsTimeUnits = false
-        model.perform(.editorToggleWrap)
-        XCTAssertNotEqual(model.wrapsLines, wrapped, "the chord stayed refused with the mode off")
+    func testTheWrapPreferenceSurvivesLayoutSwitchesAndModelRecreation() throws {
+        let (model, defaults) = try makeModel()
+        model.loadStateIfNeeded()
+
+        for wrapped in [false, true] {
+            model.wrapsLines = wrapped
+            for dayMode in [true, false] {
+                model.showsTimeUnits = dayMode
+                XCTAssertEqual(model.wrapsLines, wrapped)
+
+                let restored = isolatedModel(defaults: defaults)
+                XCTAssertEqual(restored.showsTimeUnits, dayMode)
+                XCTAssertEqual(restored.wrapsLines, wrapped)
+            }
+        }
     }
 
     func testLayoutCaptionExplainsBothChoices() {
