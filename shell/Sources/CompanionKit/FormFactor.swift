@@ -197,7 +197,7 @@ public struct FormFactor: Sendable {
     public static let devBundleIdentifier = "dev.onetimesecret.pad.debug"
 
     /// Configuration lookup for packaged and XCTest hosts.
-    public static func resolvedBundleIdentifier(fallback: String) -> String {
+    static func resolvedBundleIdentifier(fallback: String) -> String {
         if let identifier = resolvedBundleIdentifier(running: Bundle.main.bundleIdentifier, fallback: fallback) {
             return identifier
         }
@@ -215,22 +215,6 @@ public struct FormFactor: Sendable {
             return running
         }
         return nil
-    }
-
-    /// The summoned panel (docs/spec/04): accessory posture.
-    ///
-    /// Computed rather than stored, because the identifier it derives
-    /// everything from is a property of the running build: a dev copy
-    /// and an installed release copy are two apps to LaunchServices
-    /// and must be two stores here, or two processes on one debounce
-    /// clobber one another's `state.sealed`.
-    public static var panel: FormFactor {
-        let id = resolvedBundleIdentifier(fallback: panelBundleIdentifier)
-        return FormFactor(
-            credentialService: id,
-            stateDirectory: "\(id).noindex",
-            loggerSubsystem: id
-        )
     }
 
     /// The background surface (docs/spec/feature/background-surface):
