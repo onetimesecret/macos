@@ -273,6 +273,37 @@ final class MarkdownParserTests: XCTestCase {
         XCTAssertEqual(block.map { [$0.startingRow, $0.startingColumn] }, [1, 1], "the object ends its row's last cell")
     }
 
+    /// cmark-gfm gives the paragraph it keeps above a table no source position; a definition's
+    /// object before that paragraph still stands at the definition.
+    func testADefinitionsObjectStaysAboveTheParagraphATableSplitsOff() throws {
+        let header: [[PreviewEvent]] = [[.text("h")]]
+        let parts: [String?] = ["[r]: /u", nil, "\n\nA", nil, "\n\nx", nil, "\n| h |\n| - |\n\nB", nil]
+        XCTAssertEqual(try parse(parts, .gfm).blocks, [
+            .objects(["0"]),
+            .paragraph([.text("A"), .object("1")]),
+            .paragraph([.text("x"), .object("2")]),
+            .table(alignments: [nil], header: header, body: []),
+            .paragraph([.text("B"), .object("3")]),
+        ])
+        XCTAssertEqual(try parse(["> [r]: /u", nil, "\n>\n> x", nil, "\n> | h |\n> | - |"], .gfm).blocks, [.quote([
+            .objects(["0"]),
+            .paragraph([.text("x"), .object("1")]),
+            .table(alignments: [nil], header: header, body: []),
+        ])])
+        XCTAssertEqual(try parse(["- [r]: /u", nil, "\n\n  x", nil, "\n  | h |\n  | - |"], .gfm).blocks, [
+            .list(ordered: false, start: 0, tight: true, items: [MarkdownListItem(task: nil, blocks: [
+                .objects(["0"]),
+                .paragraph([.text("x"), .object("1")]),
+                .table(alignments: [nil], header: header, body: []),
+            ])]),
+        ])
+
+        let (rendered, chips) = render(parts)
+        let found = attachments(in: rendered)
+        XCTAssertEqual(found.count, chips.count)
+        for (actual, expected) in zip(found, chips) { XCTAssertTrue(actual === expected, "rendered in source order") }
+    }
+
     /// cmark-gfm pads a short row to the header's width, so a few kilobytes of wide tables ask for
     /// hundreds of thousands of cells; every table of a page shares one budget, and past it the
     /// page shows as plain text.

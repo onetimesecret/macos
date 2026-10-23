@@ -323,8 +323,8 @@ private struct PlacedBlock {
     }
 
     var shape: Shape
-    let start: SourcePosition
-    let end: SourcePosition
+    var start: SourcePosition
+    var end: SourcePosition
 
     var block: MarkdownBlock {
         switch shape {
@@ -465,6 +465,14 @@ private final class TreeWalker {
         while let node = child {
             blocks += try block(node)
             child = library.next(node)
+        }
+        // cmark-gfm leaves the paragraph it keeps above a table at line 0; `place` needs starts to ascend.
+        for index in blocks.indices where blocks[index].start.line == 0 {
+            let neighbour = blocks[index...].first { $0.start.line > 0 }?.start
+                ?? blocks[..<index].last { $0.start.line > 0 }?.end
+            guard let neighbour else { continue }
+            blocks[index].start = neighbour
+            blocks[index].end = neighbour
         }
         return blocks
     }
