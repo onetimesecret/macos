@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Refuse a build when a running executable resolves inside its output directory."""
+"""Inspect current-user executables; conservatively check text mappings when unlinked."""
 import ctypes
 import errno
 import os
 from pathlib import Path
 import sys
 import subprocess
+
+
+PROC_UID_ONLY = 4
 
 
 class ProcessPaths:
@@ -22,7 +25,7 @@ class ProcessPaths:
         while True:
             buffer = (ctypes.c_int * capacity)()
             size = ctypes.sizeof(buffer)
-            count = self.library.proc_listpids(1, 0, buffer, size)
+            count = self.library.proc_listpids(PROC_UID_ONLY, os.getuid(), buffer, size)
             if count <= 0:
                 raise OSError(ctypes.get_errno(), "proc_listpids failed")
             if count < size:
@@ -70,7 +73,10 @@ def running_build(build_directory, processes):
 
 
 def main(arguments):
-    detect_only = arguments and arguments[0] == "--running"
+    detect_only = bool(arguments and arguments[0] == "--running")
+    if len(arguments) != (2 if detect_only else 1) or (not detect_only and arguments[0].startswith("-")):
+        print("Usage: check-live-build.py [--running] DIRECTORY", file=sys.stderr)
+        return 2
     directory = arguments[1] if detect_only else arguments[0]
     try:
         active = running_build(directory, ProcessPaths())

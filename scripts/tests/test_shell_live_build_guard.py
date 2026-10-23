@@ -73,6 +73,29 @@ class LiveBuildGuardTests(unittest.TestCase):
             with patch("sys.stderr"):
                 self.assertEqual(GUARD.main(["--running", "/tmp/build"]), 2)
 
+    def test_process_enumeration_is_limited_to_the_current_user(self):
+        processes = GUARD.ProcessPaths.__new__(GUARD.ProcessPaths)
+        processes.library = Mock()
+
+        def list_pids(kind, uid, buffer, size):
+            self.assertEqual(kind, 4)
+            self.assertEqual(uid, 501)
+            buffer[0] = 123
+            return GUARD.ctypes.sizeof(GUARD.ctypes.c_int)
+
+        processes.library.proc_listpids.side_effect = list_pids
+        with patch.object(GUARD.os, "getuid", return_value=501):
+            self.assertEqual(processes.pids(), [123])
+
+    def test_invalid_arguments_show_usage_without_inspecting_processes(self):
+        for arguments in ([], ["--running"], ["--unknown"], ["a", "b"],
+                          ["--running", "a", "b"]):
+            with self.subTest(arguments=arguments), patch("sys.stderr") as output:
+                with patch.object(GUARD, "ProcessPaths") as processes:
+                    self.assertEqual(GUARD.main(arguments), 2)
+                    processes.assert_not_called()
+                self.assertIn("Usage:", "".join(call.args[0] for call in output.write.call_args_list))
+
     def test_missing_path_fails_closed(self):
         processes = Mock()
         processes.pids.return_value = [123]

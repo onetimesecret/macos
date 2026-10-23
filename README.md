@@ -179,9 +179,14 @@ previous run's persistent identity or authorize Keychain prompts to keep an
 automated test going. See the runtime-testing rules in [AGENTS.md](AGENTS.md).
 
 Do not rebuild an executable while it is running from `shell/.build/`.
-The shared build-lane check inspects resolved executable paths before test,
-development and packaging builds and stops if a live build executable is found;
-it does not terminate it. A packaged app in `dist/` or `/Applications` uses
+The shared build-lane check inspects this user’s resolved executable paths before
+test, development and packaging builds and stops if a live build executable is
+found; it does not terminate it. Unlinked executables are checked through `lsof`
+text mappings, including dylibs, so a mapped library from the output directory
+can also stop a build. The scripts check the fixed `shell/.build/` output; custom
+Swift `--scratch-path` and `--build-path` locations are outside this check. Use
+the default output with these scripts, or separately check a custom output with
+`python3 scripts/check-live-build.py DIRECTORY` before building. A packaged app in `dist/` or `/Applications` uses
 a separate executable, but its existing content still makes it unsuitable as
 an automated-test fixture.
 
