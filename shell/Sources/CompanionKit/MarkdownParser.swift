@@ -188,7 +188,8 @@ private struct PlaceholderSource {
             pieces.append(.text(String(decoding: UnsafeRawBufferPointer(rebasing: bytes[start..<end]), as: UTF8.self)))
         }
         while index < bytes.count {
-            if bytes[index] == 0xF4, index + 3 < bytes.count {
+            if bytes[index] == 0xF4, index + 3 < bytes.count,
+               (1...3).allSatisfy({ bytes[index + $0] & 0xC0 == 0x80 }) {
                 let value = UInt32(bytes[index] & 0x07) << 18 | UInt32(bytes[index + 1] & 0x3F) << 12
                     | UInt32(bytes[index + 2] & 0x3F) << 6 | UInt32(bytes[index + 3] & 0x3F)
                 if let atom = atom(value) {

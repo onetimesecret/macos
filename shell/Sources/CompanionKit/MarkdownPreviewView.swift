@@ -274,10 +274,10 @@ private final class MarkdownPreviewRenderer {
         var spacing: CGFloat = 8
     }
 
-    /// A composed identity naming no object of this rendering, a table row with more cells than
-    /// the table has columns, or a rendering that showed fewer objects than the page has.
+    /// A composed identity naming no object of this rendering, or one it already showed, a table
+    /// row with more cells than the table has columns, or a rendering that left an object out.
     private enum RenderFailure: Error {
-        case unknownObject, rowWiderThanTable, objectMissing
+        case unknownObject, objectShownTwice, rowWiderThanTable, objectMissing
     }
 
     private let output = NSMutableAttributedString(string: "")
@@ -290,8 +290,8 @@ private final class MarkdownPreviewRenderer {
     /// One stream for the document, so HTML scope crosses blocks (plan R3).
     private var composer: PreviewCompositionStream
     private var images = 0
-    /// Objects shown; the composer refuses a second showing of any one.
-    private var shown = 0
+    /// The objects shown, by index, checked here apart from the parser's and the composer's checks.
+    private var shown: Set<Int> = []
 
     init(source: NSAttributedString, dialect: PreviewDialect, limits: CompositionLimits) {
         let raw = source.string as NSString
@@ -319,7 +319,7 @@ private final class MarkdownPreviewRenderer {
             let document = try MarkdownParser.parse(text, objects: offsets, dialect: dialect, limits: limits)
             for block in document.blocks { try renderBlock(block, context: Context()) }
             try composer.finish()
-            guard shown == attachments.count else { throw RenderFailure.objectMissing }
+            guard shown.count == attachments.count else { throw RenderFailure.objectMissing }
             return NSAttributedString(attributedString: output)
         } catch {
             Self.log(error)
@@ -666,7 +666,7 @@ private final class MarkdownPreviewRenderer {
         guard let index = Int(identity), attachments.indices.contains(index) else {
             throw RenderFailure.unknownObject
         }
-        shown += 1
+        guard shown.insert(index).inserted else { throw RenderFailure.objectShownTwice }
         var attributes = baseAttributes
         attributes[.attachment] = attachments[index]
         return NSAttributedString(string: "\u{FFFC}", attributes: attributes)
