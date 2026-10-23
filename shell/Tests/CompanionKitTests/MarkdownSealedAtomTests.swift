@@ -420,44 +420,41 @@ final class MarkdownSealedAtomTests: XCTestCase {
         }
     }
 
-    /// P05: cmark-gfm drops a row's cells past the header's count, and R1 places a dropped cell's
-    /// object after the table, so it renders and copies after any object in a later row.
-    func testP05AnExcessCellsObjectStandsAfterItsTable() throws {
+    /// P05: cmark-gfm drops a row's cells past the header's count, and R1 gives a dropped cell's
+    /// object to the end of its row's last kept cell, so it renders and copies in source order.
+    func testP05AnExcessCellsObjectEndsItsRowsLastCell() throws {
         let header: [[PreviewEvent]] = [[.text("a")], [.text("b")]]
-        let reordered = "| a | b |\n| - | - |\n| c | d | {obj} |\n| e | f {obj} |"
-        let rendered = try check(reordered, .gfm, [
+        let excess = "| a | b |\n| - | - |\n| c | d | {obj} |\n| e | f {obj} |"
+        let rendered = try check(excess, .gfm, [
             .table(alignments: [nil, nil], header: header, body: [
-                [[.text("c")], [.text("d")]], [[.text("e")], [.text("f "), .object("1")]],
+                [[.text("c")], [.text("d"), .object("0")]], [[.text("e")], [.text("f "), .object("1")]],
             ]),
-            .objects(["0"]),
-        ], shows: "a\nb\nc\nd\ne\nf {obj}\n\n{obj}\n", order: [1, 0])
-        XCTAssertEqual(attachments(in: rendered).map { cell(at: $0.location, in: rendered) }, [[2, 1], nil])
-        try check(reordered, .commonMark, [.paragraph([
+        ], shows: "a\nb\nc\nd{obj}\ne\nf {obj}\n\n")
+        XCTAssertEqual(attachments(in: rendered).map { cell(at: $0.location, in: rendered) }, [[1, 1], [2, 1]])
+        try check(excess, .commonMark, [.paragraph([
             .text("| a | b |"), .softBreak, .text("| - | - |"), .softBreak, .text("| c | d | "), .object("0"),
             .text(" |"), .softBreak, .text("| e | f "), .object("1"), .text(" |"),
         ])], shows: "| a | b | | - | - | | c | d | {obj} | | e | f {obj} |\n")
 
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         view.isSelectedPage = true
-        view.reseed(with: PageModel.QuietRendering(text: source(reordered).0, fenceRegions: []))
+        view.reseed(with: PageModel.QuietRendering(text: source(excess).0, fenceRegions: []))
         view.selectAll(nil)
         XCTAssertEqual(view.shownSelection(), [[
-            .ink("a\nb\nc\nd\ne\nf "), .chip(2), .ink("\n\n"), .chip(1), .ink("\n"),
+            .ink("a\nb\nc\nd"), .chip(1), .ink("\ne\nf "), .chip(2), .ink("\n\n"),
         ]], "a copy follows the rendered order")
 
         try check("| a | b |\n| - | - |\n| {obj} | d | {obj} |", .gfm, [
-            .table(alignments: [nil, nil], header: header, body: [[[.object("0")], [.text("d")]]]),
-            .objects(["1"]),
-        ], shows: "a\nb\n{obj}\nd\n\n{obj}\n")
+            .table(alignments: [nil, nil], header: header, body: [[[.object("0")], [.text("d"), .object("1")]]]),
+        ], shows: "a\nb\n{obj}\nd{obj}\n\n")
 
         // cmark-gfm takes a plain line after a table as one more row.
         let quoted = "> | a | b |\n> | - | - |\n> | c | d | {obj} |\n> after {obj}"
         try check(quoted, .gfm, [.quote([
             .table(alignments: [nil, nil], header: header, body: [
-                [[.text("c")], [.text("d")]], [[.text("after "), .object("1")], []],
+                [[.text("c")], [.text("d"), .object("0")]], [[.text("after "), .object("1")], []],
             ]),
-            .objects(["0"]),
-        ])], shows: "a\nb\nc\nd\nafter {obj}\n\n\n{obj}\n", order: [1, 0])
+        ])], shows: "a\nb\nc\nd{obj}\nafter {obj}\n\n\n")
         try check(quoted, .commonMark, [.quote([.paragraph([
             .text("| a | b |"), .softBreak, .text("| - | - |"), .softBreak, .text("| c | d | "), .object("0"),
             .text(" |"), .softBreak, .text("after "), .object("1"),
@@ -466,11 +463,10 @@ final class MarkdownSealedAtomTests: XCTestCase {
         let listed = "- | a | b |\n  | - | - |\n  | c | d | {obj} |\n- next {obj}"
         try check(listed, .gfm, [.list(ordered: false, start: 0, tight: true, items: [
             MarkdownListItem(task: nil, blocks: [
-                .table(alignments: [nil, nil], header: header, body: [[[.text("c")], [.text("d")]]]),
-                .objects(["0"]),
+                .table(alignments: [nil, nil], header: header, body: [[[.text("c")], [.text("d"), .object("0")]]]),
             ]),
             MarkdownListItem(task: nil, blocks: [.paragraph([.text("next "), .object("1")])]),
-        ])], shows: "•\t\na\nb\nc\nd\n\n{obj}\n•\tnext {obj}\n")
+        ])], shows: "•\t\na\nb\nc\nd{obj}\n\n•\tnext {obj}\n")
     }
 
     /// P05: an object in the delimiter row leaves it no delimiter row, so neither dialect has a table.

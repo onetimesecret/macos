@@ -307,6 +307,11 @@ private struct PlacedBlock {
         case leaf(MarkdownBlock)
         case quote([PlacedBlock])
         case list(ordered: Bool, start: Int, tight: Bool, items: [PlacedItem])
+        /// `rows` are the source lines of `body`'s rows.
+        case table(
+            alignments: [MarkdownAlignment?], header: [[PreviewEvent]], body: [[[PreviewEvent]]],
+            rows: [ClosedRange<Int>]
+        )
     }
 
     var shape: Shape
@@ -321,6 +326,8 @@ private struct PlacedBlock {
             return .list(ordered: ordered, start: start, tight: tight, items: items.map {
                 MarkdownListItem(task: $0.task, blocks: $0.blocks.map(\.block))
             })
+        case .table(let alignments, let header, let body, _):
+            return .table(alignments: alignments, header: header, body: body)
         }
     }
 }
@@ -466,7 +473,7 @@ private final class TreeWalker {
             shape = .leaf(.codeBlock(info: info, literal: try parts(library.literal, of: node)))
         case .htmlBlock: shape = .leaf(.html(try parts(library.literal, of: node)))
         case .thematicBreak: shape = .leaf(.thematicBreak)
-        case .table: shape = .leaf(try table(node))
+        case .table: shape = try table(node)
         case .blockQuote:
             try enter()
             defer { leave() }
@@ -503,7 +510,7 @@ private final class TreeWalker {
     }
 
     /// Cells as cmark-gfm keeps them: one per column, a row's excess cells dropped.
-    private func table(_ node: UnsafeRawPointer) throws -> MarkdownBlock {
+    private func table(_ node: UnsafeRawPointer) throws -> PlacedBlock.Shape {
         let alignments: [MarkdownAlignment?] = (0..<max(0, Int(library.tableColumnCount(node)))).map { column in
             // ots_gfm.h: 1 left, 2 center, 3 right.
             switch library.tableAlignment(node, Int32(column)) {
@@ -515,6 +522,7 @@ private final class TreeWalker {
         }
         var header: [[PreviewEvent]]?
         var body: [[[PreviewEvent]]] = []
+        var rows: [ClosedRange<Int>] = []
         var row = library.firstChild(node)
         while let current = row {
             if NodeKind(library.kind(current)) == .tableRow {
@@ -528,11 +536,13 @@ private final class TreeWalker {
                     header = cells
                 } else {
                     body.append(cells)
+                    let (start, end) = span(current)
+                    rows.append(start.line...max(start.line, end.line))
                 }
             }
             row = library.next(current)
         }
-        return .table(alignments: alignments, header: header ?? [], body: body)
+        return .table(alignments: alignments, header: header ?? [], body: body, rows: rows)
     }
 
     // MARK: Inlines
@@ -640,6 +650,7 @@ private final class TreeWalker {
 
     /// Puts each object the walk never emitted inside the deepest container whose span covers
     /// it, before the first child after it; inside a leaf, before it for a definition's object.
+    /// A table row's dropped cell gives its object to the row's last kept cell.
     /// `unplaced` is in source order, as siblings are, so each is found by binary search.
     private static func place(_ unplaced: ArraySlice<Unplaced>, in blocks: inout [PlacedBlock]) {
         guard !unplaced.isEmpty else { return }
@@ -654,6 +665,8 @@ private final class TreeWalker {
             switch blocks[after - 1].shape {
             case .quote: nested[after - 1, default: []].append(object)
             case .list(_, _, _, let items) where !items.isEmpty: nested[after - 1, default: []].append(object)
+            case .table(_, _, let body, let rows) where row(of: object.position.line, in: rows, body) != nil:
+                nested[after - 1, default: []].append(object)
             default: insertions.append((object.definition ? after - 1 : after, object))
             }
         }
@@ -671,6 +684,12 @@ private final class TreeWalker {
                 }
                 for (item, objects) in byItem { place(objects[...], in: &items[item].blocks) }
                 blocks[index].shape = .list(ordered: ordered, start: start, tight: tight, items: items)
+            case .table(let alignments, let header, var body, let rows):
+                for object in objects {
+                    guard let row = row(of: object.position.line, in: rows, body) else { continue }
+                    body[row][body[row].count - 1].append(.object(object.identity))
+                }
+                blocks[index].shape = .table(alignments: alignments, header: header, body: body, rows: rows)
             case .leaf: break
             }
         }
@@ -696,6 +715,13 @@ private final class TreeWalker {
             if index < blocks.count { result.append(blocks[index]) }
         }
         blocks = result
+    }
+
+    /// The body row on `line`, when it has a cell to take an object.
+    private static func row(of line: Int, in rows: [ClosedRange<Int>], _ body: [[[PreviewEvent]]]) -> Int? {
+        let after = firstIndex(in: rows.count) { line < rows[$0].lowerBound }
+        guard after > 0, rows[after - 1].contains(line), !body[after - 1].isEmpty else { return nil }
+        return after - 1
     }
 
     /// The first index in `0..<count` where `isPast` turns true, for a predicate false then true.

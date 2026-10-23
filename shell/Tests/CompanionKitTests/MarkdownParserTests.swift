@@ -248,15 +248,14 @@ final class MarkdownParserTests: XCTestCase {
         for (actual, expected) in zip(found, chips) { XCTAssertTrue(actual === expected) }
     }
 
-    /// cmark-gfm drops a row's cells past the header's count, so their objects stand after the table.
-    func testAGFMTableRowsExcessCellObjectStandsAfterTheTable() throws {
+    /// cmark-gfm drops a row's cells past the header's count, so their objects end the row's last kept cell.
+    func testAGFMTableRowsExcessCellObjectEndsTheRowsLastCell() throws {
         let parts: [String?] = ["| a | b |\n| - | - |\n| c | d | ", nil, " |\n| e |\n\nafter ", nil]
         XCTAssertEqual(try parse(parts, .gfm).blocks, [
             .table(
                 alignments: [nil, nil], header: [[.text("a")], [.text("b")]],
-                body: [[[.text("c")], [.text("d")]], [[.text("e")], []]]
+                body: [[[.text("c")], [.text("d"), .object("0")]], [[.text("e")], []]]
             ),
-            .objects(["0"]),
             .paragraph([.text("after "), .object("1")]),
         ])
         guard case .paragraph(let events)? = try parse(parts, .commonMark).blocks.first else {
@@ -270,7 +269,8 @@ final class MarkdownParserTests: XCTestCase {
         for (actual, expected) in zip(found, chips) { XCTAssertTrue(actual === expected) }
         let first = (rendered.string as NSString).range(of: "\u{FFFC}").location
         let style = rendered.attribute(.paragraphStyle, at: first, effectiveRange: nil) as? NSParagraphStyle
-        XCTAssertFalse(style?.textBlocks.contains { $0 is NSTextTableBlock } ?? true, "the object is outside the table")
+        let block = style?.textBlocks.last as? NSTextTableBlock
+        XCTAssertEqual(block.map { [$0.startingRow, $0.startingColumn] }, [1, 1], "the object ends its row's last cell")
     }
 
     /// Every object identity in `blocks`, in document order.
