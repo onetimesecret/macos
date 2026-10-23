@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Packaged builds leave a git record of their source.**
+  `scripts/package-app.sh` records a dev or local build as an annotated
+  tag object at `refs/builds/<lane>/<version>-<commit>`, or, with
+  uncommitted changes, untracked files git does not ignore included, as
+  a snapshot commit at `refs/builds/<lane>/<version>-<commit>-<tree>`;
+  `git push --tags` and `push.followTags` send neither. An App Store
+  build is tagged `build/app-store/<version>-<build number>`, plus
+  `v<version>` when no tag of that name exists, and the script prints a
+  `git push` command for them; it pushes nothing, and a
+  `build/app-store` tag it cannot write fails the run after packaging,
+  with no `v<version>` tag. `CFBundleVersion` for dev and local builds
+  names the first 12 characters of the commit in place of the short SHA,
+  and `OnetimePadSourceRevision` names the snapshot when a dirty build
+  has one. `--app-store` refuses, before compiling, to run in CI or on a
+  checkout with no commit, uncommitted changes, or index entries flagged
+  assume-unchanged or skip-worktree; stops before signing when its build
+  number's tag already names another commit; and runs `build-core.sh`
+  without `--if-stale`. A build whose tree changes while it builds, or
+  whose index has such flags, gets no record, and builds under CI get
+  none. `build-core.sh` dates the xcframework from the start of its
+  build, so `--if-stale` rebuilds a source saved while cargo runs.
+  `docs/development/build-records.md` covers reading and pruning
+  records.
+
 - **Seat words and note hints take their size from the platform** (app
   0.40.8; issue #297). The twelve places that spelled the mini font
   size as a literal 9 now read `NSFont.systemFontSize(for: .mini)`
