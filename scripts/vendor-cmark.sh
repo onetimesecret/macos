@@ -101,8 +101,8 @@ manifest() { # <target dir>
 symbols() { # <target dir> <prefix header or ""> <include dirs...>
   local dir="$1" prefix="$2" out source include
   shift 2
-  # clang's default C standard, as SwiftPM compiles the targets.
-  local flags=(-c -w -I"$dir/include" -I"$dir/generated")
+  # clang's default C standard, as SwiftPM compiles the targets; DEFINES adds a configuration's macros.
+  local flags=(-c -w -I"$dir/include" -I"$dir/generated" ${DEFINES:+"$DEFINES"})
   for include in "$@"; do flags+=(-I"$dir/$include"); done
   local sources=()
   while read -r source; do sources+=("$source"); done < <(find "$dir/upstream" -name '*.c' | LC_ALL=C sort)
@@ -183,15 +183,20 @@ check_target() { # <target dir> <prefix> <library name> <dest fn> <include dirs.
     fi
   fi
 
-  if ! diff -u "$dir/prefix.h" <(symbols "$dir" "" "$@" | render_prefix "$prefix" "$name") >"$WORK/prefix.diff"; then
-    cat "$WORK/prefix.diff" >&2
-    fail "$dir/prefix.h does not match nm -gU of a build of upstream/"
-  fi
-  local strays
-  strays="$(symbols "$dir" "$PWD/$dir/prefix.h" "$@" | grep -v "^$prefix" || true)"
-  if [[ -n "$strays" ]]; then
-    fail "$dir: symbols without the $prefix prefix: $(echo "$strays" | tr '\n' ' ')"
-  fi
+  # Debug as SwiftPM builds it, and release, which Package.swift builds with NDEBUG.
+  local strays configuration
+  for DEFINES in "" -DNDEBUG; do
+    configuration="${DEFINES:-debug}"
+    if ! diff -u "$dir/prefix.h" <(symbols "$dir" "" "$@" | render_prefix "$prefix" "$name") >"$WORK/prefix.diff"; then
+      cat "$WORK/prefix.diff" >&2
+      fail "$dir/prefix.h does not match nm -gU of a $configuration build of upstream/"
+    fi
+    strays="$(symbols "$dir" "$PWD/$dir/prefix.h" "$@" | grep -v "^$prefix" || true)"
+    if [[ -n "$strays" ]]; then
+      fail "$dir: $configuration symbols without the $prefix prefix: $(echo "$strays" | tr '\n' ' ')"
+    fi
+  done
+  DEFINES=""
 }
 
 if [[ "$CHECK" == 1 ]]; then
