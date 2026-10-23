@@ -345,9 +345,6 @@ struct StreamNavigatorView: View {
 
     private typealias Metrics = StreamNavigator.Metrics
 
-    /// The gap between the dense rail's map and its checkpoint list.
-    private static let mapGap: CGFloat = 4
-
     var body: some View {
         GeometryReader { proxy in
             let size = CGSize(width: clipWidth ?? proxy.size.width, height: proxy.size.height)
@@ -355,17 +352,20 @@ struct StreamNavigatorView: View {
                 nodes: nodes, geometry: roll.geometry, height: size.height, width: size.width)
             let nodeIDs = nodes.map(\.id)
             if StreamNavigator.isDense(layout, columnHeight: size.height) {
+                let list = StreamNavigator.checkpointList(layout.placed)
+                // The list keeps room for the active row, or the first when none is active.
+                let row = (list.active ?? list.rows.first)?.placed.rowHeight ?? Metrics.firstRow
                 let mapSize = CGSize(
                     width: proxy.size.width,
-                    height: min(max(0, size.height), max(40, size.height * 0.4)))
+                    height: StreamNavigator.denseMapHeight(columnHeight: size.height, row: row))
                 let map = mapCache.layout(
                     nodes: nodes, geometry: roll.geometry,
                     height: mapSize.height, width: mapSize.width, compact: true)
-                VStack(spacing: Self.mapGap) {
+                VStack(spacing: Metrics.mapGap) {
                     stream(map, size: mapSize, nodeIDs: nodeIDs, compact: true)
                         .frame(width: mapSize.width, height: mapSize.height)
                     checkpointList(
-                        layout, height: max(0, size.height - mapSize.height - Self.mapGap))
+                        list, height: max(0, size.height - mapSize.height - Metrics.mapGap))
                 }
             } else {
                 // Rows that outrun the column lengthen the drawing, and the column scrolls to
@@ -396,8 +396,7 @@ struct StreamNavigatorView: View {
 
     /// The dense rail's checkpoints as rows in a scroll view of their own, which a selection
     /// change scrolls by the least move that shows the active row (#277).
-    private func checkpointList(_ layout: StreamNavigator.Layout, height: CGFloat) -> some View {
-        let list = StreamNavigator.checkpointList(layout.placed)
+    private func checkpointList(_ list: StreamNavigator.CheckpointList, height: CGFloat) -> some View {
         let reveal = list.active.map {
             RailReveal.Request(id: $0.id, top: $0.top, bottom: $0.bottom)
         }
@@ -411,7 +410,12 @@ struct StreamNavigatorView: View {
                 maxWidth: .infinity, minHeight: max(height, list.contentHeight),
                 maxHeight: max(height, list.contentHeight), alignment: .topLeading)
             .background(RailReveal(request: reveal).accessibilityHidden(true))
+            // The rows fill the clip, so this is the clip's width, as the drawing's is in the other branch.
+            .background(GeometryReader { content in
+                Color.clear.preference(key: ClipWidthKey.self, value: content.size.width)
+            })
         }
+        .onPreferenceChange(ClipWidthKey.self) { clipWidth = $0 }
         .frame(height: height)
     }
 

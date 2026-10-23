@@ -354,6 +354,8 @@ public enum StreamNavigator {
         public static let gaugeWidth: CGFloat = 44
         /// The room between two rows of the dense rail's checkpoint list.
         public static let listSpacing: CGFloat = 3
+        /// The gap between the dense rail's map and its checkpoint list.
+        public static let mapGap: CGFloat = 4
 
         /// How far above its node's y a row is drawn; a day's first row rises a point more
         /// so its larger dot centres on the same line as a later row's.
@@ -481,6 +483,12 @@ public enum StreamNavigator {
     /// map and the checkpoint list (ADR-0060); a column the placed rows merely outrun scrolls (#277).
     public static func isDense(_ layout: Layout, columnHeight: CGFloat) -> Bool {
         layout.packedHeight > columnHeight
+    }
+
+    /// The dense rail's map height: two fifths of the column, at least 40 points, and short
+    /// enough that the list under it shows a `row` points tall row whole (ADR-0060).
+    public static func denseMapHeight(columnHeight: CGFloat, row: CGFloat) -> CGFloat {
+        max(0, min(max(40, columnHeight * 0.4), columnHeight - Metrics.mapGap - row))
     }
 
     /// The dense rail's checkpoint list (ADR-0060): every placed node's row stacked from the

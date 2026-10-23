@@ -92,14 +92,14 @@ final class TimeRailTests: XCTestCase {
 
         let rolling = mounted(TabDropTarget.self)
         XCTAssertEqual(rolling.count, pages, "the roll showing")
-        XCTAssertTrue(rolling.contains(where: clipped), "the control: the column fits every row")
+        XCTAssertTrue(rolling.contains(where: clipped), "the control: no row was clipped with the roll showing")
         XCTAssertEqual(mounted(WheelRelayView.self).count, 1, "the control: the roll's rail relays no wheel")
 
         model.showLedger()
         XCTAssertTrue(model.showingLedger, "the control")
         let ledger = mounted(TabDropTarget.self)
         XCTAssertEqual(ledger.count, pages, "the Ledger hid a checkpoint")
-        XCTAssertTrue(ledger.contains(where: clipped), "the control: the column fits every row")
+        XCTAssertTrue(ledger.contains(where: clipped), "the control: no row was clipped under the Ledger")
         XCTAssertEqual(mounted(WheelRelayView.self).count, 0, "the Ledger's rail drives the roll")
 
         model.showingLedger = false
@@ -111,8 +111,42 @@ final class TimeRailTests: XCTestCase {
         XCTAssertNotNil(model.selectedFile, "the control")
         let file = mounted(TabDropTarget.self)
         XCTAssertEqual(file.count, pages, "the File hid a checkpoint")
-        XCTAssertTrue(file.contains(where: clipped), "the control: the column fits every row")
+        XCTAssertTrue(file.contains(where: clipped), "the control: no row was clipped under the File")
         XCTAssertEqual(mounted(WheelRelayView.self).count, 0, "the File's rail drives the roll")
+    }
+
+    /// A dense column too short for the map's 40 point floor still shows the active row whole.
+    func testAShortDenseColumnStillShowsTheActiveRow() throws {
+        let model = try makeModel()
+        for _ in 0..<30 { model.newPage() }
+        let checkpoints = StreamNavigator.nodes(
+            projection: model.timeUnits, tabs: model.navigationTabs, selection: model.selection)
+        let active = try XCTUnwrap(checkpoints.first(where: \.active)?.tab, "the control: no node is active")
+        XCTAssertEqual(checkpoints.last?.tab, active, "the control: the active row is not the last")
+        for height: CGFloat in [30, 50] {
+            let host = NSHostingView(rootView: StreamNavigatorView(
+                model: model, roll: RollGeometryModel(), drivesRoll: false, readOnly: false,
+                nodes: checkpoints, chords: [:]))
+            host.frame = NSRect(x: 0, y: 0, width: TimeRailView.width, height: height)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            addTeardownBlock { window.close() }
+            host.layoutSubtreeIfNeeded()
+            drainMainQueue()
+            host.layoutSubtreeIfNeeded()
+
+            func targets(_ view: NSView) -> [TabDropTarget] {
+                ((view as? TabDropTarget).map { [$0] } ?? []) + view.subviews.flatMap(targets)
+            }
+            let row = try XCTUnwrap(targets(host).first { $0.slot == active }, "no target at \(height)")
+            let clip = try XCTUnwrap(
+                sequence(first: row as NSView, next: { $0.superview }).first { $0 is NSClipView } as? NSClipView,
+                "the rail is not dense at \(height)")
+            XCTAssertTrue(
+                clip.bounds.contains(clip.convert(row.bounds, from: row)),
+                "the active row is cut short at \(height): \(clip.bounds)")
+        }
     }
 
     // MARK: The rows, and where they send a click

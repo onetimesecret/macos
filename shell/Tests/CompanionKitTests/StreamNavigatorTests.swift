@@ -151,6 +151,21 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertEqual(dense.packedHeight, dense.contentHeight, "the packed rows and the packed drawing differ")
     }
 
+    /// The map takes two fifths of a roomy column, 40 points at least, and gives way in a short
+    /// one so the list keeps room for one whole row.
+    func testTheDenseMapLeavesTheListRoomForOneRow() {
+        let gap = StreamNavigator.Metrics.mapGap
+        XCTAssertEqual(StreamNavigator.denseMapHeight(columnHeight: 400, row: 38), 160)
+        XCTAssertEqual(StreamNavigator.denseMapHeight(columnHeight: 120, row: 38), 48)
+        XCTAssertEqual(StreamNavigator.denseMapHeight(columnHeight: 90, row: 38), 40)
+        for height: CGFloat in [30, 44, 60, 82] {
+            let map = StreamNavigator.denseMapHeight(columnHeight: height, row: 24)
+            XCTAssertGreaterThanOrEqual(map, 0, "a negative map at \(height)")
+            XCTAssertGreaterThanOrEqual(height - map - gap, 24, "the list lost its row at \(height)")
+        }
+        XCTAssertEqual(StreamNavigator.denseMapHeight(columnHeight: 10, row: 24), 0)
+    }
+
     func testDenseMapFitsMinimumHeightAndCoversLongDocumentInBothOrders() {
         let checkpoints = nodes((1...60).map {
             slot(tab: UInt64($0), page: UInt64($0 + 100), day: 0,
