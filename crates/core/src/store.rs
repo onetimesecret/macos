@@ -1667,7 +1667,32 @@ impl<C: Clock> SheetStore<C> {
             SizeClass::of(len),
             DestinationClass::None,
         );
+        self.drop_records_with_no_value(uuid);
         true
+    }
+
+    /// Drop each record with no value for a burned identity, unrecorded, and
+    /// take out its standings as the settle takes out an ended one (ADR-0058 point 8).
+    fn drop_records_with_no_value(&mut self, uuid: ItemId) {
+        let peer = |chip: &SealedChip| chip.uuid == uuid && !chip.is_local();
+        let mut touched = Vec::new();
+        for sheet in self.readable_sheets_mut() {
+            let detached = sheet.detached.iter().any(peer);
+            if !detached && !sheet.chips.iter().any(peer) {
+                continue;
+            }
+            sheet.chips.retain(|chip| !peer(chip));
+            sheet.detached.retain(|chip| !peer(chip));
+            if detached {
+                // A step could stand it again with no record to read.
+                sheet.document.forget_undo();
+            }
+            touched.push(sheet.id);
+        }
+        for id in touched {
+            self.settle_document(id);
+            self.take_out_standings(id);
+        }
     }
 
     /// Record that a chip's bytes left for `destination` (ADR-0012).
@@ -5718,6 +5743,68 @@ mod tests {
             alpha.sheet(a).unwrap().document.runs(),
             beta.sheet(b).unwrap().document.runs()
         );
+    }
+
+    #[test]
+    fn a_burn_drops_every_record_with_no_value_for_its_identity_on_this_device() {
+        let (mut store, _) = store();
+        let pages: Vec<SheetId> = (0..3).map(|_| store.new_tab().1).collect();
+        let (home, away, aside) = (pages[0], pages[1], pages[2]);
+        type_on(&mut store, home, "ink ");
+        type_on(&mut store, away, "dest ");
+        type_on(&mut store, aside, "aside");
+        let chip = store.seal_text_at(home, "the secret", 4, 0).unwrap();
+        let uuid = uuid_of(&store, chip);
+        // As a peer's batch stands it: away stands a record with no value, aside keeps one detached.
+        {
+            let sheet = store.sheet_mut(away).unwrap();
+            sheet.chips.push(SealedChip::peer(ChipId(9001), uuid));
+            sheet.document.insert_chip(0, uuid).unwrap();
+            sheet.document.commit_unrecorded();
+            store
+                .sheet_mut(aside)
+                .unwrap()
+                .detached
+                .push(SealedChip::peer(ChipId(9002), uuid));
+        }
+        store.settle_document(away);
+        assert_eq!(records_of(&store, uuid).len(), 3);
+        assert!(store.can_undo(aside));
+
+        assert!(store.delete_chip(chip));
+        assert!(records_of(&store, uuid).is_empty());
+        assert!(standings(&store, away).is_empty());
+        assert_eq!(body(&store, away), "dest ");
+        assert_eq!(ended_on_record(&store, uuid), 1, "only the value's end");
+        assert!(!store.can_undo(aside), "a step could stand it again");
+        assert!(store.undo(away), "the typing stays a step");
+        assert!(
+            standings(&store, away).is_empty(),
+            "the take out is no step"
+        );
+    }
+
+    #[test]
+    fn a_burn_takes_out_the_standing_a_peer_moved_and_the_peer_converges_with_none() {
+        let (mut pair, chip, uuid) = moved_by_the_peer();
+        let [(home, mirror_home, _), (away, mirror_away, _)] = pair.pages.clone();
+        assert_eq!(pair.return_to_alpha(1), Ok(()));
+        assert_eq!(records_of(&pair.alpha, uuid).len(), 2);
+
+        assert!(pair.alpha.delete_chip(chip));
+        assert!(records_of(&pair.alpha, uuid).is_empty());
+        assert!(standings(&pair.alpha, away).is_empty());
+        ship(&pair.alpha, home, &mut pair.beta, mirror_home).unwrap();
+        ship(&pair.alpha, away, &mut pair.beta, mirror_away).unwrap();
+        assert!(standings(&pair.beta, mirror_away).is_empty());
+        assert!(pair.agree(0) && pair.agree(1));
+        let records = records_of(&pair.beta, uuid);
+        assert_eq!(
+            records.len(),
+            1,
+            "the peer's record detaches and waits for its page"
+        );
+        assert!(pair.beta.sheet(mirror_away).unwrap().chip_count() == 0);
     }
 
     #[test]
