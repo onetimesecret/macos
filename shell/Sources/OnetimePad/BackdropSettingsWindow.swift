@@ -135,6 +135,7 @@ final class BackdropSettingsWindowController: NSObject {
             // every Apple app's Settings window draws them.
             window.toolbarStyle = .preference
             window.isReleasedWhenClosed = false
+            window.isRestorable = false
             // The window is built once and shown many times, so without
             // this it would keep the Space it was first opened on and
             // every later ⌘, would carry the user there instead of

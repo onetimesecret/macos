@@ -95,6 +95,7 @@ enum ManualLanguageChoiceTarget: Equatable {
 @MainActor
 final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private let model: BackdropModel
+    private let applicationIsActive: () -> Bool
     private var startupComplete = false
     private enum PendingApplicationOpen {
         case untitled
@@ -106,11 +107,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         model = BackdropModel()
+        applicationIsActive = { NSApp.isActive }
         super.init()
     }
 
-    init(model: BackdropModel) {
+    init(model: BackdropModel, applicationIsActive: @escaping () -> Bool = { NSApp.isActive }) {
         self.model = model
+        self.applicationIsActive = applicationIsActive
         super.init()
     }
     private var controller: BackdropWindowController?
@@ -226,7 +229,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             if case nil = pendingApplicationOpen { pendingApplicationOpen = .untitled }
             return true
         }
-        guard finderDocuments.isEmpty else { return true }
+        guard finderDocuments.isEmpty else {
+            initialOpenHandled = true
+            return true
+        }
         if initialOpenHandled {
             _ = applicationShouldHandleReopen(sender, hasVisibleWindows: false)
             return true
@@ -420,17 +426,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// so the ordinary editor window can take keyboard focus. Show it from
     /// that activation callback, which must not route this same gesture
     /// a second time as a launch or ⌘Tab (and possibly anchor on today).
-    private func applySummon(_ reason: ActivationReason) {
+    func applySummon(_ reason: ActivationReason) {
         guard startupComplete else { return }
-        // A deliberate selection supersedes an outstanding companion request;
-        // only automatic activation callbacks defer to that earlier claim.
-        if reason == .openEditorPresentation {
-            aboutActivation = false
-            settingsActivation = false
-            auxiliaryActivation = false
-        }
+        aboutActivation = false
+        settingsActivation = false
+        auxiliaryActivation = false
         let route = ActivationRouter.decide(reason, in: activationContext())
-        if ActivationRouter.defersForActivation(route: route, appActive: NSApp.isActive) {
+        if ActivationRouter.defersForActivation(route: route, appActive: applicationIsActive()) {
             // Clear pending intent if activation is lost before the command can finish.
             pendingEditorSummon = route
             NSApp.activate(ignoringOtherApps: true)
@@ -508,6 +510,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // instead loses activation, no summon should survive that turn
         // away and take precedence over a later return.
         pendingEditorSummon = nil
+        aboutActivation = false
+        settingsActivation = false
+        auxiliaryActivation = false
     }
 
     /// The Finder's Open and Open With, and files dropped on the Dock icon.
@@ -747,7 +752,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         alert.informativeText = "macOS could not register ⌃⌥Space. Another app, or another copy of \(Self.productName), may use it; with two or more input sources, the Input Sources pane of Keyboard Shortcuts may hold it. The pad still opens from the menu bar. Free the shortcut, then try again.\n\nRegistration: \(failure.stage.rawValue), code \(failure.status)."
         alert.addButton(withTitle: "Try Again")
         alert.addButton(withTitle: "Cancel")
-        auxiliaryActivation = !NSApp.isActive
+        auxiliaryActivation = !applicationIsActive()
         NSApp.activate(ignoringOtherApps: true)
         if ModalSession.run({ alert.runModal() }) == .alertFirstButtonReturn {
             registerSummonShortcut()
@@ -839,7 +844,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func openSettingsTab(_ tab: SettingsTab?) {
-        settingsActivation = !NSApp.isActive
+        settingsActivation = !applicationIsActive()
         settings.show(tab: tab)
     }
 
@@ -855,7 +860,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func exportDiagnostics() {
-        auxiliaryActivation = !NSApp.isActive
+        auxiliaryActivation = !applicationIsActive()
         NSApp.activate(ignoringOtherApps: true)
         DiagnosticsActions.export(diagnosticReport())
     }
@@ -865,7 +870,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func sendFeedback() {
-        auxiliaryActivation = !NSApp.isActive
+        auxiliaryActivation = !applicationIsActive()
         feedback.show()
     }
 
@@ -946,7 +951,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // summon — flag it so the raise is skipped (only when the
         // activation will actually happen; an already-active app fires
         // no notification to consume the flag).
-        aboutActivation = !NSApp.isActive
+        aboutActivation = !applicationIsActive()
         NSApp.activate(ignoringOtherApps: true)
     }
 

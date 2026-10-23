@@ -7,8 +7,17 @@ import XCTest
 
 @MainActor
 final class ApplicationLifecycleTests: XCTestCase {
-    private func withApplication(keymapOverride: String? = nil, _ test: (BackdropAppDelegate, BackdropModel) throws -> Void) throws {
+    private func withApplication(keymapOverride: String? = nil, applicationIsActive: @escaping () -> Bool = { NSApp.isActive }, _ test: (BackdropAppDelegate, BackdropModel) throws -> Void) throws {
         _ = NSApplication.shared
+        let oldMain = NSApp.mainMenu, oldWindows = NSApp.windowsMenu
+        let oldServices = NSApp.servicesMenu, oldHelp = NSApp.helpMenu
+        let oldServicesParent = oldServices?.supermenu?.items.first { $0.submenu === oldServices }
+        defer {
+            oldServices?.supermenu?.items.first { $0.submenu === oldServices }?.submenu = nil
+            oldServicesParent?.submenu = oldServices
+            NSApp.mainMenu = oldMain; NSApp.windowsMenu = oldWindows
+            NSApp.servicesMenu = oldServices; NSApp.helpMenu = oldHelp
+        }
         let suite = "onetimepad.lifecycle.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
@@ -29,12 +38,23 @@ final class ApplicationLifecycleTests: XCTestCase {
             seams: .init(stateDirectory: directory, client: CompanionClient(adopting: handle), keymapOverride: overrideURL))
         let model = BackdropModel(defaults: defaults, pages: pages)
         let originalWindows = Set(NSApp.windows.map(ObjectIdentifier.init))
+        let originalVisibleWindows = Set(NSApp.windows.filter(\.isVisible).map(ObjectIdentifier.init))
         defer {
-            for window in NSApp.windows where !originalWindows.contains(ObjectIdentifier(window)) {
-                window.close()
+            for window in NSApp.windows {
+                let identifier = ObjectIdentifier(window)
+                if !originalWindows.contains(identifier) {
+                    if window is NSPanel {
+                        window.orderOut(nil)
+                    } else {
+                        window.isReleasedWhenClosed = false
+                        window.close()
+                    }
+                } else if !originalVisibleWindows.contains(identifier) && window.isVisible {
+                    window.orderOut(nil)
+                }
             }
         }
-        try test(BackdropAppDelegate(model: model), model)
+        try test(BackdropAppDelegate(model: model, applicationIsActive: applicationIsActive), model)
     }
 
     func testUnbundledAndUnrecognizedLaunchesAreRejected() throws {
@@ -54,6 +74,7 @@ final class ApplicationLifecycleTests: XCTestCase {
             app.openSettings()
             let settings = try XCTUnwrap(app.madeSettings?.window)
             defer { settings.close() }
+            XCTAssertFalse(settings.isRestorable)
             for _ in 0..<3 {
                 app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
                 XCTAssertFalse(model.editorWindowOpen)
@@ -62,6 +83,43 @@ final class ApplicationLifecycleTests: XCTestCase {
             settings.close()
             app.openSettings()
             XCTAssertTrue(app.madeSettings?.window === settings)
+            XCTAssertFalse(settings.isRestorable)
+        }
+    }
+
+    func testNewEditorRequestsSupersedeAbandonedCompanionActivation() throws {
+        for companion in ["settings", "about", "feedback"] {
+            for resign in [false, true] {
+                for reason in [ActivationReason.hotkey, .statusItem, .reopen] {
+                    try withApplication(applicationIsActive: { false }) { app, model in
+                        app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+                        model.setAmbientPanelEnabled(false)
+                        switch companion {
+                        case "settings": app.openSettings()
+                        case "about": app.showAbout()
+                        default: app.sendFeedback()
+                        }
+                        if resign {
+                            app.applicationWillResignActive(Notification(name: NSApplication.willResignActiveNotification))
+                        }
+                        app.applySummon(reason)
+                        XCTAssertFalse(model.editorWindowOpen)
+                        app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+                        XCTAssertTrue(model.editorWindowOpen, "\(companion), resign=\(resign), \(reason)")
+                    }
+                }
+            }
+        }
+    }
+
+    func testNewCompanionActivationStillSupersedesDeferredEditorRequest() throws {
+        try withApplication(applicationIsActive: { false }) { app, model in
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+            model.setAmbientPanelEnabled(false)
+            app.applySummon(.hotkey)
+            app.openSettings()
+            app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+            XCTAssertFalse(model.editorWindowOpen)
         }
     }
 
@@ -405,15 +463,6 @@ final class ApplicationLifecycleTests: XCTestCase {
 
     func testWillFinishInstallsMenusBeforeStartupWithoutOpeningWindows() throws {
         try withApplication { app, _ in
-            let oldMain = NSApp.mainMenu, oldWindows = NSApp.windowsMenu
-            let oldServices = NSApp.servicesMenu, oldHelp = NSApp.helpMenu
-            let oldServicesParent = oldServices?.supermenu?.items.first { $0.submenu === oldServices }
-            defer {
-                oldServices?.supermenu?.items.first { $0.submenu === oldServices }?.submenu = nil
-                oldServicesParent?.submenu = oldServices
-                NSApp.mainMenu = oldMain; NSApp.windowsMenu = oldWindows
-                NSApp.servicesMenu = oldServices; NSApp.helpMenu = oldHelp
-            }
             let before = Set(NSApp.windows.map(ObjectIdentifier.init))
             app.applicationWillFinishLaunching(Notification(name: NSApplication.willFinishLaunchingNotification))
             var initialOpens = 0
@@ -464,16 +513,6 @@ final class ApplicationLifecycleTests: XCTestCase {
 
     func testMenuInstallationCreatesNoWindowsAndPreservesNativeResponderTargets() throws {
         try withApplication { app, model in
-            let oldMain = NSApp.mainMenu
-            let oldWindows = NSApp.windowsMenu
-            let oldHelp = NSApp.helpMenu
-            let oldServices = NSApp.servicesMenu
-            defer {
-                NSApp.mainMenu = oldMain
-                NSApp.windowsMenu = oldWindows
-                NSApp.helpMenu = oldHelp
-                NSApp.servicesMenu = oldServices
-            }
             let before = Set(NSApp.windows.map(ObjectIdentifier.init))
             let menus = MainMenuController(app: app)
             menus.install()
@@ -498,11 +537,32 @@ final class ApplicationLifecycleTests: XCTestCase {
         }
     }
 
+    func testMenuFixtureRestoresRolesAndReleasesItsModel() throws {
+        _ = NSApplication.shared
+        let main = NSApp.mainMenu, windows = NSApp.windowsMenu
+        let services = NSApp.servicesMenu, help = NSApp.helpMenu
+        let servicesParent = services?.supermenu
+        weak var releasedApp: BackdropAppDelegate?
+        weak var releasedModel: BackdropModel?
+        try autoreleasepool {
+            try withApplication { app, model in
+                releasedApp = app
+                releasedModel = model
+                MainMenuController(app: app).install()
+            }
+        }
+        XCTAssertTrue(NSApp.mainMenu === main)
+        XCTAssertTrue(NSApp.windowsMenu === windows)
+        XCTAssertTrue(NSApp.servicesMenu === services)
+        XCTAssertTrue(NSApp.helpMenu === help)
+        XCTAssertTrue(services?.supermenu === servicesParent)
+        XCTAssertNil(releasedApp)
+        XCTAssertNil(releasedModel)
+    }
+
     func testUnboundMenuCommandsKeepTheirItemsWithoutShortcuts() throws {
         let keymap = #"[{"context":"Editor","bindings":{"cmd-,":null,"cmd-shift-w":null}}]"#
         try withApplication(keymapOverride: keymap) { app, _ in
-            let oldMain = NSApp.mainMenu, oldWindows = NSApp.windowsMenu, oldServices = NSApp.servicesMenu
-            defer { NSApp.mainMenu = oldMain; NSApp.windowsMenu = oldWindows; NSApp.servicesMenu = oldServices }
             let menus = MainMenuController(app: app)
             menus.install()
             let main = try XCTUnwrap(NSApp.mainMenu)
