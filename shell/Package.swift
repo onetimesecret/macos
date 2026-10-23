@@ -4,9 +4,6 @@
 // scripts/build-core.sh — no Swift code holds a secret.
 import PackageDescription
 
-// The vendored parsers force-include their prefix.h, which takes an absolute path.
-let shellDirectory = String(#filePath.dropLast("/Package.swift".count))
-
 let package = Package(
     name: "OnetimePad",
     defaultLocalization: "en",
@@ -19,16 +16,18 @@ let package = Package(
             path: "../bindings/CompanionCore.xcframework"
         ),
         // The preview's Markdown parsers (plan R1), vendored by scripts/vendor-cmark.sh;
-        // prefix.h renames every external symbol (otscm_, otsgfm_) so the two link into one binary.
+        // prefix.h renames every external symbol (otscm_, otsgfm_) so the two link into one binary;
+        // `-include` finds it through the target's own search path, so the manifest names no absolute path.
         .target(
             name: "CMarkCommonMark",
             path: "Sources/CMarkCommonMark",
             exclude: ["UPSTREAM.md", "upstream/COPYING", "upstream/case_fold.inc", "upstream/entities.inc"],
             sources: ["upstream", "shim"],
             cSettings: [
+                .headerSearchPath("."),
                 .headerSearchPath("upstream"),
                 .headerSearchPath("generated"),
-                .unsafeFlags(["-include", "\(shellDirectory)/Sources/CMarkCommonMark/prefix.h"]),
+                .unsafeFlags(["-include", "prefix.h"]),
             ]
         ),
         .target(
@@ -40,10 +39,11 @@ let package = Package(
             ],
             sources: ["upstream", "shim"],
             cSettings: [
+                .headerSearchPath("."),
                 .headerSearchPath("upstream/src"),
                 .headerSearchPath("upstream/extensions"),
                 .headerSearchPath("generated"),
-                .unsafeFlags(["-include", "\(shellDirectory)/Sources/CMarkGFM/prefix.h"]),
+                .unsafeFlags(["-include", "prefix.h"]),
             ]
         ),
         // Everything the app is above its window: the seam wrapper, the

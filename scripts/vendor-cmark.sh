@@ -101,7 +101,8 @@ manifest() { # <target dir>
 symbols() { # <target dir> <prefix header or ""> <include dirs...>
   local dir="$1" prefix="$2" out source include
   shift 2
-  local flags=(-c -std=c99 -w -I"$dir/include" -I"$dir/generated")
+  # clang's default C standard, as SwiftPM compiles the targets.
+  local flags=(-c -w -I"$dir/include" -I"$dir/generated")
   for include in "$@"; do flags+=(-I"$dir/$include"); done
   local sources=()
   while read -r source; do sources+=("$source"); done < <(find "$dir/upstream" -name '*.c' | LC_ALL=C sort)
