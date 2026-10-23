@@ -7,21 +7,13 @@ struct FinderOpenPlan: Equatable, Sendable {
     var open: [URL] = []
     /// File URLs kept for the next drain: startup completing, a modal ending, a close decision resolving.
     var held: [URL] = []
-    /// The route for an activation already on its way, in place of its own.
-    var pendingRoute: ActivationRoute?
-
-    /// `launchActivationOutstanding` is true only at the startup drain, and
-    /// only when the replay of an activation during startup did not run.
-    /// The two autoclosures read the model, so they wait for startup.
+    /// The model-dependent close decision is read only after startup.
     static func decide(
         queued: [URL],
         startupComplete: Bool,
         modalSessionRunning: Bool,
         modalBracketed: Bool,
-        closeDecisionPending: @autoclosure () -> Bool,
-        launchActivationOutstanding: Bool,
-        appActive: Bool,
-        context: @autoclosure () -> ActivationContext
+        closeDecisionPending: @autoclosure () -> Bool
     ) -> FinderOpenPlan {
         let files = queued.filter(\.isFileURL)
         // Both modal facts, as every other modal gate reads them (`ModalSession`).
@@ -29,10 +21,6 @@ struct FinderOpenPlan: Equatable, Sendable {
             return FinderOpenPlan(held: files)
         }
         guard !files.isEmpty else { return FinderOpenPlan() }
-        // An inactive app's open defers in `applySummon`, which arms the route itself.
-        guard launchActivationOutstanding, appActive else { return FinderOpenPlan(open: files) }
-        return FinderOpenPlan(
-            open: files,
-            pendingRoute: ActivationRouter.decide(.openEditorPresentation, in: context()))
+        return FinderOpenPlan(open: files)
     }
 }

@@ -135,6 +135,7 @@ final class BackdropSettingsWindowController: NSObject {
             // every Apple app's Settings window draws them.
             window.toolbarStyle = .preference
             window.isReleasedWhenClosed = false
+            window.isRestorable = false
             // The window is built once and shown many times, so without
             // this it would keep the Space it was first opened on and
             // every later ⌘, would carry the user there instead of
@@ -224,56 +225,5 @@ final class BackdropSettingsWindowController: NSObject {
         hosted.sizingOptions = []
         hosted.preferredContentSize = NSSize(width: Self.width, height: Self.height(of: tab))
         return hosted
-    }
-}
-
-/// Route native SwiftUI Settings requests to the app's existing settings window.
-/// Replacing the menu command alone leaves the empty scene independently openable.
-struct SettingsSceneRedirect: NSViewRepresentable {
-    let openSettings: () -> Void
-
-    func makeNSView(context: Context) -> SettingsSceneRedirectView {
-        SettingsSceneRedirectView(openSettings: openSettings)
-    }
-
-    func updateNSView(_ view: SettingsSceneRedirectView, context: Context) {}
-}
-
-final class SettingsSceneRedirectView: NSView {
-    private let openSettings: () -> Void
-    private var redirectPending = false
-
-    init(openSettings: @escaping () -> Void) {
-        self.openSettings = openSettings
-        super.init(frame: .zero)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("not archived") }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        NotificationCenter.default.removeObserver(self)
-        guard let window else { return }
-        window.isRestorable = false
-        // SwiftUI can reuse the same scene window after closing it.
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(redirect),
-            name: NSWindow.didBecomeKeyNotification, object: window)
-        redirect()
-    }
-
-    @objc func redirect() {
-        guard let window, !redirectPending else { return }
-        redirectPending = true
-        window.orderOut(nil)
-        // Let SwiftUI finish presenting before closing its empty host.
-        DispatchQueue.main.async { [weak self, weak window] in
-            guard let self else { return }
-            self.redirectPending = false
-            guard let window, self.window === window else { return }
-            window.close()
-            self.openSettings()
-        }
     }
 }

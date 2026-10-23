@@ -114,3 +114,26 @@ select_build_lane() { # <dev|local|app-store>
       ;;
   esac
 }
+
+# Resolved executable paths also cover relative launches and symlinked checkouts.
+require_stopped_executables() { # <directory>
+  python3 scripts/check-live-build.py "$1"
+}
+
+require_stopped_build() {
+  require_stopped_executables "$PWD/shell/.build"
+}
+
+running_from() { # <directory>; inspection failure terminates the calling lane
+  local process_status
+  if python3 scripts/check-live-build.py --running "$1"; then
+    return 0
+  else
+    process_status=$?
+    if [[ "$process_status" == 1 ]]; then
+      return 1
+    fi
+    echo "Process inspection failed; refusing to continue this build lane." >&2
+    exit 1
+  fi
+}
