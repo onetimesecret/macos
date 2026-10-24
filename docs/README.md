@@ -48,7 +48,8 @@ next touches one: [file-backed documents](development/file-backed-documents.md),
 [encryption export compliance](development/encryption-export-compliance.md),
 the [keymap](development/keymap-format-and-dispatch.md), the
 [menu bar status item](development/menu-bar-status-item.md), the
-[text editor](development/text-editor-capabilities.md), and
+[text editor](development/text-editor-capabilities.md),
+[build records](development/build-records.md), and
 [signing assets and credentials](development/handling-signing-assets-and-credentials.md).
 For the local and dev lanes' profiles, use
 [Creating development profiles](development/development-profiles.md).

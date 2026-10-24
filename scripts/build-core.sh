@@ -63,6 +63,11 @@ if [[ "$IF_STALE" == 1 ]]; then
   fi
 fi
 
+# Dated before cargo reads a source and copied onto the xcframework at the end, so
+# --if-stale counts a file saved during the build as newer than the build.
+BUILD_START="$(mktemp -t companion-core-build-start)"
+trap 'rm -f "$BUILD_START"' EXIT
+
 # Must match the shell's platform floor (Package.swift: .macOS(.v13)),
 # else cc-built objects (e.g. ring's C sources) default to the SDK's
 # version and ld warns on every link.
@@ -112,5 +117,6 @@ cmp -s THIRD_PARTY_NOTICES.md "$XCF/THIRD_PARTY_NOTICES.md" || {
   echo "xcframework third-party notices do not match the canonical notice" >&2
   exit 1
 }
+touch -r "$BUILD_START" "$XCF"
 printf '%s\n' "$SHAPE" > "$STAMP"
 echo "Built $XCF ($SHAPE)"

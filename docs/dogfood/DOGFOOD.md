@@ -231,8 +231,10 @@ What changes:
 Right-click the tray icon: the version line (disabled, informational)
 shows the stamped bundle version next to the core the binary actually
 linked against, so a stale `xcframework` shows itself rather than
-hiding. The build script appends the short git SHA, with a `.dirty`
-marker for an uncommitted tree.
+hiding. The build script appends `+` and the first 12 characters of the
+commit, with a `.dirty` marker for an uncommitted tree.
+[Build records](../development/build-records.md) shows how to find the
+source from it.
 
 ## Launch at login
 

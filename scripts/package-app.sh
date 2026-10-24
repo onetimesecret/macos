@@ -87,11 +87,13 @@ while (($#)); do
         echo "$USAGE" >&2
         exit 1
       fi
-      if [[ ! "$2" =~ ^[0-9]+$ ]]; then
-        echo "--build-number must contain decimal digits only (got: $2)" >&2
+      # 18 digits stay below 2^63, where shell arithmetic wraps.
+      if [[ ! "$2" =~ ^[0-9]{1,18}$ ]]; then
+        echo "--build-number must be 1 to 18 decimal digits (got: $2)" >&2
         exit 1
       fi
-      REQUESTED_BUILD_NUMBER="$2"
+      # Base 10, so 007 names the same build and the same tag as 7.
+      REQUESTED_BUILD_NUMBER="$((10#$2))"
       shift
       ;;
     *)
@@ -222,7 +224,7 @@ if ((APP_STORE_MODE)); then
   # after the compile. Every worktree shares the git common directory.
   if [[ -z "${APP_STORE_BUILD_NUMBER_FILE:-}" ]]; then
     if ! GIT_COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
-      echo "APP_STORE_BUILD_NUMBER_FILE must name the build number counter outside a git checkout." >&2
+      echo "--app-store packages only from a git checkout, and none was found here." >&2
       exit 1
     fi
     APP_STORE_BUILD_NUMBER_FILE="$GIT_COMMON_DIR/onetimepad-app-store-build-number"
@@ -237,26 +239,6 @@ if ((APP_STORE_MODE)); then
   fi
 fi
 validate_signing_configuration
-
-if [[ "$CONFIG" == "debug" ]]; then
-  scripts/build-core.sh --if-stale --test-util
-else
-  # ADR-0018: never trust whichever development framework happens to be in
-  # bindings/. The explicit release shape rebuilds whenever the stamp differs.
-  scripts/build-core.sh --if-stale
-fi
-
-if [[ ! -d bindings/CompanionCore.xcframework ]]; then
-  echo "bindings/CompanionCore.xcframework is missing after the core build." >&2
-  exit 1
-fi
-if ! cmp -s THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PARTY_NOTICES.md; then
-  echo "CompanionCore.xcframework is missing the canonical third-party notices." >&2
-  exit 1
-fi
-if [[ "$CONFIG" == "release" ]]; then
-  scripts/verify-release-core.sh
-fi
 
 # The app's marketing version is the product's own number and it lives
 # in shell/OnetimePad-Info.plist, edited by hand when user visible work
@@ -290,6 +272,364 @@ CORE_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/core/Cargo.toml | he
 if [[ -z "$CORE_VERSION" ]]; then
   echo "could not read version from crates/core/Cargo.toml" >&2
   exit 1
+fi
+
+# Prints the tree `git add -A` would write, tracked changes and untracked files
+# alike, staged in a copy of the index rather than the real one.
+worktree_tree() { # <scratch index>
+  local scratch=$1 index output
+  index="$(git rev-parse --git-path index 2>/dev/null)" || return 1
+  # Owner-only, since the copy lists every path; the index's mtime keeps git's racy entry checks.
+  if [[ -f "$index" ]]; then
+    cp "$index" "$scratch" && touch -r "$index" "$scratch" || return 1
+  else
+    rm -f "$scratch"
+  fi
+  if ! output="$(umask 077 && GIT_INDEX_FILE="$scratch" git add -A 2>&1)"; then
+    printf '%s\n' "$output" | sed 's/^/    /' >&2
+    return 1
+  fi
+  # write-tree also rewrites the index, to save its cache tree.
+  (umask 077 && GIT_INDEX_FILE="$scratch" git write-tree)
+}
+
+# Reads, before the compile, HEAD (empty outside a checkout, on an unborn branch or with a
+# missing object) and the tree `git add -A` would write; dirty means it is not HEAD's tree.
+read_source_state() {
+  local hidden
+  SOURCE_HEAD="$(git rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)"
+  SOURCE_SHORT="${SOURCE_HEAD:0:12}"
+  SOURCE_TREE=""
+  SOURCE_DIRTY=""
+  SOURCE_HIDDEN=""
+  SOURCE_CHANGED=""
+  SOURCE_SNAPSHOT=""
+  SOURCE_RECORD=""
+  [[ -n "$SOURCE_HEAD" ]] || return 0
+  SOURCE_INDEX="$(mktemp -t onetimepad-source-index)"
+  TEMP_FILES+=("$SOURCE_INDEX" "$SOURCE_INDEX.lock")
+  if ! SOURCE_TREE="$(worktree_tree "$SOURCE_INDEX")"; then
+    SOURCE_TREE=""
+    echo "    warning: could not read the source tree, so this build counts as dirty." >&2
+  fi
+  [[ -n "$SOURCE_TREE" && "$SOURCE_TREE" == "$(git rev-parse -q --verify "$SOURCE_HEAD^{tree}" 2>/dev/null)" ]] \
+    || SOURCE_DIRTY=1
+  # `git add -A` skips entries flagged assume-unchanged or skip-worktree, yet the compile reads them.
+  hidden="$(git ls-files -v 2>/dev/null | LC_ALL=C sed -n 's/^[a-zS] //p')" || hidden=""
+  if [[ -n "$hidden" ]]; then
+    SOURCE_HIDDEN=1
+    SOURCE_DIRTY=1
+    echo "    warning: these index entries are flagged assume-unchanged or skip-worktree, so git" >&2
+    echo "    cannot see edits to them, and this build counts as dirty with no record (first 5):" >&2
+    printf '%s\n' "$hidden" | sed -n '1,5s/^/      /p' >&2
+    if [[ "$(git config --type=bool core.sparseCheckout 2>/dev/null)" == true ]]; then
+      echo "    a sparse checkout flags every path outside it; for a record, package from a full checkout." >&2
+    else
+      echo "    clear the flags with git update-index --no-assume-unchanged or --no-skip-worktree." >&2
+    fi
+  fi
+  echo "==> Source: $SOURCE_SHORT${SOURCE_DIRTY:+ with uncommitted changes}"
+}
+
+# Reads HEAD and the tree again after the compile. Only a tree change voids the build. A HEAD
+# move is followed for dev and local when the new commit's tree is the one built; an App Store
+# build keeps the commit the operator started from.
+check_source_unchanged() {
+  local head tree paths
+  [[ -n "$SOURCE_TREE" ]] || return 0
+  head="$(git rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)"
+  tree="$(worktree_tree "$SOURCE_INDEX")" || tree=""
+  # Agent definitions and memory under .claude/ are not build inputs, so writes there void nothing.
+  if [[ -n "$tree" && "$tree" != "$SOURCE_TREE" ]] \
+    && paths="$(git diff-tree -r --name-only --no-renames "$SOURCE_TREE" "$tree" 2>/dev/null)" \
+    && [[ -n "$paths" ]] && ! grep -qv '^\.claude/' <<<"$paths"; then
+    echo "    note: only files under .claude/ changed during the build; recording the tree read before it."
+    tree=$SOURCE_TREE
+  fi
+  if [[ "$tree" != "$SOURCE_TREE" ]]; then
+    echo "    warning: files changed during the build, or the tree could not be read again." >&2
+    echo "    warning: stamping the build dirty against $SOURCE_SHORT, with no record." >&2
+    SOURCE_CHANGED=1
+    SOURCE_DIRTY=1
+  elif [[ "$head" != "$SOURCE_HEAD" ]]; then
+    if ! ((APP_STORE_MODE)) && [[ -n "$head" \
+      && "$(git rev-parse -q --verify "$head^{tree}" 2>/dev/null)" == "$SOURCE_TREE" ]]; then
+      echo "    note: HEAD moved during the build to ${head:0:12}, whose tree is the one built; recording that commit."
+      SOURCE_HEAD=$head
+      SOURCE_SHORT=${head:0:12}
+      SOURCE_DIRTY=$SOURCE_HIDDEN
+    else
+      echo "    note: HEAD moved during the build; recording against $SOURCE_SHORT, the commit it started from."
+    fi
+  fi
+  return 0
+}
+
+# Prints a warning followed by git's own text, indented.
+git_warning() { # <warning> <git output>
+  echo "    warning: $1" >&2
+  printf '%s\n' "$2" | sed 's/^/    /' >&2
+}
+
+# Fails with a warning when git would refuse <ref> as a name, before anything is made for it.
+ref_name_ok() { # <ref>
+  git check-ref-format "$1" && return 0
+  echo "    warning: $1 is not a valid ref name (git check-ref-format), so it is not written." >&2
+  return 1
+}
+
+# True in CI, where builds are stamped but get no record and --app-store is refused.
+# CI=false and CI=0 count as unset.
+in_ci() {
+  case "${CI:-}" in
+    '' | false | 0) return 1 ;;
+  esac
+  return 0
+}
+
+# A dirty dev or local build outside CI is stamped with a snapshot commit of its tree, recorded
+# under refs/builds/; flagged index entries rule it out, since the snapshot would miss their edits.
+snapshot_source() {
+  local ref existing output
+  SOURCE_SNAPSHOT=""
+  SOURCE_RECORD=""
+  [[ -n "$SOURCE_DIRTY" && -n "$SOURCE_TREE" && -z "$SOURCE_CHANGED" && -z "$SOURCE_HIDDEN" ]] || return 0
+  if in_ci; then
+    return 0
+  fi
+  ref="refs/builds/$BUILD_LANE/$VERSION-$SOURCE_SHORT-${SOURCE_TREE:0:12}"
+  ref_name_ok "$ref" || return 0
+  if existing="$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null)"; then
+    if [[ "$(git rev-parse -q --verify "$existing^{tree}" 2>/dev/null)" == "$SOURCE_TREE" \
+      && "$(git rev-parse -q --verify "$existing^1" 2>/dev/null)" == "$SOURCE_HEAD" ]]; then
+      SOURCE_SNAPSHOT=$existing
+      SOURCE_RECORD=$ref
+    else
+      echo "    warning: $ref names another snapshot; left as it is, and this build gets no record." >&2
+    fi
+    return 0
+  fi
+  if ! output="$(git commit-tree --no-gpg-sign -p "$SOURCE_HEAD" \
+    -m "OnetimePad $VERSION, $BUILD_LANE build of $SOURCE_SHORT with uncommitted changes" \
+    "$SOURCE_TREE" 2>&1)" || [[ ! "$output" =~ ^[0-9a-f]{40,64}$ ]]; then
+    git_warning "could not snapshot the uncommitted changes, so this build is stamped $SOURCE_SHORT.dirty with no record:" "$output"
+    return 0
+  fi
+  SOURCE_SNAPSHOT=$output
+  SOURCE_RECORD=$ref
+}
+
+# Prints its argument, or "unknown" when it is empty or has a slash, as a path would.
+version_or_unknown() {
+  case $1 in
+    '' | */*) echo unknown ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+# Prints a record's annotation without paths or certificate subjects, which can contain an account
+# name or a person's legal name (docs/development/handling-signing-assets-and-credentials.md).
+build_annotation() {
+  local source=$SOURCE_HEAD signing=ad-hoc swift rust xcode
+  [[ -z "$SOURCE_SNAPSHOT" ]] || source="$source with uncommitted changes in snapshot $SOURCE_SNAPSHOT"
+  if [[ -n "${CODESIGN_IDENTITY:-}" && "$CODESIGN_IDENTITY" != "-" ]]; then
+    signing="team ${TEAM_ID:-unknown}"
+  fi
+  swift="$(swift --version 2>/dev/null | sed -n 1p)" || swift=""
+  rust="$(rustc --version 2>/dev/null)" || rust=""
+  xcode="$(xcodebuild -version 2>/dev/null | tr '\n' ' ')" || xcode=""
+  printf '%s\n' \
+    "OnetimePad $VERSION, $BUILD_LANE build ${BUNDLE_VERSION:-unknown}" \
+    "" \
+    "Version: $VERSION" \
+    "Build: ${BUNDLE_VERSION:-unknown}" \
+    "Lane: $BUILD_LANE" \
+    "Configuration: $CONFIG" \
+    "Bundle identifier: $BUILD_BUNDLE_ID" \
+    "Source: $source" \
+    "Signing: $signing" \
+    "Pre-signature digest: ${DIGEST:-unknown}" \
+    "Core: ${CORE_VERSION:-unknown}" \
+    "FFI: ${FFI_VERSION:-unknown}" \
+    "Swift: $(version_or_unknown "$swift")" \
+    "Rust: $(version_or_unknown "$rust")" \
+    "Xcode: $(version_or_unknown "${xcode% }")" \
+    "Built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
+# Describes the annotation of a record that already names this build's commit.
+earlier_annotation() { # <ref>
+  if [[ "$(git cat-file -t "$1" 2>/dev/null)" == tag ]]; then
+    echo "its annotation is from an earlier build."
+  else
+    echo "it is a plain ref with no annotation, and stays so."
+  fi
+}
+
+# Tags the commit a build came from, unsigned so the end of a build never waits on a prompt.
+# Returns 0 when the tag names that commit, whether made now or already there; otherwise 1.
+create_build_tag() { # <name> <commit> <message>
+  local name=$1 commit=$2 message=$3 existing output
+  ref_name_ok "refs/tags/$name" || return 1
+  if existing="$(git rev-parse -q --verify "refs/tags/$name^{commit}" 2>/dev/null)"; then
+    if [[ "$existing" == "$commit" ]]; then
+      echo "    tag $name already names this commit; $(earlier_annotation "refs/tags/$name")"
+      return 0
+    fi
+    echo "    warning: tag $name names ${existing:0:12}, not this build's commit; left as it is." >&2
+    return 1
+  fi
+  if output="$(git tag -a --no-sign -m "$message" "$name" "$commit" 2>&1)"; then
+    echo "==> tagged $name"
+    return 0
+  fi
+  git_warning "could not create tag $name:" "$output"
+  printf '    run by hand: git tag -a --no-sign -m %q %q %s\n' "$message" "$name" "$commit" >&2
+  return 1
+}
+
+# Fails when tag build/app-store/<version>-<number> is not a valid name, names a commit
+# other than SOURCE_HEAD, or cannot be written; a tag on the same commit is fine.
+app_store_tag_free() { # <number>
+  local name="build/$BUILD_LANE/$VERSION-$1" existing output
+  ref_name_ok "refs/tags/$name" || return 1
+  if existing="$(git rev-parse -q --verify "refs/tags/$name^{commit}" 2>/dev/null)"; then
+    [[ "$existing" != "$SOURCE_HEAD" ]] || return 0
+    echo "    error: tag $name already names ${existing:0:12}, not this build's commit." >&2
+    return 1
+  fi
+  # A transaction aborted after prepare finds a ref in the way, such as a tag named build.
+  if ! output="$(printf 'start\ncreate %s %s\nprepare\nabort\n' "refs/tags/$name" "$SOURCE_HEAD" \
+    | git update-ref --stdin 2>&1 >/dev/null)"; then
+    echo "    error: tag $name cannot be written:" >&2
+    printf '%s\n' "$output" | sed 's/^/    /' >&2
+    return 1
+  fi
+  return 0
+}
+
+# Points <ref> at a new annotated tag object for <commit>; the empty old value makes
+# update-ref refuse a ref that exists. Returns 0 when <ref> names <commit>.
+write_build_record() { # <ref> <commit> <message>
+  local ref=$1 commit=$2 message=$3 existing tagger tag output
+  ref_name_ok "$ref" || return 1
+  if existing="$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null)"; then
+    if [[ "$existing" == "$commit" ]]; then
+      echo "    record $ref already names this commit; $(earlier_annotation "$ref")"
+      return 0
+    fi
+    echo "    warning: $ref names ${existing:0:12}, not this build's source; left as it is." >&2
+    return 1
+  fi
+  if ! tagger="$(git var GIT_COMMITTER_IDENT 2>&1)"; then
+    output=$tagger
+  elif ! tag="$(printf 'object %s\ntype commit\ntag %s\ntagger %s\n\n%s\n' \
+    "$commit" "${ref#refs/}" "$tagger" "$message" | git mktag 2>&1)" \
+    || [[ ! "$tag" =~ ^[0-9a-f]{40,64}$ ]]; then
+    output=$tag
+  elif output="$(git update-ref "$ref" "$tag" "" 2>&1)"; then
+    echo "==> recorded $ref"
+    return 0
+  fi
+  git_warning "could not record $ref:" "$output"
+  echo "    this build's source is $commit; once the cause is fixed, keep a plain record with:" >&2
+  printf '    git update-ref %q %q\n' "$ref" "$commit" >&2
+  return 1
+}
+
+# Dev and local builds are recorded under refs/builds/, which `git push --tags` leaves behind.
+# App Store builds are tagged build/app-store/<version>-<number>, for pushing; v<version> is
+# tagged by hand on the build that is released (docs/development/build-records.md).
+tag_build() {
+  local name message
+  if in_ci; then
+    echo "==> CI is set, so this build writes no tag or record."
+    return 0
+  fi
+  [[ -n "$SOURCE_HEAD" ]] || return 0
+  if [[ -n "$SOURCE_CHANGED" ]]; then
+    echo "    no record: the source changed during the build." >&2
+    return 0
+  fi
+  if [[ -n "$SOURCE_DIRTY" && -z "$SOURCE_RECORD" ]]; then
+    echo "    no record: no snapshot was made of the uncommitted changes." >&2
+    return 0
+  fi
+  message="$(build_annotation)"
+  if [[ -n "$SOURCE_DIRTY" ]]; then
+    write_build_record "$SOURCE_RECORD" "$SOURCE_SNAPSHOT" "$message" || true
+    return 0
+  fi
+  if ! ((APP_STORE_MODE)); then
+    write_build_record "refs/builds/$BUILD_LANE/$VERSION-$SOURCE_SHORT" "$SOURCE_HEAD" "$message" || true
+    return 0
+  fi
+  name="build/$BUILD_LANE/$VERSION-$APP_STORE_BUILD_NUMBER"
+  if ! create_build_tag "$name" "$SOURCE_HEAD" "$message"; then
+    echo "    error: tag $name was not written, so the package in dist/ has no record;" >&2
+    echo "    upload it only once that tag names $SOURCE_HEAD." >&2
+    return 1
+  fi
+  printf '    push with: git push origin %q\n' "$name"
+  return 0
+}
+
+read_source_state
+# An App Store build needs a record, and CI writes none.
+if ((APP_STORE_MODE)) && in_ci; then
+  echo "--app-store does not package in CI, where no build record is written." >&2
+  exit 1
+fi
+# An App Store build is uploaded and tagged for release, so it is packaged only from a clean commit.
+if ((APP_STORE_MODE)); then
+  if [[ -z "$SOURCE_HEAD" ]]; then
+    echo "--app-store packages only a commit, and HEAD names none here (no checkout, an unborn branch, or a missing object)." >&2
+    exit 1
+  fi
+  if [[ -z "$SOURCE_TREE" ]]; then
+    echo "--app-store packages only a commit it can compare with the tree, and the tree could not be read." >&2
+    exit 1
+  fi
+  if [[ -n "$SOURCE_DIRTY" ]]; then
+    echo "--app-store packages only a committed tree. Commit these changes, or set them aside with" >&2
+    echo "git stash -u, which also takes untracked files (git status --short, first 20 lines):" >&2
+    GIT_OPTIONAL_LOCKS=0 git status --short 2>&1 | sed -n '1,20p' >&2 || true
+    exit 1
+  fi
+  # A build number adds only digits, so probing with 1 checks the version's part of the tag name.
+  if ! git check-ref-format "refs/tags/build/$BUILD_LANE/$VERSION-1"; then
+    echo "--app-store stops before compiling: version $VERSION (CFBundleShortVersionString in" >&2
+    echo "shell/OnetimePad-Info.plist) does not make a valid tag name for git check-ref-format." >&2
+    exit 1
+  fi
+  if [[ -n "$REQUESTED_BUILD_NUMBER" ]] && ! app_store_tag_free "$REQUESTED_BUILD_NUMBER"; then
+    echo "--app-store stops before compiling; choose another --build-number." >&2
+    exit 1
+  fi
+fi
+
+if [[ "$CONFIG" == "debug" ]]; then
+  scripts/build-core.sh --if-stale --test-util
+elif ((APP_STORE_MODE)); then
+  # An upload reruns cargo instead of reusing the cached xcframework;
+  # cargo's own fingerprints keep that incremental.
+  scripts/build-core.sh
+else
+  # ADR-0018: never trust whichever development framework happens to be in
+  # bindings/. The explicit release shape rebuilds whenever the stamp differs.
+  scripts/build-core.sh --if-stale
+fi
+
+if [[ ! -d bindings/CompanionCore.xcframework ]]; then
+  echo "bindings/CompanionCore.xcframework is missing after the core build." >&2
+  exit 1
+fi
+if ! cmp -s THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PARTY_NOTICES.md; then
+  echo "CompanionCore.xcframework is missing the canonical third-party notices." >&2
+  exit 1
+fi
+if [[ "$CONFIG" == "release" ]]; then
+  scripts/verify-release-core.sh
 fi
 
 echo "==> swift build -c $CONFIG --product OnetimePad"
@@ -446,11 +786,14 @@ reserve_app_store_build_number() { # <counter file> [explicit number]
   APP_STORE_BUILD_NUMBER=$next
 }
 
-# Whether the tree the build came from is one the repo can reproduce. A
-# modified tracked file and an untracked new one both say no: a source
-# file nobody has added yet builds into the binary just the same. Asked
-# once, so the two stamps below name the same tree.
-TREE_DIRTY="$(git status --porcelain --untracked-files=normal 2>/dev/null || true)"
+# The stamps below and the record name the source read before the compile,
+# provided the tree is still the one read then.
+check_source_unchanged
+if ((APP_STORE_MODE)) && [[ -n "$SOURCE_CHANGED" ]]; then
+  echo "--app-store stops instead, before a build number is reserved; package again when nothing in the checkout is changing." >&2
+  exit 1
+fi
+snapshot_source
 
 if ((APP_STORE_MODE)); then
   # Keep the App Store build number separate from the marketing version and
@@ -458,18 +801,24 @@ if ((APP_STORE_MODE)); then
   # spend one.
   reserve_app_store_build_number "$APP_STORE_BUILD_NUMBER_FILE" "$REQUESTED_BUILD_NUMBER"
   echo "==> App Store build number: $APP_STORE_BUILD_NUMBER (counter: $APP_STORE_BUILD_NUMBER_FILE)"
-  plutil -replace CFBundleVersion -string "$APP_STORE_BUILD_NUMBER" "$APP/Contents/Info.plist"
+  # A number whose tag names another commit cannot name this build; it is left as a gap.
+  if ! app_store_tag_free "$APP_STORE_BUILD_NUMBER"; then
+    echo "--app-store stops before stamping or signing; package again to take another build number." >&2
+    exit 1
+  fi
+  BUNDLE_VERSION="$APP_STORE_BUILD_NUMBER"
 else
-  plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
+  BUNDLE_VERSION="$VERSION"
   # Dogfood builds carry the commit in CFBundleVersion so "which build am
   # I on" has a one-glance answer. An uncommitted tree is part of the
   # answer: the SHA alone would claim a build the repo cannot reproduce.
   # Outside a git checkout the plain version stands.
-  if SHA="$(git rev-parse --short HEAD 2>/dev/null)"; then
-    [[ -z "$TREE_DIRTY" ]] || SHA="$SHA.dirty"
-    plutil -replace CFBundleVersion -string "$VERSION+$SHA" "$APP/Contents/Info.plist"
+  if [[ -n "$SOURCE_SHORT" ]]; then
+    BUNDLE_VERSION="$VERSION+$SOURCE_SHORT"
+    [[ -z "$SOURCE_DIRTY" ]] || BUNDLE_VERSION="$BUNDLE_VERSION.dirty"
   fi
 fi
+plutil -replace CFBundleVersion -string "$BUNDLE_VERSION" "$APP/Contents/Info.plist"
 
 # Stamp provenance independently of the App Store's numeric build counter.
 # A dirty tree stays visible in reports from locally packaged builds, and
@@ -477,9 +826,11 @@ fi
 # About box and the diagnostics report cannot disagree about a build.
 plutil -replace OnetimePadBuildLane -string "$BUILD_LANE" "$APP/Contents/Info.plist"
 SOURCE_REVISION="unknown"
-if RESOLVED_REVISION="$(git rev-parse HEAD 2>/dev/null)"; then
-  SOURCE_REVISION="$RESOLVED_REVISION"
-  [[ -z "$TREE_DIRTY" ]] || SOURCE_REVISION="$SOURCE_REVISION.dirty"
+if [[ -n "$SOURCE_SNAPSHOT" ]]; then
+  SOURCE_REVISION="$SOURCE_SNAPSHOT"
+elif [[ -n "$SOURCE_HEAD" ]]; then
+  SOURCE_REVISION="$SOURCE_HEAD"
+  [[ -z "$SOURCE_DIRTY" ]] || SOURCE_REVISION="$SOURCE_REVISION.dirty"
 fi
 plutil -replace OnetimePadSourceRevision -string "$SOURCE_REVISION" "$APP/Contents/Info.plist"
 
@@ -682,6 +1033,10 @@ if ((APP_STORE_MODE)); then
     echo "installer package does not report the requested installer identity" >&2
     exit 1
   fi
+fi
+# After packaging, so only a build that packaged gets a record.
+tag_build
+if ((APP_STORE_MODE)); then
   echo "Built $APP and $PKG (App Store build $APP_STORE_BUILD_NUMBER)."
 else
   echo "Built $APP. Launch with: open \"$APP\""

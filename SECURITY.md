@@ -34,18 +34,35 @@ where the checkout lives.
 To reproduce it:
 
 ```sh
-git checkout <commit>          # clean tree, see the note below
+git checkout <tag>             # clean tree, see the note below
 scripts/build-core.sh
 scripts/package-app.sh
 cat "dist/OnetimePad Local.presig.sha256"
 ```
 
-Compare that line against the published one. The build script stamps
-`CFBundleVersion` with the short commit SHA, plus a `.dirty` marker for
-an uncommitted tree, and `Info.plist` is inside the digest, so an
-uncommitted change to anything changes the hash even when it changes no
-compiled byte. Build from a clean checkout of the same commit or the
-comparison is meaningless.
+In the public repository, each tag
+`build/app-store/<version>-<build number>` names the commit an App Store
+build came from, and `v<version>` names the commit of the released
+build. Dev and local builds are recorded under `refs/builds/`, which
+`git push --tags` does not send
+([build records](docs/development/build-records.md)).
+
+No digest is published for this lane, so compare that line with one
+from another clean build of the same commit. Each `build/app-store`
+tag's annotation names the pre-signature digest of the first build
+packaged under that number, which differs from this recipe's, as below.
+The build script stamps
+`CFBundleVersion` with the first 12 characters of the commit, plus a
+`.dirty` marker for an uncommitted tree, and `Info.plist` is inside the
+digest, so an uncommitted change to any file git does not ignore changes
+the hash even when it changes no compiled byte. Build from a clean
+checkout of the same commit or the comparison is meaningless.
+
+This recipe builds the local lane. An App Store build of the same commit
+writes a different bundle identifier, `CFBundleVersion` and
+`OnetimePadBuildLane` into `Info.plist`, so its digest differs, and
+`--app-store` refuses to start without App Store signing identities and
+a provisioning profile.
 
 ### What this covers
 
