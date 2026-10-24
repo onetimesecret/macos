@@ -2547,6 +2547,65 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(remount.scroll.contentView.bounds.origin.y, 0, accuracy: 1)
     }
 
+    /// A hand off from a roll already out of its window saves the place it read
+    /// last for the pad, over an older one, and passes it to the incoming roll.
+    func testAHandOffFromARollOutOfItsWindowKeepsTheFreshestPlace() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        let scratch = PadCatalog.scratchID
+        _ = try page(in: model, saying: longPage(lines: 180))
+        let source = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(source.scroll, model: model, readOnly: false, coordinator: source.coordinator)
+        source.stack.scroll(toDocumentOffset: 300, animated: false)
+        model.rememberPadReadingPlace(try XCTUnwrap(source.stack.currentPlace), for: scratch)
+        source.stack.scroll(toDocumentOffset: 700, animated: false)
+        let freshest = try XCTUnwrap(source.stack.currentPlace)
+
+        source.scroll.removeFromSuperview()
+        model.transferOwnership(to: .editorWindow)
+        DayScrollView.dismantleNSView(source.scroll, coordinator: source.coordinator)
+        XCTAssertEqual(model.readingPlace(for: scratch), freshest)
+        let destination = try mountRoll(model: model, height: 120)
+        DayScrollView.updateRoll(
+            destination.scroll, model: model, readOnly: false, coordinator: destination.coordinator)
+        XCTAssertEqual(destination.stack.currentPlace, freshest)
+    }
+
+    /// A summon that reaches a standing roll as a request, after ownership left and
+    /// came back, does not outlive its pass: a later pad switch restores that pad's anchor.
+    func testASummonDoesNotOverrideALaterPadSwitch() throws {
+        let model = try makeModel()
+        model.pads.isEnabled = true
+        let scratch = PadCatalog.scratchID
+        _ = try page(in: model, saying: longPage(lines: 180))
+        let roll = try mountRoll(model: model, height: 120)
+        func pass() {
+            DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        }
+        pass()
+        let other = try XCTUnwrap(model.createPad(named: "Other"))
+        model.newPage()
+        let otherPage = try XCTUnwrap(model.selectedPageID)
+        let ink = longPage(lines: 220).replacingOccurrences(of: "\n", with: "\\n")
+        XCTAssertTrue(model.coreClient.syncDocument(sheet: otherPage, json: "[{\"ink\":\"\(ink)\"}]"))
+        model.refresh()
+        pass()
+        roll.stack.scroll(toDocumentOffset: 1150, animated: false)
+        let otherPlace = try XCTUnwrap(roll.stack.currentPlace)
+        model.activatePad(scratch)
+        pass()
+
+        model.transferOwnership(to: .editorWindow)
+        model.transferOwnership(to: .panel)
+        XCTAssertNil(model.onAnchorToday, "the summon finds no live anchor, so it waits as a request")
+        model.anchorOnToday()
+        pass()
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin.y, 0, accuracy: 1)
+        model.activatePad(other)
+        pass()
+        XCTAssertEqual(roll.stack.currentPlace, otherPlace)
+    }
+
     /// A page queued while the clip had no size yields to a hand off place from a
     /// later pass, and a pick taken in the same pass as a place still outranks it.
     func testAHandOffPlaceOutranksAPageQueuedBeforeTheClipWasSized() throws {

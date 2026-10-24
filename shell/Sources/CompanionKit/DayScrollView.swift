@@ -126,7 +126,8 @@ public struct DayScrollView: NSViewRepresentable {
             scroller: { [weak stack] offset in stack?.scroll(toDocumentOffset: offset) },
             scrubber: { [weak stack] offset in stack?.scroll(toDocumentOffset: offset, animated: false) },
             wheel: { [weak scroll] event in scroll?.scrollWheel(with: event) },
-            place: { [weak stack] in stack?.currentPlace },
+            // The dismantle's own answer, so a hand off from a roll out of its window keeps the place.
+            place: { [weak stack] in stack?.departingPlace },
             pad: { [weak stack] in stack?.renderedPadID },
             from: surface
         )
