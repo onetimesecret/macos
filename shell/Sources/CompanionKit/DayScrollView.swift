@@ -624,7 +624,7 @@ final class DayStackView: NSView {
             if changingPad, let pad = signature.padID {
                 // A hand off may already have supplied a newer anchor. Otherwise ADR-0060: the remembered anchor,
                 // else for a pad shown earlier (switch back, file or Ledger return) its selected page, else Today.
-                let shownBefore = model.rollShows(pad: pad)
+                let shownBefore = model.markShown(pad: pad)
                 if !waiting {
                     if !todayRequested, let place = model.readingPlace(for: pad),
                        projected.contains(place.page) {
@@ -1470,6 +1470,7 @@ final class DayStackView: NSView {
     /// Open the roll on `place` once it can be found.
     func open(at place: RollPlace) {
         pendingTodayAnchor = false
+        pendingPage = nil
         pendingPlace = place
     }
 

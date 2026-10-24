@@ -1196,8 +1196,9 @@ public final class PageModel: ObservableObject {
     // applies to any remount of one, a switch back or a return from a file or the Ledger.
     private var padsShown: Set<UUID> = []
 
-    /// Note that the roll shows `pad`; true when it had shown it earlier this session.
-    func rollShows(pad: UUID) -> Bool {
+    /// Records that the roll now shows `pad`, and answers whether it had shown it earlier
+    /// this session. Call it only where the roll renders a pad.
+    func markShown(pad: UUID) -> Bool {
         !padsShown.insert(pad).inserted
     }
 

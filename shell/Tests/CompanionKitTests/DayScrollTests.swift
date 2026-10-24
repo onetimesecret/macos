@@ -2547,6 +2547,36 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(remount.scroll.contentView.bounds.origin.y, 0, accuracy: 1)
     }
 
+    /// A page queued while the clip had no size yields to a hand off place from a
+    /// later pass, and a pick taken in the same pass as a place still outranks it.
+    func testAHandOffPlaceOutranksAPageQueuedBeforeTheClipWasSized() throws {
+        let (model, roll, pages) = try padWithPages(3)
+        let (upper, lower) = (pages[0], pages[2])
+        roll.stack.scroll(toDocumentOffset: try top(of: lower, in: roll) + 500, animated: false)
+        let handOff = try XCTUnwrap(roll.stack.currentPlace)
+        XCTAssertEqual(handOff.page, lower)
+        func size(height: CGFloat) {
+            roll.scroll.frame.size.height = height
+            roll.scroll.layoutSubtreeIfNeeded()
+        }
+
+        size(height: 0)
+        XCTAssertTrue(roll.scroll.contentView.bounds.isEmpty)
+        roll.stack.open(onPage: upper)
+        roll.stack.update(projection: model.timeUnits, selectedPage: model.selectedPageID, readOnly: false)
+        model.viewStates.leaveRollPlace(handOff)
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        size(height: 120)
+        XCTAssertEqual(roll.stack.currentPlace, handOff)
+
+        model.viewStates.leaveRollPlace(handOff)
+        model.openFile(at: try scratchFile())
+        model.select(try XCTUnwrap(model.tabs.first { $0.pageID == upper }?.id))
+        DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin.y, try pickedOffset(of: upper, in: roll), accuracy: 1)
+        XCTAssertNotEqual(roll.stack.currentPlace, handOff)
+    }
+
     /// ADR-0060 restores the anchor before the selection: the clip returns to the
     /// page being read while the selection stays on the page the editor left.
     func testASwitchBackRestoresTheAnchorPageAndKeepsADifferentSelection() throws {
