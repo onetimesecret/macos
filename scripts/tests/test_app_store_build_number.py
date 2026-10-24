@@ -77,6 +77,7 @@ class AppStoreBuildNumberTests(unittest.TestCase):
             (("--app-store",), "release 1 "),
             (("--app-store", "--build-number", "7"), "release 1 7"),
             (("--build-number", "7", "--app-store"), "release 1 7"),
+            (("--app-store", "--build-number", "007"), "release 1 7"),
         ):
             with self.subTest(args=args):
                 result = self.parse(*args)
@@ -90,6 +91,7 @@ class AppStoreBuildNumberTests(unittest.TestCase):
             ("--app-store", "--build-number", ""),
             ("--app-store", "--build-number", "1.2"),
             ("--app-store", "--build-number", "-1"),
+            ("--app-store", "--build-number", "1" * 19),
             ("--app-store", "--debug"),
             ("--app-store", "7"),
             ("--release",),

@@ -87,8 +87,9 @@ while (($#)); do
         echo "$USAGE" >&2
         exit 1
       fi
-      if [[ ! "$2" =~ ^[0-9]+$ ]]; then
-        echo "--build-number must contain decimal digits only (got: $2)" >&2
+      # 18 digits stay below 2^63, where shell arithmetic wraps.
+      if [[ ! "$2" =~ ^[0-9]{1,18}$ ]]; then
+        echo "--build-number must be 1 to 18 decimal digits (got: $2)" >&2
         exit 1
       fi
       # Base 10, so 007 names the same build and the same tag as 7.
