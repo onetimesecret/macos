@@ -14,6 +14,7 @@ use crate::blocks::{BlockIndex, MaterializedMeta, PersistedBlock};
 use crate::clock::Clock;
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
+use crate::metadata::NameVersion;
 use crate::note::Note;
 use crate::sheet::{
     Availability, CeremonyState, ChipId, ChipMeta, Conceal, ItemId, PeerKind, SealedChip, Segment,
@@ -159,6 +160,8 @@ impl<C: Clock> SheetStore<C> {
         self.next_sheet_id = next_sheet_id;
         self.next_chip_id = chips.next_id;
         self.active_cut = active_cut;
+        // Page ids are minted afresh, and nothing restored is a change.
+        self.metadata_dirty.clear();
         Ok(restored)
     }
 
@@ -500,6 +503,15 @@ fn emit_chip(chip: &SealedChip, note: Option<&str>, out: &mut dyn Sink) {
         Some(name) => {
             out.u8(1);
             out.bytes(name.as_bytes());
+        }
+    }
+    // The name's version, which `MAGIC_V4` never wrote (ADR-0058 point 9).
+    match chip.name_version {
+        None => out.u8(0),
+        Some(version) => {
+            out.u8(1);
+            out.u64(version.counter);
+            out.raw(&version.writer);
         }
     }
     match note {
@@ -996,6 +1008,23 @@ fn read_chip(
             _ => return Err(Malformed),
         }
     };
+    // `MAGIC_V4` wrote no name version, so its names come back unversioned.
+    let versioned = matches!(reading.layout, ChipLayout::Tagged) && !record.done();
+    let name_version = if versioned {
+        match record.u8().ok_or(Malformed)? {
+            0 => None,
+            1 => Some(NameVersion {
+                counter: record.u64().ok_or(Malformed)?,
+                writer: record
+                    .raw(32)
+                    .and_then(|writer| writer.try_into().ok())
+                    .ok_or(Malformed)?,
+            }),
+            _ => return Err(Malformed),
+        }
+    } else {
+        None
+    };
     // And one written before the note ends here; its undo starts empty.
     let note = if record.done() {
         None
@@ -1035,6 +1064,7 @@ fn read_chip(
         }
     };
     chip.name = name;
+    chip.name_version = name_version;
     chip.note = note;
     // A written chip stood when it was written; its seal is long past.
     chip.stood = true;
@@ -2359,8 +2389,8 @@ mod tests {
         doc.insert_chip(0, uuid).unwrap();
         doc.insert(1, " and ink \u{1F600}").unwrap();
         doc.commit(None);
-        // No name, no note, then the field this build does not know.
-        let tail = [&[0u8, 0][..], b"a chip field from 2027"].concat();
+        // No name, no name version, no note, then the field this build does not know.
+        let tail = [&[0u8, 0, 0][..], b"a chip field from 2027"].concat();
         let snapshot =
             sheet_snapshot_with_tails(&[(uuid, "ghp_still-here")], &doc.export_snapshot(), &tail);
 
@@ -2442,7 +2472,7 @@ mod tests {
     fn a_written_note_comes_back_beside_its_name() {
         let (mut store, _clock) = store();
         let uuid = ItemId::random();
-        let mut tail = vec![0u8]; // no name
+        let mut tail = vec![0u8, 0]; // no name, no name version
         tail.extend_from_slice(&text_field("kept \u{1F600} beside it"));
         let snapshot =
             sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
@@ -2465,6 +2495,7 @@ mod tests {
         let (mut store, _clock) = store();
         let uuid = ItemId::random();
         let mut tail = text_field("API_KEY");
+        tail.push(0); // no name version
         tail.extend_from_slice(&text_field("kept \u{1F600} beside it"));
         let snapshot =
             sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
@@ -2506,7 +2537,7 @@ mod tests {
         let (mut store, clock) = store();
         let uuid = ItemId::random();
         let note = "kept \u{1F600} beside it";
-        let mut tail = vec![0u8]; // no name
+        let mut tail = vec![0u8, 0]; // no name, no name version
         tail.extend_from_slice(&text_field(note));
         let snapshot =
             sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
@@ -2537,8 +2568,11 @@ mod tests {
     fn an_unknown_note_flag_is_malformed_and_the_store_is_untouched() {
         let (mut store, survivor) = occupied();
         let uuid = ItemId::random();
-        let snapshot =
-            sheet_snapshot_with_tails(&[(uuid, "ghp_flagged")], &one_chip_document(uuid), &[0, 7]);
+        let snapshot = sheet_snapshot_with_tails(
+            &[(uuid, "ghp_flagged")],
+            &one_chip_document(uuid),
+            &[0, 0, 7],
+        );
         assert_eq!(store.restore(&snapshot, 0), Err(RestoreError::Malformed));
         let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
         assert_eq!(ids, vec![survivor], "the failed restore touched the store");
@@ -3367,9 +3401,12 @@ mod tests {
         chip.extend(receipt.map_or_else(|| vec![0], text_field));
         chip.extend_from_slice(&(payload.len() as u64).to_le_bytes());
         chip.extend_from_slice(payload);
-        for field in fields {
-            chip.extend(field.map_or_else(|| vec![0], text_field));
+        let [name, note] = fields;
+        chip.extend(name.map_or_else(|| vec![0], text_field));
+        if tagged {
+            chip.push(0); // no name version
         }
+        chip.extend(note.map_or_else(|| vec![0], text_field));
         chip
     }
 
@@ -3444,6 +3481,7 @@ mod tests {
         assert!(chip.is_local());
         assert_eq!(chip.conceal().unwrap().receipt_id, "receipt-v4");
         assert_eq!(chip.name(), Some("API_KEY"));
+        assert_eq!(chip.name_version(), None, "a v4 name has no version");
         assert_eq!(&**old.note_text(chip.id()).unwrap(), "rotate monthly");
         assert_eq!(
             &*old.copy_out_chip(chip.id()).unwrap().0,
@@ -3463,10 +3501,11 @@ mod tests {
         );
     }
 
-    /// A record with no value: its availability tag, kind and size class, no name, no note.
+    /// A record with no value: its availability tag, kind and size class, no
+    /// name, no name version, no note.
     fn peer_record(uuid: ItemId, tag: u8, kind: u8, size: u8) -> Vec<u8> {
         let mut chip = uuid.as_bytes().to_vec();
-        chip.extend_from_slice(&[tag, kind, size, 0, 0]);
+        chip.extend_from_slice(&[tag, kind, size, 0, 0, 0]);
         chip
     }
 
@@ -3514,6 +3553,62 @@ mod tests {
             );
             let ids: Vec<SheetId> = revived.sheets().map(Sheet::id).collect();
             assert_eq!(ids, vec![survivor], "the refused restore touched the store");
+        }
+    }
+
+    #[test]
+    fn a_name_version_round_trips_on_attached_and_detached_records() {
+        let (mut original, clock) = store();
+        original.set_writer([7; 32]);
+        let id = original.new_tab().1;
+        let kept = original.seal_text_at(id, "ghp_versioned", 0, 0).unwrap();
+        let gone = original.seal_text_at(id, "ghp_detached", 1, 0).unwrap();
+        original.set_chip_name(kept, "FIRST").unwrap();
+        original.set_chip_name(kept, "SECOND").unwrap();
+        original.set_chip_name(gone, "GONE").unwrap();
+        assert!(original.apply_ops(
+            id,
+            &[crate::store::EditOp::Delete {
+                pos_u16: 1,
+                len_u16: 1,
+            }],
+        ));
+        let snapshot = original.snapshot(1_000);
+
+        let mut revived = store_on(clock.clone());
+        assert_eq!(revived.restore(&snapshot, 1_000), Ok(1));
+        let sheet = revived.sheets().next().unwrap();
+        let standing = sheet.chips().next().unwrap();
+        assert_eq!(standing.name(), Some("SECOND"));
+        assert_eq!(
+            standing.name_version(),
+            Some(NameVersion {
+                counter: 2,
+                writer: [7; 32]
+            })
+        );
+        let detached = sheet.detached().next().unwrap();
+        assert_eq!(detached.name(), Some("GONE"));
+        assert_eq!(
+            detached.name_version(),
+            Some(NameVersion {
+                counter: 1,
+                writer: [7; 32]
+            })
+        );
+        assert_eq!(*revived.snapshot(1_000), *snapshot, "written back as read");
+    }
+
+    #[test]
+    fn an_unknown_or_short_name_version_is_malformed_and_the_store_is_untouched() {
+        let uuid = ItemId::random();
+        for tail in [&[0u8, 2][..], &[0, 1, 9, 0][..]] {
+            let (mut store, survivor) = occupied();
+            let snapshot =
+                sheet_snapshot_with_tails(&[(uuid, "ghp_flagged")], &one_chip_document(uuid), tail);
+            assert_eq!(store.restore(&snapshot, 0), Err(RestoreError::Malformed));
+            let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+            assert_eq!(ids, vec![survivor], "the failed restore touched the store");
         }
     }
 }

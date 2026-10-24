@@ -1294,8 +1294,9 @@ char *companion_sheet_conceal(CompanionHandle *handle, uint64_t sheet,
  *     "client_id": "…" }             // required, non-empty
  * Not persisted core-side (the shell re-sends it at launch);
  * configuring resumes the persisted sign-in from its own Keychain
- * account. Returns false on malformed JSON, a missing field, or a
- * non-https URL.
+ * account, and names the device identity at rest, if any, as the
+ * writer of its name versions (ADR-0058 point 5), minting none.
+ * Returns false on malformed JSON, a missing field, or a non-https URL.
  */
 bool companion_sync_configure(CompanionHandle *handle, const char *json);
 

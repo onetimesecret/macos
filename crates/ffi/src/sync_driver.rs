@@ -581,6 +581,11 @@ fn package_needs_republish(engine: &EngineState) -> bool {
         && !engine.session.ballot_in_flight()
 }
 
+/// The name version writer a device fingerprint decodes to (ADR-0058 point 5).
+pub(crate) fn writer_of(fingerprint: &str) -> Option<[u8; 32]> {
+    crate::persist::hex_decode(fingerprint)?.try_into().ok()
+}
+
 /// Build the engine if none stands, minting what pairing has not
 /// delivered (the founder path). Needs configuration and a sign-in.
 fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
@@ -613,6 +618,9 @@ fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
     let Some(packages) = KeyPackageKeeper::mint(&pkcs8) else {
         return Err("keychain");
     };
+    if let Some(writer) = writer_of(&fingerprint) {
+        guard.store.set_writer(writer);
+    }
     if let Some(engine) = guard.sync.engine.as_mut() {
         // Re-attach: the fresh package waits as pending until the relay
         // takes it (client protocol §5.2).
@@ -2450,6 +2458,39 @@ mod tests {
         assert!(engine.packages.is_published());
         assert!(engine.pending_packages.is_none());
         assert!(!package_needs_republish(&engine));
+    }
+
+    #[test]
+    fn starting_the_engine_names_the_device_as_the_name_writer() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync = configured();
+        let mut keeper = TokenKeeper::new("https://eu.example/oauth/token", "companion", None);
+        let _ = keeper.absorb(TokenGrant {
+            access: Zeroizing::new("at".into()),
+            refresh: Zeroizing::new("rt".into()),
+        });
+        companion.sync.keeper = Some(keeper);
+        assert_eq!(companion.store.writer(), [0; 32]);
+        let handle = CompanionHandle {
+            inner: std::sync::Mutex::new(companion),
+        };
+
+        assert_eq!(ensure_engine(&handle), Ok(()));
+        let writer = handle.inner.lock().unwrap().store.writer();
+        let fingerprint = pairing::stored_device_fingerprint(&*credentials).unwrap();
+        assert_eq!(writer_of(&fingerprint), Some(writer));
+        assert_eq!(crate::persist::hex_encode(&writer), fingerprint);
+    }
+
+    #[test]
+    fn a_fingerprint_that_is_not_32_hex_bytes_names_no_writer() {
+        let short = "ab".repeat(31);
+        let odd = format!("{short}a");
+        for refused in ["", short.as_str(), odd.as_str(), &"zz".repeat(32)] {
+            assert_eq!(writer_of(refused), None, "{refused}");
+        }
+        assert_eq!(writer_of(&"0f".repeat(32)), Some([0x0f; 32]));
     }
 
     fn attached_engine(credentials: &dyn CredentialStore) -> EngineState {

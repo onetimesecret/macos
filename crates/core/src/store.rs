@@ -2,7 +2,7 @@
 //! [`ledger`](crate::ledger) of what those pages did (doc 04). The strip
 //! has no cap (issue #158).
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use zeroize::{Zeroize, Zeroizing};
@@ -14,6 +14,7 @@ use crate::document::{
 };
 use crate::ink::StepOutcome;
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
+use crate::metadata::{NameVersion, ObjectMetadata};
 use crate::note::Note;
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, NameRefusal, SealedChip, Segment, Sheet,
@@ -196,6 +197,15 @@ pub struct SheetStore<C: Clock> {
     pub(crate) next_chip_id: u64,
     /// The last cut that held an object, until it ends (ADR-0046 point 3).
     pub(crate) active_cut: Option<crate::transfer::ActiveCut>,
+    /// This device's fingerprint, the writer of its name versions; zero until
+    /// the seam sets it (ADR-0058 point 5).
+    pub(crate) writer: [u8; 32],
+    /// Per page, the objects whose metadata changed here since the driver last
+    /// took them. Never persisted.
+    pub(crate) metadata_dirty: BTreeMap<SheetId, BTreeSet<ItemId>>,
+    /// Entries for objects with no record on their page yet, by page identity,
+    /// oldest first. Never persisted.
+    pub(crate) metadata_pending: VecDeque<(ItemId, ObjectMetadata)>,
 }
 
 impl<C: Clock> SheetStore<C> {
@@ -212,6 +222,9 @@ impl<C: Clock> SheetStore<C> {
             next_sheet_id: 1,
             next_chip_id: 1,
             active_cut: None,
+            writer: [0; 32],
+            metadata_dirty: BTreeMap::new(),
+            metadata_pending: VecDeque::new(),
         }
     }
 
@@ -527,6 +540,7 @@ impl<C: Clock> SheetStore<C> {
             SizeClass::of(text.len()),
             DestinationClass::None,
         );
+        self.note_metadata(sheet, uuid);
         Ok(id)
     }
 
@@ -557,6 +571,7 @@ impl<C: Clock> SheetStore<C> {
             size,
             DestinationClass::None,
         );
+        self.note_metadata(sheet, uuid);
         Ok(id)
     }
 
@@ -1075,6 +1090,7 @@ impl<C: Clock> SheetStore<C> {
         let open = !self.is_due(id);
         for uuid in arrived {
             let moved = open.then(|| self.take_detached(id, uuid)).flatten();
+            let followed = moved.is_some();
             let record = match moved {
                 Some(record) => record,
                 None if self.terminal_cause(uuid).is_some() => continue,
@@ -1086,6 +1102,10 @@ impl<C: Clock> SheetStore<C> {
             };
             if let Some(sheet) = self.sheet_mut(id) {
                 sheet.chips.push(record);
+            }
+            self.drain_pending_metadata(id, uuid);
+            if followed {
+                self.note_metadata(id, uuid);
             }
         }
     }
@@ -1129,7 +1149,9 @@ impl<C: Clock> SheetStore<C> {
             let record = sheet.detached.remove(index);
             // A step here could stand the moved sentinel a second time.
             sheet.document.forget_undo();
-            if !local_there {
+            if local_there {
+                self.keep_newer_metadata(there, &record);
+            } else {
                 self.stand_in(there, record);
             }
         }
@@ -1166,16 +1188,23 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Put `record` in place of the record standing its identity on `there`,
-    /// or keep it detached there if none stands.
-    fn stand_in(&mut self, there: SheetId, record: SealedChip) {
+    /// keeping any newer name that one learned, or keep it detached there if
+    /// none stands.
+    fn stand_in(&mut self, there: SheetId, mut record: SealedChip) {
         let Some(dest) = self.sheet_mut(there) else {
             return;
         };
-        match dest.chips.iter_mut().find(|chip| chip.uuid == record.uuid) {
-            Some(slot) => *slot = record,
+        let uuid = record.uuid;
+        match dest.chips.iter_mut().find(|chip| chip.uuid == uuid) {
+            Some(slot) => {
+                crate::metadata::absorb(&mut record, slot);
+                *slot = record;
+            }
             None => dest.detached.push(record),
         }
         dest.rebuild_segments();
+        self.drain_pending_metadata(there, uuid);
+        self.note_metadata(there, uuid);
     }
 
     /// Take out each later standing of an identity, and each of an ended one
@@ -1437,7 +1466,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// A page by its cross-device identity, mutably.
-    fn sheet_mut_by_uuid(&mut self, page: ItemId) -> Option<&mut Sheet> {
+    pub(crate) fn sheet_mut_by_uuid(&mut self, page: ItemId) -> Option<&mut Sheet> {
         self.tabs
             .iter_mut()
             .filter_map(|tab| tab.page.as_mut())
@@ -1473,14 +1502,35 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Name a sealed object by [`judge_name`]'s rule; an empty draft clears
-    /// the name. A refusal changes nothing, and no outcome is recorded.
+    /// the name. A change takes the next name version (ADR-0058 point 5); the
+    /// name it already has changes nothing. A refusal changes nothing, and no
+    /// outcome is recorded.
     ///
     /// # Errors
     /// [`NameRefusal::UnknownChip`] for an unknown chip or a page past its
-    /// deadline (Law 0001, expiry row), or the rule's own refusal.
+    /// deadline (Law 0001, expiry row), the rule's own refusal, or
+    /// [`NameRefusal::VersionsSpent`].
     pub fn set_chip_name(&mut self, id: ChipId, draft: &str) -> Result<(), NameRefusal> {
-        let chip = self.chip_mut(id).ok_or(NameRefusal::UnknownChip)?;
-        chip.name = judge_name(draft)?.map(|name| Zeroizing::new(name.to_owned()));
+        let writer = self.writer;
+        let (page, chip) = self
+            .readable_sheets_mut()
+            .find_map(|sheet| {
+                let page = sheet.id;
+                sheet
+                    .chips
+                    .iter_mut()
+                    .find(|c| c.id == id)
+                    .map(|c| (page, c))
+            })
+            .ok_or(NameRefusal::UnknownChip)?;
+        let name = judge_name(draft)?;
+        if chip.name() == name {
+            return Ok(());
+        }
+        chip.name_version = Some(NameVersion::after(chip.name_version, writer)?);
+        chip.name = name.map(|name| Zeroizing::new(name.to_owned()));
+        let uuid = chip.uuid;
+        self.note_metadata(page, uuid);
         Ok(())
     }
 

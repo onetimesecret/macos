@@ -14,6 +14,8 @@ pub mod harden;
 mod ink;
 mod language_detection;
 pub mod ledger;
+// What a peer learns of a sealed object beside the page's ops (ADR-0058 point 5).
+mod metadata;
 mod note;
 pub mod persist;
 pub mod secret;
@@ -40,6 +42,7 @@ pub use harden::harden_process;
 pub use ink::StepOutcome;
 pub use language_detection::detect_source_language;
 pub use ledger::{DestinationClass, LEDGER_RETENTION_MS, LedgerEvent, LedgerRecord, SizeClass};
+pub use metadata::{NameVersion, ObjectMetadata};
 pub use persist::RestoreError;
 pub use secret::SecretBuffer;
 pub use sheet::{

@@ -9,6 +9,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use crate::blocks::{BlockIndex, BlockMeta};
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::SizeClass;
+use crate::metadata::NameVersion;
 use crate::note::Note;
 use crate::secret::SecretBuffer;
 use crate::ttl::{self, Ttl};
@@ -220,6 +221,8 @@ pub enum NameRefusal {
     TooLong,
     /// Outside `[A-Za-z_][A-Za-z0-9_]*`.
     OutsideCharset,
+    /// The name's version counter has no successor (ADR-0058 point 5).
+    VersionsSpent,
 }
 
 impl std::fmt::Display for NameRefusal {
@@ -231,6 +234,7 @@ impl std::fmt::Display for NameRefusal {
                 f,
                 "a name is letters, digits and underscores, and does not start with a digit"
             ),
+            NameRefusal::VersionsSpent => write!(f, "this name cannot change again"),
         }
     }
 }
@@ -311,6 +315,9 @@ pub struct SealedChip {
     pub(crate) availability: Availability,
     /// A wiping owner, since a name is content (Law 0004, C10).
     pub(crate) name: Option<Zeroizing<String>>,
+    /// The version of the name's last write; `None` until one is set or received
+    /// (ADR-0058 point 5).
+    pub(crate) name_version: Option<NameVersion>,
     /// Made by its first accepted edit, or by a restore, a paste or a clone that brings its
     /// text, which then rests until an edit (C31).
     pub(crate) note: Option<Note>,
@@ -361,6 +368,7 @@ impl SealedChip {
             uuid,
             availability,
             name: None,
+            name_version: None,
             note: None,
             stood: false,
         }
@@ -485,6 +493,12 @@ impl SealedChip {
     #[must_use]
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref().map(String::as_str)
+    }
+
+    /// The version of the name's last write (ADR-0058 point 5).
+    #[must_use]
+    pub fn name_version(&self) -> Option<NameVersion> {
+        self.name_version
     }
 
     /// Whether a note holds anything but whitespace: the block's doorway.

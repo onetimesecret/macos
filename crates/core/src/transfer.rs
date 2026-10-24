@@ -10,6 +10,7 @@ use crate::clock::Clock;
 use crate::document::{EditIntent, EditSelection, InvalidRange, TextSelection};
 use crate::fragment::{Copied, CopyRefusal, Fragment, Node, ink_of, placeholder};
 use crate::ledger::{DestinationClass, LedgerEvent, SizeClass};
+use crate::metadata::NameVersion;
 use crate::note::Note;
 use crate::sheet::{ChipId, ItemId, SealedChip, Segment, Sheet, SheetId, judge_name};
 use crate::store::{SheetStore, range_in_body};
@@ -397,15 +398,19 @@ impl<C: Clock> SheetStore<C> {
                     if let (Some(chip), Some(sheet)) = (moved, self.sheet_mut(id)) {
                         sheet.detached.push(chip);
                     }
+                    self.drain_pending_metadata(id, uuid);
+                    self.note_metadata(id, uuid);
                     if !sources.contains(&from) {
                         sources.push(from);
                     }
                 }
                 Planned::Clone(chip) => {
                     clones.extend(chip.local_len().map(|len| (chip.uuid, len)));
+                    let uuid = chip.uuid;
                     if let Some(sheet) = self.sheet_mut(id) {
                         sheet.detached.push(*chip);
                     }
+                    self.note_metadata(id, uuid);
                 }
                 Planned::Ink(_) | Planned::Placeholder(_) | Planned::Reattach { .. } => {}
             }
@@ -460,6 +465,9 @@ impl<C: Clock> SheetStore<C> {
                         .as_ref()
                         .and_then(|name| judge_name(name.as_str()).ok().flatten())
                         .map(|name| Zeroizing::new(name.to_owned()));
+                    // A new identity, so its name starts a version of its own.
+                    let writer = self.writer;
+                    clone.name_version = clone.name.as_ref().map(|_| NameVersion::first(writer));
                     clone.note = reference.note.as_deref().map(|text| Note::holding(text));
                     placed.cloned += 1;
                     plan.push(Planned::Clone(Box::new(clone)));

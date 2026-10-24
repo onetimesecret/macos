@@ -1364,7 +1364,9 @@ pub unsafe extern "C" fn companion_chip_name_refusal(draft: *const c_char) -> u3
     match judge_name(draft) {
         Ok(_) => 0,
         Err(NameRefusal::TooLong) => 1,
-        Err(NameRefusal::OutsideCharset | NameRefusal::UnknownChip) => 2,
+        Err(
+            NameRefusal::OutsideCharset | NameRefusal::UnknownChip | NameRefusal::VersionsSpent,
+        ) => 2,
     }
 }
 
@@ -3053,8 +3055,10 @@ fn sync_refusal(reason: &str) -> *mut c_char {
 /// `{"relay_url", "authorize_url", "token_url", "client_id"}`, all
 /// required, the three URLs refused unless `https://`. Not persisted
 /// core-side (the shell re-sends it at launch); configuring resumes the
-/// persisted sign-in from its own Keychain account. Returns whether the
-/// configuration was accepted.
+/// persisted sign-in from its own Keychain account, and names the device
+/// identity at rest, if any, as the writer of its name versions
+/// (ADR-0058 point 5), minting none. Returns whether the configuration
+/// was accepted.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `json` a valid, NUL-terminated
@@ -3074,6 +3078,12 @@ pub unsafe extern "C" fn companion_sync_configure(
         return false;
     };
     guard.sync.keeper = Some(sync_driver::keeper_for(&config, &*guard.credentials));
+    let writer = pairing::stored_device_fingerprint(&*guard.credentials)
+        .as_deref()
+        .and_then(sync_driver::writer_of);
+    if let Some(writer) = writer {
+        guard.store.set_writer(writer);
+    }
     guard.sync.config = Some(config);
     // A fresh configuration forgets the last one's faults.
     sync_driver::clear_fault(&mut guard);
@@ -8321,6 +8331,26 @@ mod tests {
                 "client_id":"companion"}"#,
         );
         assert!(unsafe { companion_sync_configure(handle, config.as_ptr()) });
+    }
+
+    #[test]
+    fn configuring_sync_names_the_identity_at_rest_as_the_name_writer_and_mints_none() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let writer =
+            |handle: *mut CompanionHandle| unsafe { &*handle }.inner.lock().unwrap().store.writer();
+        let handle = handle_with(Arc::clone(&credentials));
+        sync_configured(handle);
+        assert_eq!(writer(handle), [0; 32], "no identity at rest, so no writer");
+        assert!(
+            pairing::stored_device_fingerprint(&*credentials).is_none(),
+            "configuring minted an identity"
+        );
+
+        let fingerprint = pairing::device_fingerprint(&*credentials).unwrap();
+        sync_configured(handle);
+        assert_eq!(persist::hex_encode(&writer(handle)), fingerprint);
+        unsafe { companion_free(handle) };
     }
 
     /// Wait until the finish call has actually taken the ceremony and

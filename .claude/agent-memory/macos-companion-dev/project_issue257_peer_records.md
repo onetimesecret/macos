@@ -24,4 +24,7 @@ Unit 2: `import_update` returns the identities a batch stands that the page lack
 - `ChipInfo.available` decodes with `decodeIfPresent ?? true`, so older fixtures still decode. `readerReason` translates both value-elsewhere refusals into sealed content wording (ADR-0055 rule 3).
 - The only burn path in the shell is Burn Local Copy after a successful conceal, so hiding Create One-Time Link plus the core's conceal refusal keeps the burn from being offered.
 
+- Unit 4 (core metadata, 2026-10-23): routes live in `crates/core/src/metadata.rs`. The writer is set in `companion_sync_configure` (stored identity only, never mints, since configure already reads the Keychain at launch) and in `ensure_engine`. A name with no version (an `OTSSNAP4` restore) restates at counter 0. `stand_in` folds the replaced record's newer name into the arriving value. A no op rename takes no version. Two test stores mint different page uuids, so `apply_object_metadata` in a test takes the receiver's own page uuid.
+- `OTSSNAP5` chip tail is name, name version (flag, u64 LE, 32 bytes), note; a hand built v5 fixture with a note must write the version flag.
+
 Related: [[project-issue241-243-core]], [[project-adr0018-gated-seams]]
