@@ -442,11 +442,10 @@ build_annotation() {
     "Built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 
-# Tags the commit a build came from. Returns 0 when the tag names that commit,
-# whether made now or already there; otherwise it warns and returns 1.
-create_build_tag() { # <name> <commit> <message> [--no-sign]
-  local name=$1 commit=$2 message=$3 flags=(-a) existing output
-  [[ -z "${4:-}" ]] || flags+=("$4")
+# Tags the commit a build came from, unsigned so the end of a build never waits on a prompt.
+# Returns 0 when the tag names that commit, whether made now or already there; otherwise 1.
+create_build_tag() { # <name> <commit> <message>
+  local name=$1 commit=$2 message=$3 existing output
   ref_name_ok "refs/tags/$name" || return 1
   if existing="$(git rev-parse -q --verify "refs/tags/$name^{commit}" 2>/dev/null)"; then
     if [[ "$existing" == "$commit" ]]; then
@@ -456,12 +455,12 @@ create_build_tag() { # <name> <commit> <message> [--no-sign]
     echo "    warning: tag $name names ${existing:0:12}, not this build's commit; left as it is." >&2
     return 1
   fi
-  if output="$(git tag "${flags[@]}" -m "$message" "$name" "$commit" 2>&1)"; then
+  if output="$(git tag -a --no-sign -m "$message" "$name" "$commit" 2>&1)"; then
     echo "==> tagged $name"
     return 0
   fi
   git_warning "could not create tag $name:" "$output"
-  printf '    run by hand: git tag %s -m %q %q %s\n' "${flags[*]}" "$message" "$name" "$commit" >&2
+  printf '    run by hand: git tag -a --no-sign -m %q %q %s\n' "$message" "$name" "$commit" >&2
   return 1
 }
 
@@ -514,9 +513,10 @@ write_build_record() { # <ref> <commit> <message>
 }
 
 # Dev and local builds are recorded under refs/builds/, which `git push --tags` leaves behind.
-# App Store builds are tagged build/app-store/<version>-<number> and v<version>, for pushing.
+# App Store builds are tagged build/app-store/<version>-<number>, for pushing; v<version> is
+# tagged by hand on the build that is released (docs/development/build-records.md).
 tag_build() {
-  local name message pushable=()
+  local name message
   if in_ci; then
     echo "==> CI is set, so this build writes no tag or record."
     return 0
@@ -535,21 +535,17 @@ tag_build() {
     write_build_record "$SOURCE_RECORD" "$SOURCE_SNAPSHOT" "$message" || true
     return 0
   fi
-  if [[ -z "$APP_STORE_BUILD_NUMBER" ]]; then
+  if ! ((APP_STORE_MODE)); then
     write_build_record "refs/builds/$BUILD_LANE/$VERSION-$SOURCE_SHORT" "$SOURCE_HEAD" "$message" || true
     return 0
   fi
   name="build/$BUILD_LANE/$VERSION-$APP_STORE_BUILD_NUMBER"
-  if ! create_build_tag "$name" "$SOURCE_HEAD" "$message" --no-sign; then
-    echo "    error: the App Store package was built, but it has no record: tag $name was not written," >&2
-    echo "    so v$VERSION was not tagged and there is nothing to push." >&2
+  if ! create_build_tag "$name" "$SOURCE_HEAD" "$message"; then
+    echo "    error: tag $name was not written, so the package in dist/ has no record;" >&2
+    echo "    upload it only once that tag names $SOURCE_HEAD." >&2
     return 1
   fi
-  pushable=("$name")
-  create_build_tag "v$VERSION" "$SOURCE_HEAD" "OnetimePad $VERSION" && pushable+=("v$VERSION")
-  printf '    push with: git push origin'
-  printf ' %q' "${pushable[@]}"
-  printf '\n'
+  printf '    push with: git push origin %q\n' "$name"
   return 0
 }
 
@@ -1012,8 +1008,11 @@ if ((APP_STORE_MODE)); then
     echo "installer package does not report the requested installer identity" >&2
     exit 1
   fi
+fi
+# After packaging, so only a build that packaged gets a record.
+tag_build
+if ((APP_STORE_MODE)); then
   echo "Built $APP and $PKG (App Store build $APP_STORE_BUILD_NUMBER)."
 else
   echo "Built $APP. Launch with: open \"$APP\""
 fi
-tag_build
