@@ -121,9 +121,10 @@ Loro text of its own; its value never travels.
 8. **Burns stay on the device.** A burn deletes the sentinel, and that
    delete syncs, so a peer's record detaches and ends with its page. A
    device whose ledger records an identity's end, its burn or the end
-   of the page its value stood on, takes a later standing of that
-   identity out at settle, outside the undo stack, since no device can
-   hold that value again.
+   of the page its value stood on, takes out a standing of that
+   identity it has no value for, outside the undo stack, when a batch
+   or key frame stands it and when the burn is recorded, since no
+   device can hold that value again.
 9. **At rest.** A new content snapshot version writes each record's
    availability as a tag ahead of any payload bytes, the name's version
    and the note's operation log. This build reads the previous version.
@@ -158,6 +159,10 @@ stack.
   person's instruction, as the hold is under ADR-0021. ADR-0021's
   earliest expiry rule governs a page's deadline, not where a value
   stands.
+- A value that moves to another page (point 3) clears the undo stack of
+  the page it leaves, since a step there could stand its sentinel a
+  second time. A peer's batch can clear the undo of a page the person
+  is not editing.
 - An earlier build still refuses these batches on `ChipRoster` and
   skips the two new envelopes; no capability negotiation exists. No
   user meets this before the relay ships.

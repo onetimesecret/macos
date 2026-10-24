@@ -64,7 +64,8 @@ New #257 code uses these owners:
 ## 4. Increments
 
 Each increment compiles, passes its targeted tests and is committed on its
-own. CI runs the full suites.
+own. CI runs the full suites. No build ships between increments 1 and 3:
+`OTSSNAP5`'s chip record gains fields in each.
 
 1. **Peer records (fixes the stall).** `SealedChip` availability, admission,
    one standing per identity, burned identities taken out, value follows
