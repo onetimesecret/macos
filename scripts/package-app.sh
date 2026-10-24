@@ -324,8 +324,9 @@ read_source_state() {
   echo "==> Source: $SOURCE_SHORT${SOURCE_DIRTY:+ with uncommitted changes}"
 }
 
-# Reads HEAD and the tree again after the compile. Only a tree change voids the build; a HEAD
-# move is followed when the new commit's tree is the one built, and set aside otherwise.
+# Reads HEAD and the tree again after the compile. Only a tree change voids the build. A HEAD
+# move is followed for dev and local when the new commit's tree is the one built; an App Store
+# build keeps the commit the operator started from.
 check_source_unchanged() {
   local head tree
   [[ -n "$SOURCE_TREE" ]] || return 0
@@ -337,13 +338,14 @@ check_source_unchanged() {
     SOURCE_CHANGED=1
     SOURCE_DIRTY=1
   elif [[ "$head" != "$SOURCE_HEAD" ]]; then
-    if [[ -n "$head" && "$(git rev-parse -q --verify "$head^{tree}" 2>/dev/null)" == "$SOURCE_TREE" ]]; then
+    if ! ((APP_STORE_MODE)) && [[ -n "$head" \
+      && "$(git rev-parse -q --verify "$head^{tree}" 2>/dev/null)" == "$SOURCE_TREE" ]]; then
       echo "    note: HEAD moved during the build to ${head:0:12}, whose tree is the one built; recording that commit."
       SOURCE_HEAD=$head
       SOURCE_SHORT=${head:0:12}
       SOURCE_DIRTY=$SOURCE_HIDDEN
     else
-      echo "    note: HEAD moved during the build, but the tree did not; recording against $SOURCE_SHORT."
+      echo "    note: HEAD moved during the build; recording against $SOURCE_SHORT, the commit it started from."
     fi
   fi
   return 0
