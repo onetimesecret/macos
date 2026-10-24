@@ -1,6 +1,7 @@
 //! What a peer learns of a sealed object beside the page's ops: its kind,
 //! size class and versioned name, and never its value (ADR-0058 point 5).
 
+use std::collections::VecDeque;
 use std::fmt;
 
 use zeroize::Zeroizing;
@@ -170,7 +171,7 @@ pub(crate) fn absorb(into: &mut SealedChip, from: &SealedChip, writer: [u8; 32])
 }
 
 /// The record for `object` on `sheet`, attached or detached.
-fn record_on(sheet: &Sheet, object: ItemId) -> Option<&SealedChip> {
+pub(crate) fn record_on(sheet: &Sheet, object: ItemId) -> Option<&SealedChip> {
     sheet
         .chips
         .iter()
@@ -189,9 +190,27 @@ pub(crate) fn record_on_mut(sheet: &mut Sheet, object: ItemId) -> Option<&mut Se
 
 impl<C: Clock> SheetStore<C> {
     /// Name this device's fingerprint as the writer of its name versions
-    /// (ADR-0058 point 5).
+    /// (ADR-0058 point 5). A name version written here before a writer was set
+    /// takes this one, and its object is marked changed on its page.
     pub fn set_writer(&mut self, writer: [u8; 32]) {
         self.writer = writer;
+        if writer == [0; 32] {
+            return;
+        }
+        let mut stamped = Vec::new();
+        for sheet in self.tabs.iter_mut().filter_map(|tab| tab.page.as_mut()) {
+            for record in sheet.chips.iter_mut().chain(&mut sheet.detached) {
+                if let Some(version) = &mut record.name_version
+                    && version.writer == [0; 32]
+                {
+                    version.writer = writer;
+                    stamped.push((sheet.id, record.uuid));
+                }
+            }
+        }
+        for (page, object) in stamped {
+            self.note_metadata(page, object);
+        }
     }
 
     /// The writer local name versions take; zero until set.
@@ -239,32 +258,62 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Apply a peer's entries to the page whose cross-device identity is
-    /// `page`. An entry for an object with no record there waits until one
-    /// arrives; a page past its deadline, ended or unknown here takes none.
-    /// Applying marks nothing changed. Returns how many entries changed a record.
+    /// `page`, or, for an object with no record there, to its records on this
+    /// device's other readable pages. An entry for an object with no record
+    /// here waits until one arrives; a page past its deadline, ended or
+    /// unknown here takes none. Applying marks nothing changed. Returns how
+    /// many entries changed a record.
     pub fn apply_object_metadata(&mut self, page: ItemId, entries: Vec<ObjectMetadata>) -> usize {
         let now = self.clock.now();
-        let writer = self.writer;
+        // A name is content, so none waits on a page that ended or never stood here.
+        let Some(named) = self
+            .sheets()
+            .find(|sheet| sheet.uuid == page && !sheet.is_due(now))
+            .map(Sheet::id)
+        else {
+            return 0;
+        };
         let mut changed = 0;
         for entry in entries {
-            let entry = entry.judged();
-            let waiting = match self.sheet_mut_by_uuid(page) {
-                // A name is content, so none waits on a page that ended or never stood here.
-                None => None,
-                Some(sheet) if sheet.is_due(now) => None,
-                Some(sheet) => match record_on_mut(sheet, entry.object) {
-                    Some(record) => {
-                        changed += usize::from(adopt(record, entry, writer));
-                        None
-                    }
-                    None => Some(entry),
-                },
-            };
-            if let Some(entry) = waiting {
-                self.hold_metadata(page, entry);
+            match self.apply_entry(named, entry.judged()) {
+                Ok(applied) => changed += usize::from(applied),
+                Err(entry) => self.hold_metadata(page, entry),
             }
         }
         changed
+    }
+
+    /// Adopt `entry` into its record on page `named`, or else into each of its
+    /// records on the other readable pages, marking those. Returns whether a
+    /// record changed, or the entry back when no record of its object is here.
+    fn apply_entry(
+        &mut self,
+        named: SheetId,
+        entry: ObjectMetadata,
+    ) -> Result<bool, ObjectMetadata> {
+        let writer = self.writer;
+        if let Some(record) = self
+            .sheet_mut(named)
+            .and_then(|sheet| record_on_mut(sheet, entry.object))
+        {
+            return Ok(adopt(record, entry, writer));
+        }
+        let mut found = false;
+        let mut restated = Vec::new();
+        for sheet in self.readable_sheets_mut().filter(|sheet| sheet.id != named) {
+            if let Some(record) = record_on_mut(sheet, entry.object) {
+                found = true;
+                if adopt(record, entry.clone(), writer) {
+                    restated.push(sheet.id);
+                }
+            }
+        }
+        if !found {
+            return Err(entry);
+        }
+        let changed = !restated.is_empty();
+        self.restated.extend(restated);
+        Ok(changed)
     }
 
     /// Keep `entry` until its record arrives, folded into any entry already
@@ -288,30 +337,28 @@ impl<C: Clock> SheetStore<C> {
         self.metadata_pending.push_back((page, entry));
     }
 
-    /// Apply the entry held for `object` now that page `id` has its record.
+    /// Apply every entry held for `object`, whichever page it was sent for, oldest
+    /// first, now that readable page `id` has its record.
     pub(crate) fn drain_pending_metadata(&mut self, id: SheetId, object: ItemId) {
-        let now = self.clock.now();
-        let Some(page) = self
-            .sheet(id)
-            .filter(|sheet| !sheet.is_due(now))
-            .map(Sheet::uuid)
-        else {
+        let has_record = self
+            .readable_sheet(id)
+            .is_some_and(|sheet| record_on(sheet, object).is_some());
+        if !has_record {
             return;
-        };
-        let Some((_, entry)) = self
-            .metadata_pending
-            .iter()
-            .position(|(at, held)| *at == page && held.object == object)
-            .and_then(|index| self.metadata_pending.remove(index))
-        else {
-            return;
-        };
+        }
+        let (waiting, kept): (VecDeque<_>, VecDeque<_>) =
+            std::mem::take(&mut self.metadata_pending)
+                .into_iter()
+                .partition(|(_, held)| held.object == object);
+        self.metadata_pending = kept;
         let writer = self.writer;
         if let Some(record) = self
             .sheet_mut(id)
             .and_then(|sheet| record_on_mut(sheet, object))
         {
-            adopt(record, entry, writer);
+            for (_, entry) in waiting {
+                adopt(record, entry, writer);
+            }
         }
     }
 
@@ -646,6 +693,96 @@ mod tests {
             beta.take_metadata_changes(b).is_empty(),
             "an applied entry is no change here"
         );
+    }
+
+    #[test]
+    fn a_rename_sent_for_the_page_an_object_left_reaches_it_where_it_moved() {
+        let (mut alpha, _) = store(ALPHA);
+        let (mut beta, _) = store(BETA);
+        let a = alpha.new_tab().1;
+        let (moved_to, sent_for) = (beta.new_tab().1, beta.new_tab().1);
+        type_on(&mut alpha, a, "one two");
+        let chip = alpha.seal_text_at(a, SECRET, 4, 0).unwrap();
+        let object = alpha.sheet(a).unwrap().chip(chip).unwrap().uuid();
+        ship(&alpha, a, &mut beta, sent_for);
+        alpha.take_metadata_changes(a);
+        assert!(beta.move_range_to(sent_for, 4, 1, moved_to, 0).is_some());
+        assert!(record_on(beta.sheet(sent_for).unwrap(), object).is_none());
+        beta.take_restated_pages();
+        beta.take_metadata_changes(moved_to);
+
+        alpha.set_chip_name(chip, "MOVED_KEY").unwrap();
+        assert_eq!(send(&mut alpha, a, &mut beta, sent_for), 1);
+        assert_eq!(record(&beta, moved_to, object).name(), Some("MOVED_KEY"));
+        assert!(beta.metadata_pending.is_empty());
+        assert_eq!(beta.take_restated_pages(), [moved_to]);
+        assert!(
+            beta.take_metadata_changes(moved_to).is_empty(),
+            "an applied entry is no change here"
+        );
+    }
+
+    #[test]
+    fn an_entry_held_for_one_page_drains_when_its_object_arrives_on_another() {
+        let (mut alpha, _) = store(ALPHA);
+        let (mut beta, _) = store(BETA);
+        let a = alpha.new_tab().1;
+        let (sent_for, arrived_on) = (beta.new_tab().1, beta.new_tab().1);
+        type_on(&mut alpha, a, "one two");
+        let chip = alpha.seal_text_at(a, SECRET, 4, 0).unwrap();
+        alpha.set_chip_name(chip, "API_KEY").unwrap();
+        let object = alpha.sheet(a).unwrap().chip(chip).unwrap().uuid();
+        assert_eq!(send(&mut alpha, a, &mut beta, sent_for), 0);
+        assert_eq!(beta.metadata_pending.len(), 1);
+
+        ship(&alpha, a, &mut beta, arrived_on);
+        assert_eq!(record(&beta, arrived_on, object).name(), Some("API_KEY"));
+        assert!(beta.metadata_pending.is_empty());
+    }
+
+    #[test]
+    fn names_written_before_a_writer_was_set_converge_once_each_device_sets_one() {
+        for alpha_first in [true, false] {
+            let (mut alpha, _) = store([0; 32]);
+            let (mut beta, _) = store([0; 32]);
+            let a = alpha.new_tab().1;
+            let b = beta.new_tab().1;
+            type_on(&mut alpha, a, "one two");
+            let chip = alpha.seal_text_at(a, SECRET, 4, 0).unwrap();
+            ship(&alpha, a, &mut beta, b);
+            let object = alpha.sheet(a).unwrap().chip(chip).unwrap().uuid();
+            let peer = record(&beta, b, object).id();
+            alpha.set_chip_name(chip, "ALPHA_NAME").unwrap();
+            beta.set_chip_name(peer, "BETA_NAME").unwrap();
+            // A relaunch keeps the versions and loses what was marked changed.
+            alpha.take_metadata_changes(a);
+            beta.take_metadata_changes(b);
+            assert_eq!(
+                record(&beta, b, object).name_version(),
+                Some(version(1, [0; 32]))
+            );
+
+            alpha.set_writer(ALPHA);
+            beta.set_writer(BETA);
+            assert_eq!(
+                record(&alpha, a, object).name_version(),
+                Some(version(1, ALPHA))
+            );
+            let to_beta = alpha.take_metadata_changes(a);
+            let to_alpha = beta.take_metadata_changes(b);
+            assert_eq!((to_beta.len(), to_alpha.len()), (1, 1));
+            let (at_alpha, at_beta) = (page_of(&alpha, a), page_of(&beta, b));
+            if alpha_first {
+                alpha.apply_object_metadata(at_alpha, to_alpha);
+                beta.apply_object_metadata(at_beta, to_beta);
+            } else {
+                beta.apply_object_metadata(at_beta, to_beta);
+                alpha.apply_object_metadata(at_alpha, to_alpha);
+            }
+            // Equal counters fall to the greater writer, beta's.
+            assert_eq!(record(&alpha, a, object).name(), Some("BETA_NAME"));
+            assert_eq!(record(&beta, b, object).name(), Some("BETA_NAME"));
+        }
     }
 
     #[test]

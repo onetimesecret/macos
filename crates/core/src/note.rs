@@ -10,13 +10,93 @@ use zeroize::Zeroizing;
 use crate::clock::Clock;
 use crate::document::{EditIntent, EditSelection, SheetDocument, TextSelection, UpdateRefusal};
 use crate::ink::{self, StepOutcome};
-use crate::metadata::record_on_mut;
+use crate::metadata::{record_on, record_on_mut};
 use crate::sheet::{ItemId, SealedChip, Sheet, SheetId};
 use crate::store::{EditOp, RemoteRefusal, SheetStore, refusal_from};
 
 /// The most bytes of note batches kept for objects no page here has a record
 /// for yet (ADR-0058 point 6).
 pub(crate) const PENDING_NOTE_BYTES: usize = 256 * 1024;
+
+/// The most note batches kept for those objects, however small each is.
+pub(crate) const PENDING_NOTE_BATCHES: usize = 256;
+
+/// Note batches for objects with no record here yet, by the identity of the page
+/// they were sent for and the object, oldest first, with their byte total.
+#[derive(Default)]
+pub(crate) struct PendingNotes {
+    batches: VecDeque<(ItemId, ItemId, Zeroizing<Vec<u8>>)>,
+    bytes: usize,
+}
+
+impl PendingNotes {
+    /// How many batches wait (test-only).
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.batches.len()
+    }
+
+    /// Whether none waits (test-only).
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.batches.is_empty()
+    }
+
+    /// The waiting batches, oldest first (test-only).
+    #[cfg(test)]
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &(ItemId, ItemId, Zeroizing<Vec<u8>>)> {
+        self.batches.iter()
+    }
+
+    /// Keep only the batches `keep` answers true for.
+    pub(crate) fn retain(
+        &mut self,
+        mut keep: impl FnMut(&(ItemId, ItemId, Zeroizing<Vec<u8>>)) -> bool,
+    ) {
+        let bytes = &mut self.bytes;
+        self.batches.retain(|batch| {
+            let kept = keep(batch);
+            if !kept {
+                *bytes = bytes.saturating_sub(batch.2.len());
+            }
+            kept
+        });
+    }
+
+    /// Keep a batch, the oldest going while either bound would pass; one past the
+    /// byte bound alone is not kept.
+    fn hold(&mut self, page: ItemId, object: ItemId, bytes: &[u8]) {
+        if bytes.len() > PENDING_NOTE_BYTES {
+            return;
+        }
+        while self.batches.len() >= PENDING_NOTE_BATCHES
+            || self.bytes + bytes.len() > PENDING_NOTE_BYTES
+        {
+            let Some((_, _, gone)) = self.batches.pop_front() else {
+                break;
+            };
+            self.bytes = self.bytes.saturating_sub(gone.len());
+        }
+        self.bytes += bytes.len();
+        self.batches
+            .push_back((page, object, Zeroizing::new(bytes.to_vec())));
+    }
+
+    /// Take every batch held for `object`, whichever page it was sent for, oldest first.
+    fn take(&mut self, object: ItemId) -> Vec<Zeroizing<Vec<u8>>> {
+        let (taken, kept): (VecDeque<_>, VecDeque<_>) = std::mem::take(&mut self.batches)
+            .into_iter()
+            .partition(|(_, held, _)| *held == object);
+        self.batches = kept;
+        taken
+            .into_iter()
+            .map(|(_, _, batch)| {
+                self.bytes = self.bytes.saturating_sub(batch.len());
+                batch
+            })
+            .collect()
+    }
+}
 
 /// The note's text, and once edited its document, in which no chip ever stands: sealed
 /// objects do not nest.
@@ -365,21 +445,28 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Merge a peer's batch into `object`'s note on the page whose cross-device identity
-    /// is `page` (ADR-0058 point 6), never touching the page, its roster or the ledger.
-    /// A record with no note takes an empty one first. A batch for an object with no
-    /// record there waits until one arrives; a page past its deadline takes none.
-    /// Returns whether the note changed.
+    /// is `page` (ADR-0058 point 6), or, with no record there, into each of its records
+    /// on this device's other readable pages, never touching a page, its roster or the
+    /// ledger. A record with no note takes an empty one first. A batch for an object
+    /// with no record here waits until one arrives; a page past its deadline takes none.
+    /// Returns whether a note changed.
     ///
     /// # Errors
-    /// [`RemoteRefusal::UnknownSheet`] for a page that is not here,
+    /// [`RemoteRefusal::Malformed`] for an empty batch, before anything else;
+    /// [`RemoteRefusal::UnknownSheet`] for a page that is not here; or
     /// [`RemoteRefusal::Malformed`], [`RemoteRefusal::MissingHistory`] or
-    /// [`RemoteRefusal::NestedObject`]; each leaves the note as it was.
+    /// [`RemoteRefusal::NestedObject`] when every record refused it. A refusal leaves
+    /// its note as it was.
     pub fn apply_remote_note_update(
         &mut self,
         page: ItemId,
         object: ItemId,
         bytes: &[u8],
     ) -> Result<bool, RemoteRefusal> {
+        // Loro refuses empty bytes too; held, they would cost the bound nothing.
+        if bytes.is_empty() {
+            return Err(RemoteRefusal::Malformed);
+        }
         let now = self.clock.now();
         let sheet = self
             .sheet_mut_by_uuid(page)
@@ -390,8 +477,31 @@ impl<C: Clock> SheetStore<C> {
         if let Some(record) = record_on_mut(sheet, object) {
             return merge_into(record, bytes);
         }
-        self.hold_note(page, object, bytes);
-        Ok(false)
+        let named = sheet.id;
+        let mut merged = Vec::new();
+        for sheet in self.readable_sheets_mut().filter(|sheet| sheet.id != named) {
+            let id = sheet.id;
+            if let Some(record) = record_on_mut(sheet, object) {
+                merged.push((id, merge_into(record, bytes)));
+            }
+        }
+        let Some(&(_, first)) = merged.first() else {
+            self.note_pending.hold(page, object, bytes);
+            return Ok(false);
+        };
+        let changed: Vec<SheetId> = merged
+            .iter()
+            .filter(|(_, outcome)| *outcome == Ok(true))
+            .map(|(id, _)| *id)
+            .collect();
+        let outcome = if merged.iter().any(|(_, outcome)| outcome.is_ok()) {
+            Ok(!changed.is_empty())
+        } else {
+            first
+        };
+        // Another page's note changed, so the shell reads that page again.
+        self.restated.extend(changed);
+        outcome
     }
 
     /// Give each record on page `id` the note a key frame rebuilt for it; a rebuild for
@@ -406,33 +516,28 @@ impl<C: Clock> SheetStore<C> {
                 .and_then(|sheet| record_on_mut(sheet, object))
             {
                 Some(record) => Note::adopt(&mut record.note, note),
-                None => self.hold_note(page, object, rebuild),
+                None => self.note_pending.hold(page, object, rebuild),
             }
         }
     }
 
-    /// Merge each batch held for `object` into its record on page `id`, oldest first;
-    /// one refused now is dropped.
+    /// Merge each batch held for `object`, whichever page it was sent for, into its
+    /// record on readable page `id`, oldest first; one refused now is dropped.
     pub(crate) fn drain_pending_notes(&mut self, id: SheetId, object: ItemId) {
-        let now = self.clock.now();
-        let Some(page) = self
-            .sheet(id)
-            .filter(|sheet| !sheet.is_due(now))
-            .map(Sheet::uuid)
-        else {
+        let has_record = self
+            .readable_sheet(id)
+            .is_some_and(|sheet| record_on(sheet, object).is_some());
+        if !has_record {
             return;
-        };
-        let (waiting, kept): (VecDeque<_>, VecDeque<_>) = std::mem::take(&mut self.note_pending)
-            .into_iter()
-            .partition(|(at, held, _)| *at == page && *held == object);
-        self.note_pending = kept;
+        }
+        let waiting = self.note_pending.take(object);
         let Some(record) = self
             .sheet_mut(id)
             .and_then(|sheet| record_on_mut(sheet, object))
         else {
             return;
         };
-        for (_, _, batch) in waiting {
+        for batch in waiting {
             // A refusal leaves the note as it was; the batch goes with it.
             let _ = merge_into(record, &batch);
         }
@@ -441,27 +546,6 @@ impl<C: Clock> SheetStore<C> {
     /// Drop every batch held for the page whose identity is `page`, as it ends.
     pub(crate) fn forget_page_notes(&mut self, page: ItemId) {
         self.note_pending.retain(|(at, _, _)| *at != page);
-    }
-
-    /// Keep a batch until its record arrives, the oldest going while the held bytes
-    /// would pass [`PENDING_NOTE_BYTES`]; one past the bound alone is not kept.
-    fn hold_note(&mut self, page: ItemId, object: ItemId, bytes: &[u8]) {
-        if bytes.len() > PENDING_NOTE_BYTES {
-            return;
-        }
-        let mut held: usize = self
-            .note_pending
-            .iter()
-            .map(|(_, _, batch)| batch.len())
-            .sum();
-        while held + bytes.len() > PENDING_NOTE_BYTES {
-            let Some((_, _, gone)) = self.note_pending.pop_front() else {
-                break;
-            };
-            held -= gone.len();
-        }
-        self.note_pending
-            .push_back((page, object, Zeroizing::new(bytes.to_vec())));
     }
 
     /// The note of `object`'s record on `page`, refused past the page's deadline.
@@ -1031,6 +1115,99 @@ mod tests {
         assert_eq!(beta.note_pending.len(), 1);
         assert!(beta.discard_page(b));
         assert!(beta.note_pending.is_empty());
+    }
+
+    #[test]
+    fn a_note_edit_sent_for_the_page_an_object_left_reaches_it_where_it_moved() {
+        let mut pair = Pair::new("base");
+        let (sent_for, object) = (pair.b, pair.object);
+        let moved_to = pair.beta.new_tab().1;
+        assert!(
+            pair.beta
+                .move_range_to(sent_for, 4, 1, moved_to, 0)
+                .is_some()
+        );
+        assert!(record_on_mut(pair.beta.sheet_mut(sent_for).unwrap(), object).is_none());
+        pair.beta.take_restated_pages();
+
+        write(&mut pair.alpha, pair.chip, 4, " moved");
+        let since = pair.beta.note_version(moved_to, object).unwrap();
+        let batch = pair
+            .alpha
+            .export_note_updates(pair.a, object, &since)
+            .unwrap();
+        let page = page_of(&pair.beta, sent_for);
+        assert_eq!(
+            pair.beta.apply_remote_note_update(page, object, &batch),
+            Ok(true)
+        );
+        assert_eq!(text_of(&pair.beta, moved_to, object), "base moved");
+        assert!(pair.beta.note_pending.is_empty());
+        assert_eq!(pair.beta.take_restated_pages(), [moved_to]);
+    }
+
+    #[test]
+    fn a_note_batch_held_for_one_page_drains_when_its_object_arrives_on_another() {
+        let (mut alpha, mut beta) = (device(), device());
+        let a = alpha.new_tab().1;
+        let (sent_for, arrived_on) = (beta.new_tab().1, beta.new_tab().1);
+        let chip = alpha.seal_text_at(a, SECRET, 0, 0).unwrap();
+        write(&mut alpha, chip, 0, "early");
+        let object = alpha.sheet(a).unwrap().chip(chip).unwrap().uuid();
+        assert_eq!(send(&mut alpha, a, &mut beta, sent_for, object), Ok(false));
+        assert_eq!(beta.note_pending.len(), 1);
+
+        ship(&alpha, a, &mut beta, arrived_on);
+        assert!(beta.note_pending.is_empty());
+        assert_eq!(beta.note_pending.bytes, 0);
+        assert_eq!(text_of(&beta, arrived_on, object), "early");
+    }
+
+    #[test]
+    fn an_empty_note_batch_is_refused_and_nothing_waits() {
+        // Loro refuses one too, so the early refusal names what the import would.
+        assert_eq!(
+            SheetDocument::new().import_ink_update(&[]),
+            Err(UpdateRefusal::Malformed)
+        );
+        let mut pair = Pair::new("base");
+        let page = page_of(&pair.beta, pair.b);
+        for (page, object) in [
+            (page, pair.object),
+            (page, ItemId::random()),
+            (ItemId::random(), ItemId::random()),
+        ] {
+            assert_eq!(
+                pair.beta.apply_remote_note_update(page, object, &[]),
+                Err(RemoteRefusal::Malformed)
+            );
+        }
+        assert!(pair.beta.note_pending.is_empty());
+        assert_eq!(text_of(&pair.beta, pair.b, pair.object), "base");
+    }
+
+    #[test]
+    fn the_waiting_cache_keeps_at_most_256_batches_however_small() {
+        let mut beta = device();
+        let b = beta.new_tab().1;
+        let page = page_of(&beta, b);
+        let objects: Vec<ItemId> = (0..300).map(|_| ItemId::random()).collect();
+        for object in &objects {
+            assert_eq!(
+                beta.apply_remote_note_update(page, *object, &[7]),
+                Ok(false)
+            );
+        }
+        let held: Vec<ItemId> = beta.note_pending.iter().map(|(_, at, _)| *at).collect();
+        assert_eq!(
+            held,
+            objects[300 - PENDING_NOTE_BATCHES..],
+            "the oldest went"
+        );
+        assert_eq!(beta.note_pending.bytes, PENDING_NOTE_BATCHES);
+
+        assert!(beta.discard_page(b));
+        assert_eq!(beta.note_pending.bytes, 0, "the total follows a purge");
     }
 
     #[test]

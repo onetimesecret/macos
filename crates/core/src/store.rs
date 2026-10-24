@@ -15,7 +15,7 @@ use crate::document::{
 use crate::ink::StepOutcome;
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::metadata::{NameVersion, ObjectMetadata};
-use crate::note::Note;
+use crate::note::{Note, PendingNotes};
 use crate::sheet::{
     CeremonyState, ChipId, ChipMeta, Conceal, ItemId, NameRefusal, SealedChip, Segment, Sheet,
     SheetClock, SheetId, Tab, TabId, capped_title, derive_title, judge_name,
@@ -212,12 +212,11 @@ pub struct SheetStore<C: Clock> {
     /// Per page, the objects whose metadata changed here since the driver last
     /// took them. Never persisted.
     pub(crate) metadata_dirty: BTreeMap<SheetId, BTreeSet<ItemId>>,
-    /// Entries for objects with no record on their page yet, by page identity,
-    /// oldest first. Never persisted.
+    /// Entries for objects with no record here yet, by the identity of the page
+    /// they were sent for, oldest first. Never persisted.
     pub(crate) metadata_pending: VecDeque<(ItemId, ObjectMetadata)>,
-    /// Note batches for objects with no record on their page yet, by page
-    /// identity and object, oldest first. Never persisted.
-    pub(crate) note_pending: VecDeque<(ItemId, ItemId, Zeroizing<Vec<u8>>)>,
+    /// Note batches for objects with no record here yet. Never persisted.
+    pub(crate) note_pending: PendingNotes,
     /// Pages whose records or steps changed by another page's edit, burn or
     /// end, until the shell takes them. Never persisted.
     pub(crate) restated: BTreeSet<SheetId>,
@@ -243,7 +242,7 @@ impl<C: Clock> SheetStore<C> {
             writer: [0; 32],
             metadata_dirty: BTreeMap::new(),
             metadata_pending: VecDeque::new(),
-            note_pending: VecDeque::new(),
+            note_pending: PendingNotes::default(),
             restated: BTreeSet::new(),
             moved_chips: VecDeque::new(),
         }
@@ -427,7 +426,7 @@ impl<C: Clock> SheetStore<C> {
 
     /// [`SheetStore::readable_sheets`], mutably, as [`SheetStore::chip_mut`]
     /// reads them (Law 0001, expiry row).
-    fn readable_sheets_mut(&mut self) -> impl Iterator<Item = &mut Sheet> {
+    pub(crate) fn readable_sheets_mut(&mut self) -> impl Iterator<Item = &mut Sheet> {
         let now = self.clock.now();
         self.tabs
             .iter_mut()
@@ -674,8 +673,8 @@ impl<C: Clock> SheetStore<C> {
         Ok(())
     }
 
-    /// Delete the range, stand the sentinel, commit, settle. A document
-    /// refusal reaps the placeless chip and fails closed.
+    /// Delete the range, stand the sentinel, commit, settle, then compact or owe the
+    /// ceremony when ink went. A document refusal reaps the placeless chip and fails closed.
     fn place_chip(
         &mut self,
         id: SheetId,
@@ -704,11 +703,16 @@ impl<C: Clock> SheetStore<C> {
         // sentinel back out.
         sheet.document.forget_undo();
         self.settle_document(id);
-        if clean {
-            Ok(chip)
-        } else {
-            Err(Refusal::InvalidRange)
+        if !clean {
+            return Err(Refusal::InvalidRange);
         }
+        // The replaced ink stays in the log as deleted text, so the page sheds its history.
+        if len_u16 > 0
+            && let Some(sheet) = self.sheet_mut(id)
+        {
+            sheet.compact_or_defer();
+        }
+        Ok(chip)
     }
 
     /// Stand a record with no value at `at_u16`, as admission from a peer
@@ -908,7 +912,9 @@ impl<C: Clock> SheetStore<C> {
     /// Take back the page's last local edit group. Returns whether
     /// anything was reverted. Only this device's own operations can be
     /// undone (relay decision background section 5); the block index
-    /// rebuilds afterwards.
+    /// rebuilds afterwards. A later standing of an identity the step left
+    /// standing twice, or one of an ended identity, is taken out (ADR-0058
+    /// points 2 and 8).
     pub fn undo(&mut self, id: SheetId) -> bool {
         let Some(sheet) = self.sheet_mut(id) else {
             return false;
@@ -917,6 +923,7 @@ impl<C: Clock> SheetStore<C> {
             return false;
         }
         self.settle_document(id);
+        self.take_out_standings(id);
         true
     }
 
@@ -930,6 +937,7 @@ impl<C: Clock> SheetStore<C> {
             return false;
         }
         self.settle_document(id);
+        self.take_out_standings(id);
         true
     }
 
@@ -1343,16 +1351,21 @@ impl<C: Clock> SheetStore<C> {
     /// `page` (relay decision background section 6). A page that
     /// already has history is refused. The frame's note rebuilds go to
     /// their records after the page's (ADR-0058 point 6); a frame that is
-    /// only a page rebuild has none.
+    /// only a page rebuild has none. A page past its deadline takes nothing,
+    /// as a note batch for it does (Law 0001, expiry row).
     pub fn adopt_key_frame(
         &mut self,
         id: SheetId,
         page: ItemId,
         frame: &[u8],
     ) -> Result<(), RemoteRefusal> {
+        let now = self.clock.now();
         let Some(sheet) = self.sheet_mut(id) else {
             return Err(RemoteRefusal::UnknownSheet);
         };
+        if sheet.is_due(now) {
+            return Ok(());
+        }
         if !sheet.document.is_pristine() {
             return Err(RemoteRefusal::NotFresh);
         }
@@ -6161,6 +6174,81 @@ mod tests {
     }
 
     #[test]
+    fn an_undo_that_stands_an_identity_a_peer_moved_keeps_one_standing_and_a_save_restores() {
+        for alpha_sends_first in [true, false] {
+            let (mut alpha, mut beta, a, b, chip) = shared_object();
+            let uuid = uuid_of(&alpha, chip);
+            assert!(beta.move_range(b, 4, 1, 14).is_some());
+            take_out(&mut alpha, a, 4);
+            ship(&beta, b, &mut alpha, a).unwrap();
+            assert_eq!(
+                standings(&alpha, a),
+                vec![uuid],
+                "the peer's move stands it"
+            );
+
+            // The step back stands the removed sentinel beside the moved one.
+            assert!(alpha.undo(a));
+            assert_eq!(standings(&alpha, a), vec![uuid]);
+            assert_eq!(body(&alpha, a), "one \u{FFFC}two three", "the first stands");
+            let wall = alpha.wall_ms();
+            let (mut restored, _) = store();
+            assert_eq!(restored.restore(&alpha.snapshot(wall), wall), Ok(1));
+
+            if alpha_sends_first {
+                ship(&alpha, a, &mut beta, b).unwrap();
+                ship(&beta, b, &mut alpha, a).unwrap();
+            } else {
+                ship(&beta, b, &mut alpha, a).unwrap();
+                ship(&alpha, a, &mut beta, b).unwrap();
+            }
+            for (store, id) in [(&alpha, a), (&beta, b)] {
+                assert_eq!(standings(store, id), vec![uuid], "{alpha_sends_first}");
+            }
+            assert_eq!(
+                alpha.sheet(a).unwrap().document.runs(),
+                beta.sheet(b).unwrap().document.runs(),
+                "{alpha_sends_first}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_step_that_stands_a_burned_identity_again_has_it_taken_out() {
+        for redo in [false, true] {
+            let (mut store, _) = store();
+            let (home, away) = (store.new_tab().1, store.new_tab().1);
+            type_on(&mut store, home, "ink ");
+            type_on(&mut store, away, "dest ");
+            let chip = store.seal_text_at(home, "the secret", 4, 0).unwrap();
+            let uuid = uuid_of(&store, chip);
+            store
+                .stand_peer_record_as(away, 0, uuid, None, None)
+                .unwrap();
+            // A move there is a step the burn below leaves standing.
+            assert!(store.move_range(away, 0, 1, 6).is_some());
+            if redo {
+                assert!(store.undo(away));
+            }
+
+            assert!(store.delete_chip(chip));
+            assert!(standings(&store, away).is_empty(), "redo {redo}");
+            let stepped = if redo {
+                store.redo(away)
+            } else {
+                store.undo(away)
+            };
+            assert!(
+                stepped,
+                "the control: the move is still a step, redo {redo}"
+            );
+            assert!(standings(&store, away).is_empty(), "redo {redo}");
+            assert!(records_of(&store, uuid).is_empty());
+            assert_eq!(body(&store, away), "dest ", "redo {redo}");
+        }
+    }
+
+    #[test]
     fn a_burn_drops_every_record_with_no_value_for_its_identity_on_this_device() {
         let (mut store, _) = store();
         let pages: Vec<SheetId> = (0..3).map(|_| store.new_tab().1).collect();
@@ -6337,6 +6425,66 @@ mod tests {
         assert!(!contains(&frame, b"DOOMED"));
     }
 
+    /// Typed as ink, then sealed where it stands.
+    const INKED: &str = "ghp_inked_then_sealed_7d1e";
+
+    /// A page reading `key: INKED done`, solo or deferred, and the range of `INKED`.
+    fn inked(deferred: bool) -> (SheetStore<ManualClock>, SheetId, u32, u32) {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        assert!(store.set_compaction_deferred(id, deferred));
+        type_on(&mut store, id, &format!("key: {INKED} done"));
+        let pristine = SheetStore::<ManualClock>::pristine_document_version();
+        let log = store.export_document_updates(id, &pristine).unwrap();
+        assert!(
+            contains(&log, INKED.as_bytes()),
+            "the control: the log shows ink"
+        );
+        (store, id, 5, u32::try_from(INKED.len()).unwrap())
+    }
+
+    fn history_shows_the_ink(store: &SheetStore<ManualClock>, id: SheetId) -> bool {
+        let pristine = SheetStore::<ManualClock>::pristine_document_version();
+        let log = store.export_document_updates(id, &pristine).unwrap();
+        let snapshot = store.sheet(id).unwrap().document.export_snapshot();
+        contains(&log, INKED.as_bytes()) || contains(&snapshot, INKED.as_bytes())
+    }
+
+    #[test]
+    fn sealing_ink_in_place_on_a_solo_page_sheds_the_ink_from_its_history() {
+        let (mut store, id, at, len) = inked(false);
+        let chip = store.seal_text_at(id, INKED, at, len).unwrap();
+        assert!(!history_shows_the_ink(&store, id));
+        assert_eq!(body(&store, id), "key: \u{FFFC} done");
+        assert_eq!(
+            store.copy_out_chip(chip).unwrap().0.as_slice(),
+            INKED.as_bytes()
+        );
+    }
+
+    #[test]
+    fn sealing_ink_in_place_on_a_deferred_page_owes_the_ceremony_that_sheds_it() {
+        let (mut store, id, at, len) = inked(true);
+        store.seal_text_at(id, INKED, at, len).unwrap();
+        assert!(store.ceremony_due(id));
+        assert!(history_shows_the_ink(&store, id), "kept until the ceremony");
+        let frame = store.perform_ceremony(id).unwrap();
+        assert!(!contains(&frame, INKED.as_bytes()));
+        assert!(!history_shows_the_ink(&store, id));
+    }
+
+    #[test]
+    fn a_seal_at_a_point_compacts_nothing_and_owes_no_ceremony() {
+        for deferred in [false, true] {
+            let (mut store, id, _, _) = inked(deferred);
+            let peer = store.sheet(id).unwrap().document.peer_id();
+            store.seal_text_at(id, "beside it", 0, 0).unwrap();
+            // A compaction rebuilds the page under a fresh peer.
+            assert_eq!(store.sheet(id).unwrap().document.peer_id(), peer);
+            assert!(!store.ceremony_due(id), "deferred {deferred}");
+        }
+    }
+
     #[test]
     fn a_key_frame_lands_only_on_a_fresh_page() {
         let (mut alpha, _) = store();
@@ -6368,6 +6516,34 @@ mod tests {
             beta.sheet(b).unwrap().derived_title(),
             Some("standing history")
         );
+    }
+
+    #[test]
+    fn a_key_frame_offered_to_a_page_past_its_deadline_changes_nothing() {
+        let (mut alpha, _) = store();
+        let (mut beta, beta_clock) = store();
+        let a = alpha.new_tab().1;
+        assert!(alpha.set_compaction_deferred(a, true));
+        type_on(&mut alpha, a, "ink ");
+        let chip = alpha.seal_text_at(a, "the secret", 4, 0).unwrap();
+        write_note(&mut alpha, chip, "a note to rebuild");
+        let frame = alpha.perform_ceremony(a).unwrap();
+        let page = alpha.sheet(a).unwrap().uuid();
+
+        let due = beta.new_tab().1;
+        let own = beta.sheet(due).unwrap().uuid();
+        beta_clock.advance(8 * HOUR);
+        assert!(beta.is_due(due), "the control: the page is due");
+        assert_eq!(beta.adopt_key_frame(due, page, &frame), Ok(()));
+        let sheet = beta.sheet(due).unwrap();
+        assert!(sheet.document.is_pristine());
+        assert_eq!(sheet.uuid(), own);
+        assert_eq!(sheet.chip_count(), 0);
+        assert!(beta.note_pending.is_empty());
+
+        let live = beta.new_tab().1;
+        assert_eq!(beta.adopt_key_frame(live, page, &frame), Ok(()));
+        assert_eq!(standings(&beta, live), vec![uuid_of(&alpha, chip)]);
     }
 
     const WALL: u64 = 1_600_000_000_000;
