@@ -24,6 +24,27 @@ final class PadModelTests: XCTestCase {
         model.activatePad(PadCatalog.scratchID)
         XCTAssertEqual(model.navigationTabs.map(\.id), existing.map(\.id))
     }
+
+    func testPadReadingPlacesRejectOtherPadsAndClosedPages() throws {
+        let model = isolatedModel(defaults: try defaults())
+        model.loadStateIfNeeded()
+        model.pads.isEnabled = true
+        let tab = try XCTUnwrap(model.selectedTab)
+        let page = try XCTUnwrap(tab.pageID)
+        let place = RollPlace(page: page, anchor: ScrollAnchor(characterIndex: 42))
+        let other = try XCTUnwrap(model.createPad(named: "Other"))
+        model.rememberPadReadingPlace(place, for: other)
+        XCTAssertNil(model.readingPlace(for: other), "an anchor from another pad must not restore")
+        model.activatePad(PadCatalog.scratchID)
+        model.rememberPadReadingPlace(place, for: PadCatalog.scratchID)
+        XCTAssertEqual(model.readingPlace(for: PadCatalog.scratchID), place)
+        model.rememberPadReadingPlace(nil, for: PadCatalog.scratchID)
+        XCTAssertEqual(model.readingPlace(for: PadCatalog.scratchID), place,
+            "a detached or unmeasured roll must not erase the previous reading")
+        model.close(tab.id)
+        XCTAssertNil(model.readingPlace(for: PadCatalog.scratchID), "a closed page must not restore")
+    }
+
     func testNewPageOwnershipKeepsInactiveInkStorageAndDisablingRevealsAll() throws {
         let model = isolatedModel(defaults: try defaults())
         model.loadStateIfNeeded()

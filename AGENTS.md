@@ -28,3 +28,9 @@ Keep code comments to one or two lines. Do not write a comment that asserts a gu
 Do not use any of the following terms or phrases or sentence structures:
 - holds, claims, lands, carries
 - "A isn't only B, but also C"
+
+## Runtime testing
+
+Automated UI tests and probes use both an injected temporary state directory and an in-memory credential client. Use `PageModel.Seams(stateDirectory:client:)` with the test-util ephemeral client; changing a bundle identifier alone is insufficient isolation.
+
+Do not launch, replace, quit, or reset a person's running app to validate a change. Do not modify production identity constants to run a probe. A Keychain access prompt during automated testing is a reason to stop and audit the test setup, rather than authorize the prompt and continue.

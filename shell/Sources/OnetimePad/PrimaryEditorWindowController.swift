@@ -113,7 +113,7 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
             window?.titleVisibility = Self.titleVisibility(padsEnabled: enabled)
         }
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 360, height: 280)
+        window.minSize = Self.minimumSize
         // No saved application state: restoration would write a
         // snapshot of the window, ink included, under
         // ~/Library/Saved Application State.
@@ -415,6 +415,9 @@ extension NSToolbarItem.Identifier {
 
 extension PrimaryEditorWindowController: NSToolbarDelegate, NSToolbarItemValidation {
     static let toolbarIdentifier = "PrimaryEditorToolbar"
+
+    /// The window's smallest frame; the timeline rail's tests host it at this height less the chrome.
+    nonisolated static let minimumSize = NSSize(width: 360, height: 280)
 
     /// The pad picker leads, where the title would stand, and the expand
     /// control trails.

@@ -4,7 +4,7 @@ title: The rail and the gutters say each fact once
 status: accepted   # draft → accepted → superseded
 dated: 2026-09-16
 supersedes: docs/spec/design/2026-0916-clipboard-clear-interval.md, on D-34's stamp, D-36's marks, D-37's gutter gauge and D-38's tooltip only; docs/spec/design/2026-0915-ui-ux-decisions.md, on D-12's markup stripping only
-superseded-by:
+superseded-by: docs/adr/0060-shared-pad-timeline-navigation.md, on dense checkpoint label presentation; the active mark distinction remains only
 reviewed: 2026-09-16
 surfaces: OnetimePad (background surface), Days + side
 sources:
@@ -19,6 +19,12 @@ sources:
   - crates/core/src/sheet.rs
   - crates/ffi/src/lib.rs
 ---
+
+> Scoped successor, 2026-10-03: [ADR-0060](../../adr/0060-shared-pad-timeline-navigation.md)
+> replaces dense checkpoint label presentation; the active mark distinction remains. Its shared navigator, selectable day/checkpoint
+> ordering, density handling, and session reading-position rules are approved
+> design requirements, not an implementation verification report.
+
 
 # The rail and the gutters say each fact once
 

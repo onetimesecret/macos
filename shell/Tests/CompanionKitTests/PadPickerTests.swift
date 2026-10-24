@@ -299,6 +299,28 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(CompanionL10n.string("pad.app.remove"), "pad.app.remove", "the remove items became checkmarks")
     }
 
+    /// Every key the rail reads is in the table, since a missing key reads back as itself.
+    func testTheRailsKeysAreInTheStrings() {
+        let keys = [
+            "pad.heading", "pad.files.heading", "pad.page.new",
+            "pad.stream", "pad.stream.position", "pad.stream.percent", "pad.sort.action",
+            "pad.stream.window.help", "pad.stream.retained", "pad.stream.emptyDay.one",
+            "pad.stream.emptyDay.many",
+        ]
+        for key in keys {
+            XCTAssertNotEqual(CompanionL10n.string(key), key, "\(key) is missing from the strings")
+        }
+        XCTAssertEqual(CompanionL10n.format("pad.stream.percent", 42), "42 percent")
+        XCTAssertEqual(
+            CompanionL10n.string("pad.stream.window.help"),
+            "seven-day boundary; pages outside the window are retained because they hold content")
+        XCTAssertEqual(StreamNavigator.retainedLabel, "7d+ · retained")
+        XCTAssertEqual(
+            [0, 1, 2, 11].map(StreamNavigator.emptyDaysLabel),
+            ["0 empty days", "1 empty day", "2 empty days", "11 empty days"])
+        XCTAssertEqual(CompanionL10n.format("pad.sort.action", "Sort Days", "Newest First"), "Sort Days: Newest First")
+    }
+
     /// One list, each app once: the running ones in order, checked when
     /// associated, then an associated app that is not running, checked,
     /// so it can still be unchecked.
@@ -352,16 +374,18 @@ final class PadPickerTests: XCTestCase {
 
     func testSortMenuOffersExplicitOrdersAndDescribesTheCurrentValue() {
         XCTAssertEqual(PadSortCopy.orders, [.natural, .chronological, .reverseChronological])
-        let labels = ["Natural order", "Oldest first", "Newest first"]
+        let labels = ["Natural Order", "Oldest First", "Newest First"]
         for (direction, label) in zip(PadSortCopy.orders, labels) {
-            let copy = PadSortCopy(direction: direction, subject: "days")
-            XCTAssertEqual(copy.label, "days sort order")
+            let copy = PadSortCopy(direction: direction, subject: "days", title: "Days")
+            XCTAssertEqual(copy.menuTitle, "Sort Days")
+            XCTAssertEqual(copy.label, "sort days")
             XCTAssertEqual(copy.currentOrder, label)
-            XCTAssertEqual(copy.help, "days sort order: \(label)")
+            XCTAssertEqual(copy.help, "sort days: \(label)")
         }
-        let checkpoints = PadSortCopy(direction: .reverseChronological, subject: "today checkpoints")
-        XCTAssertEqual(checkpoints.label, "today checkpoints sort order")
-        XCTAssertEqual(checkpoints.help, "today checkpoints sort order: Newest first")
+        let checkpoints = PadSortCopy(
+            direction: .reverseChronological, subject: "checkpoints from today", title: "Checkpoints from Today")
+        XCTAssertEqual(checkpoints.menuTitle, "Sort Checkpoints from Today")
+        XCTAssertEqual(checkpoints.help, "sort checkpoints from today: Newest First")
     }
 
     func testExperimentalRailWidthAndLayoutDisclosureUseSameMeasure() {

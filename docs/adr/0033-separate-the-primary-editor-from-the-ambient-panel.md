@@ -6,7 +6,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-09-18
-- **Superseded in part by:** [ADR-0036](0036-editing-presentations-are-mutually-exclusive.md), specifically simultaneous visibility, the non-owner glance, and the switching consequences that keep both content windows open. The distinct window roles, ownership boundary and activation routes stand.
+- **Superseded in part by:** [ADR-0036](0036-editing-presentations-are-mutually-exclusive.md), specifically simultaneous visibility, the non-owner glance, and the switching consequences that keep both content windows open. The distinct window roles and ownership boundary stand. Also [ADR-0059](0059-appkit-owns-window-presentation.md), for activation, Cmd-Tab, reopen and activation-based launch classification only.
 - **Supersedes in part:** [ADR-0010](0010-form-factors-as-sibling-targets.md), specifically Amendment 1 except its login launch clause; [ADR-0019](0019-the-pad-is-on-every-space.md), specifically the reach of its all Spaces rule over the whole application, which now covers the ambient panel only; and [ADR-0032](0032-inactive-raised-surfaces-follow-normal-app-stacking.md), specifically its return switch consequence and the reach of its companion window rule over the primary editor. Their remaining decisions stand.
 - **Depends on:** [ADR-0006](0006-persistent-editor-storage-swap.md) for the one layout manager per storage rule, and [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md) with [ADR-0016](0016-content-persists-across-restart.md) for the persistence model that bounds window restoration.
 
@@ -144,7 +144,7 @@ architecture, so the model is built transferable either way. Whether the panel
 keeps its editing role is left to the dogfood evidence the first three eject
 triggers name.
 
-**Launch and activation are decided by route, never by last use.** A login
+**Historical launch and activation policy, replaced by ADR-0059.** A login
 launch, or any launch the system performs without activating the application,
 shows the ambient panel only and never opens the editor window. A launch the
 person performs, a Dock click, a reopen and ⌘Tab select the editor window,

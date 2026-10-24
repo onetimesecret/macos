@@ -56,6 +56,8 @@ struct SettingsCaption: View {
         Text(text)
             .font(.caption)
             .foregroundStyle(Color.secondaryInk)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

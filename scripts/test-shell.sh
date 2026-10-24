@@ -19,6 +19,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Rebuilding can replace an executable that is still running from this build directory.
+source scripts/build-lanes.sh
+require_stopped_build
+
 scripts/build-core.sh --if-stale --test-util
 
 echo "==> swift test --package-path shell${*:+ $*}"
