@@ -133,6 +133,7 @@ final class HTMLTokenizerTests: XCTestCase {
             [.text("<"), .object("a"), .text(">")],
             [.text("<a"), .object("suffix"), .text(">")],
             [.text("</a"), .object("suffix"), .text(">")],
+            [.text("</a "), .object("trailing"), .text(">")],
             [.text("<a"), .object(""), .text(">")],
         ]
         for input in inputs {
