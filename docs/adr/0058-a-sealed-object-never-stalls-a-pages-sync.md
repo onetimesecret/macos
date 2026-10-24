@@ -173,6 +173,10 @@ the conceal receipt and the note's undo stack.
 - A seal in place compacts its page outside the rung schedule: a solo
   page loses its edit history at that seal, and an enrolled page's
   ceremony rotates the channel's key.
+- An entry or note op a peer sends for one page reaches the object
+  wherever it stands on this device, so a peer that knows an object's
+  identity from a page they share can rename or annotate it on a page
+  they do not.
 - Two devices that each write an object's first note while apart, and
   two members that both commit one ceremony (client protocol §7.8, as
   for the page's body), refuse each other's later note ops, so their
