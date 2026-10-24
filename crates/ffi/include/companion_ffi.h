@@ -6,8 +6,8 @@
  * chips. By construction it hands out only opaque handles, non-secret
  * JSON metadata (titles, counts, and a chip's mechanical excerpt in the
  * sheet-facing JSON; the ledger carries no excerpt at all), source-language
- * slugs from the explicit experimental detector, and action results. It never
- * hands out
+ * slugs from the explicit experimental detector, the Markdown reading of page
+ * text the caller passes in, and action results. It never hands out
  * a sealed byte. Sealed-byte movement stays in Rust: the sealed paste
  * reads the pasteboard in the core, copy-out writes it in the core.
  * The one deliberate visible-ink entry into sealed custody is
@@ -96,6 +96,57 @@ const char *companion_version(void);
  * input is source code.
  */
 char *companion_detect_source_language(const uint8_t *bytes, size_t len);
+
+/* ------------------------------------------------------------------ */
+/* Markdown                                                            */
+/* ------------------------------------------------------------------ */
+
+/* Dialect codes for companion_markdown_parse_json(). */
+typedef enum {
+    COMPANION_MARKDOWN_COMMONMARK = 0, /* CommonMark 0.31.2 */
+    COMPANION_MARKDOWN_GFM        = 1  /* GitHub Flavored Markdown */
+} CompanionMarkdownDialect;
+
+/*
+ * Read a page's text as Markdown for the rendered preview (issue 332).
+ * No handle or store is involved; the text is the page's visible ink as
+ * the caller already holds it, each sealed object a U+FFFC, borrowed only
+ * for this synchronous call.
+ *
+ *   text, len           the page as UTF-8, len bytes. text must be
+ *                       non-NULL, even for an empty page; an embedded NUL
+ *                       byte is input, not a terminator.
+ *   objects, objects_len
+ *                       the UTF-16 offsets in the page of the U+FFFC
+ *                       characters that are sealed objects, ascending;
+ *                       (NULL, 0) is none. Object i is identity "i".
+ *   dialect             a CompanionMarkdownDialect code.
+ *   maximum_input_scalars, maximum_depth, maximum_table_cells
+ *                       the preview's limits: Unicode scalars in the page,
+ *                       nesting of quotes, lists and inline containers,
+ *                       and table cells across every table of the page.
+ *
+ * Returns the document,
+ *   {"blocks": [...], "atoms": [{"identity": "0", "offset": 7}, ...]},
+ * each case of a block or event in the JSON Swift synthesizes for a
+ * Codable enum, {"case": {"label": v, "_0": v}} and {} for a case with
+ * no values; or, for a page the reader refuses,
+ *   {"error": {"inputLimit": {}}}
+ * and its siblings depthLimit, tableCellLimit, noPlaceholderWindow,
+ * objectOffset and parserFailure, or {"error": {"duplicateObject":
+ * {"_0": identity}}}. A text longer than four bytes for each allowed
+ * scalar is refused as inputLimit before it is read. NULL for NULL text,
+ * text that is not UTF-8, a NULL or misaligned objects with a nonzero
+ * objects_len, a length no allocation can have, an unknown dialect, or a
+ * contained parser panic. Free a non-NULL result with
+ * companion_string_free().
+ */
+char *companion_markdown_parse_json(const char *text, size_t len,
+                                    const size_t *objects, size_t objects_len,
+                                    int dialect,
+                                    size_t maximum_input_scalars,
+                                    size_t maximum_depth,
+                                    uint64_t maximum_table_cells);
 
 /* ------------------------------------------------------------------ */
 /* Diagnostics                                                         */

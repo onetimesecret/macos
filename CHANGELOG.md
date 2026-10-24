@@ -523,6 +523,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The core reads Markdown** (`companion-ffi` 0.44.0, `companion-markdown`
+  0.1.0; issue #332). The new `companion-markdown` crate reads a page as
+  CommonMark 0.31.2 or GitHub Flavored Markdown with comrak 0.57.0 and
+  places each sealed object as an atom. `companion_markdown_parse_json`,
+  which needs no handle, returns the page's document as JSON in the shape
+  Swift's synthesized `Codable` decodes, or `{"error": …}` naming why the
+  page was refused. It takes the page text the shell
+  already holds, the UTF-16 offsets of its objects, a dialect code and
+  the preview's three limits; null text, text that is not UTF-8 and an
+  unknown dialect return null. Nothing calls it yet, and the preview
+  still renders with swift-markdown. The crate's tests compare its output
+  with every example of the CommonMark 0.31.2 spec, all 652 matching, and
+  the GFM 0.29 examples, where the 13 that differ are listed with their
+  reasons. `THIRD_PARTY_NOTICES.md` adds comrak and the ten runtime crates
+  it brings, and `deny.toml` allows `Unicode-DFS-2016`, the license
+  finl_unicode declares.
+
 - **One Timeline navigator for every pad, and each pad keeps its place**
   (app 0.42.0; [ADR-0060](docs/adr/0060-shared-pad-timeline-navigation.md),
   PR #327). With pads on or off, the Timeline layout draws the same
