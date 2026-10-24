@@ -1,9 +1,12 @@
 THIRD-PARTY NOTICES
 
 This file contains notices for Betlang 0.1.1, its embedded student model,
-Betlang's resolved runtime dependency fearless_simd 0.4.0, and the shell's SwiftPM
-dependencies swift-markdown 0.9.0 and swift-cmark 0.9.0. It does not replace
-notices required for other third-party components.
+Betlang's resolved runtime dependency fearless_simd 0.4.0, comrak 0.57.0 and the
+resolved runtime dependencies it adds (caseless 0.2.2, fearless_simd 1.1.0,
+finl_unicode 1.5.0, memchr-n 0.1.10, phf 0.14.0, phf_shared 0.14.0, siphasher
+1.0.4, tinyvec 1.13.3, typed-arena 2.0.2 and unicode-normalization 0.1.26), and
+the shell's SwiftPM dependencies swift-markdown 0.9.0 and swift-cmark 0.9.0. It
+does not replace notices required for other third-party components.
 
 RELEASE STATUS — UNRESOLVED MODEL-WEIGHT LICENSING
 
@@ -334,6 +337,726 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+
+===============================================================================
+comrak 0.57.0
+===============================================================================
+
+Package: https://crates.io/crates/comrak/0.57.0
+Dependency path: companion-markdown 0.1.0 -> comrak 0.57.0
+Registry package checksum SHA-256:
+b5ef59c72b988dfc7c73ec58ec0dc50f95dd87d7f1f39f428902bc379cea8507
+Upstream: https://github.com/kivikakk/comrak
+Upstream revision recorded in the published package:
+a39f26a0b0f63db2cb5aaa172f0de5eeb51c8b6c
+Published license expression: BSD-2-Clause
+License text reproduced here: COPYING, in full
+
+The comrak 0.57.0 package contains COPYING. It contains no NOTICE file. COPYING
+also carries the notices of the cmark-gfm, houdini, buffer, utf8proc and
+markdowntest material comrak derives from, and of the CommonMark spec and its
+test software; all of it is reproduced.
+
+The following is the exact COPYING text included in the comrak 0.57.0 crates.io
+package:
+
+Copyright (c) 2017–2025, Comrak contributors
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+
+    * Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials provided
+      with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+-----
+
+cmark-gfm
+
+derived from https://github.com/github/cmark
+
+Copyright (c) 2014, John MacFarlane
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+
+    * Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials provided
+      with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+-----
+
+houdini.h, houdini_href_e.c, houdini_html_e.c, houdini_html_u.c
+
+derive from https://github.com/vmg/houdini (with some modifications)
+
+Copyright (C) 2012 Vicent Martí
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-----
+
+buffer.h, buffer.c, chunk.h
+
+are derived from code (C) 2012 Github, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-----
+
+utf8.c and utf8.c
+
+are derived from utf8proc
+(<http://www.public-software-group.org/utf8proc>),
+(C) 2009 Public Software Group e. V., Berlin, Germany.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+-----
+
+The normalization code in normalize.py was derived from the
+markdowntest project, Copyright 2013 Karl Dubost:
+
+The MIT License (MIT)
+
+Copyright (c) 2013 Karl Dubost
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+-----
+
+The CommonMark spec (test/spec.txt) is
+
+Copyright (C) 2014-15 John MacFarlane
+
+Released under the Creative Commons CC-BY-SA 4.0 license:
+<http://creativecommons.org/licenses/by-sa/4.0/>.
+
+-----
+
+The test software in test/ is
+
+Copyright (c) 2014, John MacFarlane
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+
+    * Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials provided
+      with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+===============================================================================
+caseless 0.2.2
+===============================================================================
+
+Package: https://crates.io/crates/caseless/0.2.2
+Dependency path: companion-markdown 0.1.0 -> comrak 0.57.0 -> caseless 0.2.2
+Registry package checksum SHA-256:
+8b6fd507454086c8edfd769ca6ada439193cdb209c7681712ef6275cccbfe5d8
+Upstream: https://github.com/unicode-rs/rust-caseless
+Upstream revision recorded in the published package:
+f77d542c5439252f75d8da2f0cb4a13d3a13c5ea
+Published license expression: MIT
+License text reproduced here: MIT
+
+The caseless 0.2.2 package contains LICENSE. It contains no NOTICE file.
+
+The following is the exact LICENSE text included in the caseless 0.2.2
+crates.io package:
+
+Copyright (c) 2017 Simon Sapin
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+===============================================================================
+fearless_simd 1.1.0
+===============================================================================
+
+Package: https://crates.io/crates/fearless_simd/1.1.0
+Dependency path: companion-markdown 0.1.0 -> comrak 0.57.0 -> memchr-n 0.1.10
+-> fearless_simd 1.1.0
+Registry package checksum SHA-256:
+3296eb97d869113eaf148a6bdf01884e90b3828ad7ae2340b0f93362fc158611
+Upstream: https://github.com/linebender/fearless_simd
+Upstream revision recorded in the published package:
+b8a50a2c9ce03ee5384038ae8e6f45749662e2f6
+Published license expression: Apache-2.0 OR MIT
+License text reproduced here: MIT
+
+The fearless_simd 1.1.0 package contains LICENSE-MIT and LICENSE-APACHE. It
+contains no NOTICE file. Reproducing the MIT option here records the selected
+redistribution notice; it is not a legal conclusion about unrelated materials.
+
+The following is the exact LICENSE-MIT text included in the fearless_simd 1.1.0
+crates.io package:
+
+Copyright (c) 2018 Raph Levien
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+===============================================================================
+finl_unicode 1.5.0
+===============================================================================
+
+Package: https://crates.io/crates/finl_unicode/1.5.0
+Dependency path: companion-markdown 0.1.0 -> comrak 0.57.0 -> finl_unicode 1.5.0
+Registry package checksum SHA-256:
+80bb028c8b4148c9ee0cca68fcd9add6044e81d3619f48577ddf13a263d047a2
+Upstream: https://github.com/dahosek/finl_unicode
+Upstream revision recorded in the published package:
+b632656c56abdbbf2207668551008ced5c502227
+Published license expression: (MIT OR Apache-2.0) AND Unicode-DFS-2016
+License text reproduced here: MIT and LICENSE-UNICODE
+
+The finl_unicode 1.5.0 package contains LICENSE-MIT, LICENSE-APACHE and
+LICENSE-UNICODE. It contains no NOTICE file. The package's LICENSE-MIT carries
+no copyright line. Its LICENSE-UNICODE is the text headed UNICODE LICENSE V3,
+although the published expression names Unicode-DFS-2016; both files are
+reproduced as published. Reproducing the MIT option here records the selected
+redistribution notice; it is not a legal conclusion about unrelated materials.
+
+The following is the exact LICENSE-MIT text included in the finl_unicode 1.5.0
+crates.io package:
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+The following is the exact LICENSE-UNICODE text included in the finl_unicode
+1.5.0 crates.io package:
+
+UNICODE LICENSE V3
+
+COPYRIGHT AND PERMISSION NOTICE
+
+Copyright © 1991-2023 Unicode, Inc.
+
+NOTICE TO USER: Carefully read the following legal agreement. BY
+DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR
+SOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT
+DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of data files and any associated documentation (the "Data Files") or
+software and any associated documentation (the "Software") to deal in the
+Data Files or Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, and/or sell
+copies of the Data Files or Software, and to permit persons to whom the
+Data Files or Software are furnished to do so, provided that either (a)
+this copyright and permission notice appear with all copies of the Data
+Files or Software, or (b) this copyright and permission notice appear in
+associated Documentation.
+
+THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+THIRD PARTY RIGHTS.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE
+BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,
+OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA
+FILES OR SOFTWARE.
+
+Except as contained in this notice, the name of a copyright holder shall
+not be used in advertising or otherwise to promote the sale, use or other
+dealings in these Data Files or Software without prior written
+authorization of the copyright holder.
+
+===============================================================================
+memchr-n 0.1.10
+===============================================================================
+
+Package: https://crates.io/crates/memchr-n/0.1.10
+Dependency path: companion-markdown 0.1.0 -> comrak 0.57.0 -> memchr-n 0.1.10
+Registry package checksum SHA-256:
+f48c6352cc1185740af256ccc396af598d2366bfd90a34f5afe48744bf06a5b5
+Upstream: https://github.com/Dr-Emann/memchr_n
+Upstream revision recorded in the published package:
+c5b04b39680a7d0e6a86fa4af88e78884038d71d
+Published license expression: MIT OR Apache-2.0
+License text reproduced here: MIT
+
+The memchr-n 0.1.10 package contains LICENSE-MIT and LICENSE-APACHE. It
+contains no NOTICE file. Reproducing the MIT option here records the selected
+redistribution notice; it is not a legal conclusion about unrelated materials.
+
+The following is the exact LICENSE-MIT text included in the memchr-n 0.1.10
+crates.io package:
+
+MIT License
+
+Copyright (c) 2026 Zachary Dremann
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+===============================================================================
+phf 0.14.0 and phf_shared 0.14.0
+===============================================================================
+
+Packages: https://crates.io/crates/phf/0.14.0
+https://crates.io/crates/phf_shared/0.14.0
+Dependency path: companion-markdown 0.1.0 -> comrak 0.57.0 -> phf 0.14.0
+-> phf_shared 0.14.0
+Registry package checksums SHA-256:
+phf 010378780309880b08997fae13be7834dba947d36393bd372f2b1556deb2a2f6
+phf_shared c6fd9027e2d9319be6349febd1db4e8d02aa544921200c9b777720ac34a3aa89
+Upstream: https://github.com/rust-phf/rust-phf
+Upstream revision recorded in both published packages:
+1620d169aad09b02ef02a97b272470152e100bd6
+Published license expression: MIT
+License text reproduced here: MIT
+
+The phf 0.14.0 and phf_shared 0.14.0 packages each contain LICENSE, byte for
+byte the same file. Neither contains a NOTICE file.
+
+The following is the exact LICENSE text included in the phf 0.14.0 and
+phf_shared 0.14.0 crates.io packages:
+
+The MIT License (MIT)
+
+Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+===============================================================================
+siphasher 1.0.4
+===============================================================================
+
+Package: https://crates.io/crates/siphasher/1.0.4
+Dependency path: companion-markdown 0.1.0 -> comrak 0.57.0 -> phf 0.14.0
+-> phf_shared 0.14.0 -> siphasher 1.0.4
+Registry package checksum SHA-256:
+33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256
+Upstream: https://github.com/jedisct1/rust-siphash
+Upstream revision recorded in the published package:
+ed028f01a16205b0819fa83b0cdc052e2d5ac3b7
+Published license expression: MIT OR Apache-2.0
+License text reproduced here: COPYING and MIT
+
+The siphasher 1.0.4 package contains COPYING, LICENSE-MIT and LICENSE-APACHE.
+It contains no NOTICE file. Its LICENSE-MIT carries no copyright line; the
+copyright lines are in COPYING, reproduced first. Reproducing the MIT option
+here records the selected redistribution notice; it is not a legal conclusion
+about unrelated materials.
+
+The following is the exact COPYING text included in the siphasher 1.0.4
+crates.io package:
+
+Copyright 2012-2016 The Rust Project Developers.
+Copyright 2016-2026 Frank Denis.
+
+Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+<LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+option.
+
+The following is the exact LICENSE-MIT text included in the siphasher 1.0.4
+crates.io package:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+===============================================================================
+tinyvec 1.13.3
+===============================================================================
+
+Package: https://crates.io/crates/tinyvec/1.13.3
+Dependency path: companion-markdown 0.1.0 -> comrak 0.57.0 -> caseless 0.2.2
+-> unicode-normalization 0.1.26 -> tinyvec 1.13.3
+Registry package checksum SHA-256:
+fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee
+Upstream: https://github.com/Lokathor/tinyvec
+Upstream revision recorded in the published package:
+e343bbbb5a6594c9d57de718e6f232e6c0115dcb
+Published license expression: Zlib OR Apache-2.0 OR MIT
+License text reproduced here: MIT
+
+The tinyvec 1.13.3 package contains LICENSE-MIT.md, LICENSE-APACHE.md and
+LICENSE-ZLIB.md. It contains no NOTICE file. Its LICENSE-MIT.md carries no
+copyright line. Reproducing the MIT option here records the selected
+redistribution notice; it is not a legal conclusion about unrelated materials.
+
+The following is the exact LICENSE-MIT.md text included in the tinyvec 1.13.3
+crates.io package:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+===============================================================================
+typed-arena 2.0.2
+===============================================================================
+
+Package: https://crates.io/crates/typed-arena/2.0.2
+Dependency path: companion-markdown 0.1.0 -> comrak 0.57.0 -> typed-arena 2.0.2
+Registry package checksum SHA-256:
+6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a
+Upstream: https://github.com/SimonSapin/rust-typed-arena
+Upstream revision recorded in the published package:
+239d236e6dd756b15d50c1d6eef5703b7f28bc61
+Published license expression: MIT
+License text reproduced here: MIT
+
+The typed-arena 2.0.2 package contains LICENSE. It contains no NOTICE file.
+
+The following is the exact LICENSE text included in the typed-arena 2.0.2
+crates.io package:
+
+MIT License
+
+Copyright (c) 2018 The typed-arena developers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+===============================================================================
+unicode-normalization 0.1.26
+===============================================================================
+
+Package: https://crates.io/crates/unicode-normalization/0.1.26
+Dependency path: companion-markdown 0.1.0 -> comrak 0.57.0 -> caseless 0.2.2
+-> unicode-normalization 0.1.26
+Registry package checksum SHA-256:
+75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d
+Upstream: https://github.com/unicode-rs/unicode-normalization
+Upstream revision recorded in the published package:
+16c9597b73ec5b6b8ed55f4249a5ac854892544c
+Published license expression: (MIT OR Apache-2.0) AND Unicode-3.0
+License text reproduced here: MIT and LICENSE-UNICODE
+
+The unicode-normalization 0.1.26 package contains COPYRIGHT, LICENSE-MIT,
+LICENSE-APACHE and LICENSE-UNICODE. It contains no NOTICE file. Reproducing the
+MIT option here records the selected redistribution notice; it is not a legal
+conclusion about unrelated materials.
+
+The following is the exact LICENSE-MIT text included in the
+unicode-normalization 0.1.26 crates.io package:
+
+Copyright (c) 2015 The Rust Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+The following is the exact LICENSE-UNICODE text included in the
+unicode-normalization 0.1.26 crates.io package:
+
+UNICODE LICENSE V3
+
+COPYRIGHT AND PERMISSION NOTICE
+
+Copyright © 1991-2023 Unicode, Inc.
+
+NOTICE TO USER: Carefully read the following legal agreement. BY
+DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR
+SOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT
+DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of data files and any associated documentation (the "Data Files") or
+software and any associated documentation (the "Software") to deal in the
+Data Files or Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, and/or sell
+copies of the Data Files or Software, and to permit persons to whom the
+Data Files or Software are furnished to do so, provided that either (a)
+this copyright and permission notice appear with all copies of the Data
+Files or Software, or (b) this copyright and permission notice appear in
+associated Documentation.
+
+THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+THIRD PARTY RIGHTS.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE
+BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,
+OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA
+FILES OR SOFTWARE.
+
+Except as contained in this notice, the name of a copyright holder shall
+not be used in advertising or otherwise to promote the sale, use or other
+dealings in these Data Files or Software without prior written
+authorization of the copyright holder.
+
+The following is the exact COPYRIGHT text included in the
+unicode-normalization 0.1.26 crates.io package:
+
+Licensed under the Apache License, Version 2.0
+<LICENSE-APACHE or
+http://www.apache.org/licenses/LICENSE-2.0> or the MIT
+license <LICENSE-MIT or http://opensource.org/licenses/MIT>,
+at your option. All files in the project carrying such
+notice may not be copied, modified, or distributed except
+according to those terms.
 
 ===============================================================================
 swift-markdown 0.9.0

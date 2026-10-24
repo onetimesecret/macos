@@ -44,6 +44,9 @@ allow = [
   # Required by unicode-ident (transitive via serde); permissive,
   # data-file attribution only.
   "Unicode-3.0",
+  # Required by finl_unicode (transitive via comrak, companion-markdown):
+  # the earlier Unicode data license, permissive, attribution only.
+  "Unicode-DFS-2016",
   # Required by webpki-roots (transitive via ureq/rustls, companion-transport):
   # Mozilla's CA bundle, redistributed under a permissive data license.
   "CDLA-Permissive-2.0",
