@@ -1,0 +1,777 @@
+{
+  "abort": {
+    "events": [
+      {
+        "allTasksSuspended": true,
+        "atsDictionaryPresent": false,
+        "bundleIdentifier": "com.onetimesecret.pad",
+        "bundlePath": "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/verified/TransportResearch.app",
+        "event": "prepared",
+        "executablePath": "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/verified/TransportResearch.app/Contents/MacOS/OnetimePad",
+        "plistSHA256": "fefd4afa763b562ec82da8a68efe725f72dd2c4c9ae09dc89ac341c72f5370c1",
+        "runtimeOS": "Version 27.2 (Build 26B5101f)",
+        "session": {
+          "cachePolicy": "reloadIgnoringLocalCacheData",
+          "configuration": "ephemeral",
+          "cookieStorageNil": true,
+          "credentialStorageNil": true,
+          "requestTimeoutSeconds": 20,
+          "resourceTimeoutSeconds": 30,
+          "shouldSetCookies": false,
+          "urlCacheNil": true
+        },
+        "suspendedTaskCount": 13
+      },
+      {
+        "event": "aborted",
+        "reason": "No explicit ACTIVATE command"
+      }
+    ],
+    "exitCode": 0,
+    "idle": {
+      "allTasksSuspended": true,
+      "command": "ABORT",
+      "eventsAtPrepared": [],
+      "eventsBeforeCommand": [],
+      "seconds": 2,
+      "zeroLocalEvents": true
+    }
+  },
+  "active": {
+    "events": [
+      {
+        "allTasksSuspended": true,
+        "atsDictionaryPresent": false,
+        "bundleIdentifier": "com.onetimesecret.pad",
+        "bundlePath": "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/verified/TransportResearch.app",
+        "event": "prepared",
+        "executablePath": "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/verified/TransportResearch.app/Contents/MacOS/OnetimePad",
+        "plistSHA256": "fefd4afa763b562ec82da8a68efe725f72dd2c4c9ae09dc89ac341c72f5370c1",
+        "runtimeOS": "Version 27.2 (Build 26B5101f)",
+        "session": {
+          "cachePolicy": "reloadIgnoringLocalCacheData",
+          "configuration": "ephemeral",
+          "cookieStorageNil": true,
+          "credentialStorageNil": true,
+          "requestTimeoutSeconds": 20,
+          "resourceTimeoutSeconds": 30,
+          "shouldSetCookies": false,
+          "urlCacheNil": true
+        },
+        "suspendedTaskCount": 13
+      },
+      {
+        "event": "activated"
+      },
+      {
+        "event": "resume",
+        "followRedirects": false,
+        "id": "http_loopback_ipv4",
+        "url": "http://127.0.0.1:64300/ok?case=ipv4"
+      },
+      {
+        "bytesReceived": 17,
+        "elapsedSeconds": 0.01038503646850586,
+        "event": "result",
+        "finalURL": "http://127.0.0.1:64300/ok?case=ipv4",
+        "followRedirects": false,
+        "id": "http_loopback_ipv4",
+        "redirects": [],
+        "status": 200,
+        "transactions": [
+          {
+            "connectStarted": true,
+            "dnsStarted": true,
+            "fetchType": 1,
+            "protocol": "http/1.1",
+            "proxyConnection": false,
+            "remoteAddress": "127.0.0.1",
+            "requestHeaderBytesSent": 221,
+            "requestStarted": true,
+            "responseBodyBytesReceived": 17,
+            "reusedConnection": false,
+            "status": 200,
+            "tlsStarted": false,
+            "url": "http://127.0.0.1:64300/ok?case=ipv4"
+          }
+        ],
+        "url": "http://127.0.0.1:64300/ok?case=ipv4"
+      },
+      {
+        "event": "resume",
+        "followRedirects": false,
+        "id": "http_localhost",
+        "url": "http://localhost:64300/ok?case=localhost"
+      },
+      {
+        "bytesReceived": 17,
+        "elapsedSeconds": 0.003340005874633789,
+        "event": "result",
+        "finalURL": "http://localhost:64300/ok?case=localhost",
+        "followRedirects": false,
+        "id": "http_localhost",
+        "redirects": [],
+        "status": 200,
+        "transactions": [
+          {
+            "connectStarted": true,
+            "dnsStarted": true,
+            "fetchType": 1,
+            "protocol": "http/1.1",
+            "proxyConnection": false,
+            "remoteAddress": "127.0.0.1",
+            "requestHeaderBytesSent": 226,
+            "requestStarted": true,
+            "responseBodyBytesReceived": 17,
+            "reusedConnection": false,
+            "status": 200,
+            "tlsStarted": false,
+            "url": "http://localhost:64300/ok?case=localhost"
+          }
+        ],
+        "url": "http://localhost:64300/ok?case=localhost"
+      },
+      {
+        "event": "resume",
+        "followRedirects": false,
+        "id": "http_loopback_ipv6",
+        "url": "http://[::1]:64301/ok?case=ipv6"
+      },
+      {
+        "bytesReceived": 17,
+        "elapsedSeconds": 0.001231074333190918,
+        "event": "result",
+        "finalURL": "http://[::1]:64301/ok?case=ipv6",
+        "followRedirects": false,
+        "id": "http_loopback_ipv6",
+        "redirects": [],
+        "status": 200,
+        "transactions": [
+          {
+            "connectStarted": true,
+            "dnsStarted": true,
+            "fetchType": 1,
+            "protocol": "http/1.1",
+            "proxyConnection": false,
+            "remoteAddress": "::1",
+            "requestHeaderBytesSent": 217,
+            "requestStarted": true,
+            "responseBodyBytesReceived": 17,
+            "reusedConnection": false,
+            "status": 200,
+            "tlsStarted": false,
+            "url": "http://[::1]:64301/ok?case=ipv6"
+          }
+        ],
+        "url": "http://[::1]:64301/ok?case=ipv6"
+      },
+      {
+        "event": "resume",
+        "followRedirects": false,
+        "id": "http_private_interface_self",
+        "url": "http://192.168.86.10:64302/ok?case=private"
+      },
+      {
+        "bytesReceived": 17,
+        "elapsedSeconds": 2.651777982711792,
+        "event": "result",
+        "finalURL": "http://192.168.86.10:64302/ok?case=private",
+        "followRedirects": false,
+        "id": "http_private_interface_self",
+        "redirects": [],
+        "status": 200,
+        "transactions": [
+          {
+            "connectStarted": true,
+            "dnsStarted": true,
+            "fetchType": 1,
+            "protocol": "http/1.1",
+            "proxyConnection": false,
+            "remoteAddress": "192.168.86.10",
+            "requestHeaderBytesSent": 228,
+            "requestStarted": true,
+            "responseBodyBytesReceived": 17,
+            "reusedConnection": false,
+            "status": 200,
+            "tlsStarted": false,
+            "url": "http://192.168.86.10:64302/ok?case=private"
+          }
+        ],
+        "url": "http://192.168.86.10:64302/ok?case=private"
+      },
+      {
+        "event": "resume",
+        "followRedirects": false,
+        "id": "https_local_untrusted_control",
+        "url": "https://127.0.0.1:64303/ok?case=untrusted"
+      },
+      {
+        "bytesReceived": 0,
+        "elapsedSeconds": 0.03627204895019531,
+        "error": {
+          "code": -1202,
+          "description": "The certificate for this server is invalid. You might be connecting to a server that is pretending to be \u201c127.0.0.1\u201d which could put your confidential information at risk.",
+          "domain": "NSURLErrorDomain"
+        },
+        "event": "result",
+        "followRedirects": false,
+        "id": "https_local_untrusted_control",
+        "redirects": [],
+        "transactions": [
+          {
+            "connectStarted": false,
+            "dnsStarted": false,
+            "fetchType": 1,
+            "proxyConnection": false,
+            "requestHeaderBytesSent": 0,
+            "requestStarted": false,
+            "responseBodyBytesReceived": 0,
+            "reusedConnection": false,
+            "tlsProtocolVersion": "tls_protocol_version_t(rawValue: 772)",
+            "tlsStarted": false,
+            "url": "https://127.0.0.1:64303/ok?case=untrusted"
+          }
+        ],
+        "underlyingError": {
+          "code": -1202,
+          "domain": "kCFErrorDomainCFNetwork"
+        },
+        "url": "https://127.0.0.1:64303/ok?case=untrusted"
+      },
+      {
+        "event": "resume",
+        "followRedirects": false,
+        "id": "local_redirect_reject",
+        "url": "http://127.0.0.1:64300/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-reject"
+      },
+      {
+        "bytesReceived": 13,
+        "elapsedSeconds": 0.0019199848175048828,
+        "event": "result",
+        "finalURL": "http://127.0.0.1:64300/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-reject",
+        "followRedirects": false,
+        "id": "local_redirect_reject",
+        "location": "http://127.0.0.1:64300/redirect-target?case=local-reject",
+        "redirects": [
+          {
+            "followed": false,
+            "from": "http://127.0.0.1:64300/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-reject",
+            "status": 302,
+            "to": "http://127.0.0.1:64300/redirect-target?case=local-reject"
+          }
+        ],
+        "status": 302,
+        "transactions": [
+          {
+            "connectStarted": true,
+            "dnsStarted": true,
+            "fetchType": 1,
+            "protocol": "http/1.1",
+            "proxyConnection": false,
+            "remoteAddress": "127.0.0.1",
+            "requestHeaderBytesSent": 291,
+            "requestStarted": true,
+            "responseBodyBytesReceived": 13,
+            "reusedConnection": false,
+            "status": 302,
+            "tlsStarted": false,
+            "url": "http://127.0.0.1:64300/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-reject"
+          }
+        ],
+        "url": "http://127.0.0.1:64300/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-reject"
+      },
+      {
+        "event": "resume",
+        "followRedirects": true,
+        "id": "local_redirect_follow",
+        "url": "http://127.0.0.1:64300/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-follow"
+      },
+      {
+        "bytesReceived": 17,
+        "elapsedSeconds": 0.0021930932998657227,
+        "event": "result",
+        "finalURL": "http://127.0.0.1:64300/redirect-target?case=local-follow",
+        "followRedirects": true,
+        "id": "local_redirect_follow",
+        "redirects": [
+          {
+            "followed": true,
+            "from": "http://127.0.0.1:64300/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-follow",
+            "status": 302,
+            "to": "http://127.0.0.1:64300/redirect-target?case=local-follow"
+          }
+        ],
+        "status": 200,
+        "transactions": [
+          {
+            "connectStarted": true,
+            "dnsStarted": true,
+            "fetchType": 1,
+            "protocol": "http/1.1",
+            "proxyConnection": false,
+            "remoteAddress": "127.0.0.1",
+            "requestHeaderBytesSent": 291,
+            "requestStarted": true,
+            "responseBodyBytesReceived": 13,
+            "reusedConnection": false,
+            "status": 302,
+            "tlsStarted": false,
+            "url": "http://127.0.0.1:64300/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-follow"
+          },
+          {
+            "connectStarted": true,
+            "dnsStarted": true,
+            "fetchType": 1,
+            "protocol": "http/1.1",
+            "proxyConnection": false,
+            "remoteAddress": "127.0.0.1",
+            "requestHeaderBytesSent": 242,
+            "requestStarted": true,
+            "responseBodyBytesReceived": 17,
+            "reusedConnection": false,
+            "status": 200,
+            "tlsStarted": false,
+            "url": "http://127.0.0.1:64300/redirect-target?case=local-follow"
+          }
+        ],
+        "url": "http://127.0.0.1:64300/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-follow"
+      },
+      {
+        "event": "resume",
+        "followRedirects": false,
+        "id": "http_public_dns",
+        "url": "http://httpbingo.org/get?transport_lab=public-http"
+      },
+      {
+        "bytesReceived": 0,
+        "elapsedSeconds": 0.0005320310592651367,
+        "error": {
+          "code": -1022,
+          "description": "The resource could not be loaded because the App Transport Security policy requires the use of a secure connection.",
+          "domain": "NSURLErrorDomain"
+        },
+        "event": "result",
+        "followRedirects": false,
+        "id": "http_public_dns",
+        "redirects": [],
+        "transactions": [
+          {
+            "connectStarted": false,
+            "dnsStarted": false,
+            "fetchType": 0,
+            "proxyConnection": false,
+            "requestHeaderBytesSent": 0,
+            "requestStarted": false,
+            "responseBodyBytesReceived": 0,
+            "reusedConnection": false,
+            "tlsStarted": false,
+            "url": "http://httpbingo.org/get?transport_lab=public-http"
+          }
+        ],
+        "underlyingError": {
+          "code": -1022,
+          "domain": "kCFErrorDomainCFNetwork"
+        },
+        "url": "http://httpbingo.org/get?transport_lab=public-http"
+      },
+      {
+        "event": "resume",
+        "followRedirects": false,
+        "id": "https_public_control",
+        "url": "https://httpbingo.org/get?transport_lab=https-control"
+      },
+      {
+        "bytesReceived": 835,
+        "elapsedSeconds": 11.127030968666077,
+        "event": "result",
+        "finalURL": "https://httpbingo.org/get?transport_lab=https-control",
+        "followRedirects": false,
+        "id": "https_public_control",
+        "redirects": [],
+        "status": 200,
+        "transactions": [
+          {
+            "connectStarted": true,
+            "dnsStarted": true,
+            "fetchType": 1,
+            "protocol": "h2",
+            "proxyConnection": false,
+            "remoteAddress": "66.241.125.232",
+            "requestHeaderBytesSent": 135,
+            "requestStarted": true,
+            "responseBodyBytesReceived": 509,
+            "reusedConnection": false,
+            "status": 200,
+            "tlsProtocolVersion": "tls_protocol_version_t(rawValue: 772)",
+            "tlsStarted": true,
+            "url": "https://httpbingo.org/get?transport_lab=https-control"
+          }
+        ],
+        "url": "https://httpbingo.org/get?transport_lab=https-control"
+      },
+      {
+        "event": "resume",
+        "followRedirects": false,
+        "id": "https_to_http_public_reject",
+        "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget%3Fcase%3Dhttps-to-public-reject"
+      },
+      {
+        "bytesReceived": 0,
+        "elapsedSeconds": 0.3955249786376953,
+        "event": "result",
+        "finalURL": "https://httpbingo.org/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget%3Fcase%3Dhttps-to-public-reject",
+        "followRedirects": false,
+        "id": "https_to_http_public_reject",
+        "location": "http://httpbingo.org/get?case=https-to-public-reject",
+        "redirects": [
+          {
+            "followed": false,
+            "from": "https://httpbingo.org/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget%3Fcase%3Dhttps-to-public-reject",
+            "status": 302,
+            "to": "http://httpbingo.org/get?case=https-to-public-reject"
+          }
+        ],
+        "status": 302,
+        "transactions": [
+          {
+            "connectStarted": true,
+            "dnsStarted": true,
+            "fetchType": 1,
+            "protocol": "h2",
+            "proxyConnection": false,
+            "remoteAddress": "66.241.125.232",
+            "requestHeaderBytesSent": 170,
+            "requestStarted": true,
+            "responseBodyBytesReceived": 0,
+            "reusedConnection": false,
+            "status": 302,
+            "tlsProtocolVersion": "tls_protocol_version_t(rawValue: 772)",
+            "tlsStarted": true,
+            "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget%3Fcase%3Dhttps-to-public-reject"
+          }
+        ],
+        "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget%3Fcase%3Dhttps-to-public-reject"
+      },
+      {
+        "event": "resume",
+        "followRedirects": true,
+        "id": "https_to_http_public_follow",
+        "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget%3Fcase%3Dhttps-to-public-follow"
+      },
+      {
+        "bytesReceived": 0,
+        "elapsedSeconds": 0.43092799186706543,
+        "error": {
+          "code": -1022,
+          "description": "The resource could not be loaded because the App Transport Security policy requires the use of a secure connection.",
+          "domain": "NSURLErrorDomain"
+        },
+        "event": "result",
+        "followRedirects": true,
+        "id": "https_to_http_public_follow",
+        "redirects": [
+          {
+            "followed": true,
+            "from": "https://httpbingo.org/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget%3Fcase%3Dhttps-to-public-follow",
+            "status": 302,
+            "to": "http://httpbingo.org/get?case=https-to-public-follow"
+          }
+        ],
+        "transactions": [
+          {
+            "connectStarted": true,
+            "dnsStarted": true,
+            "fetchType": 1,
+            "protocol": "h2",
+            "proxyConnection": false,
+            "remoteAddress": "66.241.125.232",
+            "requestHeaderBytesSent": 170,
+            "requestStarted": true,
+            "responseBodyBytesReceived": 0,
+            "reusedConnection": false,
+            "status": 302,
+            "tlsProtocolVersion": "tls_protocol_version_t(rawValue: 772)",
+            "tlsStarted": true,
+            "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget%3Fcase%3Dhttps-to-public-follow"
+          },
+          {
+            "connectStarted": false,
+            "dnsStarted": false,
+            "fetchType": 0,
+            "proxyConnection": false,
+            "requestHeaderBytesSent": 0,
+            "requestStarted": false,
+            "responseBodyBytesReceived": 0,
+            "reusedConnection": false,
+            "tlsStarted": false,
+            "url": "http://httpbingo.org/get?case=https-to-public-follow"
+          }
+        ],
+        "underlyingError": {
+          "code": -1022,
+          "domain": "kCFErrorDomainCFNetwork"
+        },
+        "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget%3Fcase%3Dhttps-to-public-follow"
+      },
+      {
+        "event": "resume",
+        "followRedirects": false,
+        "id": "https_to_http_loopback_reject",
+        "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dhttps-to-loopback-reject"
+      },
+      {
+        "bytesReceived": 147,
+        "elapsedSeconds": 0.3963890075683594,
+        "event": "result",
+        "finalURL": "https://httpbingo.org/redirect-to?url=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dhttps-to-loopback-reject",
+        "followRedirects": false,
+        "id": "https_to_http_loopback_reject",
+        "redirects": [],
+        "status": 403,
+        "transactions": [
+          {
+            "connectStarted": true,
+            "dnsStarted": true,
+            "fetchType": 1,
+            "protocol": "h2",
+            "proxyConnection": false,
+            "remoteAddress": "66.241.125.232",
+            "requestHeaderBytesSent": 182,
+            "requestStarted": true,
+            "responseBodyBytesReceived": 169,
+            "reusedConnection": false,
+            "status": 403,
+            "tlsProtocolVersion": "tls_protocol_version_t(rawValue: 772)",
+            "tlsStarted": true,
+            "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dhttps-to-loopback-reject"
+          }
+        ],
+        "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dhttps-to-loopback-reject"
+      },
+      {
+        "event": "resume",
+        "followRedirects": true,
+        "id": "https_to_http_loopback_follow",
+        "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dhttps-to-loopback-follow"
+      },
+      {
+        "bytesReceived": 147,
+        "elapsedSeconds": 0.40088701248168945,
+        "event": "result",
+        "finalURL": "https://httpbingo.org/redirect-to?url=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dhttps-to-loopback-follow",
+        "followRedirects": true,
+        "id": "https_to_http_loopback_follow",
+        "redirects": [],
+        "status": 403,
+        "transactions": [
+          {
+            "connectStarted": true,
+            "dnsStarted": true,
+            "fetchType": 1,
+            "protocol": "h2",
+            "proxyConnection": false,
+            "remoteAddress": "66.241.125.232",
+            "requestHeaderBytesSent": 183,
+            "requestStarted": true,
+            "responseBodyBytesReceived": 169,
+            "reusedConnection": false,
+            "status": 403,
+            "tlsProtocolVersion": "tls_protocol_version_t(rawValue: 772)",
+            "tlsStarted": true,
+            "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dhttps-to-loopback-follow"
+          }
+        ],
+        "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dhttps-to-loopback-follow"
+      },
+      {
+        "caseCount": 13,
+        "event": "complete"
+      }
+    ],
+    "exitCode": 0,
+    "idle": {
+      "allTasksSuspended": true,
+      "command": "ACTIVATE",
+      "eventsAtPrepared": [],
+      "eventsBeforeCommand": [],
+      "seconds": 2,
+      "zeroLocalEvents": true
+    }
+  },
+  "assertions": {
+    "abort_without_resume_or_local_traffic": true,
+    "all_cases_completed_within_deadlines": true,
+    "both_idle_windows_zero_local_events": true,
+    "exact_current_plist_after_signing_and_at_runtime": true,
+    "local_follow_returns_200": true,
+    "local_follow_target_requested": true,
+    "local_ipv4_control_status_200": true,
+    "local_reject_returns_302": true,
+    "local_reject_target_not_requested": true,
+    "no_ats_dictionary": true
+  },
+  "cleanup": {
+    "fixturePrivateKeyRemoved": true,
+    "serverThreadsStopped": true
+  },
+  "metadata": {
+    "architecture": "arm64",
+    "binaryBuildVersion": "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/verified/TransportResearch.app/Contents/MacOS/OnetimePad:\nLoad command 11\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform MACOS\n    minos 13.0\n      sdk 27.0\n   ntools 1\n     tool LD\n  version 27037.1",
+    "compileTarget": "arm64-apple-macosx13.0",
+    "labSourceSHA256": {
+      "TransportProbe.swift": "7a0c8b206a283d36ff788aa10292089cdb0a7b74bd808226370265f5b0f333a7",
+      "run.py": "327d776f6836232b600846f4f0e5010655c40b53f7ce2d7da551d2678982c7c9"
+    },
+    "listeners": [
+      {
+        "address": "127.0.0.1",
+        "label": "ipv4-loopback",
+        "port": 64300
+      },
+      {
+        "address": "::1",
+        "label": "ipv6-loopback",
+        "port": 64301
+      },
+      {
+        "address": "192.168.86.10",
+        "label": "private-interface-self",
+        "port": 64302
+      },
+      {
+        "address": "127.0.0.1",
+        "label": "self-signed-tls",
+        "port": 64303
+      }
+    ],
+    "localOnly": false,
+    "optionalSkips": [],
+    "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.2\nBuildVersion:\t\t26B5101f",
+    "proxyEnvironmentVariableNames": [],
+    "revision": "54d38a549b597f9fd5a664e48db05a293bccbb5d",
+    "sdkPath": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+    "sdkVersion": "27.0",
+    "signature": "Executable=/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/verified/TransportResearch.app/Contents/MacOS/OnetimePad\nIdentifier=transport-research\nFormat=app bundle with Mach-O thin (arm64)\nCodeDirectory v=20400 size=555 flags=0x2(adhoc) hashes=11+3 location=embedded\nVersionPlatform=1\nVersionMin=851968\nVersionSDK=1769472\nHash type=sha256 size=32\nCandidateCDHash sha256=057a9e7e59cb0d1d6cecf4dce14b0dcd606acb18\nCandidateCDHashFull sha256=057a9e7e59cb0d1d6cecf4dce14b0dcd606acb18129969a08b0b2c9543462793\nHash choices=sha256\nCMSDigest=057a9e7e59cb0d1d6cecf4dce14b0dcd606acb18129969a08b0b2c9543462793\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=81920\nExecutable Segment flags=0x1\nPage size=16384\nCDHash=057a9e7e59cb0d1d6cecf4dce14b0dcd606acb18\nSignature=adhoc\nInfo.plist entries=16\nTeamIdentifier=not set\nSealed Resources version=2 rules=13 files=0\nInternal requirements count=0 size=12\nTotal signatures=1\nChosen signature=1\n",
+    "signedEntitlements": "",
+    "signedEntitlementsDiagnostic": "Executable=/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/transport/runs/verified/TransportResearch.app/Contents/MacOS/OnetimePad\nwarning: Specifying ':' in the path is deprecated and will not work in a future release",
+    "signedEntitlementsExitCode": 0,
+    "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.2.0",
+    "utc": "2026-10-17T03:12:55.160381+00:00"
+  },
+  "protectedInputsAfter": {
+    "docs/spec/design/2026-1016-markdown-dialects-and-preview.md": "a77f7eaef31eb934fc51a18da59e1ba04e5e687c2bc66a1aa6017c44bb910bb9",
+    "scripts/Companion.entitlements": "edd36115a8e15ab02ad08acc8a283cf2aa8c7d63f490bd75cddf9dc47bc9e965",
+    "shell/OnetimePad-Info.plist": "fefd4afa763b562ec82da8a68efe725f72dd2c4c9ae09dc89ac341c72f5370c1",
+    "shell/Sources/CompanionKit/FeedbackClient.swift": "4467f459b1ed26f1f5822fe6d8052a75870ea6dfac7b4077cd44a526a955a671"
+  },
+  "protectedInputsBefore": {
+    "docs/spec/design/2026-1016-markdown-dialects-and-preview.md": "a77f7eaef31eb934fc51a18da59e1ba04e5e687c2bc66a1aa6017c44bb910bb9",
+    "scripts/Companion.entitlements": "edd36115a8e15ab02ad08acc8a283cf2aa8c7d63f490bd75cddf9dc47bc9e965",
+    "shell/OnetimePad-Info.plist": "fefd4afa763b562ec82da8a68efe725f72dd2c4c9ae09dc89ac341c72f5370c1",
+    "shell/Sources/CompanionKit/FeedbackClient.swift": "4467f459b1ed26f1f5822fe6d8052a75870ea6dfac7b4077cd44a526a955a671"
+  },
+  "protectedInputsUnchanged": true,
+  "serverEvents": [
+    {
+      "kind": "tcp_accept",
+      "listener": "ipv4-loopback",
+      "seconds": 9.50444933399558
+    },
+    {
+      "kind": "http_request",
+      "listener": "ipv4-loopback",
+      "method": "GET",
+      "path": "/ok?case=ipv4",
+      "seconds": 9.507044167025015
+    },
+    {
+      "kind": "tcp_accept",
+      "listener": "ipv4-loopback",
+      "seconds": 9.510745167033747
+    },
+    {
+      "kind": "http_request",
+      "listener": "ipv4-loopback",
+      "method": "GET",
+      "path": "/ok?case=localhost",
+      "seconds": 9.510987500019837
+    },
+    {
+      "kind": "tcp_accept",
+      "listener": "ipv6-loopback",
+      "seconds": 9.512098042003345
+    },
+    {
+      "kind": "http_request",
+      "listener": "ipv6-loopback",
+      "method": "GET",
+      "path": "/ok?case=ipv6",
+      "seconds": 9.512318875000346
+    },
+    {
+      "kind": "tcp_accept",
+      "listener": "private-interface-self",
+      "seconds": 12.163443125027698
+    },
+    {
+      "kind": "http_request",
+      "listener": "private-interface-self",
+      "method": "GET",
+      "path": "/ok?case=private",
+      "seconds": 12.163863709021825
+    },
+    {
+      "kind": "tcp_accept",
+      "listener": "self-signed-tls",
+      "seconds": 12.165757209004369
+    },
+    {
+      "kind": "tls_failure",
+      "listener": "self-signed-tls",
+      "reason": "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1032)",
+      "seconds": 12.199018375016749
+    },
+    {
+      "kind": "tcp_accept",
+      "listener": "ipv4-loopback",
+      "seconds": 12.201982124999631
+    },
+    {
+      "kind": "http_request",
+      "listener": "ipv4-loopback",
+      "method": "GET",
+      "path": "/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-reject",
+      "seconds": 12.202257541997824
+    },
+    {
+      "kind": "tcp_accept",
+      "listener": "ipv4-loopback",
+      "seconds": 12.20357045903802
+    },
+    {
+      "kind": "http_request",
+      "listener": "ipv4-loopback",
+      "method": "GET",
+      "path": "/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-follow",
+      "seconds": 12.20372229203349
+    },
+    {
+      "kind": "tcp_accept",
+      "listener": "ipv4-loopback",
+      "seconds": 12.204599709017202
+    },
+    {
+      "kind": "http_request",
+      "listener": "ipv4-loopback",
+      "method": "GET",
+      "path": "/redirect-target?case=local-follow",
+      "seconds": 12.204754250007682
+    }
+  ],
+  "verification": {
+    "bundlePlistSHA256": "fefd4afa763b562ec82da8a68efe725f72dd2c4c9ae09dc89ac341c72f5370c1",
+    "plistBytesEqual": true,
+    "runtimePlistSHA256": "fefd4afa763b562ec82da8a68efe725f72dd2c4c9ae09dc89ac341c72f5370c1",
+    "sourcePlistSHA256": "fefd4afa763b562ec82da8a68efe725f72dd2c4c9ae09dc89ac341c72f5370c1"
+  }
+}

@@ -1,0 +1,67 @@
+[
+  {
+    "followRedirects": false,
+    "id": "http_loopback_ipv4",
+    "url": "http://127.0.0.1:64300/ok?case=ipv4"
+  },
+  {
+    "followRedirects": false,
+    "id": "http_localhost",
+    "url": "http://localhost:64300/ok?case=localhost"
+  },
+  {
+    "followRedirects": false,
+    "id": "http_loopback_ipv6",
+    "url": "http://[::1]:64301/ok?case=ipv6"
+  },
+  {
+    "followRedirects": false,
+    "id": "http_private_interface_self",
+    "url": "http://192.168.86.10:64302/ok?case=private"
+  },
+  {
+    "followRedirects": false,
+    "id": "https_local_untrusted_control",
+    "url": "https://127.0.0.1:64303/ok?case=untrusted"
+  },
+  {
+    "followRedirects": false,
+    "id": "local_redirect_reject",
+    "url": "http://127.0.0.1:64300/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-reject"
+  },
+  {
+    "followRedirects": true,
+    "id": "local_redirect_follow",
+    "url": "http://127.0.0.1:64300/redirect?to=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dlocal-follow"
+  },
+  {
+    "followRedirects": false,
+    "id": "http_public_dns",
+    "url": "http://httpbingo.org/get?transport_lab=public-http"
+  },
+  {
+    "followRedirects": false,
+    "id": "https_public_control",
+    "url": "https://httpbingo.org/get?transport_lab=https-control"
+  },
+  {
+    "followRedirects": false,
+    "id": "https_to_http_public_reject",
+    "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget%3Fcase%3Dhttps-to-public-reject"
+  },
+  {
+    "followRedirects": true,
+    "id": "https_to_http_public_follow",
+    "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2Fhttpbingo.org%2Fget%3Fcase%3Dhttps-to-public-follow"
+  },
+  {
+    "followRedirects": false,
+    "id": "https_to_http_loopback_reject",
+    "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dhttps-to-loopback-reject"
+  },
+  {
+    "followRedirects": true,
+    "id": "https_to_http_loopback_follow",
+    "url": "https://httpbingo.org/redirect-to?url=http%3A%2F%2F127.0.0.1%3A64300%2Fredirect-target%3Fcase%3Dhttps-to-loopback-follow"
+  }
+]

@@ -6,6 +6,7 @@ documentation_status: reviewed # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-08-25
+- **Superseded in part by:** [ADR-0059](0059-preview-images-use-an-explicit-resource-request-route.md), only the Consequences bullet beginning “Opening is deliberate”, narrowing its app-wide reading; the source text and link behavior remain unchanged.
 
 ## Context
 
@@ -49,6 +50,10 @@ pointing-hand cursor promises open-on-click.
   editor first, and the ⌘ convention is the one every macOS editor's
   "open link" already uses.
 - Only http and https open. Anything else a page carries is text.
+
+## Decision history
+
+- 2026-10-16: Superseded in part by [ADR-0059](0059-preview-images-use-an-explicit-resource-request-route.md), only for the Consequences bullet beginning “Opening is deliberate”, narrowing its app-wide reading while preserving the source text. A distinct, destination-visible **Load Image** control may authorize a preview-resource request. Editable-ink link detection, plain-click editing and ⌘-click link opening remain unchanged; ordinary preview text, link and image-body clicks do not load images. Exact image-control gestures remain R5 work.
 
 ## Eject triggers
 

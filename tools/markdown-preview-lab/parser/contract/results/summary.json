@@ -1,0 +1,497 @@
+{
+  "utc": "2026-10-17T03:57:16.470787+00:00",
+  "build_root_revision": "4126666890df2228abd2406a27fbcff9d7269108",
+  "tested_root_revision": "aea9418025b0eb4c9eceb8887e5e5c36f1404ffc",
+  "fixture_total": 560,
+  "fixture_passed": 560,
+  "fixture_failures": [],
+  "ast_assertions": 560,
+  "html_assertions": 560,
+  "xml_assertions": 560,
+  "expected_invalid_xml_count": 30,
+  "actual_invalid_xml_count": 30,
+  "mode_metadata_total": 14,
+  "mode_metadata_passed": 14,
+  "previous_binary_comparisons": 240,
+  "previous_binary_equal": 240,
+  "mode_pair_comparisons": 120,
+  "mode_pair_passed": 120,
+  "official_comparisons": 70,
+  "official_equal": 45,
+  "official_regression_passed": 70,
+  "official_mismatches": [
+    {
+      "mode": "cm-core",
+      "id": "official-gfm-491",
+      "family": "GFM 0.29-gfm",
+      "example": 491,
+      "expected_html": "<p><del>Hi</del> Hello, <del>there</del> world!</p>\n",
+      "section": "6.5Strikethrough (extension)",
+      "mode_expected_html": "<p>~~Hi~~ Hello, ~there~ world!</p>\n",
+      "actual_html": "<p>~~Hi~~ Hello, ~there~ world!</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "cm-smart",
+      "id": "official-gfm-491",
+      "family": "GFM 0.29-gfm",
+      "example": 491,
+      "expected_html": "<p><del>Hi</del> Hello, <del>there</del> world!</p>\n",
+      "section": "6.5Strikethrough (extension)",
+      "mode_expected_html": "<p>~~Hi~~ Hello, ~there~ world!</p>\n",
+      "actual_html": "<p>~~Hi~~ Hello, ~there~ world!</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "legacy-core",
+      "id": "official-cm-171",
+      "family": "CommonMark 0.31.2",
+      "example": 171,
+      "expected_html": "<textarea>\n\n*foo*\n\n_bar_\n\n</textarea>\n",
+      "section": "HTML blocks",
+      "mode_expected_html": "<textarea>\n<p><em>foo</em></p>\n<p><em>bar</em></p>\n</textarea>\n",
+      "actual_html": "<textarea>\n<p><em>foo</em></p>\n<p><em>bar</em></p>\n</textarea>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "legacy-core",
+      "id": "official-cm-354",
+      "family": "CommonMark 0.31.2",
+      "example": 354,
+      "expected_html": "<p>*$*alpha.</p>\n<p>*£*bravo.</p>\n<p>*€*charlie.</p>\n",
+      "section": "Emphasis and strong emphasis",
+      "mode_expected_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "actual_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "legacy-core",
+      "id": "official-gfm-491",
+      "family": "GFM 0.29-gfm",
+      "example": 491,
+      "expected_html": "<p><del>Hi</del> Hello, <del>there</del> world!</p>\n",
+      "section": "6.5Strikethrough (extension)",
+      "mode_expected_html": "<p>~~Hi~~ Hello, ~there~ world!</p>\n",
+      "actual_html": "<p>~~Hi~~ Hello, ~there~ world!</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "legacy-gfm",
+      "id": "official-cm-171",
+      "family": "CommonMark 0.31.2",
+      "example": 171,
+      "expected_html": "<textarea>\n\n*foo*\n\n_bar_\n\n</textarea>\n",
+      "section": "HTML blocks",
+      "mode_expected_html": "&lt;textarea>\n<p><em>foo</em></p>\n<p><em>bar</em></p>\n&lt;/textarea>\n",
+      "actual_html": "&lt;textarea>\n<p><em>foo</em></p>\n<p><em>bar</em></p>\n&lt;/textarea>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "legacy-gfm",
+      "id": "official-cm-354",
+      "family": "CommonMark 0.31.2",
+      "example": 354,
+      "expected_html": "<p>*$*alpha.</p>\n<p>*£*bravo.</p>\n<p>*€*charlie.</p>\n",
+      "section": "Emphasis and strong emphasis",
+      "mode_expected_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "actual_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "legacy-double",
+      "id": "official-cm-171",
+      "family": "CommonMark 0.31.2",
+      "example": 171,
+      "expected_html": "<textarea>\n\n*foo*\n\n_bar_\n\n</textarea>\n",
+      "section": "HTML blocks",
+      "mode_expected_html": "&lt;textarea>\n<p><em>foo</em></p>\n<p><em>bar</em></p>\n&lt;/textarea>\n",
+      "actual_html": "&lt;textarea>\n<p><em>foo</em></p>\n<p><em>bar</em></p>\n&lt;/textarea>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "legacy-double",
+      "id": "official-cm-354",
+      "family": "CommonMark 0.31.2",
+      "example": 354,
+      "expected_html": "<p>*$*alpha.</p>\n<p>*£*bravo.</p>\n<p>*€*charlie.</p>\n",
+      "section": "Emphasis and strong emphasis",
+      "mode_expected_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "actual_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "legacy-double",
+      "id": "official-gfm-491",
+      "family": "GFM 0.29-gfm",
+      "example": 491,
+      "expected_html": "<p><del>Hi</del> Hello, <del>there</del> world!</p>\n",
+      "section": "6.5Strikethrough (extension)",
+      "mode_expected_html": "<p><del>Hi</del> Hello, ~there~ world!</p>\n",
+      "actual_html": "<p><del>Hi</del> Hello, ~there~ world!</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-core",
+      "id": "official-cm-354",
+      "family": "CommonMark 0.31.2",
+      "example": 354,
+      "expected_html": "<p>*$*alpha.</p>\n<p>*£*bravo.</p>\n<p>*€*charlie.</p>\n",
+      "section": "Emphasis and strong emphasis",
+      "mode_expected_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "actual_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-core",
+      "id": "official-gfm-491",
+      "family": "GFM 0.29-gfm",
+      "example": 491,
+      "expected_html": "<p><del>Hi</del> Hello, <del>there</del> world!</p>\n",
+      "section": "6.5Strikethrough (extension)",
+      "mode_expected_html": "<p>~~Hi~~ Hello, ~there~ world!</p>\n",
+      "actual_html": "<p>~~Hi~~ Hello, ~there~ world!</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-gfm",
+      "id": "official-cm-171",
+      "family": "CommonMark 0.31.2",
+      "example": 171,
+      "expected_html": "<textarea>\n\n*foo*\n\n_bar_\n\n</textarea>\n",
+      "section": "HTML blocks",
+      "mode_expected_html": "&lt;textarea>\n\n*foo*\n\n_bar_\n\n&lt;/textarea>\n",
+      "actual_html": "&lt;textarea>\n\n*foo*\n\n_bar_\n\n&lt;/textarea>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-gfm",
+      "id": "official-cm-354",
+      "family": "CommonMark 0.31.2",
+      "example": 354,
+      "expected_html": "<p>*$*alpha.</p>\n<p>*£*bravo.</p>\n<p>*€*charlie.</p>\n",
+      "section": "Emphasis and strong emphasis",
+      "mode_expected_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "actual_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-double",
+      "id": "official-cm-171",
+      "family": "CommonMark 0.31.2",
+      "example": 171,
+      "expected_html": "<textarea>\n\n*foo*\n\n_bar_\n\n</textarea>\n",
+      "section": "HTML blocks",
+      "mode_expected_html": "&lt;textarea>\n\n*foo*\n\n_bar_\n\n&lt;/textarea>\n",
+      "actual_html": "&lt;textarea>\n\n*foo*\n\n_bar_\n\n&lt;/textarea>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-double",
+      "id": "official-cm-354",
+      "family": "CommonMark 0.31.2",
+      "example": 354,
+      "expected_html": "<p>*$*alpha.</p>\n<p>*£*bravo.</p>\n<p>*€*charlie.</p>\n",
+      "section": "Emphasis and strong emphasis",
+      "mode_expected_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "actual_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-double",
+      "id": "official-gfm-491",
+      "family": "GFM 0.29-gfm",
+      "example": 491,
+      "expected_html": "<p><del>Hi</del> Hello, <del>there</del> world!</p>\n",
+      "section": "6.5Strikethrough (extension)",
+      "mode_expected_html": "<p><del>Hi</del> Hello, ~there~ world!</p>\n",
+      "actual_html": "<p><del>Hi</del> Hello, ~there~ world!</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-preview",
+      "id": "official-cm-354",
+      "family": "CommonMark 0.31.2",
+      "example": 354,
+      "expected_html": "<p>*$*alpha.</p>\n<p>*£*bravo.</p>\n<p>*€*charlie.</p>\n",
+      "section": "Emphasis and strong emphasis",
+      "mode_expected_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "actual_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-preview-spans-off",
+      "id": "official-cm-354",
+      "family": "CommonMark 0.31.2",
+      "example": 354,
+      "expected_html": "<p>*$*alpha.</p>\n<p>*£*bravo.</p>\n<p>*€*charlie.</p>\n",
+      "section": "Emphasis and strong emphasis",
+      "mode_expected_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "actual_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-default",
+      "id": "official-cm-354",
+      "family": "CommonMark 0.31.2",
+      "example": 354,
+      "expected_html": "<p>*$*alpha.</p>\n<p>*£*bravo.</p>\n<p>*€*charlie.</p>\n",
+      "section": "Emphasis and strong emphasis",
+      "mode_expected_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "actual_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-gfm-spans",
+      "id": "official-cm-171",
+      "family": "CommonMark 0.31.2",
+      "example": 171,
+      "expected_html": "<textarea>\n\n*foo*\n\n_bar_\n\n</textarea>\n",
+      "section": "HTML blocks",
+      "mode_expected_html": "&lt;textarea>\n\n*foo*\n\n_bar_\n\n&lt;/textarea>\n",
+      "actual_html": "&lt;textarea>\n\n*foo*\n\n_bar_\n\n&lt;/textarea>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-gfm-spans",
+      "id": "official-cm-354",
+      "family": "CommonMark 0.31.2",
+      "example": 354,
+      "expected_html": "<p>*$*alpha.</p>\n<p>*£*bravo.</p>\n<p>*€*charlie.</p>\n",
+      "section": "Emphasis and strong emphasis",
+      "mode_expected_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "actual_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-preview-double",
+      "id": "official-cm-354",
+      "family": "CommonMark 0.31.2",
+      "example": 354,
+      "expected_html": "<p>*$*alpha.</p>\n<p>*£*bravo.</p>\n<p>*€*charlie.</p>\n",
+      "section": "Emphasis and strong emphasis",
+      "mode_expected_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "actual_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-preview-double",
+      "id": "official-gfm-491",
+      "family": "GFM 0.29-gfm",
+      "example": 491,
+      "expected_html": "<p><del>Hi</del> Hello, <del>there</del> world!</p>\n",
+      "section": "6.5Strikethrough (extension)",
+      "mode_expected_html": "<p><del>Hi</del> Hello, ~there~ world!</p>\n",
+      "actual_html": "<p><del>Hi</del> Hello, ~there~ world!</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    },
+    {
+      "mode": "swift-preview-no-sourcepos",
+      "id": "official-cm-354",
+      "family": "CommonMark 0.31.2",
+      "example": 354,
+      "expected_html": "<p>*$*alpha.</p>\n<p>*£*bravo.</p>\n<p>*€*charlie.</p>\n",
+      "section": "Emphasis and strong emphasis",
+      "mode_expected_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "actual_html": "<p>*$*alpha.</p>\n<p><em>£</em>bravo.</p>\n<p><em>€</em>charlie.</p>\n",
+      "expected_equal": false,
+      "actual_equal": false,
+      "regression_passed": true
+    }
+  ],
+  "official_mismatch_counts_by_fixture": {
+    "official-cm-171": 6,
+    "official-cm-354": 12,
+    "official-gfm-491": 7,
+    "official-gfm-492": 0,
+    "official-gfm-493": 0
+  },
+  "invalid_xml_counts_by_fixture": {
+    "table-colspan-three": 5,
+    "table-colspan-two": 5,
+    "table-combined-span": 5,
+    "table-rowspan": 5,
+    "table-span-token-ascii": 5,
+    "table-span-token-so": 5
+  },
+  "per_mode": {
+    "cm-core": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-gfm-491"
+      ]
+    },
+    "cm-smart": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-gfm-491"
+      ]
+    },
+    "legacy-core": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-cm-171",
+        "official-cm-354",
+        "official-gfm-491"
+      ]
+    },
+    "legacy-gfm": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-cm-171",
+        "official-cm-354"
+      ]
+    },
+    "legacy-double": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-cm-171",
+        "official-cm-354",
+        "official-gfm-491"
+      ]
+    },
+    "swift-core": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-cm-354",
+        "official-gfm-491"
+      ]
+    },
+    "swift-gfm": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-cm-171",
+        "official-cm-354"
+      ]
+    },
+    "swift-double": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-cm-171",
+        "official-cm-354",
+        "official-gfm-491"
+      ]
+    },
+    "swift-preview": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-cm-354"
+      ]
+    },
+    "swift-preview-spans-off": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-cm-354"
+      ]
+    },
+    "swift-default": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-cm-354"
+      ]
+    },
+    "swift-gfm-spans": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-cm-171",
+        "official-cm-354"
+      ]
+    },
+    "swift-preview-double": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-cm-354",
+        "official-gfm-491"
+      ]
+    },
+    "swift-preview-no-sourcepos": {
+      "fixtures": 40,
+      "passed": 40,
+      "official_mismatch_ids": [
+        "official-cm-354"
+      ]
+    }
+  },
+  "protected_files_checked": 737,
+  "changed_protected_files": [
+    "docs/spec/design/2026-1016-markdown-dialects-and-preview.md"
+  ],
+  "blocking_input_changes": [],
+  "concurrent_document_changes": [
+    {
+      "path": "docs/spec/design/2026-1016-markdown-dialects-and-preview.md",
+      "before_sha256": "7e0ab2f5064a06db1f4f31328b43603d1d261e124679c84be70f6522199c1468",
+      "after_sha256": "b5dd0473bccce67bd0d0db3a5c573d4821a3f914003801d0d742563548134b2c"
+    }
+  ],
+  "input_sha256": {
+    "build.py": "25d1cf798262b8a3a31378bbd03cc5c4cc2dea986bfe3f598b8266d2103e305f",
+    "harness.c": "16fb6ad1b02d4d56c561d59cfc89f69107d814f7597417c693917e6945597017",
+    "profiles.py": "997e0ff09288f6a1ed2d90987f1cbe3da9d33366d7b1ad04fc4ec66cf287ad24",
+    "fixtures.py": "020fce8a7248af741b444ac664e00a87d9233c1c270557f274226d8a927949e5",
+    "run.py": "827903876ffa437e6c9ad3fad38c0a4b9dfaa18929f069a78015eddfa153740d"
+  },
+  "provenance_sha256": "92cc50d82325ba1481a8cfd3755fb9fc4b45af41a18239266764a22e92abfcf3",
+  "oracle_notice": "../CORPUS-NOTICE.md; official-example-containing adaptations are CC-BY-SA 4.0",
+  "passed": true
+}

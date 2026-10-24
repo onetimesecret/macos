@@ -1,0 +1,1391 @@
+{
+  "failures": [
+    {
+      "id": "table-ordinary",
+      "markdown": "| A | B | C |\n| --- | --- | --- |\n| left | middle | right |\n",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left | middle | right |"
+              }
+            ]
+          }
+        ]
+      },
+      "expected_html": "<p>| A | B | C |\n| --- | --- | --- |\n| left | middle | right |</p>\n",
+      "reason": "Ordinary cells provide a non-span control.",
+      "official_oracle": null,
+      "mode": "cm-smart",
+      "candidate": "commonmark",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left | middle | right |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_html": "<p>| A | B | C |\n| — | — | — |\n| left | middle | right |</p>\n",
+      "actual_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-3:25\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-3:25\">\n    <text sourcepos=\"1:1-1:13\" xml:space=\"preserve\">| A | B | C |</text>\n    <softbreak />\n    <text sourcepos=\"2:1-2:19\" xml:space=\"preserve\">| — | — | — |</text>\n    <softbreak />\n    <text sourcepos=\"3:1-3:25\" xml:space=\"preserve\">| left | middle | right |</text>\n  </paragraph>\n</document>\n",
+      "expected_xml": "<document><paragraph><text>| A | B | C |</text><softbreak /><text>| --- | --- | --- |</text><softbreak /><text>| left | middle | right |</text></paragraph></document>",
+      "expected_xml_well_formed": true,
+      "actual_xml_error": null,
+      "expected_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left | middle | right |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left | middle | right |"
+              }
+            ]
+          }
+        ]
+      },
+      "ast_passed": false,
+      "html_passed": false,
+      "xml_check_passed": false,
+      "passed": false
+    },
+    {
+      "id": "table-colspan-two",
+      "markdown": "| A | B | C |\n| --- | --- | --- |\n| left || right |\n",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left || right |"
+              }
+            ]
+          }
+        ]
+      },
+      "expected_html": "<p>| A | B | C |\n| --- | --- | --- |\n| left || right |</p>\n",
+      "reason": "An immediately empty cell is a colspan filler only with TABLE_SPANS.",
+      "official_oracle": null,
+      "mode": "cm-smart",
+      "candidate": "commonmark",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left || right |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_html": "<p>| A | B | C |\n| — | — | — |\n| left || right |</p>\n",
+      "actual_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-3:17\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-3:17\">\n    <text sourcepos=\"1:1-1:13\" xml:space=\"preserve\">| A | B | C |</text>\n    <softbreak />\n    <text sourcepos=\"2:1-2:19\" xml:space=\"preserve\">| — | — | — |</text>\n    <softbreak />\n    <text sourcepos=\"3:1-3:17\" xml:space=\"preserve\">| left || right |</text>\n  </paragraph>\n</document>\n",
+      "expected_xml": "<document><paragraph><text>| A | B | C |</text><softbreak /><text>| --- | --- | --- |</text><softbreak /><text>| left || right |</text></paragraph></document>",
+      "expected_xml_well_formed": true,
+      "actual_xml_error": null,
+      "expected_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left || right |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left || right |"
+              }
+            ]
+          }
+        ]
+      },
+      "ast_passed": false,
+      "html_passed": false,
+      "xml_check_passed": false,
+      "passed": false
+    },
+    {
+      "id": "table-colspan-three",
+      "markdown": "| A | B | C |\n| --- | --- | --- |\n| wide |||\n",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| wide |||"
+              }
+            ]
+          }
+        ]
+      },
+      "expected_html": "<p>| A | B | C |\n| --- | --- | --- |\n| wide |||</p>\n",
+      "reason": "The API must report a numeric colspan of three, not just a boolean marker.",
+      "official_oracle": null,
+      "mode": "cm-smart",
+      "candidate": "commonmark",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| wide |||"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_html": "<p>| A | B | C |\n| — | — | — |\n| wide |||</p>\n",
+      "actual_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-3:10\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-3:10\">\n    <text sourcepos=\"1:1-1:13\" xml:space=\"preserve\">| A | B | C |</text>\n    <softbreak />\n    <text sourcepos=\"2:1-2:19\" xml:space=\"preserve\">| — | — | — |</text>\n    <softbreak />\n    <text sourcepos=\"3:1-3:10\" xml:space=\"preserve\">| wide |||</text>\n  </paragraph>\n</document>\n",
+      "expected_xml": "<document><paragraph><text>| A | B | C |</text><softbreak /><text>| --- | --- | --- |</text><softbreak /><text>| wide |||</text></paragraph></document>",
+      "expected_xml_well_formed": true,
+      "actual_xml_error": null,
+      "expected_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| wide |||"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| wide |||"
+              }
+            ]
+          }
+        ]
+      },
+      "ast_passed": false,
+      "html_passed": false,
+      "xml_check_passed": false,
+      "passed": false
+    },
+    {
+      "id": "table-header-colspan",
+      "markdown": "| A || C |\n| --- | --- | --- |\n| left | middle | right |\n",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A || C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left | middle | right |"
+              }
+            ]
+          }
+        ]
+      },
+      "expected_html": "<p>| A || C |\n| --- | --- | --- |\n| left | middle | right |</p>\n",
+      "reason": "Header spans are checked through APIs and HTML because XML omits their metadata.",
+      "official_oracle": null,
+      "mode": "cm-smart",
+      "candidate": "commonmark",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A || C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left | middle | right |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_html": "<p>| A || C |\n| — | — | — |\n| left | middle | right |</p>\n",
+      "actual_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-3:25\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-3:25\">\n    <text sourcepos=\"1:1-1:10\" xml:space=\"preserve\">| A || C |</text>\n    <softbreak />\n    <text sourcepos=\"2:1-2:19\" xml:space=\"preserve\">| — | — | — |</text>\n    <softbreak />\n    <text sourcepos=\"3:1-3:25\" xml:space=\"preserve\">| left | middle | right |</text>\n  </paragraph>\n</document>\n",
+      "expected_xml": "<document><paragraph><text>| A || C |</text><softbreak /><text>| --- | --- | --- |</text><softbreak /><text>| left | middle | right |</text></paragraph></document>",
+      "expected_xml_well_formed": true,
+      "actual_xml_error": null,
+      "expected_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A || C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left | middle | right |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A || C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left | middle | right |"
+              }
+            ]
+          }
+        ]
+      },
+      "ast_passed": false,
+      "html_passed": false,
+      "xml_check_passed": false,
+      "passed": false
+    },
+    {
+      "id": "table-rowspan",
+      "markdown": "| A | B | C |\n| --- | --- | --- |\n| top | mid | right |\n| ^ | low | end |\n",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| top | mid | right |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ^ | low | end |"
+              }
+            ]
+          }
+        ]
+      },
+      "expected_html": "<p>| A | B | C |\n| --- | --- | --- |\n| top | mid | right |\n| ^ | low | end |</p>\n",
+      "reason": "A caret-only cell extends the previous cell and is emptied only with TABLE_SPANS.",
+      "official_oracle": null,
+      "mode": "cm-smart",
+      "candidate": "commonmark",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| top | mid | right |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ^ | low | end |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_html": "<p>| A | B | C |\n| — | — | — |\n| top | mid | right |\n| ^ | low | end |</p>\n",
+      "actual_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-4:17\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-4:17\">\n    <text sourcepos=\"1:1-1:13\" xml:space=\"preserve\">| A | B | C |</text>\n    <softbreak />\n    <text sourcepos=\"2:1-2:19\" xml:space=\"preserve\">| — | — | — |</text>\n    <softbreak />\n    <text sourcepos=\"3:1-3:21\" xml:space=\"preserve\">| top | mid | right |</text>\n    <softbreak />\n    <text sourcepos=\"4:1-4:17\" xml:space=\"preserve\">| ^ | low | end |</text>\n  </paragraph>\n</document>\n",
+      "expected_xml": "<document><paragraph><text>| A | B | C |</text><softbreak /><text>| --- | --- | --- |</text><softbreak /><text>| top | mid | right |</text><softbreak /><text>| ^ | low | end |</text></paragraph></document>",
+      "expected_xml_well_formed": true,
+      "actual_xml_error": null,
+      "expected_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| top | mid | right |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ^ | low | end |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| top | mid | right |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ^ | low | end |"
+              }
+            ]
+          }
+        ]
+      },
+      "ast_passed": false,
+      "html_passed": false,
+      "xml_check_passed": false,
+      "passed": false
+    },
+    {
+      "id": "table-combined-span",
+      "markdown": "| A | B | C |\n| --- | --- | --- |\n| top || right |\n| ^ || next |\n",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| top || right |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ^ || next |"
+              }
+            ]
+          }
+        ]
+      },
+      "expected_html": "<p>| A | B | C |\n| --- | --- | --- |\n| top || right |\n| ^ || next |</p>\n",
+      "reason": "Combined row/column spans retain filler nodes but suppress them in HTML.",
+      "official_oracle": null,
+      "mode": "cm-smart",
+      "candidate": "commonmark",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| top || right |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ^ || next |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_html": "<p>| A | B | C |\n| — | — | — |\n| top || right |\n| ^ || next |</p>\n",
+      "actual_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-4:13\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-4:13\">\n    <text sourcepos=\"1:1-1:13\" xml:space=\"preserve\">| A | B | C |</text>\n    <softbreak />\n    <text sourcepos=\"2:1-2:19\" xml:space=\"preserve\">| — | — | — |</text>\n    <softbreak />\n    <text sourcepos=\"3:1-3:16\" xml:space=\"preserve\">| top || right |</text>\n    <softbreak />\n    <text sourcepos=\"4:1-4:13\" xml:space=\"preserve\">| ^ || next |</text>\n  </paragraph>\n</document>\n",
+      "expected_xml": "<document><paragraph><text>| A | B | C |</text><softbreak /><text>| --- | --- | --- |</text><softbreak /><text>| top || right |</text><softbreak /><text>| ^ || next |</text></paragraph></document>",
+      "expected_xml_well_formed": true,
+      "actual_xml_error": null,
+      "expected_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| top || right |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ^ || next |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| top || right |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ^ || next |"
+              }
+            ]
+          }
+        ]
+      },
+      "ast_passed": false,
+      "html_passed": false,
+      "xml_check_passed": false,
+      "passed": false
+    },
+    {
+      "id": "table-empty-width-control",
+      "markdown": "| A | B | C |\n| --- | --- | --- |\n| left |   | right |\n",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left |   | right |"
+              }
+            ]
+          }
+        ]
+      },
+      "expected_html": "<p>| A | B | C |\n| --- | --- | --- |\n| left |   | right |</p>\n",
+      "reason": "A wider whitespace cell is empty text, not the immediate-pipe span syntax.",
+      "official_oracle": null,
+      "mode": "cm-smart",
+      "candidate": "commonmark",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left |   | right |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_html": "<p>| A | B | C |\n| — | — | — |\n| left |   | right |</p>\n",
+      "actual_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-3:20\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-3:20\">\n    <text sourcepos=\"1:1-1:13\" xml:space=\"preserve\">| A | B | C |</text>\n    <softbreak />\n    <text sourcepos=\"2:1-2:19\" xml:space=\"preserve\">| — | — | — |</text>\n    <softbreak />\n    <text sourcepos=\"3:1-3:20\" xml:space=\"preserve\">| left |   | right |</text>\n  </paragraph>\n</document>\n",
+      "expected_xml": "<document><paragraph><text>| A | B | C |</text><softbreak /><text>| --- | --- | --- |</text><softbreak /><text>| left |   | right |</text></paragraph></document>",
+      "expected_xml_well_formed": true,
+      "actual_xml_error": null,
+      "expected_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left |   | right |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| left |   | right |"
+              }
+            ]
+          }
+        ]
+      },
+      "ast_passed": false,
+      "html_passed": false,
+      "xml_check_passed": false,
+      "passed": false
+    },
+    {
+      "id": "table-caret-text-control",
+      "markdown": "| A | B | C |\n| --- | --- | --- |\n| top | mid | right |\n| ^ note | low | end |\n",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| top | mid | right |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ^ note | low | end |"
+              }
+            ]
+          }
+        ]
+      },
+      "expected_html": "<p>| A | B | C |\n| --- | --- | --- |\n| top | mid | right |\n| ^ note | low | end |</p>\n",
+      "reason": "Caret plus other text is not a rowspan marker.",
+      "official_oracle": null,
+      "mode": "cm-smart",
+      "candidate": "commonmark",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| top | mid | right |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ^ note | low | end |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_html": "<p>| A | B | C |\n| — | — | — |\n| top | mid | right |\n| ^ note | low | end |</p>\n",
+      "actual_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-4:22\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-4:22\">\n    <text sourcepos=\"1:1-1:13\" xml:space=\"preserve\">| A | B | C |</text>\n    <softbreak />\n    <text sourcepos=\"2:1-2:19\" xml:space=\"preserve\">| — | — | — |</text>\n    <softbreak />\n    <text sourcepos=\"3:1-3:21\" xml:space=\"preserve\">| top | mid | right |</text>\n    <softbreak />\n    <text sourcepos=\"4:1-4:22\" xml:space=\"preserve\">| ^ note | low | end |</text>\n  </paragraph>\n</document>\n",
+      "expected_xml": "<document><paragraph><text>| A | B | C |</text><softbreak /><text>| --- | --- | --- |</text><softbreak /><text>| top | mid | right |</text><softbreak /><text>| ^ note | low | end |</text></paragraph></document>",
+      "expected_xml_well_formed": true,
+      "actual_xml_error": null,
+      "expected_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| top | mid | right |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ^ note | low | end |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| top | mid | right |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ^ note | low | end |"
+              }
+            ]
+          }
+        ]
+      },
+      "ast_passed": false,
+      "html_passed": false,
+      "xml_check_passed": false,
+      "passed": false
+    },
+    {
+      "id": "table-span-token-ascii",
+      "markdown": "| A | B | C |\n| --- | --- | --- |\n| OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z || right |\n",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z || right |"
+              }
+            ]
+          }
+        ]
+      },
+      "expected_html": "<p>| A | B | C |\n| --- | --- | --- |\n| OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z || right |</p>\n",
+      "reason": "The token remains text inside the spanning cell; no native object node is introduced.",
+      "official_oracle": null,
+      "mode": "cm-smart",
+      "candidate": "commonmark",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z || right |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_html": "<p>| A | B | C |\n| — | — | — |\n| OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z || right |</p>\n",
+      "actual_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-3:60\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-3:60\">\n    <text sourcepos=\"1:1-1:13\" xml:space=\"preserve\">| A | B | C |</text>\n    <softbreak />\n    <text sourcepos=\"2:1-2:19\" xml:space=\"preserve\">| — | — | — |</text>\n    <softbreak />\n    <text sourcepos=\"3:1-3:60\" xml:space=\"preserve\">| OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z || right |</text>\n  </paragraph>\n</document>\n",
+      "expected_xml": "<document><paragraph><text>| A | B | C |</text><softbreak /><text>| --- | --- | --- |</text><softbreak /><text>| OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z || right |</text></paragraph></document>",
+      "expected_xml_well_formed": true,
+      "actual_xml_error": null,
+      "expected_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z || right |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| OTSAttachment0123456789ABCDEF0123456789ABCDEF0Z || right |"
+              }
+            ]
+          }
+        ]
+      },
+      "ast_passed": false,
+      "html_passed": false,
+      "xml_check_passed": false,
+      "passed": false
+    },
+    {
+      "id": "table-span-token-so",
+      "markdown": "| A | B | C |\n| --- | --- | --- |\n| ￼ || right |\n",
+      "expected_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ￼ || right |"
+              }
+            ]
+          }
+        ]
+      },
+      "expected_html": "<p>| A | B | C |\n| --- | --- | --- |\n| ￼ || right |</p>\n",
+      "reason": "The token remains text inside the spanning cell; no native object node is introduced.",
+      "official_oracle": null,
+      "mode": "cm-smart",
+      "candidate": "commonmark",
+      "actual_ast": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ￼ || right |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_html": "<p>| A | B | C |\n| — | — | — |\n| ￼ || right |</p>\n",
+      "actual_xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE document SYSTEM \"CommonMark.dtd\">\n<document sourcepos=\"1:1-3:16\" xmlns=\"http://commonmark.org/xml/1.0\">\n  <paragraph sourcepos=\"1:1-3:16\">\n    <text sourcepos=\"1:1-1:13\" xml:space=\"preserve\">| A | B | C |</text>\n    <softbreak />\n    <text sourcepos=\"2:1-2:19\" xml:space=\"preserve\">| — | — | — |</text>\n    <softbreak />\n    <text sourcepos=\"3:1-3:16\" xml:space=\"preserve\">| ￼ || right |</text>\n  </paragraph>\n</document>\n",
+      "expected_xml": "<document><paragraph><text>| A | B | C |</text><softbreak /><text>| --- | --- | --- |</text><softbreak /><text>| ￼ || right |</text></paragraph></document>",
+      "expected_xml_well_formed": true,
+      "actual_xml_error": null,
+      "expected_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| --- | --- | --- |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ￼ || right |"
+              }
+            ]
+          }
+        ]
+      },
+      "actual_xml_projection": {
+        "type": "document",
+        "children": [
+          {
+            "type": "paragraph",
+            "children": [
+              {
+                "type": "text",
+                "literal": "| A | B | C |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| — | — | — |"
+              },
+              {
+                "type": "softbreak"
+              },
+              {
+                "type": "text",
+                "literal": "| ￼ || right |"
+              }
+            ]
+          }
+        ]
+      },
+      "ast_passed": false,
+      "html_passed": false,
+      "xml_check_passed": false,
+      "passed": false
+    }
+  ],
+  "changed_protected_files": [
+    "docs/spec/design/2026-1016-markdown-dialects-and-preview.md"
+  ]
+}

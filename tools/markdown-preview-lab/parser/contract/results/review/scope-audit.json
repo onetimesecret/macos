@@ -1,0 +1,34 @@
+{
+  "utc": "2026-10-17T04:18:37.311566+00:00",
+  "root_revision": "aea9418025b0eb4c9eceb8887e5e5c36f1404ffc",
+  "outside_contract_hash_checks": 737,
+  "changed_outside_contract": [],
+  "prior_contract_file_hash_checks": 19,
+  "changed_prior_contract_files": [],
+  "prior_expectations_corrections_sha256": "5c0243ecfba80dbd7dd9d7f6dffb19432c010eeae85563fe473e086f085960fe",
+  "unchanged_fixture_rows": 560,
+  "unchanged_fixture_fields": [
+    "actual_xml",
+    "actual_html",
+    "actual_ast",
+    "expected_ast",
+    "expected_html"
+  ],
+  "original_actual_xml_preserved_rows": 560,
+  "full_source_manifest_files": {
+    "commonmark": 119,
+    "gfm": 167,
+    "gfm-official": 155
+  },
+  "regression_tests": 34,
+  "modified_files": [
+    "tools/markdown-preview-lab/parser/contract/build.py",
+    "tools/markdown-preview-lab/parser/contract/run.py",
+    "tools/markdown-preview-lab/parser/contract/README.md"
+  ],
+  "new_test_file": "tools/markdown-preview-lab/parser/contract/test_review.py",
+  "summary_sha256": "7f69000e3170d00a9b25727c8557b03c148509e70ce682eaea71bfb9ffdff54a",
+  "regression_report_sha256": "e8f04623d74fb96234fa367d13c650cf35f7075a7828c1f561c3bdc6d1d970b3",
+  "provenance_sha256": "4263e6f5af6ae1d7292e240e203b769837bed3d6584045c73d211cf2624313ef",
+  "note": "Only contract files were written; no original evidence, parser sources, settings, or global configuration were modified; no network, GUI, app launch, or commit operation was issued."
+}

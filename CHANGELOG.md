@@ -9,9 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The rendered preview reads Markdown with GitHub's own parser** (app
+  0.43.0; the 2026-10-16 Markdown dialects plan, R1). The preview parses
+  each page with cmark-gfm 0.29.0.gfm.13 instead of swift-markdown, whose
+  parser added Apple's syntax. Table cells no longer span: `||` leaves an
+  empty cell and `^` is a cell's text. `^[text](key)` is a caret and an
+  ordinary link. A bare `www.`, `https://` or email address is a link, and
+  an address ends where a sealed object starts. A web link whose address
+  has a user or password before the host, Markdown or HTML, opens nothing,
+  since `https://docs.example.com@evil.example/` would open evil.example.
+  `</br>` breaks a line as `<br>` does, as browsers read it. Where
+  cmark-gfm and the published GFM 0.29 page differ, the preview follows
+  cmark-gfm. A sealed object is never part of an address, and it shows in
+  source order: one in a link's address or title follows the link's text,
+  as one in an image's address follows its alt text; one in a reference
+  definition shows where the definition is; one in a table cell past the
+  header's columns ends its row. A page whose tables come to more than
+  100,000 cells, counting the empty cells that pad short rows, shows its
+  plain text. cmark 0.31.2 reads CommonMark, but the Settings dialect
+  choice is not part of this change, so every page reads as GFM.
+
+- **The rendered preview formats a restricted set of HTML** (app 0.42.0;
+  ADR-0059; the 2026-10-16 Markdown dialects plan, R3). Raw HTML in a
+  page's rendered preview is composed rather than shown as markup: `em`,
+  `i`, `strong`, `b`, `del`, `s`, `strike`, `code` and `span` format the
+  text, also across Markdown blocks; `p`, `div` and `br` break lines; an
+  `a` with an http, https or mailto address is a link that opens by
+  ⌘-click as a Markdown link does; comments leave no text. Every other
+  tag, and GFM's disallowed tags (`script`, `iframe`, `style` and the
+  rest), stays visible as text, so nothing runs or embeds. An image,
+  Markdown or `img`, shows its alt text as plain text and loads nothing,
+  so one with no alt text, such as `![](a.png)` or a bare `<img src>`,
+  shows nothing at all; an image or link address with a sealed object in it is refused, and the
+  object keeps its place in rendered order and in copy. A page past the
+  composition limits shows its plain text with its objects in place. The
+  Settings dialect choice and the Load Image control are not part of this
+  change.
+
 - Cmd-Tab preserves the current window instead of always selecting the editor.
   A Dock reopen opens the editor only when no ordinary window is visible.
-  See [ADR-0059](docs/adr/0059-appkit-owns-window-presentation.md).
+  See [ADR-0061](docs/adr/0061-appkit-owns-window-presentation.md).
 
 - **Seat words and note hints take their size from the platform** (app
   0.40.8; issue #297). The twelve places that spelled the mini font

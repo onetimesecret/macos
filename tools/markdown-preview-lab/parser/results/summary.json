@@ -1,0 +1,645 @@
+{
+  "fixture_total": 270,
+  "fixture_passed": 270,
+  "fixture_failures": [],
+  "punctuation": {
+    "commonmark": {
+      "A": 0,
+      "U+FFFC": 1
+    },
+    "gfm": {
+      "A": 0,
+      "U+FFFC": 0
+    },
+    "gfm-official": {
+      "A": 0,
+      "U+FFFC": 0
+    }
+  },
+  "unicode_version": "15.1.0",
+  "official_corpora": {
+    "commonmark": {
+      "total": 652,
+      "exact_html_passed": 652,
+      "html_event_passed": 652,
+      "serializer_only_ids": [],
+      "extensions_disabled_match_ids": [],
+      "mismatches": []
+    },
+    "gfm": {
+      "total": 677,
+      "exact_html_passed": 651,
+      "html_event_passed": 653,
+      "serializer_only_ids": [
+        279,
+        280
+      ],
+      "extensions_disabled_match_ids": [
+        140,
+        141,
+        142,
+        145,
+        147,
+        611,
+        615,
+        617,
+        620,
+        621
+      ],
+      "mismatches": [
+        {
+          "example": 140,
+          "section": "4.6HTML blocks",
+          "markdown": "<script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n</script>\nokay\n",
+          "expected_html": "<script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n</script>\n<p>okay</p>\n",
+          "actual_html": "&lt;script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n&lt;/script>\n<p>okay</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n</script>\n<p>okay</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 141,
+          "section": "4.6HTML blocks",
+          "markdown": "<style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n</style>\nokay\n",
+          "expected_html": "<style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n</style>\n<p>okay</p>\n",
+          "actual_html": "&lt;style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n&lt;/style>\n<p>okay</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n</style>\n<p>okay</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 142,
+          "section": "4.6HTML blocks",
+          "markdown": "<style\n  type=\"text/css\">\n\nfoo\n",
+          "expected_html": "<style\n  type=\"text/css\">\n\nfoo\n",
+          "actual_html": "&lt;style\n  type=\"text/css\">\n\nfoo\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<style\n  type=\"text/css\">\n\nfoo\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 145,
+          "section": "4.6HTML blocks",
+          "markdown": "<style>p{color:red;}</style>\n*foo*\n",
+          "expected_html": "<style>p{color:red;}</style>\n<p><em>foo</em></p>\n",
+          "actual_html": "&lt;style>p{color:red;}&lt;/style>\n<p><em>foo</em></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<style>p{color:red;}</style>\n<p><em>foo</em></p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 147,
+          "section": "4.6HTML blocks",
+          "markdown": "<script>\nfoo\n</script>1. *bar*\n",
+          "expected_html": "<script>\nfoo\n</script>1. *bar*\n",
+          "actual_html": "&lt;script>\nfoo\n&lt;/script>1. *bar*\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<script>\nfoo\n</script>1. *bar*\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 279,
+          "section": "5.3Task list items (extension)",
+          "markdown": "- [ ] foo\n- [x] bar\n",
+          "expected_html": "<ul>\n<li><input disabled=\"\" type=\"checkbox\"> foo</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> bar</li>\n</ul>\n",
+          "actual_html": "<ul>\n<li><input type=\"checkbox\" disabled=\"\" /> foo</li>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> bar</li>\n</ul>\n",
+          "equal": false,
+          "html_event_equal": true,
+          "extensions_disabled_html": "<ul>\n<li>[ ] foo</li>\n<li>[x] bar</li>\n</ul>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 280,
+          "section": "5.3Task list items (extension)",
+          "markdown": "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n",
+          "expected_html": "<ul>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> foo\n<ul>\n<li><input disabled=\"\" type=\"checkbox\"> bar</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> baz</li>\n</ul>\n</li>\n<li><input disabled=\"\" type=\"checkbox\"> bim</li>\n</ul>\n",
+          "actual_html": "<ul>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> foo\n<ul>\n<li><input type=\"checkbox\" disabled=\"\" /> bar</li>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> baz</li>\n</ul>\n</li>\n<li><input type=\"checkbox\" disabled=\"\" /> bim</li>\n</ul>\n",
+          "equal": false,
+          "html_event_equal": true,
+          "extensions_disabled_html": "<ul>\n<li>[x] foo\n<ul>\n<li>[ ] bar</li>\n<li>[x] baz</li>\n</ul>\n</li>\n<li>[ ] bim</li>\n</ul>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 324,
+          "section": "6.2Entity and numeric character references",
+          "markdown": "&nbsp &x; &#; &#x;\n&#87654321;\n&#abcdef0;\n&ThisIsNotDefined; &hi?;\n",
+          "expected_html": "<p>&amp;nbsp &amp;x; &amp;#; &amp;#x;\n&amp;#87654321;\n&amp;#abcdef0;\n&amp;ThisIsNotDefined; &amp;hi?;</p>\n",
+          "actual_html": "<p>&amp;nbsp &amp;x; &amp;#; &amp;#x;\n�\n&amp;#abcdef0;\n&amp;ThisIsNotDefined; &amp;hi?;</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>&amp;nbsp &amp;x; &amp;#; &amp;#x;\n�\n&amp;#abcdef0;\n&amp;ThisIsNotDefined; &amp;hi?;</p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 398,
+          "section": "6.4Emphasis and strong emphasis",
+          "markdown": "__foo, __bar__, baz__\n",
+          "expected_html": "<p><strong>foo, <strong>bar</strong>, baz</strong></p>\n",
+          "actual_html": "<p><strong>foo, bar, baz</strong></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p><strong>foo, bar, baz</strong></p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 426,
+          "section": "6.4Emphasis and strong emphasis",
+          "markdown": "foo******bar*********baz\n",
+          "expected_html": "<p>foo<strong><strong><strong>bar</strong></strong></strong>***baz</p>\n",
+          "actual_html": "<p>foo<strong>bar</strong>***baz</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>foo<strong>bar</strong>***baz</p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 434,
+          "section": "6.4Emphasis and strong emphasis",
+          "markdown": "__foo __bar__ baz__\n",
+          "expected_html": "<p><strong>foo <strong>bar</strong> baz</strong></p>\n",
+          "actual_html": "<p><strong>foo bar baz</strong></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p><strong>foo bar baz</strong></p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 435,
+          "section": "6.4Emphasis and strong emphasis",
+          "markdown": "____foo__ bar__\n",
+          "expected_html": "<p><strong><strong>foo</strong> bar</strong></p>\n",
+          "actual_html": "<p><strong>foo bar</strong></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p><strong>foo bar</strong></p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 436,
+          "section": "6.4Emphasis and strong emphasis",
+          "markdown": "**foo **bar****\n",
+          "expected_html": "<p><strong>foo <strong>bar</strong></strong></p>\n",
+          "actual_html": "<p><strong>foo bar</strong></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p><strong>foo bar</strong></p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 473,
+          "section": "6.4Emphasis and strong emphasis",
+          "markdown": "****foo****\n",
+          "expected_html": "<p><strong><strong>foo</strong></strong></p>\n",
+          "actual_html": "<p><strong>foo</strong></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p><strong>foo</strong></p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 474,
+          "section": "6.4Emphasis and strong emphasis",
+          "markdown": "____foo____\n",
+          "expected_html": "<p><strong><strong>foo</strong></strong></p>\n",
+          "actual_html": "<p><strong>foo</strong></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p><strong>foo</strong></p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 475,
+          "section": "6.4Emphasis and strong emphasis",
+          "markdown": "******foo******\n",
+          "expected_html": "<p><strong><strong><strong>foo</strong></strong></strong></p>\n",
+          "actual_html": "<p><strong>foo</strong></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p><strong>foo</strong></p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 477,
+          "section": "6.4Emphasis and strong emphasis",
+          "markdown": "_____foo_____\n",
+          "expected_html": "<p><em><strong><strong>foo</strong></strong></em></p>\n",
+          "actual_html": "<p><em><strong>foo</strong></em></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p><em><strong>foo</strong></em></p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 611,
+          "section": "6.8Autolinks",
+          "markdown": "<http://foo.bar/baz bim>\n",
+          "expected_html": "<p>&lt;http://foo.bar/baz bim&gt;</p>\n",
+          "actual_html": "<p>&lt;<a href=\"http://foo.bar/baz\">http://foo.bar/baz</a> bim&gt;</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>&lt;http://foo.bar/baz bim&gt;</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 615,
+          "section": "6.8Autolinks",
+          "markdown": "<foo\\+@bar.example.com>\n",
+          "expected_html": "<p>&lt;foo+@bar.example.com&gt;</p>\n",
+          "actual_html": "<p>&lt;<a href=\"mailto:foo+@bar.example.com\">foo+@bar.example.com</a>&gt;</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>&lt;foo+@bar.example.com&gt;</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 617,
+          "section": "6.8Autolinks",
+          "markdown": "< http://foo.bar >\n",
+          "expected_html": "<p>&lt; http://foo.bar &gt;</p>\n",
+          "actual_html": "<p>&lt; <a href=\"http://foo.bar\">http://foo.bar</a> &gt;</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>&lt; http://foo.bar &gt;</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 620,
+          "section": "6.8Autolinks",
+          "markdown": "http://example.com\n",
+          "expected_html": "<p>http://example.com</p>\n",
+          "actual_html": "<p><a href=\"http://example.com\">http://example.com</a></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>http://example.com</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 621,
+          "section": "6.8Autolinks",
+          "markdown": "foo@bar.example.com\n",
+          "expected_html": "<p>foo@bar.example.com</p>\n",
+          "actual_html": "<p><a href=\"mailto:foo@bar.example.com\">foo@bar.example.com</a></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>foo@bar.example.com</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 634,
+          "section": "6.9Autolinks (extension)",
+          "markdown": "xmpp:foo@bar.baz/txt\n\nxmpp:foo@bar.baz/txt@bin\n\nxmpp:foo@bar.baz/txt@bin.com\n",
+          "expected_html": "<p><a href=\"xmpp:foo@bar.baz/txt\">xmpp:foo@bar.baz/txt</a></p>\n<p><a href=\"xmpp:foo@bar.baz/txt@bin\">xmpp:foo@bar.baz/txt@bin</a></p>\n<p><a href=\"xmpp:foo@bar.baz/txt@bin.com\">xmpp:foo@bar.baz/txt@bin.com</a></p>\n",
+          "actual_html": "<p><a href=\"xmpp:foo@bar.baz/txt\">xmpp:foo@bar.baz/txt</a></p>\n<p>xmpp:foo@bar.baz/<a href=\"txt@bin\">txt@bin</a></p>\n<p>xmpp:foo@bar.baz/<a href=\"txt@bin.com\">txt@bin.com</a></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>xmpp:foo@bar.baz/txt</p>\n<p>xmpp:foo@bar.baz/txt@bin</p>\n<p>xmpp:foo@bar.baz/txt@bin.com</p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 635,
+          "section": "6.9Autolinks (extension)",
+          "markdown": "xmpp:foo@bar.baz/txt/bin\n",
+          "expected_html": "<p><a href=\"xmpp:foo@bar.baz/txt\">xmpp:foo@bar.baz/txt</a>/bin</p>\n",
+          "actual_html": "<p><a href=\"xmpp:foo@bar.baz/txt/bin\">xmpp:foo@bar.baz/txt/bin</a></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>xmpp:foo@bar.baz/txt/bin</p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 649,
+          "section": "6.10Raw HTML",
+          "markdown": "foo <!-- not a comment -- two hyphens -->\n",
+          "expected_html": "<p>foo &lt;!-- not a comment -- two hyphens --&gt;</p>\n",
+          "actual_html": "<p>foo <!-- not a comment -- two hyphens --></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>foo <!-- not a comment -- two hyphens --></p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 650,
+          "section": "6.10Raw HTML",
+          "markdown": "foo <!--> foo -->\n\nfoo <!-- foo--->\n",
+          "expected_html": "<p>foo &lt;!--&gt; foo --&gt;</p>\n<p>foo &lt;!-- foo---&gt;</p>\n",
+          "actual_html": "<p>foo <!--> foo --&gt;</p>\n<p>foo &lt;!-- foo---&gt;</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>foo <!--> foo --&gt;</p>\n<p>foo &lt;!-- foo---&gt;</p>\n",
+          "extensions_disabled_equal": false
+        }
+      ]
+    },
+    "gfm-official": {
+      "total": 677,
+      "exact_html_passed": 661,
+      "html_event_passed": 663,
+      "serializer_only_ids": [
+        279,
+        280
+      ],
+      "extensions_disabled_match_ids": [
+        140,
+        141,
+        142,
+        145,
+        147,
+        611,
+        615,
+        617,
+        620,
+        621
+      ],
+      "mismatches": [
+        {
+          "example": 140,
+          "section": "4.6HTML blocks",
+          "markdown": "<script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n</script>\nokay\n",
+          "expected_html": "<script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n</script>\n<p>okay</p>\n",
+          "actual_html": "&lt;script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n&lt;/script>\n<p>okay</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n</script>\n<p>okay</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 141,
+          "section": "4.6HTML blocks",
+          "markdown": "<style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n</style>\nokay\n",
+          "expected_html": "<style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n</style>\n<p>okay</p>\n",
+          "actual_html": "&lt;style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n&lt;/style>\n<p>okay</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n</style>\n<p>okay</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 142,
+          "section": "4.6HTML blocks",
+          "markdown": "<style\n  type=\"text/css\">\n\nfoo\n",
+          "expected_html": "<style\n  type=\"text/css\">\n\nfoo\n",
+          "actual_html": "&lt;style\n  type=\"text/css\">\n\nfoo\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<style\n  type=\"text/css\">\n\nfoo\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 145,
+          "section": "4.6HTML blocks",
+          "markdown": "<style>p{color:red;}</style>\n*foo*\n",
+          "expected_html": "<style>p{color:red;}</style>\n<p><em>foo</em></p>\n",
+          "actual_html": "&lt;style>p{color:red;}&lt;/style>\n<p><em>foo</em></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<style>p{color:red;}</style>\n<p><em>foo</em></p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 147,
+          "section": "4.6HTML blocks",
+          "markdown": "<script>\nfoo\n</script>1. *bar*\n",
+          "expected_html": "<script>\nfoo\n</script>1. *bar*\n",
+          "actual_html": "&lt;script>\nfoo\n&lt;/script>1. *bar*\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<script>\nfoo\n</script>1. *bar*\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 279,
+          "section": "5.3Task list items (extension)",
+          "markdown": "- [ ] foo\n- [x] bar\n",
+          "expected_html": "<ul>\n<li><input disabled=\"\" type=\"checkbox\"> foo</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> bar</li>\n</ul>\n",
+          "actual_html": "<ul>\n<li><input type=\"checkbox\" disabled=\"\" /> foo</li>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> bar</li>\n</ul>\n",
+          "equal": false,
+          "html_event_equal": true,
+          "extensions_disabled_html": "<ul>\n<li>[ ] foo</li>\n<li>[x] bar</li>\n</ul>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 280,
+          "section": "5.3Task list items (extension)",
+          "markdown": "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n",
+          "expected_html": "<ul>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> foo\n<ul>\n<li><input disabled=\"\" type=\"checkbox\"> bar</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> baz</li>\n</ul>\n</li>\n<li><input disabled=\"\" type=\"checkbox\"> bim</li>\n</ul>\n",
+          "actual_html": "<ul>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> foo\n<ul>\n<li><input type=\"checkbox\" disabled=\"\" /> bar</li>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> baz</li>\n</ul>\n</li>\n<li><input type=\"checkbox\" disabled=\"\" /> bim</li>\n</ul>\n",
+          "equal": false,
+          "html_event_equal": true,
+          "extensions_disabled_html": "<ul>\n<li>[x] foo\n<ul>\n<li>[ ] bar</li>\n<li>[x] baz</li>\n</ul>\n</li>\n<li>[ ] bim</li>\n</ul>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 324,
+          "section": "6.2Entity and numeric character references",
+          "markdown": "&nbsp &x; &#; &#x;\n&#87654321;\n&#abcdef0;\n&ThisIsNotDefined; &hi?;\n",
+          "expected_html": "<p>&amp;nbsp &amp;x; &amp;#; &amp;#x;\n&amp;#87654321;\n&amp;#abcdef0;\n&amp;ThisIsNotDefined; &amp;hi?;</p>\n",
+          "actual_html": "<p>&amp;nbsp &amp;x; &amp;#; &amp;#x;\n�\n&amp;#abcdef0;\n&amp;ThisIsNotDefined; &amp;hi?;</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>&amp;nbsp &amp;x; &amp;#; &amp;#x;\n�\n&amp;#abcdef0;\n&amp;ThisIsNotDefined; &amp;hi?;</p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 611,
+          "section": "6.8Autolinks",
+          "markdown": "<http://foo.bar/baz bim>\n",
+          "expected_html": "<p>&lt;http://foo.bar/baz bim&gt;</p>\n",
+          "actual_html": "<p>&lt;<a href=\"http://foo.bar/baz\">http://foo.bar/baz</a> bim&gt;</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>&lt;http://foo.bar/baz bim&gt;</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 615,
+          "section": "6.8Autolinks",
+          "markdown": "<foo\\+@bar.example.com>\n",
+          "expected_html": "<p>&lt;foo+@bar.example.com&gt;</p>\n",
+          "actual_html": "<p>&lt;<a href=\"mailto:foo+@bar.example.com\">foo+@bar.example.com</a>&gt;</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>&lt;foo+@bar.example.com&gt;</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 617,
+          "section": "6.8Autolinks",
+          "markdown": "< http://foo.bar >\n",
+          "expected_html": "<p>&lt; http://foo.bar &gt;</p>\n",
+          "actual_html": "<p>&lt; <a href=\"http://foo.bar\">http://foo.bar</a> &gt;</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>&lt; http://foo.bar &gt;</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 620,
+          "section": "6.8Autolinks",
+          "markdown": "http://example.com\n",
+          "expected_html": "<p>http://example.com</p>\n",
+          "actual_html": "<p><a href=\"http://example.com\">http://example.com</a></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>http://example.com</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 621,
+          "section": "6.8Autolinks",
+          "markdown": "foo@bar.example.com\n",
+          "expected_html": "<p>foo@bar.example.com</p>\n",
+          "actual_html": "<p><a href=\"mailto:foo@bar.example.com\">foo@bar.example.com</a></p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>foo@bar.example.com</p>\n",
+          "extensions_disabled_equal": true
+        },
+        {
+          "example": 633,
+          "section": "6.9Autolinks (extension)",
+          "markdown": "mailto:foo@bar.baz\n\nmailto:a.b-c_d@a.b\n\nmailto:a.b-c_d@a.b.\n\nmailto:a.b-c_d@a.b/\n\nmailto:a.b-c_d@a.b-\n\nmailto:a.b-c_d@a.b_\n\nxmpp:foo@bar.baz\n\nxmpp:foo@bar.baz.\n",
+          "expected_html": "<p><a href=\"mailto:foo@bar.baz\">mailto:foo@bar.baz</a></p>\n<p><a href=\"mailto:a.b-c_d@a.b\">mailto:a.b-c_d@a.b</a></p>\n<p><a href=\"mailto:a.b-c_d@a.b\">mailto:a.b-c_d@a.b</a>.</p>\n<p><a href=\"mailto:a.b-c_d@a.b\">mailto:a.b-c_d@a.b</a>/</p>\n<p>mailto:a.b-c_d@a.b-</p>\n<p>mailto:a.b-c_d@a.b_</p>\n<p><a href=\"xmpp:foo@bar.baz\">xmpp:foo@bar.baz</a></p>\n<p><a href=\"xmpp:foo@bar.baz\">xmpp:foo@bar.baz</a>.</p>\n",
+          "actual_html": "<p>mailto:<a href=\"mailto:foo@bar.baz\">foo@bar.baz</a></p>\n<p>mailto:<a href=\"mailto:a.b-c_d@a.b\">a.b-c_d@a.b</a></p>\n<p>mailto:<a href=\"mailto:a.b-c_d@a.b\">a.b-c_d@a.b</a>.</p>\n<p>mailto:<a href=\"mailto:a.b-c_d@a.b\">a.b-c_d@a.b</a>/</p>\n<p>mailto:a.b-c_d@a.b-</p>\n<p>mailto:a.b-c_d@a.b_</p>\n<p>xmpp:<a href=\"mailto:foo@bar.baz\">foo@bar.baz</a></p>\n<p>xmpp:<a href=\"mailto:foo@bar.baz\">foo@bar.baz</a>.</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>mailto:foo@bar.baz</p>\n<p>mailto:a.b-c_d@a.b</p>\n<p>mailto:a.b-c_d@a.b.</p>\n<p>mailto:a.b-c_d@a.b/</p>\n<p>mailto:a.b-c_d@a.b-</p>\n<p>mailto:a.b-c_d@a.b_</p>\n<p>xmpp:foo@bar.baz</p>\n<p>xmpp:foo@bar.baz.</p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 634,
+          "section": "6.9Autolinks (extension)",
+          "markdown": "xmpp:foo@bar.baz/txt\n\nxmpp:foo@bar.baz/txt@bin\n\nxmpp:foo@bar.baz/txt@bin.com\n",
+          "expected_html": "<p><a href=\"xmpp:foo@bar.baz/txt\">xmpp:foo@bar.baz/txt</a></p>\n<p><a href=\"xmpp:foo@bar.baz/txt@bin\">xmpp:foo@bar.baz/txt@bin</a></p>\n<p><a href=\"xmpp:foo@bar.baz/txt@bin.com\">xmpp:foo@bar.baz/txt@bin.com</a></p>\n",
+          "actual_html": "<p>xmpp:<a href=\"mailto:foo@bar.baz\">foo@bar.baz</a>/txt</p>\n<p>xmpp:<a href=\"mailto:foo@bar.baz\">foo@bar.baz</a>/txt@bin</p>\n<p>xmpp:<a href=\"mailto:foo@bar.baz\">foo@bar.baz</a>/txt@bin.com</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>xmpp:foo@bar.baz/txt</p>\n<p>xmpp:foo@bar.baz/txt@bin</p>\n<p>xmpp:foo@bar.baz/txt@bin.com</p>\n",
+          "extensions_disabled_equal": false
+        },
+        {
+          "example": 635,
+          "section": "6.9Autolinks (extension)",
+          "markdown": "xmpp:foo@bar.baz/txt/bin\n",
+          "expected_html": "<p><a href=\"xmpp:foo@bar.baz/txt\">xmpp:foo@bar.baz/txt</a>/bin</p>\n",
+          "actual_html": "<p>xmpp:<a href=\"mailto:foo@bar.baz\">foo@bar.baz</a>/txt/bin</p>\n",
+          "equal": false,
+          "html_event_equal": false,
+          "extensions_disabled_html": "<p>xmpp:foo@bar.baz/txt/bin</p>\n",
+          "extensions_disabled_equal": false
+        }
+      ]
+    }
+  },
+  "expected_corpus_mismatch_ids": {
+    "commonmark": [],
+    "gfm": [
+      140,
+      141,
+      142,
+      145,
+      147,
+      279,
+      280,
+      324,
+      398,
+      426,
+      434,
+      435,
+      436,
+      473,
+      474,
+      475,
+      477,
+      611,
+      615,
+      617,
+      620,
+      621,
+      634,
+      635,
+      649,
+      650
+    ],
+    "gfm-official": [
+      140,
+      141,
+      142,
+      145,
+      147,
+      279,
+      280,
+      324,
+      611,
+      615,
+      617,
+      620,
+      621,
+      633,
+      634,
+      635
+    ]
+  },
+  "actual_corpus_mismatch_ids": {
+    "commonmark": [],
+    "gfm": [
+      140,
+      141,
+      142,
+      145,
+      147,
+      279,
+      280,
+      324,
+      398,
+      426,
+      434,
+      435,
+      436,
+      473,
+      474,
+      475,
+      477,
+      611,
+      615,
+      617,
+      620,
+      621,
+      634,
+      635,
+      649,
+      650
+    ],
+    "gfm-official": [
+      140,
+      141,
+      142,
+      145,
+      147,
+      279,
+      280,
+      324,
+      611,
+      615,
+      617,
+      620,
+      621,
+      633,
+      634,
+      635
+    ]
+  },
+  "corpus_regression_passed": true,
+  "input_sha256": {
+    "harness.c": "492b4804889ba982939d272412cfe2d5ad4bc248cb78791e751fbd5eee1f1702",
+    "fixtures.py": "338e36bf0a404a71305715c88f67e1be836ffa6f0ab7619e17c5c9d441541898",
+    "run.py": "fde3eba72994a5e0156106ddec0fd141a2742bc14f0fc9e6b07fa75662be4003",
+    "bootstrap.py": "a0493322a88a3829db5f6b3f63474de288928242abb9e3c615009a913ab88e0d",
+    "test_lab.py": "4c6db8d705f9104b0f3167ca36b42d05577a7c0088b073c0c72ef2b6def6fae5",
+    "known-mismatches.json": "b9d57bdd0c611e70e924590acceed00d8f2bfa3b50b4b8c10c3b5a77f98ce8da"
+  }
+}

@@ -6,6 +6,7 @@ documentation_status: reviewed # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-09-14
+- **Superseded in part by:** [ADR-0059](0059-preview-images-use-an-explicit-resource-request-route.md), only the Decision paragraph beginning “Preview rendering remains markup-preserving” and the Consequences bullet beginning “The setting changes presentation only”, solely to clarify surface scope. The source text and pure display-refresh semantics remain unchanged; this clarification does not expand this record's runtime network scope.
 - **Supersedes in part:** [ADR-0024](0024-caret-only-automation-and-display-only-color.md), specifically amendment C's restriction of syntax color to the editable page, and [ADR-0029](0029-betlang-source-language-detection-behind-the-existing-c-abi.md), specifically its exclusion of quiet roll pages from display-only highlighting. Their remaining decisions stand.
 - **Depends on:** [ADR-0022](0022-fence-regions-coalesce-stamps-in-display.md) for fence-region display grouping.
 
@@ -126,6 +127,8 @@ updated geometry so the rail minimap retains truthful proportions.
   Implementation on `fix/focus-gate` remains incomplete until quiet rendering
   carries fence geometry without block-label spacing, page-owned language state
   reaches quiet pages, and every rendering dependency invalidates the cache.
+
+- 2026-10-16: Superseded in part by [ADR-0059](0059-preview-images-use-an-explicit-resource-request-route.md), only for the Decision paragraph beginning “Preview rendering remains markup-preserving” and the Consequences bullet beginning “The setting changes presentation only”, solely to distinguish this record's markup-preserving editor styling from Law 0001's syntax-removing rendered page preview. The source text remains unchanged; this clarification does not expand this record's runtime network scope. Its byte preservation, preference scopes, pure display refresh, cache invalidation, geometry publication and nonselected-page promotion remain unchanged. Image loading is a separately authorized route, not a consequence of opening, rendering or refreshing either surface; R2 still specifies the preference/surface matrix.
 
 ## Eject triggers
 

@@ -58,6 +58,11 @@ of validated current product guarantees.
 
   The technical survey's fixed destination count also coexists with a release-feed
   check. It is not a verified inventory of current network traffic.
+  The accepted [October 16 UI/UX successor](2026-1016-ui-ux-decisions.md#d-09--concealment-and-separately-authorized-resources)
+  replaces D-09's app-wide action count, and
+  [ADR-0059](../../adr/0059-preview-images-use-an-explicit-resource-request-route.md)
+  adds a separate image-resource route. This is policy authority, not proof of
+  implemented request isolation or approval of unresolved feedback/release routes.
 
 These qualifications document limits and point to accepted decisions; they
 are not implementation tests or new security guarantees.
@@ -87,7 +92,7 @@ milestone-1 documents; consult the later decision records for amendments.
 | --- | --- | --- |
 | [2026-0707-problem-space.md](2026-0707-problem-space.md) | Restatement of the problem, the cache analogy taken seriously, anti-goals | **Core deliverable** |
 | [2026-0707-overlooked-opportunities.md](2026-0707-overlooked-opportunities.md) | Landscape of neighbouring apps and the gaps they leave | **Core deliverable** |
-| [2026-0707-design-principles.md](2026-0707-design-principles.md) | The principles that fall out of the problem space and overlooked opportunities | Binding, as amended by rev C |
+| [2026-0707-design-principles.md](2026-0707-design-principles.md) | The principles that follow from the problem space and overlooked opportunities | Binding within scope, with recorded amendments including October 16's preview/resource exception |
 | [2026-0707-interaction-model.md](2026-0707-interaction-model.md) | Sheets, ink and sealed chips, the window, tabs, the ledger, the keyboard map | **Revision C** — consolidates design rounds v7–v10 and the 12 Jul 2026 decision rounds |
 | [2026-0707-technical-direction.md](2026-0707-technical-direction.md) | Rust framework survey, v3 API integration, security posture, a11y | Supporting — draft, amended by rev C |
 | [2026-0707-open-questions.md](2026-0707-open-questions.md) | Everything unresolved, honestly | Supporting — updated for rev C |
@@ -100,7 +105,7 @@ acceptance does not mean every original passage remains unchanged.
 
 | Record | Scope | Relationship |
 | --- | --- | --- |
-| [2026-0915-ui-ux-decisions.md](2026-0915-ui-ux-decisions.md) | Background-surface interactions, presentation, copy, and acceptance criteria | Supersedes the September 14 record; carries later amendment links |
+| [2026-1016-ui-ux-decisions.md](2026-1016-ui-ux-decisions.md) | Background-surface decisions with explicit preview resources, scoped D-09 and source/preview distinction | Supersedes the September 15 record in full by explicit incorporation with intervening accepted amendments |
 | [2026-0916-clipboard-clear-interval.md](2026-0916-clipboard-clear-interval.md) | General-pasteboard clear interval and incorporated navigator/capsule decisions | Supersedes the stream-navigator record in full, incorporating D-34–D-41 and amending D-42–D-43 |
 | [2026-0916-rail-redundancy.md](2026-0916-rail-redundancy.md) | Rail marks, timestamps, gutters, and derived titles | Amends the preceding records; carries later amendment links |
 
@@ -117,13 +122,14 @@ and open decisions remain subject to review.
 
 | Plan | Scope | Status |
 | --- | --- | --- |
-| [2026-1016-markdown-dialects-and-preview.md](2026-1016-markdown-dialects-and-preview.md) | CommonMark/GFM setting, restricted HTML, and click-to-load remote images | Scope agreed; technical plan draft |
+| [2026-1016-markdown-dialects-and-preview.md](2026-1016-markdown-dialects-and-preview.md) | CommonMark/GFM setting, restricted HTML, and click-to-load remote images | Scope and R0 policy reconciliation accepted; technical plan draft, R1–R6 remain open |
 
 ## Superseded decision history
 
 | Record | Successor |
 | --- | --- |
-| [2026-0914-ui-ux-decisions.md](2026-0914-ui-ux-decisions.md) | [September 15 UI/UX decisions](2026-0915-ui-ux-decisions.md) |
+| [2026-0914-ui-ux-decisions.md](2026-0914-ui-ux-decisions.md) | [September 15 UI/UX decisions](2026-0915-ui-ux-decisions.md), in turn superseded by the October 16 record |
+| [2026-0915-ui-ux-decisions.md](2026-0915-ui-ux-decisions.md) | [October 16 UI/UX decisions](2026-1016-ui-ux-decisions.md), with surviving provisions incorporated by reference |
 | [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) | [September 16 clear-interval record](2026-0916-clipboard-clear-interval.md), which incorporates its navigator/capsule decisions |
 
 The [rail wireframe](2026-0916-rail-redundancy-wireframe.svg) accompanies

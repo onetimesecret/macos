@@ -1,0 +1,94 @@
+Subject: [PATCH] table: share one cell budget across a parse
+
+A short row is padded with empty cells to the header's width, so a few
+kilobytes of wide tables ask for hundreds of thousands of cells.
+MAX_AUTOCOMPLETED_CELLS bounds that per table only. This budget bounds
+every table of a parse together, header rows and padding included: a
+header or row that would pass it is refused, and
+ots_table_cell_budget_exhausted() reports that one was. The caller sets
+the budget before each parse and reads it after, under its parse lock,
+since both values are process wide.
+
+A refused line reads as paragraph text and the parse goes on, so the tree
+is not the page's; Onetime Pad's shim reports the exhaustion and the
+preview then discards the whole parse. A header's cells are taken before
+its last checks, so a header those checks then refuse still spends them:
+the budget fails closed and counts an upper bound, not an exact count.
+
+Applies after 0001 and 0002. Local to Onetime Pad.
+
+diff --git a/extensions/table.c b/extensions/table.c
+index e8359f2..8ada46a 100644
+--- a/extensions/table.c
++++ b/extensions/table.c
+@@ -14,6 +14,27 @@
+ // Limit to prevent a malicious input from causing a denial of service.
+ #define MAX_AUTOCOMPLETED_CELLS 0x80000
+ 
++// Onetime Pad: the cells every table of the parse may still take, header rows
++// and autocompleted cells included, and whether a row was refused for want of them.
++static int64_t ots_table_cells_left = INT64_MAX;
++static bool ots_table_cells_exhausted = false;
++
++void ots_table_set_cell_budget(int64_t cells) {
++  ots_table_cells_left = cells;
++  ots_table_cells_exhausted = false;
++}
++
++bool ots_table_cell_budget_exhausted(void) { return ots_table_cells_exhausted; }
++
++static bool ots_take_cells(int64_t cells) {
++  if (cells > ots_table_cells_left) {
++    ots_table_cells_exhausted = true;
++    return false;
++  }
++  ots_table_cells_left -= cells;
++  return true;
++}
++
+ // Custom node flag, initialized in `create_table_extension`.
+ static cmark_node_internal_flags CMARK_NODE__TABLE_VISITED;
+ 
+@@ -346,6 +367,14 @@ static cmark_node *try_opening_table_header(cmark_syntax_extension *self,
+     return parent_container;
+   }
+ 
++  if (!ots_take_cells(header_row->n_columns)) {
++    free_table_row(parser->mem, delimiter_row);
++    free_table_row(parser->mem, header_row);
++    cmark_arena_pop();
++    parent_container->flags |= CMARK_NODE__TABLE_VISITED;
++    return parent_container;
++  }
++
+   if (cmark_arena_pop()) {
+     delimiter_row = row_from_string(
+         self, parser, input + cmark_parser_get_first_nonspace(parser),
+@@ -439,6 +468,10 @@ static cmark_node *try_opening_table_row(cmark_syntax_extension *self,
+     return NULL;
+   }
+ 
++  if (!ots_take_cells(get_n_table_columns(parent_container))) {
++    return NULL;
++  }
++
+   table_row_block =
+       cmark_parser_add_child(parser, parent_container, CMARK_NODE_TABLE_ROW,
+                              parent_container->start_column);
+diff --git a/extensions/table.h b/extensions/table.h
+index f6a0634..6828b3c 100644
+--- a/extensions/table.h
++++ b/extensions/table.h
+@@ -9,4 +9,12 @@ extern cmark_node_type CMARK_NODE_TABLE, CMARK_NODE_TABLE_ROW,
+ 
+ cmark_syntax_extension *create_table_extension(void);
+ 
++#include <stdbool.h>
++#include <stdint.h>
++
++// Onetime Pad: every table of one parse shares one cell budget. The budget is
++// process wide, so set and read it under the caller's parse lock.
++void ots_table_set_cell_budget(int64_t cells);
++bool ots_table_cell_budget_exhausted(void);
++
+ #endif

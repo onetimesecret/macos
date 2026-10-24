@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "python3",
+    "-B",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tools/markdown-preview-lab/parser",
+    "-p",
+    "test_lab.py",
+    "-v"
+  ],
+  "cwd": "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos",
+  "utc": "2026-10-17T03:19:29.071564+00:00",
+  "exit": 0,
+  "stdout": "",
+  "stderr": "test_extracts_displayed_spaces_tabs_and_entities (test_lab.LabTests.test_extracts_displayed_spaces_tabs_and_entities) ... ok\ntest_fixture_matrix_is_complete_and_ids_are_unique (test_lab.LabTests.test_fixture_matrix_is_complete_and_ids_are_unique) ... ok\ntest_full_official_corpora_are_separate (test_lab.LabTests.test_full_official_corpora_are_separate) ... ok\ntest_projection_drops_only_empty_text_children (test_lab.LabTests.test_projection_drops_only_empty_text_children) ... ok\ntest_projection_keeps_html_as_a_literal (test_lab.LabTests.test_projection_keeps_html_as_a_literal) ... ok\ntest_projection_keeps_resource_metadata (test_lab.LabTests.test_projection_keeps_resource_metadata) ... ok\ntest_punctuation_expected_outcomes_are_not_shared (test_lab.LabTests.test_punctuation_expected_outcomes_are_not_shared) ... ok\ntest_serializer_equivalence_is_narrow (test_lab.LabTests.test_serializer_equivalence_is_narrow) ... ok\n\n----------------------------------------------------------------------\nRan 8 tests in 0.073s\n\nOK\n",
+  "test_source_sha256": "4c6db8d705f9104b0f3167ca36b42d05577a7c0088b073c0c72ef2b6def6fae5"
+}

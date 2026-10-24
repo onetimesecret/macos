@@ -256,7 +256,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     }
 
     /// Start the configured ambient presentation without returning app activation.
-    /// AppKit's initial-open event separately selects the editor (ADR-0059).
+    /// AppKit's initial-open event separately selects the editor (ADR-0061).
     func show() {
         model.start()
         fitToScreen()

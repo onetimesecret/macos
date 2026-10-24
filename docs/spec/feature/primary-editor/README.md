@@ -19,7 +19,7 @@ describes the ambient panel only.
 
 ## Application launch and return
 
-[ADR-0059](../../../adr/0059-appkit-owns-window-presentation.md) replaces ADR-0033's unconditional editor selection. An initial foreground open selects the editor. A background launch does not. Cmd-Tab preserves AppKit's focus and window ordering, including a return to Settings or another ordinary window. A Dock reopen uses a visible ordinary window when available; otherwise it opens or deminiaturizes the editor without moving the current page or scroll position. The ambient panel does not prevent this reopen.
+[ADR-0061](../../../adr/0061-appkit-owns-window-presentation.md) replaces ADR-0033's unconditional editor selection. An initial foreground open selects the editor. A background launch does not. Cmd-Tab preserves AppKit's focus and window ordering, including a return to Settings or another ordinary window. A Dock reopen uses a visible ordinary window when available; otherwise it opens or deminiaturizes the editor without moving the current page or scroll position. The ambient panel does not prevent this reopen.
 
 Settings opens only through an explicit Settings action. AppKit owns the application lifecycle and menus; SwiftUI renders content within its windows.
 
@@ -232,7 +232,7 @@ reading and not something the ADR says.
 
 ## Activation routing
 
-[ADR-0059](../../../adr/0059-appkit-owns-window-presentation.md) governs these routes:
+[ADR-0061](../../../adr/0061-appkit-owns-window-presentation.md) governs these routes:
 
 - **Initial foreground open:** AppKit's untitled-open event selects the editor as a summon, anchoring on today. It waits for model startup when necessary.
 - **Ordinary activation and Cmd-Tab:** leave focus and window ordering to AppKit, without selecting a presentation or moving the roll.

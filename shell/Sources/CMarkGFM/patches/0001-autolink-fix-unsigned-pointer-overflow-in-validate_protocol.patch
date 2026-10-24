@@ -1,0 +1,50 @@
+From 46829933c318b4c3108581e82469fe4474f744a9 Mon Sep 17 00:00:00 2001
+From: iceray-Li <108821718+iceray00@users.noreply.github.com>
+Date: Tue, 22 Sep 2026 04:03:58 +0000
+Subject: [PATCH] autolink: fix unsigned pointer overflow in validate_protocol
+
+validate_protocol computes the character just before the protocol with:
+
+    char prev_char = data[-((ptrdiff_t)rewind) - len - 1];
+
+len is a size_t, so the usual arithmetic conversions make the whole index a
+size_t: instead of a small negative offset the expression evaluates to a huge
+unsigned value, and adding it to data wraps the pointer. That is undefined
+behaviour, and UBSan builds abort on it:
+
+    extensions/autolink.c:315:20: runtime error: addition of unsigned offset
+    to 0x6080000009d5 overflowed to 0x6080000009c6
+
+The address that is finally computed is the intended one and lies inside the
+text buffer (the guard above guarantees rewind + len + 1 <= max_rewind), so the
+only problem is the wrapping arithmetic itself. It is still undefined
+behaviour, and it makes every UBSan build abort on crafted input even when the
+resulting parse is correct.
+
+Cast the complete offset to ptrdiff_t so the index stays signed and the pointer
+arithmetic cannot wrap. The byte that is read is unchanged, so there is no
+change in observable behaviour.
+
+Found with UBSan using the upstream test/cmark-fuzz.c driver.
+
+Fixes #393
+---
+ extensions/autolink.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/extensions/autolink.c b/extensions/autolink.c
+index d898cd2..dff0041 100644
+--- a/extensions/autolink.c
++++ b/extensions/autolink.c
+@@ -312,7 +312,10 @@ static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewin
+     return true;
+   }
+ 
+-  char prev_char = data[-((ptrdiff_t)rewind) - len - 1];
++  // Compute the offset as a signed value: with size_t operands the index
++  // becomes a huge unsigned number and adding it to `data` wraps the pointer,
++  // which is undefined behaviour even though the address computed is in bounds.
++  char prev_char = data[-((ptrdiff_t)(rewind + len + 1))];
+ 
+   // Make sure the character before the protocol is non-alphanumeric
+   return !cmark_isalnum(prev_char);

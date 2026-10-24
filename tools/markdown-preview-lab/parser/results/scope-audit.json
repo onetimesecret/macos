@@ -1,0 +1,101 @@
+{
+  "utc": "2026-10-17T03:19:29.188268+00:00",
+  "initial_revision": "54d38a549b597f9fd5a664e48db05a293bccbb5d",
+  "tested_revision": "103eef0270843173c3acbf9f3013bd421f602dd6",
+  "tracked_diff_from_current_HEAD": [],
+  "committed_changes_during_research": [
+    "M\tdocs/spec/design/2026-1016-markdown-dialects-and-preview.md"
+  ],
+  "untracked_files": [
+    "tools/markdown-preview-lab/attachment/.gitignore",
+    "tools/markdown-preview-lab/attachment/AXClient.swift",
+    "tools/markdown-preview-lab/attachment/Lab.swift",
+    "tools/markdown-preview-lab/attachment/README.md",
+    "tools/markdown-preview-lab/attachment/repro.py",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031621Z/app-ready-report.json",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031621Z/app-report.json",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031621Z/external-ax.json",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031621Z/fixture.png",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031621Z/outcome.json",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031621Z/ready.pid",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031621Z/run.json",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031657Z/app-ready-report.json",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031657Z/app-report.json",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031657Z/external-ax.json",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031657Z/fixture.png",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031657Z/outcome.json",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031657Z/ready.pid",
+    "tools/markdown-preview-lab/attachment/runs/20261017T031657Z/run.json",
+    "tools/markdown-preview-lab/parser/.gitignore",
+    "tools/markdown-preview-lab/parser/README.md",
+    "tools/markdown-preview-lab/parser/bootstrap.py",
+    "tools/markdown-preview-lab/parser/fixtures.py",
+    "tools/markdown-preview-lab/parser/harness.c",
+    "tools/markdown-preview-lab/parser/known-mismatches.json",
+    "tools/markdown-preview-lab/parser/results/ast-results.jsonl",
+    "tools/markdown-preview-lab/parser/results/build-commands.jsonl",
+    "tools/markdown-preview-lab/parser/results/commonmark-0.31.2-spec.json",
+    "tools/markdown-preview-lab/parser/results/commonmark-corpus-results.jsonl",
+    "tools/markdown-preview-lab/parser/results/exploratory-expectation-corrections.json",
+    "tools/markdown-preview-lab/parser/results/gfm-0.29-spec.html",
+    "tools/markdown-preview-lab/parser/results/gfm-corpus-results.jsonl",
+    "tools/markdown-preview-lab/parser/results/gfm-official-corpus-results.jsonl",
+    "tools/markdown-preview-lab/parser/results/gfm-official-examples.json",
+    "tools/markdown-preview-lab/parser/results/provenance.json",
+    "tools/markdown-preview-lab/parser/results/summary.json",
+    "tools/markdown-preview-lab/parser/results/test-commands.jsonl",
+    "tools/markdown-preview-lab/parser/results/unit-tests.json",
+    "tools/markdown-preview-lab/parser/run.py",
+    "tools/markdown-preview-lab/parser/test_lab.py",
+    "tools/markdown-preview-lab/transport/.gitignore",
+    "tools/markdown-preview-lab/transport/README.md",
+    "tools/markdown-preview-lab/transport/TransportProbe.swift",
+    "tools/markdown-preview-lab/transport/run.py",
+    "tools/markdown-preview-lab/transport/runs/current/abort.jsonl",
+    "tools/markdown-preview-lab/transport/runs/current/abort.stderr.log",
+    "tools/markdown-preview-lab/transport/runs/current/active.jsonl",
+    "tools/markdown-preview-lab/transport/runs/current/active.stderr.log",
+    "tools/markdown-preview-lab/transport/runs/current/build-log.json",
+    "tools/markdown-preview-lab/transport/runs/current/cases.json",
+    "tools/markdown-preview-lab/transport/runs/current/report.md",
+    "tools/markdown-preview-lab/transport/runs/current/results.json",
+    "tools/markdown-preview-lab/transport/runs/current/server-events.json",
+    "tools/markdown-preview-lab/transport/runs/verified/abort.jsonl",
+    "tools/markdown-preview-lab/transport/runs/verified/abort.stderr.log",
+    "tools/markdown-preview-lab/transport/runs/verified/active.jsonl",
+    "tools/markdown-preview-lab/transport/runs/verified/active.stderr.log",
+    "tools/markdown-preview-lab/transport/runs/verified/build-log.json",
+    "tools/markdown-preview-lab/transport/runs/verified/cases.json",
+    "tools/markdown-preview-lab/transport/runs/verified/report.md",
+    "tools/markdown-preview-lab/transport/runs/verified/results.json",
+    "tools/markdown-preview-lab/transport/runs/verified/server-events.json"
+  ],
+  "selected_files": {
+    "AGENTS.md": {
+      "initial_sha256": "44066a5c21da11a5bbfd48299b6f71eba2e0a11ae74a05ff0efd736e8bc272cf",
+      "current_sha256": "44066a5c21da11a5bbfd48299b6f71eba2e0a11ae74a05ff0efd736e8bc272cf",
+      "current_matches_HEAD": true
+    },
+    "shell/Package.resolved": {
+      "initial_sha256": "9111081b1452ac1214d95c84d53a1fc5b56b894a57fd2885b192913d205cffe1",
+      "current_sha256": "9111081b1452ac1214d95c84d53a1fc5b56b894a57fd2885b192913d205cffe1",
+      "current_matches_HEAD": true
+    },
+    "shell/Package.swift": {
+      "initial_sha256": "79194a0b5329af9daf9095f874f6b0fe75a3252fb11e06a40cafbda56bbe7df1",
+      "current_sha256": "79194a0b5329af9daf9095f874f6b0fe75a3252fb11e06a40cafbda56bbe7df1",
+      "current_matches_HEAD": true
+    },
+    "shell/Sources/CompanionKit/MarkdownPreviewView.swift": {
+      "initial_sha256": "f6bdb5fcae6f3e049f969935e2aa075c8f5dcb964527a30af2487bb8e6338a80",
+      "current_sha256": "f6bdb5fcae6f3e049f969935e2aa075c8f5dcb964527a30af2487bb8e6338a80",
+      "current_matches_HEAD": true
+    },
+    "docs/spec/design/2026-1016-markdown-dialects-and-preview.md": {
+      "initial_sha256": "291526094c63236cad81bc1167f19d0dd517c44161e1872530c639fd5f81af59",
+      "current_sha256": "a77f7eaef31eb934fc51a18da59e1ba04e5e687c2bc66a1aa6017c44bb910bb9",
+      "current_matches_HEAD": true
+    }
+  },
+  "note": "This task issued no commit or shipping-file edit. Concurrent activity changed HEAD and created other labs; these are not attributed to this task."
+}

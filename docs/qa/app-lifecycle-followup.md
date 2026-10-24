@@ -1,6 +1,6 @@
 # Application lifecycle follow-up
 
-Date: 2026-10-22. Implementation: [ADR-0059](../adr/0059-appkit-owns-window-presentation.md).
+Date: 2026-10-22. Implementation: [ADR-0061](../adr/0061-appkit-owns-window-presentation.md).
 
 ## Review disposition
 
@@ -11,7 +11,7 @@ Date: 2026-10-22. Implementation: [ADR-0059](../adr/0059-appkit-owns-window-pres
 | L3: Launch is classified by a two-second timer | Material: timing-dependent presentation | Addressed | Native untitled-open events select the initial editor; background activation does not. The launch timer and its classifier were removed. |
 | L4: Unknown or unbundled app identity can resolve a production fallback | Material: unintended store selection during testing | Addressed at executable startup | The entry point rejects identities outside the three packaged app identifiers before constructing its delegate. Unit tests cover absent, unknown, prefix-like and recognized identifiers. This does not identify every possible misuse of a known development identity. |
 | L5: The test lane can rebuild a live executable from its build directory | Material: disrupts ongoing development sessions | Addressed for supported script lanes | The test, development and packaging lanes share resolved executable-path inspection and stop before building. Installation uses the shared query before quitting or replacing a bundle. Script tests cover absolute and relative executable launches, symlinked paths, exited processes and inspection failures. Direct invocations of build tools remain outside these checks. |
-| D1: ADR and specifications describe superseded activation behavior | Material: contradictory guidance | Addressed | ADR-0059 partially supersedes ADR-0033; current editor/background specifications and the current QA matrix describe the replacement. ADR lint and changed-document local-link checks pass. |
+| D1: ADR and specifications describe superseded activation behavior | Material: contradictory guidance | Addressed | ADR-0061 partially supersedes ADR-0033; current editor/background specifications and the current QA matrix describe the replacement. ADR lint and changed-document local-link checks pass. |
 | D2: Old hardware results could be mistaken for verification of the replacement | Material: overstates validation | Addressed | The QA procedure identifies the replaced route expectations as historical and leaves replacement hardware checks unchecked. |
 
 ## PR-326 review follow-up
@@ -131,4 +131,4 @@ The temporary probes used persistent credentials despite their separate bundle i
 
 The user confirmed that OnetimePad Local's stored content was erased during testing. The responsible testing action and mechanism remain unresolved, including whether the Keychain prompts were related. Its sandboxed storage could not be inspected. The testing safeguards above do not establish the cause or demonstrate that the underlying data-loss problem is fixed.
 
-No macOS 13 execution, full replacement hardware matrix, or stable cross-Space focus run was performed. The source still targets macOS 13. The [current manual procedure](verification-procedures/spaces-and-cmd-tab.md#current-launch-and-activation-checks-adr-0059) records the remaining checks.
+No macOS 13 execution, full replacement hardware matrix, or stable cross-Space focus run was performed. The source still targets macOS 13. The [current manual procedure](verification-procedures/spaces-and-cmd-tab.md#current-launch-and-activation-checks-adr-0061) records the remaining checks.

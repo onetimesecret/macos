@@ -1,0 +1,5 @@
+__pycache__/
+runs/*/TransportResearch.app/
+runs/*/module-cache/
+runs/*/tmp/
+runs/*/fixture-key.pem

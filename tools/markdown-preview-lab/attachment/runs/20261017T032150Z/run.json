@@ -1,0 +1,18 @@
+{
+  "startedUTC": "20261017T032150Z",
+  "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "gui": true,
+  "durationSeconds": 15,
+  "voiceOverVerification": "NOT PERFORMED",
+  "globalSettingsChanged": false,
+  "command": [
+    "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/attachment/.build/AttachmentLab.app/Contents/MacOS/AttachmentLab",
+    "--duration",
+    "15",
+    "--output",
+    "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos/tools/markdown-preview-lab/attachment/runs/20261017T032150Z"
+  ],
+  "targetPID": 8775,
+  "axClientExit": 3,
+  "appExit": 0
+}

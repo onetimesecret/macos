@@ -1,0 +1,1550 @@
+{
+  "axTrustedWithoutPrompt" : false,
+  "checks" : [
+
+  ],
+  "events" : [
+
+  ],
+  "native" : [
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{95, 130}, {330, 695}}",
+      "label" : "baseline, selected page",
+      "legacyActions" : [
+        "AXShowMenu"
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXTextArea",
+      "runtimeClass" : "AttachmentLab.LabTextView",
+      "source" : "baseline"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Mountain image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "baseline\/cell\/plain"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Linked image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "baseline\/cell\/linked"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Table image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "baseline\/cell\/table-image"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Table sealed",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "baseline\/cell\/table-sealed"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Alt sealed object",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "baseline\/cell\/alt-sealed"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Image with object in alt",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "baseline\/cell\/alt-image"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Named sealed, small",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "baseline\/cell\/sealed"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "nil",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXImage",
+      "runtimeClass" : "NSTextAttachmentCell",
+      "source" : "baseline\/cell\/stock"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Cell press probe",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.CellPressProbe",
+      "source" : "baseline\/cell\/cell-press"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {110, 761}), size=Optional(NSSize: {218, 38})",
+      "label" : "Mountain image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "baseline\/child\/0"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {110, 691}), size=Optional(NSSize: {218, 38})",
+      "label" : "Linked image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "baseline\/child\/1"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {115, 600}), size=Optional(NSSize: {218, 38})",
+      "label" : "Table image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "baseline\/child\/2"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {115, 552}), size=Optional(NSSize: {218, 38})",
+      "label" : "Table sealed",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "baseline\/child\/3"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {110, 477}), size=Optional(NSSize: {218, 38})",
+      "label" : "Alt sealed object",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "baseline\/child\/4"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {110, 439}), size=Optional(NSSize: {218, 38})",
+      "label" : "Image with object in alt",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "baseline\/child\/5"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {110, 369}), size=Optional(NSSize: {218, 38})",
+      "label" : "Named sealed, small",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "baseline\/child\/6"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {110, 299}), size=Optional(NSSize: {218, 38})",
+      "label" : "nil",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXImage",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "baseline\/child\/7"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {110, 245}), size=Optional(NSSize: {218, 38})",
+      "label" : "Cell press probe",
+      "legacyActions" : [
+        "AXPress"
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "baseline\/child\/8"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{110, 675}, {300, 54}}",
+      "label" : "￼\nOuter link text\n",
+      "legacyActions" : [
+        "AXPress"
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXLink",
+      "runtimeClass" : "NSAccessibilityTextLink",
+      "source" : "baseline\/child\/9"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{445, 130}, {330, 695}}",
+      "label" : "custom-selected, selected page",
+      "legacyActions" : [
+        "AXShowMenu"
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXTextArea",
+      "runtimeClass" : "AttachmentLab.LabTextView",
+      "source" : "custom-selected"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Mountain image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-selected\/cell\/plain"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Linked image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-selected\/cell\/linked"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Table image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-selected\/cell\/table-image"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Table sealed",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-selected\/cell\/table-sealed"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Alt sealed object",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-selected\/cell\/alt-sealed"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Image with object in alt",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-selected\/cell\/alt-image"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Named sealed, small",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-selected\/cell\/sealed"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "nil",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXImage",
+      "runtimeClass" : "NSTextAttachmentCell",
+      "source" : "custom-selected\/cell\/stock"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Cell press probe",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.CellPressProbe",
+      "source" : "custom-selected\/cell\/cell-press"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{460, 761}, {218, 38}}",
+      "label" : "Load image (simulated): Mountain image; count 0",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/supplement\/plain"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{460, 691}, {218, 38}}",
+      "label" : "Load image (simulated): Linked image; count 0",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/supplement\/linked"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{465, 600}, {218, 38}}",
+      "label" : "Load image (simulated): Table image; count 0",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/supplement\/table-image"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{465, 552}, {218, 38}}",
+      "label" : "Sealed stand-in: Table sealed",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/supplement\/table-sealed"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{460, 477}, {218, 38}}",
+      "label" : "Sealed stand-in: Alt sealed object",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/supplement\/alt-sealed"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{460, 439}, {218, 38}}",
+      "label" : "Load image (simulated): Image with object in alt; count 0",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/supplement\/alt-image"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{460, 369}, {218, 38}}",
+      "label" : "Sealed stand-in: Named sealed, small",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/supplement\/sealed"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{460, 299}, {218, 38}}",
+      "label" : "Load image (simulated): Stock NSTextAttachmentCell; count 0",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/supplement\/stock"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{460, 245}, {218, 38}}",
+      "label" : "Load image (simulated): Cell press probe; count 0",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/supplement\/cell-press"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {460, 761}), size=Optional(NSSize: {218, 38})",
+      "label" : "Mountain image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-selected\/child\/0"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {460, 691}), size=Optional(NSSize: {218, 38})",
+      "label" : "Linked image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-selected\/child\/1"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {465, 600}), size=Optional(NSSize: {218, 38})",
+      "label" : "Table image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-selected\/child\/2"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {465, 552}), size=Optional(NSSize: {218, 38})",
+      "label" : "Table sealed",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-selected\/child\/3"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {460, 477}), size=Optional(NSSize: {218, 38})",
+      "label" : "Alt sealed object",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-selected\/child\/4"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {460, 439}), size=Optional(NSSize: {218, 38})",
+      "label" : "Image with object in alt",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-selected\/child\/5"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {460, 369}), size=Optional(NSSize: {218, 38})",
+      "label" : "Named sealed, small",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-selected\/child\/6"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {460, 299}), size=Optional(NSSize: {218, 38})",
+      "label" : "nil",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXImage",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-selected\/child\/7"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {460, 245}), size=Optional(NSSize: {218, 38})",
+      "label" : "Cell press probe",
+      "legacyActions" : [
+        "AXPress"
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-selected\/child\/8"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{460, 675}, {300, 54}}",
+      "label" : "￼\nOuter link text\n",
+      "legacyActions" : [
+        "AXPress"
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXLink",
+      "runtimeClass" : "NSAccessibilityTextLink",
+      "source" : "custom-selected\/child\/9"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{460, 761}, {218, 38}}",
+      "label" : "Load image (simulated): Mountain image; count 0",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/child\/10"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{460, 691}, {218, 38}}",
+      "label" : "Load image (simulated): Linked image; count 0",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/child\/11"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{465, 600}, {218, 38}}",
+      "label" : "Load image (simulated): Table image; count 0",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/child\/12"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{465, 552}, {218, 38}}",
+      "label" : "Sealed stand-in: Table sealed",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/child\/13"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{460, 477}, {218, 38}}",
+      "label" : "Sealed stand-in: Alt sealed object",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/child\/14"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{460, 439}, {218, 38}}",
+      "label" : "Load image (simulated): Image with object in alt; count 0",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/child\/15"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{460, 369}, {218, 38}}",
+      "label" : "Sealed stand-in: Named sealed, small",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/child\/16"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{460, 299}, {218, 38}}",
+      "label" : "Load image (simulated): Stock NSTextAttachmentCell; count 0",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/child\/17"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{460, 245}, {218, 38}}",
+      "label" : "Load image (simulated): Cell press probe; count 0",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-selected\/child\/18"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{795, 130}, {330, 695}}",
+      "label" : "custom-quiet, quiet page",
+      "legacyActions" : [
+        "AXShowMenu"
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXTextArea",
+      "runtimeClass" : "AttachmentLab.LabTextView",
+      "source" : "custom-quiet"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Mountain image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-quiet\/cell\/plain"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Linked image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-quiet\/cell\/linked"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Table image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-quiet\/cell\/table-image"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Table sealed",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-quiet\/cell\/table-sealed"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Alt sealed object",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-quiet\/cell\/alt-sealed"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Image with object in alt",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-quiet\/cell\/alt-image"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Named sealed, small",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.PaintedCell",
+      "source" : "custom-quiet\/cell\/sealed"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "nil",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXImage",
+      "runtimeClass" : "NSTextAttachmentCell",
+      "source" : "custom-quiet\/cell\/stock"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{0, 0}, {0, 0}}",
+      "label" : "Cell press probe",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.CellPressProbe",
+      "source" : "custom-quiet\/cell\/cell-press"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{810, 761}, {218, 38}}",
+      "label" : "Promote page before action: Mountain image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/supplement\/plain"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{810, 691}, {218, 38}}",
+      "label" : "Promote page before action: Linked image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/supplement\/linked"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{815, 600}, {218, 38}}",
+      "label" : "Promote page before action: Table image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/supplement\/table-image"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{815, 552}, {218, 38}}",
+      "label" : "Promote page before action: Table sealed",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/supplement\/table-sealed"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{810, 477}, {218, 38}}",
+      "label" : "Promote page before action: Alt sealed object",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/supplement\/alt-sealed"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{810, 439}, {218, 38}}",
+      "label" : "Promote page before action: Image with object in alt",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/supplement\/alt-image"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{810, 369}, {218, 38}}",
+      "label" : "Promote page before action: Named sealed, small",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/supplement\/sealed"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{810, 299}, {218, 38}}",
+      "label" : "Promote page before action: Stock NSTextAttachmentCell",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/supplement\/stock"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{810, 245}, {218, 38}}",
+      "label" : "Promote page before action: Cell press probe",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/supplement\/cell-press"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {810, 761}), size=Optional(NSSize: {218, 38})",
+      "label" : "Mountain image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-quiet\/child\/0"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {810, 691}), size=Optional(NSSize: {218, 38})",
+      "label" : "Linked image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-quiet\/child\/1"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {815, 600}), size=Optional(NSSize: {218, 38})",
+      "label" : "Table image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-quiet\/child\/2"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {815, 552}), size=Optional(NSSize: {218, 38})",
+      "label" : "Table sealed",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-quiet\/child\/3"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {810, 477}), size=Optional(NSSize: {218, 38})",
+      "label" : "Alt sealed object",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-quiet\/child\/4"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {810, 439}), size=Optional(NSSize: {218, 38})",
+      "label" : "Image with object in alt",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-quiet\/child\/5"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {810, 369}), size=Optional(NSSize: {218, 38})",
+      "label" : "Named sealed, small",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-quiet\/child\/6"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {810, 299}), size=Optional(NSSize: {218, 38})",
+      "label" : "nil",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXImage",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-quiet\/child\/7"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "position=Optional(NSPoint: {810, 245}), size=Optional(NSSize: {218, 38})",
+      "label" : "Cell press probe",
+      "legacyActions" : [
+        "AXPress"
+      ],
+      "modernProtocol" : false,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "NSAccessibilityReparentingCellProxy",
+      "source" : "custom-quiet\/child\/8"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{810, 675}, {300, 54}}",
+      "label" : "￼\nOuter link text\n",
+      "legacyActions" : [
+        "AXPress"
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXLink",
+      "runtimeClass" : "NSAccessibilityTextLink",
+      "source" : "custom-quiet\/child\/9"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{810, 761}, {218, 38}}",
+      "label" : "Promote page before action: Mountain image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/child\/10"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{810, 691}, {218, 38}}",
+      "label" : "Promote page before action: Linked image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/child\/11"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{815, 600}, {218, 38}}",
+      "label" : "Promote page before action: Table image",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/child\/12"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{815, 552}, {218, 38}}",
+      "label" : "Promote page before action: Table sealed",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/child\/13"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{810, 477}, {218, 38}}",
+      "label" : "Promote page before action: Alt sealed object",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/child\/14"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{810, 439}, {218, 38}}",
+      "label" : "Promote page before action: Image with object in alt",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/child\/15"
+    },
+    {
+      "customActions" : [
+
+      ],
+      "element" : true,
+      "frame" : "{{810, 369}, {218, 38}}",
+      "label" : "Promote page before action: Named sealed, small",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : false,
+      "role" : "AXStaticText",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/child\/16"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{810, 299}, {218, 38}}",
+      "label" : "Promote page before action: Stock NSTextAttachmentCell",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/child\/17"
+    },
+    {
+      "customActions" : [
+        "Load image (simulated)"
+      ],
+      "element" : true,
+      "frame" : "{{810, 245}, {218, 38}}",
+      "label" : "Promote page before action: Cell press probe",
+      "legacyActions" : [
+
+      ],
+      "modernProtocol" : true,
+      "pressSelectorAllowed" : true,
+      "role" : "AXButton",
+      "runtimeClass" : "AttachmentLab.LoadElement",
+      "source" : "custom-quiet\/child\/18"
+    }
+  ],
+  "os" : "Version 27.2 (Build 26B5101f)",
+  "pid" : 8775,
+  "voiceOverEnabled" : false
+}

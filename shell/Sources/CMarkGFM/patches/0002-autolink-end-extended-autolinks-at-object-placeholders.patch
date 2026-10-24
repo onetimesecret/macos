@@ -1,0 +1,64 @@
+Subject: [PATCH] autolink: end extended autolinks at object placeholders
+
+Onetime Pad's preview replaces each sealed object with one scalar in
+U+100000..U+10FFFD before parsing. Every plane 16 scalar, U+100000..U+10FFFF
+(UTF-8 lead byte F4, second byte 80..8F), is therefore not a host character,
+ends a www or http extended autolink as whitespace does, and counts as a
+left boundary for www, on any page, with or without sealed objects. Plane 15
+stays ordinary text because the Nerd Fonts glyphs U+F0001..U+F1AF0 sit there.
+
+Applies after 0001 (upstream 46829933). Local to Onetime Pad.
+
+--- a/extensions/autolink.c
++++ b/extensions/autolink.c
+@@ -10,12 +10,19 @@
+ #include <strings.h>
+ #endif
+ 
++// Onetime Pad: a plane 16 scalar (UTF-8 F4 80..8F) may stand for a sealed
++// object, so every one bounds an extended autolink as whitespace does.
++static int is_placeholder(const uint8_t *p, size_t len) {
++  return len >= 2 && p[0] == 0xF4 && p[1] >= 0x80 && p[1] <= 0x8F;
++}
++
+ static int is_valid_hostchar(const uint8_t *link, size_t link_len) {
+   int32_t ch;
+   int r = cmark_utf8proc_iterate(link, (bufsize_t)link_len, &ch);
+   if (r < 0)
+     return 0;
+-  return !cmark_utf8proc_is_space(ch) && !cmark_utf8proc_is_punctuation(ch);
++  return !cmark_utf8proc_is_space(ch) && !cmark_utf8proc_is_punctuation(ch) &&
++         ch < 0x100000;
+ }
+ 
+ static int sd_autolink_issafe(const uint8_t *link, size_t link_len) {
+@@ -176,7 +183,8 @@
+   size_t link_end;
+ 
+   if (max_rewind > 0 && strchr("*_~(", data[-1]) == NULL &&
+-      !cmark_isspace(data[-1]))
++      !cmark_isspace(data[-1]) &&
++      !(max_rewind >= 4 && is_placeholder(data - 4, 4)))
+     return 0;
+ 
+   if (size < 4 || memcmp(data, "www.", strlen("www.")) != 0)
+@@ -187,7 +195,8 @@
+   if (link_end == 0)
+     return NULL;
+ 
+-  while (link_end < size && !cmark_isspace(data[link_end]) && data[link_end] != '<')
++  while (link_end < size && !cmark_isspace(data[link_end]) && data[link_end] != '<' &&
++         !is_placeholder(data + link_end, size - link_end))
+     link_end++;
+ 
+   link_end = autolink_delim(data, link_end);
+@@ -247,7 +256,8 @@
+     return 0;
+ 
+   link_end += domain_len;
+-  while (link_end < size && !cmark_isspace(data[link_end]) && data[link_end] != '<')
++  while (link_end < size && !cmark_isspace(data[link_end]) && data[link_end] != '<' &&
++         !is_placeholder(data + link_end, size - link_end))
+     link_end++;
+ 
+   link_end = autolink_delim(data, link_end);

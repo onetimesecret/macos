@@ -182,6 +182,37 @@ language follows its page as display-only session state under **All pages**;
 it never rewrites a bare fence. The byte-preservation contract of B and C
 stands.
 
+## Amendment E — Restricted page preview and explicit resources (2026-10-16)
+
+The accepted [UI/UX successor](2026-1016-ui-ux-decisions.md) and
+[ADR-0059](../../adr/0059-preview-images-use-an-explicit-resource-request-route.md)
+enact the maintainer-directed preview reconciliation. This amendment narrows
+§3's no-rich-preview wording for the separate rendered page preview and §§5–6's
+conceal/enrollment wording for explicit image-resource requests. The original
+principle text above remains historical; this amendment controls these scopes.
+
+Rendered page preview can present the approved dialects, restricted native HTML
+formatting and explicitly loaded remote images. It is distinct from ADR-0030's
+markup-preserving editor styling. This does not expand the representation of a
+sealed payload, a chip, the ledger or the minimap; Law 0001's object, copy and
+reader rules remain in force. Scripts, embedded browser content and automatic
+resource loading are excluded from the approved preview scope.
+
+A separate **Load Image** action identifies the resource recipient and discloses
+URL/request-metadata exposure before authorization. A document-provided resource
+destination need not be enrolled for sync; this authorization grants no device
+trust, replication permission or general exception for other traffic. Display,
+scrolling, restyling and reparsing confer no request authorization. Existing
+conceal, sync and authentication keep their own accepted authority, and the
+local editing path requires no image request. Feedback and release-check
+authority gaps are not resolved by this exception.
+
+Image requests do not create lifecycle-ledger `sent` events; any request audit
+requires its own accepted decision. This is a policy amendment, not runtime
+validation. The [technical plan's R1–R6](2026-1016-markdown-dialects-and-preview.md#delivery-workstreams-and-verification)
+remain implementation and release work, including request isolation, numeric
+limits, decoder compatibility and accessible interaction checks.
+
 ## Tone
 
 Follows from the principles: quiet, precise, slightly warm, never cute

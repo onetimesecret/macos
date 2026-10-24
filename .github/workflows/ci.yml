@@ -92,6 +92,10 @@ jobs:
       - name: Install pinned toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v2
+      # Offline: the vendored parsers match UPSTREAM.md, every patch reverses
+      # to the recorded originals, and prefix.h matches nm of a fresh build.
+      - name: Check vendored Markdown parsers
+        run: ./scripts/vendor-cmark.sh --check
       # The dev shape, test seams included (ADR-0018): swift test links
       # companion_new_ephemeral, which only a --test-util build exports.
       # scripts/test-shell.sh builds that shape itself, so CI runs the

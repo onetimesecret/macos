@@ -4,9 +4,11 @@ title: The sealed object
 status: accepted     # draft → accepted → superseded
 dated: 2026-09-15
 governs: A sealed item occupies one position in the document, but its plaintext is not part of the document's ambient text.
-decisions: D-08, D-09, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5); D-40 and D-41 (docs/spec/design/2026-0915-stream-navigator.md, incorporated by docs/spec/design/2026-0916-clipboard-clear-interval.md); ADR-0011's deadline sentence (the expiry row); the rows the 2026-10-14 drafts withdrawn amendment names, none numbered, ratified by the maintainer 2026-10-16 (ADR-0042 to ADR-0047, which they cite and which were accepted the same day, are under sources, not here); ADR-0055
+decisions: D-08, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5, incorporated with their accepted amendments by docs/spec/design/2026-1016-ui-ux-decisions.md); D-09 and the preview-resource authorization in docs/spec/design/2026-1016-ui-ux-decisions.md; ADR-0059 (the preview-resource route); D-40 and D-41 (docs/spec/design/2026-0915-stream-navigator.md, incorporated by docs/spec/design/2026-0916-clipboard-clear-interval.md); ADR-0011's deadline sentence (the expiry row); the rows the 2026-10-14 drafts withdrawn amendment names, none numbered, ratified by the maintainer 2026-10-16 (ADR-0042 to ADR-0047, which they cite and which were accepted the same day, are under sources, not here); ADR-0055
 consumed-by:
-  - docs/spec/design/2026-0915-ui-ux-decisions.md (section 3 applies this law to the surface)
+  - docs/spec/design/2026-0915-ui-ux-decisions.md (historical; section 3 applies this law to the surface)
+  - docs/spec/design/2026-1016-ui-ux-decisions.md (accepted successor; D-09 and the preview-resource route)
+  - docs/adr/0059-preview-images-use-an-explicit-resource-request-route.md (accepted resource-request authority; technical validation remains owed)
   - docs/adr/0042-a-sealed-name-is-a-shell-identifier.md (accepted; the name's charset)
   - docs/adr/0043-a-sealed-objects-name-and-note-are-fields-of-its-chip.md (accepted; where the name and note live, and what keeps or drops them)
   - docs/adr/0044-a-sealed-objects-note-is-edited-on-the-pages-own-surface.md (accepted; the note on the page's own surface, routed by document)
@@ -441,6 +443,9 @@ end the table).
 | the preview's link: `textView(_:clickedOnLink:at:)`, Open Link, Copy Link | a ⌘-click, the text menu over a link | a ⌘-click and Open Link go to `Coordinator.openLink`, which asks the preview first; a plain click opens nothing; Copy Link asks first, as any copy does, and writes the URL on the ambient board; Open With and Edit Link… leave the menu, as the rows above say | `testAPreviewsLinkOpensOnlyByCommandClickThroughTheGate`, `testEveryWayOutOfAPreviewPastItsPagesDeadlineRefusesAndTheSettleTakesIt`; a real ⌘-click on a preview's link, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | the preview's drag: `dragSelection(with:offset:slideBack:)`, `dragImageForSelection(with:origin:)`, `textView(_:draggedCell:in:event:at:)` | a press and a move on the preview's selection or on an object | no drag starts from a preview, with an object in the selection or not, since the drag's image would draw each object's face where no gate sees (the plain drag row) | `testAPreviewStartsNoDragFromASelectionHoldingAnObject` |
 | a preview of a page the roll has not selected | the mouse, the keys | not selectable and never the first responder, as a quiet page is ([ADR-0030](../adr/0030-visible-pages-share-preview-rendering.md)); a click promotes its page, and the saved caret stands since a rendered index is no source index | `testAPreviewOfAnUnselectedPageIsNotSelectableAndAClickPromotesIt`, `testNonselectedPreviewActivationSelectsPageWithoutUsingRenderedSelectionAsSourceCaret` |
+| the preview's remote-image request and result ([ADR-0059](../adr/0059-preview-images-use-an-explicit-resource-request-route.md)) | the separate Load Image control, by pointer, keyboard or VoiceOver | asks the originating page by the same deadline and key-ownership rules as preview readers; a first activation on a nonselected page only promotes it; the destination and URL/request-metadata exposure are disclosed before authorization; parsing, rendering, refresh and ordinary text/link/image-body clicks authorize no request; a resource address containing a sealed object or stand-in is refused; alt-text objects remain references in rendered/copy order in every image state; the resource action is not a lifecycle-ledger `sent` event | owed: [R1/R3](../spec/design/2026-1016-markdown-dialects-and-preview.md#delivery-workstreams-and-verification) object-address/alt-order fixtures, R4 pre-activation and dispatch/retry/redirect/completion transport tests, and R5 page/deadline/key, promotion-only first activation, copy, keyboard/VoiceOver and stale-result checks before production wiring |
+
+The resource row is an accepted requirement for the new image route, not a report of implemented behavior. R4/R5 still specify consent lifetime, transport and native interaction details. The existing preview-link, copy, reader and no-drag rows remain unchanged.
 
 ## What the rule forbids
 
@@ -1790,6 +1795,24 @@ paths must stay dialog free.
   `MarkdownPreviewView.swift`, and the link menu's plumbing moves from
   the editor into `AskingTextView` so both surfaces aim their items the
   same way.
+
+- 2026-10-16: Preview-resource authority amendment, enacted at the maintainer's
+  instruction to apply the recommended document amendments. The accepted
+  [UI/UX successor](../spec/design/2026-1016-ui-ux-decisions.md#d-09--concealment-and-separately-authorized-resources)
+  replaces D-09's app-wide network-action count with exclusivity for sealed-payload
+  promotion; [ADR-0059](../adr/0059-preview-images-use-an-explicit-resource-request-route.md)
+  authorizes the separate, destination-disclosed image request. The decisions
+  inventory now names those sources and the AppKit table gains the resource row
+  with explicit test debt. Image loading uses the originating page's reader
+  gates, first activation of a nonselected page only promotes it, and ordinary
+  clicks on text, links or image bodies do not load. Object-bearing resource
+  addresses are refused and alt-text objects retain identity and rendered/copy
+  order across image states. Image fetches do not become lifecycle-ledger `sent`
+  events. The governing sealed-object rule, three complete-payload egresses,
+  preview copy/link/reader/no-drag rows and lifecycle rules are unchanged.
+  R0's policy reconciliation is enacted; R1–R6 and the named tests remain owed.
+  No runtime implementation or request-isolation result is recorded here.
+
 - 2026-10-20: Timeline node amendment (issue 267). Maintainer direction
   2026-10-20, issue 267: the drop on a tab reaches the Timeline down the
   side. The 2026-10-16 amendment built the gesture in `TabStripView`

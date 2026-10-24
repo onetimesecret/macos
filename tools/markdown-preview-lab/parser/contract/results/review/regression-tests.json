@@ -1,0 +1,199 @@
+{
+  "utc": "2026-10-17T04:13:19.025062+00:00",
+  "argv": [
+    "/Users/d/.local/venv3.13/bin/python3",
+    "tools/markdown-preview-lab/parser/contract/test_review.py"
+  ],
+  "cwd": "/Users/d/Projects/dev/onetimesecret/worktrees/macos/maple-turtle/macos",
+  "tests": 34,
+  "failures": 0,
+  "errors": 0,
+  "passed": true,
+  "scenarios": [
+    {
+      "name": "real-sources-match",
+      "counts": {
+        "commonmark": 119,
+        "gfm": 167,
+        "gfm-official": 155
+      },
+      "total": 441
+    },
+    {
+      "name": "clean-synthetic-manifest",
+      "files": 9,
+      "passed": true
+    },
+    {
+      "name": "dependency-escaping",
+      "passed": true
+    },
+    {
+      "name": "invalid-dependencies:'not-a-rule'",
+      "rejected": true
+    },
+    {
+      "name": "invalid-dependencies:'out.o:\\n'",
+      "rejected": true
+    },
+    {
+      "name": "real-compiler-dependencies",
+      "translation_units": 90,
+      "formerly_omitted_inputs": 8
+    },
+    {
+      "name": "quoted-and-literal-markers",
+      "passed": true
+    },
+    {
+      "name": "saved-xml-projections",
+      "passed": 560,
+      "repaired_diagnostic_copies": 30
+    },
+    {
+      "name": "valid-xml-control",
+      "passed": true
+    },
+    {
+      "name": "mutation:src/entities.inc",
+      "rejected": true,
+      "execute_calls": 0,
+      "subprocess_calls": 0,
+      "synthetic_only": true
+    },
+    {
+      "name": "mutation:src/case_fold_switch.inc",
+      "rejected": true,
+      "execute_calls": 0,
+      "subprocess_calls": 0,
+      "synthetic_only": true
+    },
+    {
+      "name": "mutation:extensions/autolink.h",
+      "rejected": true,
+      "execute_calls": 0,
+      "subprocess_calls": 0,
+      "synthetic_only": true
+    },
+    {
+      "name": "mutation:extensions/ext_scanners.h",
+      "rejected": true,
+      "execute_calls": 0,
+      "subprocess_calls": 0,
+      "synthetic_only": true
+    },
+    {
+      "name": "mutation:extensions/strikethrough.h",
+      "rejected": true,
+      "execute_calls": 0,
+      "subprocess_calls": 0,
+      "synthetic_only": true
+    },
+    {
+      "name": "mutation:extensions/table.h",
+      "rejected": true,
+      "execute_calls": 0,
+      "subprocess_calls": 0,
+      "synthetic_only": true
+    },
+    {
+      "name": "mutation:extensions/tagfilter.h",
+      "rejected": true,
+      "execute_calls": 0,
+      "subprocess_calls": 0,
+      "synthetic_only": true
+    },
+    {
+      "name": "mutation:extensions/tasklist.h",
+      "rejected": true,
+      "execute_calls": 0,
+      "subprocess_calls": 0,
+      "synthetic_only": true
+    },
+    {
+      "name": "mutation:COPYING",
+      "rejected": true,
+      "execute_calls": 0,
+      "subprocess_calls": 0,
+      "synthetic_only": true
+    },
+    {
+      "name": "missing:src/entities.inc",
+      "rejected": true,
+      "execute_calls": 0,
+      "subprocess_calls": 0,
+      "synthetic_only": true
+    },
+    {
+      "name": "known-span:colspan",
+      "passed": true,
+      "original_unchanged": true
+    },
+    {
+      "name": "known-span:rowspan",
+      "passed": true,
+      "original_unchanged": true
+    },
+    {
+      "name": "known-span:colspan rowspan",
+      "passed": true,
+      "original_unchanged": true
+    },
+    {
+      "name": "known-span:colspan_filler",
+      "passed": true,
+      "original_unchanged": true
+    },
+    {
+      "name": "known-span:rowspan_filler",
+      "passed": true,
+      "original_unchanged": true
+    },
+    {
+      "name": "bad-xml:empty",
+      "rejected": true
+    },
+    {
+      "name": "bad-xml:truncated",
+      "rejected": true
+    },
+    {
+      "name": "bad-xml:unrelated-malformed",
+      "rejected": true
+    },
+    {
+      "name": "bad-xml:wrong-element",
+      "rejected": true
+    },
+    {
+      "name": "bad-xml:unknown-valueless",
+      "rejected": true
+    },
+    {
+      "name": "bad-xml:duplicate-marker",
+      "rejected": true
+    },
+    {
+      "name": "bad-xml:unknown-combination",
+      "rejected": true
+    },
+    {
+      "name": "bad-xml:missing-row",
+      "rejected": true
+    },
+    {
+      "name": "bad-xml:wrong-text",
+      "rejected": true
+    },
+    {
+      "name": "bad-xml:unexpected-valid-xml",
+      "rejected": true
+    }
+  ],
+  "output": "unittest.case.FunctionTestCase (real sources still match)\nreal sources still match ... ok\nunittest.case.FunctionTestCase (clean synthetic manifest)\nclean synthetic manifest ... ok\nunittest.case.FunctionTestCase (compiler dependency escaping)\ncompiler dependency escaping ... ok\nunittest.case.FunctionTestCase (reject missing dependency rule)\nreject missing dependency rule ... ok\nunittest.case.FunctionTestCase (reject empty dependency rule)\nreject empty dependency rule ... ok\nunittest.case.FunctionTestCase (real compiler dependency coverage)\nreal compiler dependency coverage ... ok\nunittest.case.FunctionTestCase (quoted/literal marker preservation)\nquoted/literal marker preservation ... ok\nunittest.case.FunctionTestCase (all saved XML projections)\nall saved XML projections ... ok\nunittest.case.FunctionTestCase (well-formed XML control)\nwell-formed XML control ... ok\nunittest.case.FunctionTestCase (reject mutation: src/entities.inc)\nreject mutation: src/entities.inc ... ok\nunittest.case.FunctionTestCase (reject mutation: src/case_fold_switch.inc)\nreject mutation: src/case_fold_switch.inc ... ok\nunittest.case.FunctionTestCase (reject mutation: extensions/autolink.h)\nreject mutation: extensions/autolink.h ... ok\nunittest.case.FunctionTestCase (reject mutation: extensions/ext_scanners.h)\nreject mutation: extensions/ext_scanners.h ... ok\nunittest.case.FunctionTestCase (reject mutation: extensions/strikethrough.h)\nreject mutation: extensions/strikethrough.h ... ok\nunittest.case.FunctionTestCase (reject mutation: extensions/table.h)\nreject mutation: extensions/table.h ... ok\nunittest.case.FunctionTestCase (reject mutation: extensions/tagfilter.h)\nreject mutation: extensions/tagfilter.h ... ok\nunittest.case.FunctionTestCase (reject mutation: extensions/tasklist.h)\nreject mutation: extensions/tasklist.h ... ok\nunittest.case.FunctionTestCase (reject mutation: COPYING)\nreject mutation: COPYING ... ok\nunittest.case.FunctionTestCase (reject missing source)\nreject missing source ... ok\nunittest.case.FunctionTestCase (repair only known markers: colspan)\nrepair only known markers: colspan ... ok\nunittest.case.FunctionTestCase (repair only known markers: rowspan)\nrepair only known markers: rowspan ... ok\nunittest.case.FunctionTestCase (repair only known markers: colspan rowspan)\nrepair only known markers: colspan rowspan ... ok\nunittest.case.FunctionTestCase (repair only known markers: colspan_filler)\nrepair only known markers: colspan_filler ... ok\nunittest.case.FunctionTestCase (repair only known markers: rowspan_filler)\nrepair only known markers: rowspan_filler ... ok\nunittest.case.FunctionTestCase (reject XML: empty)\nreject XML: empty ... ok\nunittest.case.FunctionTestCase (reject XML: truncated)\nreject XML: truncated ... ok\nunittest.case.FunctionTestCase (reject XML: unrelated-malformed)\nreject XML: unrelated-malformed ... ok\nunittest.case.FunctionTestCase (reject XML: wrong-element)\nreject XML: wrong-element ... ok\nunittest.case.FunctionTestCase (reject XML: unknown-valueless)\nreject XML: unknown-valueless ... ok\nunittest.case.FunctionTestCase (reject XML: duplicate-marker)\nreject XML: duplicate-marker ... ok\nunittest.case.FunctionTestCase (reject XML: unknown-combination)\nreject XML: unknown-combination ... ok\nunittest.case.FunctionTestCase (reject XML: missing-row)\nreject XML: missing-row ... ok\nunittest.case.FunctionTestCase (reject XML: wrong-text)\nreject XML: wrong-text ... ok\nunittest.case.FunctionTestCase (reject XML: unexpected-valid-xml)\nreject XML: unexpected-valid-xml ... ok\n\n----------------------------------------------------------------------\nRan 34 tests in 0.425s\n\nOK\n",
+  "input_sha256": {
+    "build.py": "5816df5ddbfb0aa27681e30b5a8dbc7033fd685ef4ad8edb3c2c7106cd7107f0",
+    "run.py": "4115ba72bb44cd443ffbe09ae5e356d0a002e4731d7686b957f95572463f5fad",
+    "test_review.py": "7c3f30528cf3cc74974a96da54f0be363a29d71c41d8956461fce058a23f62ac"
+  }
+}

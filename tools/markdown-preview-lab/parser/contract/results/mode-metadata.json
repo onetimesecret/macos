@@ -1,0 +1,382 @@
+[
+  {
+    "mode": "cm-core",
+    "expected": {
+      "version": "0.31.2",
+      "compiled_version": "0.31.2",
+      "parse_options": 0,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": []
+    },
+    "actual": {
+      "version": "0.31.2",
+      "compiled_version": "0.31.2",
+      "parse_options": 0,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": []
+    },
+    "passed": true
+  },
+  {
+    "mode": "cm-smart",
+    "expected": {
+      "version": "0.31.2",
+      "compiled_version": "0.31.2",
+      "parse_options": 1024,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": []
+    },
+    "actual": {
+      "version": "0.31.2",
+      "compiled_version": "0.31.2",
+      "parse_options": 1024,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": []
+    },
+    "passed": true
+  },
+  {
+    "mode": "legacy-core",
+    "expected": {
+      "version": "0.29.0.gfm.0",
+      "compiled_version": "0.29.0.gfm.0",
+      "parse_options": 0,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": []
+    },
+    "actual": {
+      "version": "0.29.0.gfm.0",
+      "compiled_version": "0.29.0.gfm.0",
+      "parse_options": 0,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": []
+    },
+    "passed": true
+  },
+  {
+    "mode": "legacy-gfm",
+    "expected": {
+      "version": "0.29.0.gfm.0",
+      "compiled_version": "0.29.0.gfm.0",
+      "parse_options": 0,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "autolink",
+        "tagfilter",
+        "tasklist"
+      ]
+    },
+    "actual": {
+      "version": "0.29.0.gfm.0",
+      "compiled_version": "0.29.0.gfm.0",
+      "parse_options": 0,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "autolink",
+        "tagfilter",
+        "tasklist"
+      ]
+    },
+    "passed": true
+  },
+  {
+    "mode": "legacy-double",
+    "expected": {
+      "version": "0.29.0.gfm.0",
+      "compiled_version": "0.29.0.gfm.0",
+      "parse_options": 16384,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "autolink",
+        "tagfilter",
+        "tasklist"
+      ]
+    },
+    "actual": {
+      "version": "0.29.0.gfm.0",
+      "compiled_version": "0.29.0.gfm.0",
+      "parse_options": 16384,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "autolink",
+        "tagfilter",
+        "tasklist"
+      ]
+    },
+    "passed": true
+  },
+  {
+    "mode": "swift-core",
+    "expected": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 0,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": []
+    },
+    "actual": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 0,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": []
+    },
+    "passed": true
+  },
+  {
+    "mode": "swift-gfm",
+    "expected": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 0,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "autolink",
+        "tagfilter",
+        "tasklist"
+      ]
+    },
+    "actual": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 0,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "autolink",
+        "tagfilter",
+        "tasklist"
+      ]
+    },
+    "passed": true
+  },
+  {
+    "mode": "swift-double",
+    "expected": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 16384,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "autolink",
+        "tagfilter",
+        "tasklist"
+      ]
+    },
+    "actual": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 16384,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "autolink",
+        "tagfilter",
+        "tasklist"
+      ]
+    },
+    "passed": true
+  },
+  {
+    "mode": "swift-preview",
+    "expected": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 1048578,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "tasklist"
+      ]
+    },
+    "actual": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 1048578,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "tasklist"
+      ]
+    },
+    "passed": true
+  },
+  {
+    "mode": "swift-preview-spans-off",
+    "expected": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 2,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "tasklist"
+      ]
+    },
+    "actual": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 2,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "tasklist"
+      ]
+    },
+    "passed": true
+  },
+  {
+    "mode": "swift-default",
+    "expected": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 1049602,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "tasklist"
+      ]
+    },
+    "actual": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 1049602,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "tasklist"
+      ]
+    },
+    "passed": true
+  },
+  {
+    "mode": "swift-gfm-spans",
+    "expected": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 1048576,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "autolink",
+        "tagfilter",
+        "tasklist"
+      ]
+    },
+    "actual": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 1048576,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "autolink",
+        "tagfilter",
+        "tasklist"
+      ]
+    },
+    "passed": true
+  },
+  {
+    "mode": "swift-preview-double",
+    "expected": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 1064962,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "tasklist"
+      ]
+    },
+    "actual": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 1064962,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "tasklist"
+      ]
+    },
+    "passed": true
+  },
+  {
+    "mode": "swift-preview-no-sourcepos",
+    "expected": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 1048576,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "tasklist"
+      ]
+    },
+    "actual": {
+      "version": "0.29.0.gfm.13",
+      "compiled_version": "0.29.0.gfm.13",
+      "parse_options": 1048576,
+      "html_render_options": 131072,
+      "xml_render_options": 2,
+      "extensions": [
+        "table",
+        "strikethrough",
+        "tasklist"
+      ]
+    },
+    "passed": true
+  }
+]

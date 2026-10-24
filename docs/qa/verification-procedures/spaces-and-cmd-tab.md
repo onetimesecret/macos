@@ -19,9 +19,9 @@ B4 routes of issue #210. The panel-off checks for #215 were added
 after that run and remain unverified. Rows with an empty result have
 not been run.
 
-## Current launch and activation checks (ADR-0059)
+## Current launch and activation checks (ADR-0061)
 
-ADR-0059 replaces older rows below that expect every Cmd-Tab or Dock click to select the editor, rest a raised panel, or use a two-second launch classification. Those route expectations are historical; their recorded results do not verify the replacement. Other geometry, stacking and full-screen checks remain applicable.
+ADR-0061 replaces older rows below that expect every Cmd-Tab or Dock click to select the editor, rest a raised panel, or use a two-second launch classification. Those route expectations are historical; their recorded results do not verify the replacement. Other geometry, stacking and full-screen checks remain applicable.
 
 These are manual checks for an explicitly selected development fixture, separate from any app already in use. Automated probes require injected temporary state and in-memory credentials; a separate bundle identity by itself does not meet that requirement. Record the macOS version, build revision, route and result. Repeat on macOS 13 and on a current macOS release; a deployment-target build alone does not execute the older platform.
 

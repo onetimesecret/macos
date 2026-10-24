@@ -1,0 +1,45 @@
+{
+  "utc": "2026-10-17T03:57:40.954875+00:00",
+  "build_root_revision": "4126666890df2228abd2406a27fbcff9d7269108",
+  "final_root_revision": "aea9418025b0eb4c9eceb8887e5e5c36f1404ffc",
+  "root_commit_delta": [
+    "M\tdocs/adr/0023-hybrid-link-affordance-cmd-click-opens.md",
+    "M\tdocs/adr/0030-visible-pages-share-preview-rendering.md",
+    "A\tdocs/adr/0059-preview-images-use-an-explicit-resource-request-route.md",
+    "M\tdocs/law/0001-sealed-object.md",
+    "M\tdocs/spec/design/2026-0707-design-principles.md",
+    "M\tdocs/spec/design/2026-0915-ui-ux-decisions.md",
+    "M\tdocs/spec/design/2026-1016-markdown-dialects-and-preview.md",
+    "A\tdocs/spec/design/2026-1016-ui-ux-decisions.md",
+    "M\tdocs/spec/design/README.md"
+  ],
+  "tracked_worktree_diff": [],
+  "changed_audited_files": [
+    "docs/spec/design/2026-1016-markdown-dialects-and-preview.md"
+  ],
+  "old_lab_input_changes": [],
+  "parser_configuration_input_changes": [],
+  "task_files": [
+    "tools/markdown-preview-lab/parser/contract/.gitignore",
+    "tools/markdown-preview-lab/parser/contract/README.md",
+    "tools/markdown-preview-lab/parser/contract/build.py",
+    "tools/markdown-preview-lab/parser/contract/fixtures.py",
+    "tools/markdown-preview-lab/parser/contract/harness.c",
+    "tools/markdown-preview-lab/parser/contract/profiles.py",
+    "tools/markdown-preview-lab/parser/contract/results/build-commands.jsonl",
+    "tools/markdown-preview-lab/parser/contract/results/commands.jsonl",
+    "tools/markdown-preview-lab/parser/contract/results/fixtures.jsonl",
+    "tools/markdown-preview-lab/parser/contract/results/initial-expectation-corrections.json",
+    "tools/markdown-preview-lab/parser/contract/results/mode-metadata.json",
+    "tools/markdown-preview-lab/parser/contract/results/mode-pairs.jsonl",
+    "tools/markdown-preview-lab/parser/contract/results/official-comparisons.jsonl",
+    "tools/markdown-preview-lab/parser/contract/results/previous-binary-comparisons.jsonl",
+    "tools/markdown-preview-lab/parser/contract/results/provenance.json",
+    "tools/markdown-preview-lab/parser/contract/results/scope-audit.json",
+    "tools/markdown-preview-lab/parser/contract/results/start-state.json",
+    "tools/markdown-preview-lab/parser/contract/results/summary.json",
+    "tools/markdown-preview-lab/parser/contract/run.py"
+  ],
+  "summary_sha256": "73f9ec87e3e75bf4d22f4412105cdf0e5de39b541e5920d352337416e371428b",
+  "note": "No network/bootstrap/app/GUI operation or commit was issued by this task. The document revision changed concurrently; original parser-lab bytes and configuration inputs did not."
+}

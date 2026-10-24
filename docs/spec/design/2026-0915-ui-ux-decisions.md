@@ -1,10 +1,10 @@
 ---
 id: 2026-0915-ui-ux-decisions
 title: UI/UX decisions for the background surface
-status: accepted     # draft → accepted → superseded
+status: superseded     # draft → accepted → superseded
 dated: 2026-09-15
 supersedes: docs/spec/design/2026-0914-ui-ux-decisions.md; docs/design-brief.md (Tokens and parameters)
-superseded-by:
+superseded-by: docs/spec/design/2026-1016-ui-ux-decisions.md
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface)
 sources:
