@@ -304,7 +304,7 @@ read_source_state() {
   SOURCE_RECORD=""
   [[ -n "$SOURCE_HEAD" ]] || return 0
   SOURCE_INDEX="$(mktemp -t onetimepad-source-index)"
-  TEMP_FILES+=("$SOURCE_INDEX")
+  TEMP_FILES+=("$SOURCE_INDEX" "$SOURCE_INDEX.lock")
   if ! SOURCE_TREE="$(worktree_tree "$SOURCE_INDEX")"; then
     SOURCE_TREE=""
     echo "    warning: could not read the source tree, so this build counts as dirty." >&2
@@ -370,6 +370,7 @@ in_ci() {
   case "${CI:-}" in
     '' | false | 0) return 1 ;;
   esac
+  return 0
 }
 
 # A dirty dev or local build outside CI is stamped with a snapshot commit of its tree, recorded
@@ -481,6 +482,7 @@ app_store_tag_free() { # <number>
     printf '%s\n' "$output" | sed 's/^/    /' >&2
     return 1
   fi
+  return 0
 }
 
 # Points <ref> at a new annotated tag object for <commit>; the empty old value makes
