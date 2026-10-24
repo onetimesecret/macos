@@ -15,23 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uncommitted changes, untracked files git does not ignore included, as
   a snapshot commit at `refs/builds/<lane>/<version>-<commit>-<tree>`;
   `git push --tags` and `push.followTags` send neither. An App Store
-  build is tagged `build/app-store/<version>-<build number>`, plus
-  `v<version>` when no tag of that name exists, and the script prints a
-  `git push` command for them; it pushes nothing, and a
-  `build/app-store` tag it cannot write fails the run after packaging,
-  with no `v<version>` tag. `CFBundleVersion` for dev and local builds
-  names the first 12 characters of the commit in place of the short SHA,
-  and `OnetimePadSourceRevision` names the snapshot when a dirty build
-  has one. `--app-store` refuses, before compiling, to run in CI or on a
+  build is tagged `build/app-store/<version>-<build number>` on the
+  commit it started from, and the script prints a `git push` command for
+  it; it pushes nothing, and a tag it cannot write fails the run after
+  packaging. `v<version>` is left to tag by hand on the released build.
+  `CFBundleVersion` for dev and local builds names the first 12
+  characters of the commit in place of the short SHA, and
+  `OnetimePadSourceRevision` names the snapshot when a dirty build has
+  one. `--app-store` refuses, before compiling, to run in CI, on a
   checkout with no commit, uncommitted changes, or index entries flagged
-  assume-unchanged or skip-worktree; stops before signing when its build
-  number's tag already names another commit; and runs `build-core.sh`
-  without `--if-stale`. A build whose tree changes while it builds, or
-  whose index has such flags, gets no record, and builds under CI get
-  none. `build-core.sh` dates the xcframework from the start of its
-  build, so `--if-stale` rebuilds a source saved while cargo runs.
-  `docs/development/build-records.md` covers reading and pruning
-  records.
+  assume-unchanged or skip-worktree, or with a version that makes no
+  valid tag name; stops before signing when its build number's tag
+  already names another commit; and runs `build-core.sh` without
+  `--if-stale`. `--build-number` is read in base 10. A build whose tree
+  changes while it builds, or whose index has such flags, gets no
+  record, and builds under CI get none. `build-core.sh` dates the
+  xcframework from the start of its build, so `--if-stale` rebuilds a
+  source saved while cargo runs. `docs/development/build-records.md`
+  covers reading, pruning and releasing records.
 
 - Cmd-Tab preserves the current window instead of always selecting the editor.
   A Dock reopen opens the editor only when no ordinary window is visible.

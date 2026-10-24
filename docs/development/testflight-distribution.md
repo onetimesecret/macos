@@ -257,17 +257,19 @@ The script packages only a clean commit. Before compiling, it refuses to run
 in CI, outside a git checkout, on an unborn branch, when the tree cannot be
 read, with uncommitted changes (untracked files git does not ignore count), and
 with index entries flagged assume-unchanged or skip-worktree, as a sparse
-checkout has. With `--build-number N`, it also refuses when the tag
-`build/app-store/<version>-N` already names another commit or cannot be
-created. If a file changes during the build, it stops before reserving a build
-number. If the reserved number's tag already names another commit or cannot be
-created, it stops before signing, and that number stays unused. It always runs cargo for the Rust core rather than reusing
-the cached xcframework. A successful run tags the commit
-`build/app-store/<version>-<build number>`, and `v<version>` when no tag of
-that name exists, then prints a `git push` command for those tags; it pushes
-nothing. If the `build/app-store` tag is not written, the run exits with an
-error after building the package, without tagging `v<version>` or printing a
-push command. See [Build records](build-records.md).
+checkout has. It also refuses when the version does not make a valid tag name,
+and, with `--build-number N`, when the tag `build/app-store/<version>-N`
+already names another commit or cannot be created. If a file changes during the
+build, it stops before reserving a build number. If the reserved number's tag
+already names another commit or cannot be created, it stops before signing, and
+that number stays unused. It always runs cargo for the Rust core rather than
+reusing the cached xcframework. A successful run tags the commit it started
+from `build/app-store/<version>-<build number>`, then prints a `git push`
+command for that tag; it pushes nothing. If the tag is not written, the run
+exits with an error after building the package and says to upload it only once
+the tag names the source commit. The script does not tag `v<version>`; tag it
+on the build you release ([Tag a release](build-records.md#tag-a-release)).
+See [Build records](build-records.md).
 
 Before compiling, the script checks identity availability and the profile's
 team, explicit App ID, Keychain group, selected certificate, expiry, and profile
