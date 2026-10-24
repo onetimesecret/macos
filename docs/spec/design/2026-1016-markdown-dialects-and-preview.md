@@ -946,7 +946,7 @@ Those are the review's own runs; this record repeats none of them.
 
 Run from `shell/` on 2026-10-23, macOS 27.2 on arm64, Apple Swift 6.4:
 `swift test --filter "HTMLTokenizerTests|PreviewComposerTests|MarkdownPreviewCompositionTests|MarkdownPreviewRenderingTests|CheckpointMarkdownPreviewTests|CheckpointInsertionTests|DayScrollPreviewRenderingTests|PageModelPreviewRenderingTests|MarkdownParserTests|MarkdownCorpusTests|MarkdownSealedAtomTests|LinkDetectionTests|LinkRenderingTests|FenceScannerTests|FenceRenderingTests|FenceRegionFoldTests|CodeSlabTests"`,
-329 tests, 0 failures; `scripts/vendor-cmark.sh --check` passes. Not run:
+330 tests, 0 failures; `scripts/vendor-cmark.sh --check` passes. Not run:
 the full shell suite (left to CI), a macOS 13 runtime, a manual interaction
 pass and VoiceOver.
 
@@ -957,9 +957,14 @@ pass and VoiceOver.
   composition still applies.
 - `MarkdownPreviewRenderer` runs on the main actor and `reseed(with:)`
   parses and composes the whole page synchronously, so a page near the
-  limits blocks the main thread for as long as it takes. Parse and render
-  time on large pages is not recorded here; R6 benchmarks it and decides
-  whether rendering moves off the main thread.
+  limits blocks the main thread for as long as it takes. The limits bound
+  an adversarial page's work, not interactive latency. Parse and render time on large pages is not recorded here; R6 benchmarks
+  it and decides on a latency budget and whether rendering moves off the
+  main thread.
+- An image with no alt text shows nothing and has no descriptor range,
+  though it still takes an occurrence number, so occurrences count every
+  image of the page in source order. R5's carrier for such images (R3's
+  open items) decides how it is reached.
 - A `PreviewImageDescriptor` address is `unreviewed`: no scheme check runs
   on it, and nothing reads it. ADR-0059 gives its schemes to R4, whose gates
   "must complete before production image wiring".
