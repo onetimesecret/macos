@@ -646,14 +646,14 @@ impl Sheet {
 
     /// The compaction ceremony (ADR-0013): freeze provenance into the blocks,
     /// then rebirth the document without its history. Chips pass through, and each
-    /// standing one's note sheds its history with the page (ADR-0058 point 6).
+    /// note no other device has seen sheds its history with the page (ADR-0058 point 6).
     pub(crate) fn compact(&mut self) {
         // Read while the log exists: a deletion leaves no character to carry it.
         let frontier = self.document.latest_timestamp();
         self.blocks.graduate(&self.document);
         self.document.compact();
-        // A detached note keeps its history: a copy of it elsewhere may still meet it.
-        for note in self.chips.iter_mut().filter_map(|chip| chip.note.as_mut()) {
+        let records = self.chips.iter_mut().chain(&mut self.detached);
+        for note in records.filter_map(|chip| chip.note.as_mut()) {
             note.compact();
         }
         self.rebuild_segments();

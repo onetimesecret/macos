@@ -8,7 +8,9 @@ use std::collections::VecDeque;
 use zeroize::Zeroizing;
 
 use crate::clock::Clock;
-use crate::document::{EditIntent, EditSelection, SheetDocument, TextSelection, UpdateRefusal};
+use crate::document::{
+    EditIntent, EditSelection, Lineage, SheetDocument, TextSelection, UpdateRefusal,
+};
 use crate::ink::{self, StepOutcome};
 use crate::metadata::{record_on, record_on_mut};
 use crate::sheet::{ItemId, SealedChip, Sheet, SheetId};
@@ -105,16 +107,21 @@ pub(crate) struct Note {
 }
 
 /// A restored or pasted note rests in a wiping owner until an edit applies, since the
-/// document's Loro arena does not wipe (Law 0004, C01, C31).
+/// document's Loro arena does not wipe (Law 0004, C01, C31). Its history is shared once
+/// any of it has left this device or come from another.
 enum Body {
     /// The text, the selection the last run's end kept, and the operation log a restore
-    /// or a compaction left, each given to the document later.
+    /// or a key frame left, each given to the document later. A note resting with a log
+    /// has a shared history.
     Resting {
         text: Zeroizing<String>,
         kept: Option<TextSelection>,
         history: Option<Zeroizing<Vec<u8>>>,
     },
-    Document(SheetDocument),
+    Document {
+        document: SheetDocument,
+        shared: bool,
+    },
 }
 
 impl Note {
@@ -147,7 +154,7 @@ impl Note {
     pub(crate) fn text(&self) -> Zeroizing<String> {
         match &self.body {
             Body::Resting { text, .. } => Zeroizing::new(text.as_str().to_owned()),
-            Body::Document(document) => ink::text_of(document),
+            Body::Document { document, .. } => ink::text_of(document),
         }
     }
 
@@ -155,19 +162,20 @@ impl Note {
     pub(crate) fn has_content(&self) -> bool {
         match &self.body {
             Body::Resting { text, .. } => !text.trim().is_empty(),
-            Body::Document(document) => !ink::text_of(document).trim().is_empty(),
+            Body::Document { document, .. } => !ink::text_of(document).trim().is_empty(),
         }
     }
 
     /// The operation log to write beside the text, at its exact size: the one the note
-    /// rests with, or its document's; `None` when it has no operation.
+    /// rests with, or its document's; `None` when it has no operation or its history
+    /// is not shared, so the text alone restores it.
     pub(crate) fn history(&self) -> Option<Zeroizing<Vec<u8>>> {
         match &self.body {
             Body::Resting { history, .. } => {
                 history.as_ref().map(|log| Zeroizing::new(log.to_vec()))
             }
-            Body::Document(document) => {
-                (!document.is_pristine()).then(|| document.export_snapshot())
+            Body::Document { document, shared } => {
+                (*shared && !document.is_pristine()).then(|| document.export_snapshot())
             }
         }
     }
@@ -177,7 +185,15 @@ impl Note {
     pub(crate) fn resting(&self) -> Option<&Zeroizing<String>> {
         match &self.body {
             Body::Resting { text, .. } => Some(text),
-            Body::Document(_) => None,
+            Body::Document { .. } => None,
+        }
+    }
+
+    /// Whether any of the note's history has left this device or come from another.
+    fn is_shared(&self) -> bool {
+        match &self.body {
+            Body::Resting { history, .. } => history.is_some(),
+            Body::Document { shared, .. } => *shared,
         }
     }
 
@@ -205,11 +221,19 @@ impl Note {
     /// The document an edit, an export or a merge needs, made the first time.
     fn document(&mut self) -> &mut SheetDocument {
         if let Some(document) = self.woken() {
-            self.body = Body::Document(document);
+            let shared = self.is_shared();
+            self.body = Body::Document { document, shared };
         }
         match &mut self.body {
-            Body::Document(document) => document,
+            Body::Document { document, .. } => document,
             Body::Resting { .. } => unreachable!("the resting text was made a document above"),
+        }
+    }
+
+    /// Mark a document's history shared; a resting note is shared by its log alone.
+    fn mark_shared(&mut self) {
+        if let Body::Document { shared, .. } = &mut self.body {
+            *shared = true;
         }
     }
 
@@ -252,7 +276,7 @@ impl Note {
                     *kept = Some(selection);
                 }
             }
-            Body::Document(document) => document.finish_editing_group(selection),
+            Body::Document { document, .. } => document.finish_editing_group(selection),
         }
     }
 
@@ -260,7 +284,7 @@ impl Note {
     fn edited(&self) -> Option<&SheetDocument> {
         match &self.body {
             Body::Resting { .. } => None,
-            Body::Document(document) => Some(document),
+            Body::Document { document, .. } => Some(document),
         }
     }
 
@@ -284,7 +308,7 @@ impl Note {
     pub(crate) fn step(&mut self, back: bool) -> StepOutcome {
         match &mut self.body {
             Body::Resting { .. } => StepOutcome::NONE,
-            Body::Document(document) => ink::step(document, back),
+            Body::Document { document, .. } => ink::step(document, back),
         }
     }
 
@@ -293,28 +317,78 @@ impl Note {
         self.document().version()
     }
 
-    /// The note's operations beyond `since`; `None` if `since` does not decode.
+    /// The note's operations beyond `since`, which leave the device, so its history is
+    /// shared from here on; `None` if `since` does not decode.
     pub(crate) fn export_since(&mut self, since: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
-        self.document().export_updates_since(since)
+        let exported = self.document().export_updates_since(since)?;
+        self.mark_shared();
+        Some(exported)
     }
 
-    /// Merge a peer's batch outside the undo stack (ADR-0058 point 6); a refusal leaves
-    /// the note as it was, resting included. Returns whether the note changed.
+    /// Merge a peer's batch outside the undo stack (ADR-0058 point 6), only over the note's
+    /// own history once it has one; a refusal leaves the note as it was, resting included.
+    /// Returns whether the note's history changed.
     pub(crate) fn import(&mut self, bytes: &[u8]) -> Result<bool, UpdateRefusal> {
-        if let Body::Document(document) = &self.body {
-            return document.import_ink_update(bytes);
+        if let Body::Document { document, shared } = &mut self.body {
+            let changed = document.import_ink_update(bytes, Lineage::Own)?;
+            *shared = true;
+            return Ok(changed);
         }
-        let Some(document) = self.woken() else {
+        let Body::Resting {
+            text,
+            kept,
+            history,
+        } = &self.body
+        else {
             unreachable!("a note that is not a document rests");
         };
-        let changed = document.import_ink_update(bytes)?;
-        self.body = Body::Document(document);
+        let (document, changed) = if history.is_some() {
+            let document = self.woken().expect("a resting note wakes");
+            let changed = document.import_ink_update(bytes, Lineage::Own)?;
+            (document, changed)
+        } else {
+            // With no history of its own, a blank note takes any batch's history, and
+            // another only one that spells its text.
+            let document = SheetDocument::new();
+            let changed = document.import_ink_update(bytes, Lineage::Own)?;
+            if !text.is_empty() && ink::text_of(&document).as_str() != text.as_str() {
+                return Err(UpdateRefusal::UnrelatedHistory);
+            }
+            if kept.is_some() {
+                document.finish_editing_group(*kept);
+            }
+            (document, changed)
+        };
+        self.body = Body::Document {
+            document,
+            shared: true,
+        };
         Ok(changed)
     }
 
-    /// Shed the history with the page's (ADR-0058 point 6): the text re-typed under a
-    /// fresh peer, whose log the note rests with, and no step to take back.
+    /// Shed a history no other device has seen with the page's (ADR-0058 point 6): the
+    /// note rests as its text alone, with no step to take back. A shared history stays
+    /// whole, since a copy of it elsewhere may still meet it.
     pub(crate) fn compact(&mut self) {
+        let Body::Document {
+            document,
+            shared: false,
+        } = &self.body
+        else {
+            return;
+        };
+        let text = ink::text_of(document);
+        self.body = Body::Resting {
+            text,
+            kept: None,
+            history: None,
+        };
+    }
+
+    /// Re-type the text under a fresh peer for a key frame (ADR-0058 point 6): the note
+    /// rests with the rebuild's log, shared by the frame, and no step to take back.
+    /// Returns that log; `None` for a note with no text, whose rebuild has no operation.
+    pub(crate) fn rebuild(&mut self) -> Option<Zeroizing<Vec<u8>>> {
         let text = self.text();
         let rebuild = ink::document_holding(&text);
         let history = (!rebuild.is_pristine()).then(|| rebuild.export_snapshot());
@@ -323,6 +397,7 @@ impl Note {
             kept: None,
             history,
         };
+        self.history()
     }
 
     /// Fold `arriving`, the note of a value moving into a standing record's place, into
@@ -358,14 +433,21 @@ impl Note {
         }
         let theirs = other.document();
         let ours = self.document();
-        ours.shares_base(theirs) && ours.import_ink_update(&theirs.export_snapshot()).is_ok()
+        let merged = ours.shares_base(theirs)
+            && ours
+                .import_ink_update(&theirs.export_snapshot(), Lineage::Any)
+                .is_ok();
+        if merged {
+            self.mark_shared();
+        }
+        merged
     }
 
     /// Whether the note has no operation at all.
     fn is_blank(&self) -> bool {
         match &self.body {
             Body::Resting { text, history, .. } => text.is_empty() && history.is_none(),
-            Body::Document(document) => document.is_pristine(),
+            Body::Document { document, .. } => document.is_pristine(),
         }
     }
 
@@ -373,7 +455,7 @@ impl Note {
     fn has_history(&self) -> bool {
         match &self.body {
             Body::Resting { history, .. } => history.is_some(),
-            Body::Document(_) => true,
+            Body::Document { .. } => true,
         }
     }
 
@@ -454,9 +536,9 @@ impl<C: Clock> SheetStore<C> {
     /// # Errors
     /// [`RemoteRefusal::Malformed`] for an empty batch, before anything else;
     /// [`RemoteRefusal::UnknownSheet`] for a page that is not here; or
-    /// [`RemoteRefusal::Malformed`], [`RemoteRefusal::MissingHistory`] or
-    /// [`RemoteRefusal::NestedObject`] when every record refused it. A refusal leaves
-    /// its note as it was.
+    /// [`RemoteRefusal::Malformed`], [`RemoteRefusal::MissingHistory`],
+    /// [`RemoteRefusal::NestedObject`] or [`RemoteRefusal::UnrelatedHistory`] when every
+    /// record refused it. A refusal leaves its note as it was.
     pub fn apply_remote_note_update(
         &mut self,
         page: ItemId,
@@ -1167,7 +1249,7 @@ mod tests {
     fn an_empty_note_batch_is_refused_and_nothing_waits() {
         // Loro refuses one too, so the early refusal names what the import would.
         assert_eq!(
-            SheetDocument::new().import_ink_update(&[]),
+            SheetDocument::new().import_ink_update(&[], Lineage::Own),
             Err(UpdateRefusal::Malformed)
         );
         let mut pair = Pair::new("base");
@@ -1270,50 +1352,87 @@ mod tests {
         assert_eq!(text_of(&store, id, object), "base");
     }
 
-    /// A deferred page whose object's note once held [`DOOMED`], and the note's peers then.
-    fn noted_with_a_deletion() -> (Store, SheetId, ItemId, Vec<u64>) {
+    /// A note's whole history, as a peer meeting it for the first time is sent it.
+    fn export_whole(store: &mut Store, id: SheetId, object: ItemId) -> Zeroizing<Vec<u8>> {
+        let pristine = SheetDocument::pristine_version();
+        store.export_note_updates(id, object, &pristine).unwrap()
+    }
+
+    /// Seal `value` at `at` on page `id`, its note `keep ` after `doomed` is typed and deleted.
+    fn sealed_with_a_deletion(
+        store: &mut Store,
+        id: SheetId,
+        value: &str,
+        at: u32,
+        doomed: &str,
+    ) -> ItemId {
+        let chip = store.seal_text_at(id, value, at, 0).unwrap();
+        write(store, chip, 0, "keep ");
+        write(store, chip, 5, doomed);
+        let len_u16 = u32::try_from(doomed.len()).unwrap();
+        let gone = [EditOp::Delete {
+            pos_u16: 5,
+            len_u16,
+        }];
+        assert!(store.apply_note_ops(chip, &gone, EditIntent::Deletion, None));
+        store.sheet(id).unwrap().chip(chip).unwrap().uuid()
+    }
+
+    fn note_on(store: &Store, id: SheetId, object: ItemId) -> &Note {
+        record(store, id, object)
+            .note
+            .as_ref()
+            .expect("the record has a note")
+    }
+
+    /// A deferred page whose object's note once held [`DOOMED`], sent whole to a peer
+    /// when `shared`, and the note's peers then.
+    fn noted_with_a_deletion(shared: bool) -> (Store, SheetId, ItemId, Vec<u64>) {
         let mut alpha = device();
         let a = alpha.new_tab().1;
         assert!(alpha.set_compaction_deferred(a, true));
         type_on(&mut alpha, a, "one two");
-        let chip = alpha.seal_text_at(a, SECRET, 4, 0).unwrap();
-        write(&mut alpha, chip, 0, "keep ");
-        write(&mut alpha, chip, 5, DOOMED);
-        let len = u32::try_from(DOOMED.len()).unwrap();
-        let gone = [EditOp::Delete {
-            pos_u16: 5,
-            len_u16: len,
-        }];
-        assert!(alpha.apply_note_ops(chip, &gone, EditIntent::Deletion, None));
-        let object = alpha.sheet(a).unwrap().chip(chip).unwrap().uuid();
+        let object = sealed_with_a_deletion(&mut alpha, a, SECRET, 4, DOOMED);
+        if shared {
+            export_whole(&mut alpha, a, object);
+            assert!(contains(&alpha.snapshot(1_000), DOOMED), "the control");
+        }
         let peers = note_mut(&mut alpha, a, object).peers();
-        assert!(contains(&alpha.snapshot(1_000), DOOMED), "the control");
         (alpha, a, object, peers)
     }
 
     #[test]
     fn compaction_sheds_deleted_note_text_under_a_fresh_peer() {
-        let (mut alpha, a, object, before) = noted_with_a_deletion();
-        let tab = alpha.tabs().next().unwrap().id();
-        alpha.cycle_rung(tab).unwrap();
-        let frame = alpha.perform_ceremony(a).unwrap();
-        assert!(!contains(&frame, DOOMED), "the frame kept the deleted text");
-        assert!(
-            !contains(&alpha.snapshot(1_000), DOOMED),
-            "the file kept it"
-        );
-        assert_eq!(text_of(&alpha, a, object), "keep ");
-        let after = note_mut(&mut alpha, a, object).peers();
-        assert!(
-            after.iter().all(|peer| !before.contains(peer)),
-            "an old peer survived the rebuild"
-        );
-        assert!(!contains(&frame, SECRET), "a value reached the frame");
+        for shared in [false, true] {
+            let (mut alpha, a, object, before) = noted_with_a_deletion(shared);
+            let tab = alpha.tabs().next().unwrap().id();
+            alpha.cycle_rung(tab).unwrap();
+            let frame = alpha.perform_ceremony(a).unwrap();
+            let parts = crate::frame::decode(&frame).unwrap();
+            let objects: Vec<ItemId> = parts.notes.iter().map(|(object, _)| *object).collect();
+            assert_eq!(
+                objects,
+                [object],
+                "shared {shared}: the frame has no rebuild"
+            );
+            assert!(!contains(&frame, DOOMED), "the frame kept the deleted text");
+            assert!(
+                !contains(&alpha.snapshot(1_000), DOOMED),
+                "shared {shared}: the file kept it"
+            );
+            assert_eq!(text_of(&alpha, a, object), "keep ");
+            let after = note_mut(&mut alpha, a, object).peers();
+            assert!(
+                after.iter().all(|peer| !before.contains(peer)),
+                "shared {shared}: an old peer survived the rebuild"
+            );
+            assert!(!contains(&frame, SECRET), "a value reached the frame");
+        }
     }
 
     #[test]
     fn a_detached_records_note_keeps_its_history_through_its_pages_compaction() {
-        let (mut alpha, a, object, before) = noted_with_a_deletion();
+        let (mut alpha, a, object, before) = noted_with_a_deletion(true);
         assert!(alpha.apply_ops(
             a,
             &[EditOp::Delete {
@@ -1338,6 +1457,227 @@ mod tests {
             contains(&history, DOOMED),
             "the detached note was compacted"
         );
+    }
+
+    #[test]
+    fn a_pages_compaction_sheds_only_a_history_no_other_device_has_seen() {
+        const KEPT: &str = "SHARED_DELETION_MARKER_77ab";
+        // Two notes that restore resting: a shared one with its log, one with its text alone.
+        let mut first = device();
+        let id = first.new_tab().1;
+        let chips = [
+            first.seal_text_at(id, SECRET, 0, 0).unwrap(),
+            first.seal_text_at(id, "ghp_bare_value", 0, 0).unwrap(),
+        ];
+        write(&mut first, chips[0], 0, "logged");
+        write(&mut first, chips[1], 0, "bare");
+        let [logged, bare] = chips.map(|chip| first.sheet(id).unwrap().chip(chip).unwrap().uuid());
+        export_whole(&mut first, id, logged);
+        let mut alpha = device();
+        assert_eq!(alpha.restore(&first.snapshot(1_000), 1_000), Ok(1));
+        let a = alpha.sheets().next().unwrap().id();
+        let tab = alpha.tabs().next().unwrap().id();
+
+        let local = sealed_with_a_deletion(&mut alpha, a, "ghp_local_value", 0, DOOMED);
+        let shared = sealed_with_a_deletion(&mut alpha, a, "ghp_shared_value", 0, KEPT);
+        export_whole(&mut alpha, a, shared);
+        let detached = sealed_with_a_deletion(&mut alpha, a, "ghp_detached_value", 0, DOOMED);
+        let gone = [EditOp::Delete {
+            pos_u16: 0,
+            len_u16: 1,
+        }];
+        assert!(alpha.apply_ops(a, &gone));
+        let sheet = alpha.sheet(a).unwrap();
+        assert!(
+            sheet.detached.iter().any(|chip| chip.uuid == detached),
+            "the control"
+        );
+        let before = note_mut(&mut alpha, a, shared).peers();
+        for object in [local, detached] {
+            assert!(
+                note_on(&alpha, a, object).resting().is_none(),
+                "the control"
+            );
+        }
+
+        alpha.cycle_rung(tab).unwrap();
+        for object in [logged, bare] {
+            assert!(
+                note_on(&alpha, a, object).resting().is_some(),
+                "a resting note woke"
+            );
+        }
+        assert!(note_on(&alpha, a, logged).history().is_some());
+        for object in [bare, local, detached] {
+            let note = note_on(&alpha, a, object);
+            assert!(
+                note.resting().is_some(),
+                "a never shared note kept its document"
+            );
+            assert!(note.history().is_none(), "a never shared note kept its log");
+        }
+        assert_eq!(note_on(&alpha, a, local).text().as_str(), "keep ");
+        let note = note_on(&alpha, a, shared);
+        assert!(note.resting().is_none(), "the shared note was typed again");
+        assert!(note.history().is_some_and(|log| contains(&log, KEPT)));
+        assert_eq!(note_mut(&mut alpha, a, shared).peers(), before);
+        let snapshot = alpha.snapshot(1_000);
+        assert!(
+            !contains(&snapshot, DOOMED),
+            "the file kept a deletion no peer has"
+        );
+        assert!(
+            contains(&snapshot, KEPT),
+            "the control: the shared log is written"
+        );
+    }
+
+    #[test]
+    fn a_note_no_other_device_has_seen_persists_no_log_and_a_shared_one_persists_its_own() {
+        for shared in [false, true] {
+            let (alpha, _, object, before) = noted_with_a_deletion(shared);
+            let snapshot = alpha.snapshot(1_000);
+            assert_eq!(contains(&snapshot, DOOMED), shared, "shared {shared}");
+            let mut revived = device();
+            assert_eq!(revived.restore(&snapshot, 1_000), Ok(1));
+            let r = revived.sheets().next().unwrap().id();
+            let note = note_on(&revived, r, object);
+            assert!(note.resting().is_some(), "shared {shared}: the note woke");
+            assert_eq!(note.text().as_str(), "keep ");
+            assert_eq!(note.history().is_some(), shared, "shared {shared}");
+            if shared {
+                assert_eq!(note_mut(&mut revived, r, object).peers(), before);
+            }
+        }
+    }
+
+    /// The traced defect: an object leaves an enrolled page for one that compacts and
+    /// comes back, and the cursor met again exports its note from the pristine version.
+    #[test]
+    fn a_note_back_from_a_page_that_compacted_never_shows_its_text_twice() {
+        for rebuilt in [false, true] {
+            let mut pair = Pair::new("abc");
+            let (a1, b1, object) = (pair.a, pair.b, pair.object);
+            let (tab, a0) = pair.alpha.new_tab();
+            if rebuilt {
+                assert!(pair.alpha.set_compaction_deferred(a0, true));
+            }
+            assert!(pair.alpha.move_range_to(a1, 4, 1, a0, 0).is_some());
+            ship(&pair.alpha, a1, &mut pair.beta, b1);
+            let detached = &pair.beta.sheet(b1).unwrap().detached;
+            assert!(
+                detached.iter().any(|chip| chip.uuid == object),
+                "the control"
+            );
+            pair.alpha.cycle_rung(tab).unwrap();
+            if rebuilt {
+                assert!(pair.alpha.perform_ceremony(a0).is_some());
+            }
+            assert!(pair.alpha.move_range_to(a0, 0, 1, a1, 4).is_some());
+            ship(&pair.alpha, a1, &mut pair.beta, b1);
+            let standing = &pair.beta.sheet(b1).unwrap().chips;
+            assert!(
+                standing.iter().any(|chip| chip.uuid == object),
+                "the control"
+            );
+
+            let whole = export_whole(&mut pair.alpha, a1, object);
+            let page = page_of(&pair.beta, b1);
+            let outcome = pair.beta.apply_remote_note_update(page, object, &whole);
+            let expected = if rebuilt {
+                Err(RemoteRefusal::UnrelatedHistory)
+            } else {
+                Ok(false)
+            };
+            assert_eq!(outcome, expected, "rebuilt {rebuilt}");
+            assert_eq!(pair.texts(), ["abc", "abc"], "rebuilt {rebuilt}");
+
+            // A later edit on either side reaches the other, or is refused changing neither.
+            let chip = record(&pair.alpha, a1, object).id;
+            write(&mut pair.alpha, chip, 3, " alpha");
+            let to_beta = send(&mut pair.alpha, a1, &mut pair.beta, b1, object);
+            let peer = record(&pair.beta, b1, object).id;
+            write(&mut pair.beta, peer, 0, "beta ");
+            let to_alpha = send(&mut pair.beta, b1, &mut pair.alpha, a1, object);
+            if rebuilt {
+                let refused = Err(RemoteRefusal::UnrelatedHistory);
+                assert_eq!((to_beta, to_alpha), (refused, refused));
+                assert_eq!(pair.texts(), ["abc alpha", "beta abc"]);
+            } else {
+                assert_eq!((to_beta, to_alpha), (Ok(true), Ok(true)));
+                assert_eq!(pair.texts(), ["beta abc alpha", "beta abc alpha"]);
+            }
+        }
+    }
+
+    #[test]
+    fn a_batch_building_on_none_of_a_notes_history_is_refused_and_leaves_the_note() {
+        // Two devices write one record's first note apart, so neither builds on the other.
+        let (mut alpha, mut beta) = (device(), device());
+        let (a, b) = (alpha.new_tab().1, beta.new_tab().1);
+        let chip = alpha.seal_text_at(a, SECRET, 0, 0).unwrap();
+        let object = alpha.sheet(a).unwrap().chip(chip).unwrap().uuid();
+        ship(&alpha, a, &mut beta, b);
+        let peer = record(&beta, b, object).id;
+        write(&mut alpha, chip, 0, "alpha's");
+        write(&mut beta, peer, 0, "beta's");
+        let before = note_mut(&mut beta, b, object).peers();
+        assert_eq!(
+            send(&mut alpha, a, &mut beta, b, object),
+            Err(RemoteRefusal::UnrelatedHistory)
+        );
+        assert_eq!(text_of(&beta, b, object), "beta's");
+        assert_eq!(note_mut(&mut beta, b, object).peers(), before);
+
+        // A note resting with a log of its own refuses one too, and rests on.
+        let theirs = ink::document_holding("theirs");
+        let batch = theirs
+            .export_updates_since(&SheetDocument::pristine_version())
+            .unwrap();
+        let mut logged = Note::restored("mine", &ink::document_holding("mine").export_snapshot());
+        assert_eq!(logged.import(&batch), Err(UpdateRefusal::UnrelatedHistory));
+        assert!(logged.resting().is_some(), "a refusal woke the note");
+        assert_eq!(logged.text().as_str(), "mine");
+
+        // A blank note takes any batch, and one extending the history it took merges.
+        let mut blank = Note::holding("");
+        assert_eq!(blank.import(&batch), Ok(true));
+        theirs.insert(6, " more").unwrap();
+        theirs.commit(None);
+        let more = theirs.export_updates_since(&blank.version()).unwrap();
+        assert_eq!(blank.import(&more), Ok(true));
+        assert_eq!(blank.text().as_str(), "theirs more");
+    }
+
+    #[test]
+    fn a_note_restored_from_its_text_alone_takes_a_batch_spelling_it_and_refuses_another() {
+        let theirs = ink::document_holding(RESTED);
+        let batch = theirs
+            .export_updates_since(&SheetDocument::pristine_version())
+            .unwrap();
+        let mut differs = Note::restored("another text", &[]);
+        assert_eq!(differs.import(&batch), Err(UpdateRefusal::UnrelatedHistory));
+        assert!(differs.resting().is_some(), "a refusal woke the note");
+        assert_eq!(differs.text().as_str(), "another text");
+
+        let mut same = Note::restored(RESTED, &[]);
+        assert_eq!(same.import(&batch), Ok(true));
+        assert_eq!(same.text().as_str(), RESTED, "the text showed twice");
+        assert_eq!(
+            same.peers(),
+            theirs.history_peers(),
+            "it kept a history of its own"
+        );
+        assert!(!same.can_undo(), "the batch became a step");
+        assert!(
+            same.history().is_some(),
+            "the history it took is not shared"
+        );
+        theirs.insert(0, "> ").unwrap();
+        theirs.commit(None);
+        let more = theirs.export_updates_since(&same.version()).unwrap();
+        assert_eq!(same.import(&more), Ok(true));
+        assert_eq!(same.text().as_str(), format!("> {RESTED}"));
     }
 
     #[test]

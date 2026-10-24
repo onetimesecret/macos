@@ -342,7 +342,8 @@ impl PageExport {
     }
 }
 
-/// Each chip's note text and log, taken once at their exact sizes (Law 0004).
+/// Each chip's note text and, once its history is shared, its log, taken once at their
+/// exact sizes (Law 0004).
 fn notes_of(chips: &[SealedChip]) -> Vec<Option<NoteExport>> {
     chips
         .iter()

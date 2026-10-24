@@ -154,6 +154,19 @@ pub(crate) enum UpdateRefusal {
     /// The update would leave a chip sentinel in a note: sealed objects do not
     /// nest (ADR-0058 point 6).
     NestedObject,
+    /// The update builds on none of a note's own operations, a second history
+    /// whose text would show twice (ADR-0058, eject triggers).
+    UnrelatedHistory,
+}
+
+/// Whose operations a note's batch must build on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Lineage {
+    /// Any: a merge already judged over a shared base.
+    Any,
+    /// The document's own, once it has any: a change the batch brings comes from one
+    /// of its peers or depends on one of its operations.
+    Own,
 }
 
 /// What the op log can still prove about a span, frozen into the block
@@ -794,9 +807,13 @@ impl SheetDocument {
     }
 
     /// Apply a peer's batch to chipless ink, a note's (ADR-0058 point 6), only if a
-    /// trial on a fork is clean and leaves no sentinel, marked or not. Returns whether
-    /// the batch brought an operation this document lacked.
-    pub(crate) fn import_ink_update(&self, bytes: &[u8]) -> Result<bool, UpdateRefusal> {
+    /// trial on a fork is clean, leaves no sentinel, marked or not, and builds on the
+    /// `lineage` asked. Returns whether the batch brought an operation this document lacked.
+    pub(crate) fn import_ink_update(
+        &self,
+        bytes: &[u8],
+        lineage: Lineage,
+    ) -> Result<bool, UpdateRefusal> {
         let trial = self.doc.fork();
         let body = trial.get_text("body");
         let status = trial.import(bytes).map_err(|_| UpdateRefusal::Malformed)?;
@@ -811,6 +828,9 @@ impl SheetDocument {
             return Err(UpdateRefusal::NestedObject);
         }
         let before = self.doc.oplog_vv();
+        if lineage == Lineage::Own && !self.is_pristine() && unrelated(&trial, &before) {
+            return Err(UpdateRefusal::UnrelatedHistory);
+        }
         let status = self
             .doc
             .import(bytes)
@@ -1123,6 +1143,39 @@ fn chips_of(body: &LoroText) -> Vec<ItemId> {
             DocRun::Ink(_) => None,
         })
         .collect()
+}
+
+/// Whether `trial` has changes past `before` and none comes from a peer `before` has
+/// operations of or depends on one of those operations.
+fn unrelated(trial: &LoroDoc, before: &VersionVector) -> bool {
+    let mut brought = false;
+    for (peer, end) in trial.oplog_vv().iter() {
+        let start = before.get(peer).copied().unwrap_or(0);
+        if start >= *end {
+            continue;
+        }
+        if start > 0 {
+            return false;
+        }
+        brought = true;
+        let mut counter = 0;
+        while counter < *end {
+            let Some(change) = trial.get_change(ID::new(*peer, counter)) else {
+                break;
+            };
+            if change.deps.iter().any(|dep| before.includes_id(dep)) {
+                return false;
+            }
+            let next = i32::try_from(change.len)
+                .ok()
+                .and_then(|len| change.id.counter.checked_add(len));
+            match next {
+                Some(next) if next > counter => counter = next,
+                _ => break,
+            }
+        }
+    }
+    brought
 }
 
 /// The push hook reads the body in Loro's callback; relies on loro 1.13.9 `emit_events` unlocking first.

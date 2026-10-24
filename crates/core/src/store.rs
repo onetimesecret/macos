@@ -114,6 +114,9 @@ pub enum RemoteRefusal {
     /// A note's update or rebuild would stand a sealed object in the note:
     /// sealed objects do not nest (ADR-0058 point 6).
     NestedObject,
+    /// A note's update builds on none of the note's own operations, so its
+    /// text would show twice (ADR-0058, eject triggers).
+    UnrelatedHistory,
 }
 
 impl std::fmt::Display for RemoteRefusal {
@@ -129,6 +132,9 @@ impl std::fmt::Display for RemoteRefusal {
             }
             RemoteRefusal::NestedObject => {
                 write!(f, "a note never stands a sealed object")
+            }
+            RemoteRefusal::UnrelatedHistory => {
+                write!(f, "the update builds on none of the note's history")
             }
         }
     }
@@ -1424,7 +1430,8 @@ impl<C: Clock> SheetStore<C> {
 
     /// Perform a confirmed ceremony on a deferred page and return the new
     /// key frame (relay decision background sections 1 and 5): the page's
-    /// rebuild and each standing object's note rebuild (ADR-0058 point 6).
+    /// rebuild and each standing object's note rebuild under a fresh peer,
+    /// shared or not (ADR-0058 point 6); no detached record's note is rebuilt.
     /// `None`, changing nothing, unless deferred, or for a page past its
     /// deadline (Law 0001, expiry row). The caller pairs it with the
     /// GOP key rotation.
@@ -1438,8 +1445,8 @@ impl<C: Clock> SheetStore<C> {
         sheet.ceremony = CeremonyState::Deferred { due: false };
         let notes: Vec<(ItemId, Zeroizing<Vec<u8>>)> = sheet
             .chips
-            .iter()
-            .filter_map(|chip| Some((chip.uuid, chip.note.as_ref()?.history()?)))
+            .iter_mut()
+            .filter_map(|chip| Some((chip.uuid, chip.note.as_mut()?.rebuild()?)))
             .collect();
         Some(crate::frame::encode(
             &sheet.document.export_snapshot(),
@@ -2256,6 +2263,7 @@ pub(crate) fn refusal_from(refusal: UpdateRefusal) -> RemoteRefusal {
         UpdateRefusal::Malformed => RemoteRefusal::Malformed,
         UpdateRefusal::MissingHistory => RemoteRefusal::MissingHistory,
         UpdateRefusal::NestedObject => RemoteRefusal::NestedObject,
+        UpdateRefusal::UnrelatedHistory => RemoteRefusal::UnrelatedHistory,
     }
 }
 
