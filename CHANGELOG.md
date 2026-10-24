@@ -498,6 +498,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A page holding sealed objects syncs to every enrolled device** (app
+  0.44.0, companion-core 0.35.0, companion-ffi 0.44.0, companion-sync
+  0.6.0; proposed
+  [ADR-0058](docs/adr/0058-a-sealed-object-never-stalls-a-pages-sync.md),
+  issue #257). Before this, a peer refused a batch that stood a sealed
+  object its page did not have, every later batch of that page failed
+  after it, and the page stopped reaching that peer. Now the peer
+  imports the batch and shows the object as `value on another device`,
+  with its kind, size class, name and note and never its value. There
+  the copies, the link, the decrypted drag and conceal are withheld; a
+  rename, a note edit, a move and a removal sync. A name has a version,
+  so concurrent renames on two devices converge, and travels in a
+  `Metadata` envelope; a note keeps a history of its own, merges as a
+  CRDT and travels in a `NoteOps` envelope. A burn stays on the device
+  that has the value. The content snapshot is now `OTSSNAP5`, which
+  records each object's availability, its name's version and its
+  note's history; this build reads `OTSSNAP4`, and an earlier build
+  refuses the new file and leaves it untouched. A note's deleted text
+  now stays at rest until its page compacts.
+
 - **One Timeline navigator for every pad, and each pad keeps its place**
   (app 0.42.0; [ADR-0060](docs/adr/0060-shared-pad-timeline-navigation.md),
   PR #327). With pads on or off, the Timeline layout draws the same
