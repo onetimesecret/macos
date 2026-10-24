@@ -19,9 +19,17 @@ SCRIPT = (ROOT / "scripts/package-app.sh").read_text()
 CORE_SCRIPT = (ROOT / "scripts/build-core.sh").read_text()
 
 
+def find(marker, text=SCRIPT, start=0):
+    name = "build-core.sh" if text is CORE_SCRIPT else "package-app.sh"
+    index = text.find(marker, start)
+    if index < 0:
+        raise AssertionError(f"marker not found in {name}: {marker!r}")
+    return index
+
+
 def section(start_marker, end_marker, include_end=False, text=SCRIPT):
-    start = text.index(start_marker)
-    end = text.index(end_marker, start)
+    start = find(start_marker, text)
+    end = find(end_marker, text, start)
     if include_end:
         end += len(end_marker)
     return text[start:end]
@@ -56,7 +64,7 @@ PARSE = section(
     "APP_STORE_MODE=0\n",
     '\nif [[ "$CONFIG" == "debug" ]]; then\n  select_build_lane dev\n',
 )
-TAIL = SCRIPT[SCRIPT.index(AFTER_PACKAGING) :]
+TAIL = SCRIPT[find(AFTER_PACKAGING) :]
 
 CORE_MARKER_START = 'BUILD_START="$(mktemp -t companion-core-build-start)"'
 CORE_MARKER = section(
@@ -74,6 +82,7 @@ CORE_CURRENT = section(
 
 VERSION = "1.4.0"
 NUMBER = "17"
+MEMORY = ".claude/agent-memory/x.md"
 DIGEST = "ab" * 32
 LANES = {
     "dev": ("debug", "dev.onetimesecret.pad.debug"),
@@ -123,6 +132,23 @@ RESERVED = "==> App Store build number:"
 COMPILED = "==> compiled"
 REUSED = "already names this commit; its annotation is from an earlier build."
 NO_SNAPSHOT = "no record: no snapshot was made of the uncommitted changes."
+PLAIN_REF = "already names this commit; it is a plain ref with no annotation, and stays so."
+CLAUDE_NOTE = (
+    "    note: only files under .claude/ changed during the build;"
+    " recording the tree read before it.\n"
+)
+UPDATE_INDEX_HINT = (
+    "clear the flags with git update-index --no-assume-unchanged or --no-skip-worktree."
+)
+SPARSE_HINT = (
+    "a sparse checkout flags every path outside it; for a record,"
+    " package from a full checkout."
+)
+# The flagged entry warning: its listed paths, then one hint line.
+FLAGGED = re.compile(
+    r"this build counts as dirty with no record \(first 5\):\n"
+    r"(?P<paths>(?: {6}\S.*\n)*) {4}(?P<hint>\S.*)\n"
+)
 FIELD = re.compile(r"^([A-Z][A-Za-z -]*): (.*)$")
 
 
@@ -356,6 +382,12 @@ class BuildRecordTests(unittest.TestCase):
     def push_hints(self, result):
         return [line for line in result.stdout.splitlines() if "push with:" in line]
 
+    def flagged_block(self, stderr):
+        blocks = list(FLAGGED.finditer(stderr))
+        self.assertEqual(len(blocks), 1, stderr)
+        paths = [line.strip() for line in blocks[0]["paths"].splitlines()]
+        return paths, blocks[0]["hint"]
+
     def dirty(self, repo=None):
         repo = repo or self.repo
         (repo / "a.txt").write_text("one\ntwo\n")
@@ -419,7 +451,7 @@ class BuildRecordTests(unittest.TestCase):
             'echo "Built $APP and $PKG',
             'echo "Built $APP. Launch with',
         ]
-        positions = [SCRIPT.index(marker) for marker in order]
+        positions = [find(marker) for marker in order]
         self.assertEqual(positions, sorted(positions))
 
     def test_clean_build_records_head_under_refs_builds(self):
@@ -614,6 +646,95 @@ class BuildRecordTests(unittest.TestCase):
                 self.assertEqual(self.refs("refs/builds", "refs/tags"), [])
                 self.assertTrue(self.mktemp_log.read_text().split())
 
+    def test_scratch_index_is_owner_only(self):
+        index = self.repo / ".git" / "index"
+        index.chmod(0o644)
+        mode = 'echo "mode $(stat -f %Lp "$SOURCE_INDEX" 2>/dev/null || stat -c %a "$SOURCE_INDEX")"'
+        for dirty in (False, True):
+            with self.subTest(dirty=dirty):
+                if dirty:
+                    self.dirty()
+                result = self.build("local", during=mode, before_tag=mode)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    [line for line in result.stdout.splitlines() if line.startswith("mode ")],
+                    ["mode 600", "mode 600"],
+                )
+                self.assertEqual(index.stat().st_mode & 0o777, 0o644)
+
+    def claude_repo(self, directory):
+        repo = self.init_repo(self.tmp / directory)
+        (repo / ".claude" / "agent-memory").mkdir(parents=True)
+        (repo / MEMORY).write_text("memory\n")
+        self.git("add", "-A", cwd=repo)
+        self.git("commit", "-q", "-m", "agent memory", cwd=repo)
+        return repo
+
+    def test_claude_only_changes_during_the_build_keep_the_record(self):
+        edit = f"echo learned >> {MEMORY}"
+        cases = (
+            ("clean local", "local", False, edit),
+            ("dirty local", "local", True, edit),
+            ("clean dev", "dev", False, edit),
+            ("dirty dev", "dev", True, edit),
+            ("app store", "app-store", False, edit),
+            ("untracked file under .claude/", "local", False, "echo x > .claude/new.md"),
+            ("deleted file under .claude/", "local", False, f"rm {MEMORY}"),
+        )
+        for index, (name, lane, dirty, during) in enumerate(cases):
+            with self.subTest(name):
+                repo = self.claude_repo(f"claude{index}")
+                if dirty:
+                    self.dirty(repo)
+                head = self.git("rev-parse", "HEAD", cwd=repo)
+                result = self.build(lane, during=during, cwd=repo)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(CLAUDE_NOTE, result.stdout)
+                self.assertNotIn("warning", result.stderr)
+                stamps = self.stamps(result)
+                if lane == "app-store":
+                    tag = f"build/app-store/{VERSION}-{NUMBER}"
+                    self.assertEqual(
+                        self.git("rev-parse", f"{tag}^{{commit}}", cwd=repo), head
+                    )
+                    self.assertEqual(stamps["OnetimePadSourceRevision"], head)
+                    continue
+                records = self.refs("refs/builds", "refs/tags", cwd=repo)
+                record = f"refs/builds/{lane}/{VERSION}-{head[:12]}"
+                if not dirty:
+                    self.assertEqual(records, [record])
+                    self.assertEqual(
+                        self.git("rev-parse", f"{record}^{{commit}}", cwd=repo), head
+                    )
+                    self.assertEqual(stamps["OnetimePadSourceRevision"], head)
+                    continue
+                self.assertEqual(len(records), 1, records)
+                self.assertTrue(records[0].startswith(record + "-"), records)
+                snapshot = self.git("rev-parse", f"{records[0]}^{{commit}}", cwd=repo)
+                self.assertEqual(self.git("rev-parse", f"{snapshot}^1", cwd=repo), head)
+                # The snapshot is the tree read before the compile, not the later edit.
+                self.assertEqual(
+                    self.git("show", f"{snapshot}:{MEMORY}", cwd=repo), "memory"
+                )
+                self.assertEqual(self.git("show", f"{snapshot}:a.txt", cwd=repo), "one\ntwo")
+                self.assertEqual(stamps["OnetimePadSourceRevision"], snapshot)
+
+    def test_changes_beyond_claude_still_void_the_build(self):
+        cases = (
+            (".claude/ and another file", f"echo learned >> {MEMORY} && echo x >> a.txt"),
+            ("nested .claude/", "mkdir -p sub/.claude && echo x > sub/.claude/x.md"),
+            ("a sibling of .claude/", "mkdir -p .claude-other && echo x > .claude-other/x"),
+            ("a look alike name", "mkdir -p xclaude && echo x > xclaude/x.md"),
+        )
+        for index, (name, during) in enumerate(cases):
+            with self.subTest(name):
+                repo = self.claude_repo(f"beyond{index}")
+                result = self.build("local", during=during, cwd=repo)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("only files under .claude/", result.stdout)
+                self.assertIn("warning: files changed during the build", result.stderr)
+                self.assertEqual(self.refs("refs/builds", "refs/tags", cwd=repo), [])
+
     def test_tree_change_during_the_build_leaves_no_record(self):
         scenarios = (
             ("edit on a clean tree", False, "echo more >> a.txt"),
@@ -782,13 +903,10 @@ class BuildRecordTests(unittest.TestCase):
         head = self.git("rev-parse", "HEAD")
         result = self.build("local")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("assume-unchanged or skip-worktree", result.stderr)
-        listed = [
-            line.strip()
-            for line in result.stderr.splitlines()
-            if line.startswith(" " * 6)
-        ]
+        listed, hint = self.flagged_block(result.stderr)
         self.assertEqual(listed, names[:5])
+        self.assertEqual(hint, UPDATE_INDEX_HINT)
+        self.assertNotIn(SPARSE_HINT, result.stderr)
         self.assertIn(NO_SNAPSHOT, result.stderr)
         self.assertIn(
             f"==> Source: {head[:12]} with uncommitted changes", result.stdout
@@ -823,6 +941,32 @@ class BuildRecordTests(unittest.TestCase):
             self.assertTrue(
                 self.stamps(only)["OnetimePadSourceRevision"].endswith(".dirty")
             )
+
+    def test_sparse_checkout_flags_say_to_package_from_a_full_checkout(self):
+        for directory in ("inside", "outside"):
+            (self.repo / directory).mkdir()
+            (self.repo / directory / "file.txt").write_text(f"{directory}\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "two directories")
+        self.git("sparse-checkout", "set", "--cone", "inside")
+        self.assertFalse((self.repo / "outside" / "file.txt").exists())
+        self.assertEqual(
+            self.git("config", "--type=bool", "core.sparseCheckout"), "true"
+        )
+        head = self.git("rev-parse", "HEAD")
+        result = self.build("local")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        listed, hint = self.flagged_block(result.stderr)
+        self.assertEqual(listed, ["outside/file.txt"])
+        self.assertEqual(hint, SPARSE_HINT)
+        self.assertNotIn(UPDATE_INDEX_HINT, result.stderr)
+        self.assertIn(NO_SNAPSHOT, result.stderr)
+        self.assertEqual(self.refs("refs/builds", "refs/tags"), [])
+        self.assertEqual(self.stamps(result)["OnetimePadSourceRevision"], f"{head}.dirty")
+        refused = self.build("app-store")
+        self.assertEqual(refused.returncode, 1, refused.stdout)
+        self.assertEqual(self.flagged_block(refused.stderr)[1], SPARSE_HINT)
+        self.assertNotIn(COMPILED, refused.stdout)
 
     def test_app_store_refuses_a_dirty_tree_before_compiling(self):
         cases = (
@@ -1278,6 +1422,48 @@ class BuildRecordTests(unittest.TestCase):
                     self.refs("refs/builds", "refs/tags"), ["refs/builds/local"]
                 )
 
+    def test_plain_refs_are_reused_and_described_as_plain(self):
+        # Another date, so a second snapshot would get another id.
+        date = "2001-02-03T04:05:06Z"
+        later = {"GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
+        for dirty in (False, True):
+            with self.subTest("record left by the update-ref fallback", dirty=dirty):
+                repo = self.init_repo(self.tmp / f"plain{int(dirty)}")
+                if dirty:
+                    self.dirty(repo)
+                self.git("update-ref", "refs/builds/local", "HEAD", cwd=repo)
+                failed = self.build("local", cwd=repo)
+                self.assertEqual(failed.returncode, 0, failed.stderr)
+                source = self.stamps(failed)["OnetimePadSourceRevision"]
+                command = self.hand_command(failed.stderr, "keep a plain record with:")
+                self.git("update-ref", "-d", "refs/builds/local", cwd=repo)
+                by_hand = self.run_bash(command, cwd=repo)
+                self.assertEqual(by_hand.returncode, 0, by_hand.stderr)
+                (record,) = self.refs("refs/builds", cwd=repo)
+                self.assertEqual(self.git("cat-file", "-t", record, cwd=repo), "commit")
+                again = self.build("local", cwd=repo, env=later)
+                self.assertEqual(again.returncode, 0, again.stderr)
+                self.assertIn(f"    record {record} {PLAIN_REF}\n", again.stdout)
+                self.assertNotIn(REUSED, again.stdout)
+                self.assertEqual(self.git("cat-file", "-t", record, cwd=repo), "commit")
+                self.assertEqual(self.git("rev-parse", record, cwd=repo), source)
+                self.assertEqual(self.stamps(again)["OnetimePadSourceRevision"], source)
+        with self.subTest("lightweight App Store tag on this commit"):
+            repo = self.init_repo(self.tmp / "plain-tag")
+            head = self.git("rev-parse", "HEAD", cwd=repo)
+            name = f"build/app-store/{VERSION}-{NUMBER}"
+            self.git("tag", name, head, cwd=repo)
+            result = self.build("app-store", cwd=repo)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"    tag {name} {PLAIN_REF}\n", result.stdout)
+            self.assertNotIn(REUSED, result.stdout)
+            self.assertEqual(
+                self.git("cat-file", "-t", f"refs/tags/{name}", cwd=repo), "commit"
+            )
+            self.assertEqual(
+                self.push_hints(result), [f"    push with: git push origin {name}"]
+            )
+
     def test_invalid_ref_name_records_nothing(self):
         version = "1.0 beta"
         head = self.git("rev-parse", "HEAD")
@@ -1519,7 +1705,7 @@ class CoreBuildDateTests(unittest.TestCase):
             CORE_DATE,
             'printf \'%s\\n\' "$SHAPE" > "$STAMP"',
         ]
-        positions = [CORE_SCRIPT.index(marker) for marker in order]
+        positions = [find(marker, CORE_SCRIPT) for marker in order]
         self.assertEqual(positions, sorted(positions))
 
     def test_input_saved_during_the_core_build_reads_as_stale(self):
