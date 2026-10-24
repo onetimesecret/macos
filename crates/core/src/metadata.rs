@@ -81,16 +81,11 @@ impl ObjectMetadata {
     /// as counter 0, which every versioned write passes.
     fn of(record: &SealedChip, writer: [u8; 32]) -> Self {
         let (kind, size) = face_of(record);
-        let name = match (record.name_version, &record.name) {
-            (Some(version), name) => Some((version, name.clone())),
-            (None, Some(name)) => Some((NameVersion { counter: 0, writer }, Some(name.clone()))),
-            (None, None) => None,
-        };
         Self {
             object: record.uuid,
             kind,
             size,
-            name,
+            name: version_of(record, writer).map(|version| (version, record.name.clone())),
         }
     }
 
@@ -133,9 +128,20 @@ fn face_of(record: &SealedChip) -> (Option<PeerKind>, Option<SizeClass>) {
     }
 }
 
+/// The version `record`'s name compares at, sent or received: a name from
+/// before versions at counter 0 under `writer`, no name and no version none.
+fn version_of(record: &SealedChip, writer: [u8; 32]) -> Option<NameVersion> {
+    match (record.name_version, &record.name) {
+        (Some(version), _) => Some(version),
+        (None, Some(_)) => Some(NameVersion { counter: 0, writer }),
+        (None, None) => None,
+    }
+}
+
 /// Adopt from `entry` a kind or size class a record with no value lacks, and
-/// a name of a greater version. Returns whether the record changed.
-fn adopt(record: &mut SealedChip, entry: ObjectMetadata) -> bool {
+/// a name of a greater version than [`version_of`] gives it under `writer`.
+/// Returns whether the record changed.
+fn adopt(record: &mut SealedChip, entry: ObjectMetadata, writer: [u8; 32]) -> bool {
     let mut changed = false;
     if let Availability::Peer { kind, size } = &mut record.availability {
         if kind.is_none() && entry.kind.is_some() {
@@ -148,7 +154,7 @@ fn adopt(record: &mut SealedChip, entry: ObjectMetadata) -> bool {
         }
     }
     if let Some((version, name)) = entry.name
-        && record.name_version.is_none_or(|current| version > current)
+        && version_of(record, writer).is_none_or(|current| version > current)
     {
         record.name_version = Some(version);
         record.name = name;
@@ -158,18 +164,9 @@ fn adopt(record: &mut SealedChip, entry: ObjectMetadata) -> bool {
 }
 
 /// Fold into `into` what `from`, a record for the same object about to drop,
-/// knows and it lacks. Returns whether `into` changed.
-pub(crate) fn absorb(into: &mut SealedChip, from: &SealedChip) -> bool {
-    let (kind, size) = face_of(from);
-    let entry = ObjectMetadata {
-        object: from.uuid,
-        kind,
-        size,
-        name: from
-            .name_version
-            .map(|version| (version, from.name.clone())),
-    };
-    adopt(into, entry)
+/// knows and it lacks, both read under `writer`. Returns whether `into` changed.
+pub(crate) fn absorb(into: &mut SealedChip, from: &SealedChip, writer: [u8; 32]) -> bool {
+    adopt(into, ObjectMetadata::of(from, writer), writer)
 }
 
 /// The record for `object` on `sheet`, attached or detached.
@@ -247,6 +244,7 @@ impl<C: Clock> SheetStore<C> {
     /// Applying marks nothing changed. Returns how many entries changed a record.
     pub fn apply_object_metadata(&mut self, page: ItemId, entries: Vec<ObjectMetadata>) -> usize {
         let now = self.clock.now();
+        let writer = self.writer;
         let mut changed = 0;
         for entry in entries {
             let entry = entry.judged();
@@ -256,7 +254,7 @@ impl<C: Clock> SheetStore<C> {
                 Some(sheet) if sheet.is_due(now) => None,
                 Some(sheet) => match record_on_mut(sheet, entry.object) {
                     Some(record) => {
-                        changed += usize::from(adopt(record, entry));
+                        changed += usize::from(adopt(record, entry, writer));
                         None
                     }
                     None => Some(entry),
@@ -308,25 +306,25 @@ impl<C: Clock> SheetStore<C> {
         else {
             return;
         };
+        let writer = self.writer;
         if let Some(record) = self
             .sheet_mut(id)
             .and_then(|sheet| record_on_mut(sheet, object))
         {
-            adopt(record, entry);
+            adopt(record, entry, writer);
         }
     }
 
-    /// Drop every entry held for the page whose identity is `page`, as it ends;
-    /// each name wipes with its owner.
-    pub(crate) fn forget_pending_metadata(&mut self, page: ItemId) {
+    /// Drop what is held and what changed for page `id`, whose identity is
+    /// `page`, as it ends; each name wipes with its owner.
+    pub(crate) fn forget_page_metadata(&mut self, id: SheetId, page: ItemId) {
         self.metadata_pending.retain(|(at, _)| *at != page);
+        self.metadata_dirty.remove(&id);
     }
 
-    /// Mark `object` changed on `page`, forgetting pages that have ended.
+    /// Mark `object` changed on `page`, if the page stands.
     pub(crate) fn note_metadata(&mut self, page: SheetId, object: ItemId) {
-        let live: Vec<SheetId> = self.sheets().map(Sheet::id).collect();
-        self.metadata_dirty.retain(|id, _| live.contains(id));
-        if live.contains(&page) {
+        if self.sheet(page).is_some() {
             self.metadata_dirty.entry(page).or_default().insert(object);
         }
     }
@@ -335,10 +333,11 @@ impl<C: Clock> SheetStore<C> {
     /// identity on `there`, marking that page when it learned something.
     /// Returns whether it did.
     pub(crate) fn keep_newer_metadata(&mut self, there: SheetId, from: &SealedChip) -> bool {
+        let writer = self.writer;
         let learned = self
             .sheet_mut(there)
             .and_then(|sheet| sheet.chips.iter_mut().find(|chip| chip.uuid == from.uuid))
-            .is_some_and(|standing| absorb(standing, from));
+            .is_some_and(|standing| absorb(standing, from, writer));
         if learned {
             self.note_metadata(there, from.uuid);
         }
@@ -763,6 +762,102 @@ mod tests {
         assert_eq!(shared.alpha.apply_object_metadata(at_alpha, back), 1);
         assert_eq!(shared.on_alpha().name(), Some("RENAMED"));
         assert_eq!(shared.on_alpha().name_version(), Some(version(1, BETA)));
+    }
+
+    /// Give `object`'s record on `id` a name with no version, as an `OTSSNAP4` restore does.
+    fn name_unversioned(store: &mut Store, id: SheetId, object: ItemId, name: &str) {
+        let record = record_on_mut(store.sheet_mut(id).unwrap(), object).unwrap();
+        record.name = Some(Zeroizing::new(name.to_owned()));
+        record.name_version = None;
+    }
+
+    #[test]
+    fn two_names_from_before_versions_exchanged_at_once_converge_on_one() {
+        for alpha_first in [true, false] {
+            let mut shared = Shared::new();
+            let object = shared.object;
+            name_unversioned(&mut shared.alpha, shared.a, object, "ALPHA_NAME");
+            name_unversioned(&mut shared.beta, shared.b, object, "BETA_NAME");
+            // Both restates leave before either arrives.
+            let to_beta = shared.alpha.all_metadata(shared.a);
+            let to_alpha = shared.beta.all_metadata(shared.b);
+            let at_alpha = page_of(&shared.alpha, shared.a);
+            if alpha_first {
+                shared.alpha.apply_object_metadata(at_alpha, to_alpha);
+                shared.tell_beta(to_beta);
+            } else {
+                shared.tell_beta(to_beta);
+                shared.alpha.apply_object_metadata(at_alpha, to_alpha);
+            }
+            let names = (shared.on_alpha().name(), shared.on_beta().name());
+            assert_eq!(
+                names,
+                (Some("BETA_NAME"), Some("BETA_NAME")),
+                "{alpha_first}"
+            );
+
+            let to_beta = shared.alpha.all_metadata(shared.a);
+            let to_alpha = shared.beta.all_metadata(shared.b);
+            assert_eq!(shared.tell_beta(to_beta), 0, "settled");
+            assert_eq!(shared.alpha.apply_object_metadata(at_alpha, to_alpha), 0);
+        }
+    }
+
+    #[test]
+    fn a_folded_record_keeps_its_name_from_before_versions() {
+        // Away's record with no value folds into the value as the value arrives, or drops beside it.
+        for value_moves in [true, false] {
+            let (mut store, _) = store(ALPHA);
+            let [home, away] = [store.new_tab().1, store.new_tab().1];
+            type_on(&mut store, home, "ink ");
+            let chip = store.seal_text_at(home, SECRET, 4, 0).unwrap();
+            let object = store.sheet(home).unwrap().chip(chip).unwrap().uuid();
+            store
+                .stand_peer_record_as(away, 0, object, None, None)
+                .unwrap();
+            name_unversioned(&mut store, away, object, "FROM_V4");
+
+            let (edited, at, kept) = if value_moves {
+                (home, 4, away)
+            } else {
+                (away, 0, home)
+            };
+            assert!(store.apply_ops(
+                edited,
+                &[EditOp::Delete {
+                    pos_u16: at,
+                    len_u16: 1
+                }]
+            ));
+            let folded = record(&store, kept, object);
+            assert!(folded.is_local(), "{value_moves}");
+            assert_eq!(folded.name(), Some("FROM_V4"), "{value_moves}");
+            assert_eq!(folded.name_version(), Some(version(0, ALPHA)));
+        }
+    }
+
+    #[test]
+    fn a_changed_entry_goes_when_its_page_ends() {
+        let (mut store, _) = store(ALPHA);
+        let [kept, discarded] = [store.new_tab().1, store.new_tab().1];
+        let (tab, closed) = store.new_tab();
+        for id in [kept, discarded, closed] {
+            store.seal_text_at(id, SECRET, 0, 0).unwrap();
+        }
+        assert_eq!(store.metadata_dirty.len(), 3);
+
+        assert!(store.discard_page(discarded));
+        assert!(store.close_tab(tab));
+        let changed: Vec<SheetId> = store.metadata_dirty.keys().copied().collect();
+        assert_eq!(changed, [kept]);
+
+        store.note_metadata(discarded, ItemId::random());
+        store.mark_metadata_dirty(closed, &[ItemId::random()]);
+        assert_eq!(
+            store.metadata_dirty.len(),
+            1,
+            "an ended page takes no change"
+        );
     }
 
     #[test]

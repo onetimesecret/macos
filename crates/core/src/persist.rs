@@ -160,9 +160,10 @@ impl<C: Clock> SheetStore<C> {
         self.next_sheet_id = next_sheet_id;
         self.next_chip_id = chips.next_id;
         self.active_cut = active_cut;
-        // Page ids are minted afresh, and nothing restored is a change.
+        // Page and chip ids are minted afresh, and nothing restored is a change.
         self.metadata_dirty.clear();
         self.restated.clear();
+        self.moved_chips.clear();
         // An entry held for a page this restore did not bring back has no page to wait on.
         let pages: Vec<ItemId> = self.sheets().map(Sheet::uuid).collect();
         self.metadata_pending

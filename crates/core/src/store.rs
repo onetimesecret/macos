@@ -31,6 +31,9 @@ pub(crate) const HOLD_FIRST: Duration = Duration::from_secs(60 * 60);
 /// never cumulative (doc 04).
 pub(crate) const HOLD_TOPUP: Duration = Duration::from_secs(24 * 60 * 60);
 
+/// The most moved chip ids a store remembers, for a send in flight.
+pub(crate) const MOVED_CAP: usize = 64;
+
 /// Why the store refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refusal {
@@ -209,6 +212,9 @@ pub struct SheetStore<C: Clock> {
     /// Pages whose records or steps changed by another page's edit, burn or
     /// end, until the shell takes them. Never persisted.
     pub(crate) restated: BTreeSet<SheetId>,
+    /// Each value's old chip id and the id it took standing in for a record
+    /// with no value, oldest first, at most [`MOVED_CAP`]. Never persisted.
+    pub(crate) moved_chips: VecDeque<(ChipId, ChipId)>,
 }
 
 impl<C: Clock> SheetStore<C> {
@@ -229,6 +235,7 @@ impl<C: Clock> SheetStore<C> {
             metadata_dirty: BTreeMap::new(),
             metadata_pending: VecDeque::new(),
             restated: BTreeSet::new(),
+            moved_chips: VecDeque::new(),
         }
     }
 
@@ -720,21 +727,27 @@ impl<C: Clock> SheetStore<C> {
         size: Option<SizeClass>,
     ) -> Result<ChipId, Refusal> {
         self.check_seal_range(id, at_u16, 0)?;
+        let chip = ChipId(self.next_chip_id);
+        let sheet = self.sheet_mut(id).ok_or(Refusal::UnknownSheet)?;
         // One record per identity on a page.
-        if self
-            .sheet(id)
-            .is_some_and(|sheet| sheet.owned_uuids().contains(&uuid))
-        {
+        if sheet.owned_uuids().contains(&uuid) {
             return Err(Refusal::AlreadySealed);
         }
-        let chip = ChipId(self.next_chip_id);
-        let record = SealedChip::peer_known(chip, uuid, kind, size);
-        self.sheet_mut(id)
-            .ok_or(Refusal::UnknownSheet)?
+        let at = at_u16 as usize;
+        sheet
+            .document
+            .insert_chip(at, uuid)
+            .map_err(|_| Refusal::InvalidRange)?;
+        // The record joins only after its sentinel stands.
+        sheet
             .chips
-            .push(record);
+            .push(SealedChip::peer_known(chip, uuid, kind, size));
+        sheet.blocks.note_sentinel(at);
+        sheet.document.commit(None);
+        sheet.document.forget_undo();
         self.next_chip_id += 1;
-        self.place_chip(id, chip, at_u16, 0, None)
+        self.settle_document(id);
+        Ok(chip)
     }
 
     /// Apply a batch of edits to a page's body (ADR-0013). The batch is
@@ -1231,14 +1244,17 @@ impl<C: Clock> SheetStore<C> {
     /// under that one's chip id and keeping any newer name it learned, or keep
     /// it detached there if none stands.
     fn stand_in(&mut self, there: SheetId, mut record: SealedChip) {
+        let writer = self.writer;
         let Some(dest) = self.sheet_mut(there) else {
             return;
         };
         let uuid = record.uuid;
+        let mut moved = None;
         match dest.chips.iter_mut().find(|chip| chip.uuid == uuid) {
             Some(slot) => {
-                crate::metadata::absorb(&mut record, slot);
+                crate::metadata::absorb(&mut record, slot, writer);
                 // The shell's block, menus and drafts name the standing one's id.
+                moved = Some((record.id, slot.id));
                 record.id = slot.id;
                 record.stood = slot.stood;
                 *slot = record;
@@ -1246,9 +1262,34 @@ impl<C: Clock> SheetStore<C> {
             None => dest.detached.push(record),
         }
         dest.rebuild_segments();
+        if let Some((from, to)) = moved {
+            self.note_moved(from, to);
+        }
         self.drain_pending_metadata(there, uuid);
         self.note_metadata(there, uuid);
         self.restated.insert(there);
+    }
+
+    /// Remember that chip `from` now answers as `to`, so a send in flight
+    /// finds it; an id moved twice answers as the last.
+    fn note_moved(&mut self, from: ChipId, to: ChipId) {
+        for (_, at) in &mut self.moved_chips {
+            if *at == from {
+                *at = to;
+            }
+        }
+        if self.moved_chips.len() >= MOVED_CAP {
+            self.moved_chips.pop_front();
+        }
+        self.moved_chips.push_back((from, to));
+    }
+
+    /// The id chip `id` answers as now: the one its value took by moving, or itself.
+    fn moved_to(&self, id: ChipId) -> ChipId {
+        self.moved_chips
+            .iter()
+            .find_map(|(from, to)| (*from == id).then_some(*to))
+            .unwrap_or(id)
     }
 
     /// Take out each later standing of an identity, and each of an ended one
@@ -1794,10 +1835,11 @@ impl<C: Clock> SheetStore<C> {
         }
     }
 
-    /// Record that a chip's bytes left for `destination` (ADR-0012).
-    /// Returns whether the chip existed with its value on this device.
+    /// Record that a chip's bytes left for `destination` (ADR-0012), under the
+    /// id its value took if it moved. Returns whether it existed with its value here.
     pub fn record_sent(&mut self, chip: ChipId, destination: DestinationClass) -> bool {
         let offset = self.clock.local_offset_seconds();
+        let chip = self.moved_to(chip);
         // Detached ones too: a conceal's send outlives a removal made mid-flight.
         let Some((sheet_id, sealed)) = self
             .sheets()
@@ -1848,9 +1890,10 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Record a successful conceal: only the receipt id stays on the chip
-    /// (doc 03 §5). False for an unknown chip or one whose value is on
-    /// another device (ADR-0058 point 4).
+    /// (doc 03 §5), under the id its value took if it moved. False for an
+    /// unknown chip or one whose value is on another device (ADR-0058 point 4).
     pub fn mark_chip_concealed(&mut self, id: ChipId, receipt_id: String) -> bool {
+        let id = self.moved_to(id);
         for sheet in self.tabs.iter_mut().filter_map(|tab| tab.page.as_mut()) {
             let mut owned = sheet.chips.iter_mut().chain(sheet.detached.iter_mut());
             if let Some(chip) = owned.find(|c| c.id == id) {
@@ -2099,7 +2142,7 @@ impl<C: Clock> SheetStore<C> {
     fn entomb(&mut self, mut sheet: Sheet, label: Zeroizing<String>, event: LedgerEvent) {
         // The page has left the strip, so a cut it held ends here.
         self.end_a_broken_cut();
-        self.forget_pending_metadata(sheet.uuid);
+        self.forget_page_metadata(sheet.id, sheet.uuid);
         // A detached chip is a payload the page held, though nothing shows it.
         let recorded = sheet.has_content() || sheet.detached.iter().any(SealedChip::is_local);
         self.rehome_values(&mut sheet);
@@ -5859,6 +5902,111 @@ mod tests {
         remove_at(&mut store, home, 4);
         assert!(store.discard_page(away));
         assert!(store.take_restated_pages().is_empty());
+    }
+
+    #[test]
+    fn a_value_standing_on_two_other_pages_moves_to_the_first_in_page_order_only() {
+        for page_ends in [false, true] {
+            let (mut store, _) = store();
+            let [home, later, first] = [store.new_tab().1, store.new_tab().1, store.new_tab().1];
+            // `first` leads the strip, though its record stands last.
+            assert!(store.move_tab(slot(&store, first), 0));
+            type_on(&mut store, home, "ink ");
+            let chip = store.seal_text_at(home, "the secret", 4, 0).unwrap();
+            let uuid = uuid_of(&store, chip);
+            let on_later = store
+                .stand_peer_record_as(later, 0, uuid, None, None)
+                .unwrap();
+            let on_first = store
+                .stand_peer_record_as(first, 0, uuid, None, None)
+                .unwrap();
+
+            if page_ends {
+                assert!(store.discard_page(home));
+            } else {
+                remove_at(&mut store, home, 4);
+            }
+            let records = records_of(&store, uuid);
+            let holders: Vec<SheetId> = records
+                .iter()
+                .filter(|(_, record)| record.is_local())
+                .map(|(page, _)| *page)
+                .collect();
+            assert_eq!(holders, [first], "never copied: {page_ends}");
+            assert_eq!(records.len(), 2, "{page_ends}");
+            assert_eq!(
+                store.copy_out_chip(on_first).unwrap().0.as_slice(),
+                b"the secret"
+            );
+            let left = store.sheet(later).unwrap().chip(on_later).unwrap();
+            assert!(!left.is_local(), "value on another device: {page_ends}");
+        }
+    }
+
+    #[test]
+    fn a_record_with_no_value_whose_placement_is_refused_leaves_none() {
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        type_on(&mut store, id, "ink");
+        store.sheet_mut(id).unwrap().document.fail_writes_after(0);
+        assert_eq!(
+            store.stand_peer_record(id, 1, None, None),
+            Err(Refusal::InvalidRange)
+        );
+        let sheet = store.sheet(id).unwrap();
+        assert_eq!((sheet.chips().count(), sheet.detached().count()), (0, 0));
+        assert_eq!(body(&store, id), "ink");
+
+        let chip = store.stand_peer_record(id, 1, None, None).unwrap();
+        assert!(!store.sheet(id).unwrap().chip(chip).unwrap().is_local());
+    }
+
+    #[test]
+    fn a_conceal_finished_after_its_value_moved_records_under_the_object() {
+        let (mut store, home, away, chip, peer) = standing_elsewhere_here();
+        let uuid = uuid_of(&store, chip);
+        // The payload is on the wire when a backspace moves its value away.
+        assert_eq!(&**store.chip_payload(chip).unwrap(), b"the secret");
+        remove_at(&mut store, home, 4);
+        assert!(store.sheet(away).unwrap().chip(peer).unwrap().is_local());
+
+        assert!(store.mark_chip_concealed(chip, "rcpt-moved".into()));
+        assert!(store.record_sent(chip, DestinationClass::OneTimeLink));
+        let sent = store.ledger().next().unwrap();
+        assert_eq!(sent.event(), LedgerEvent::Sent);
+        assert_eq!(sent.item(), uuid);
+        assert_eq!(sent.destination(), DestinationClass::OneTimeLink);
+        let arrived = store.sheet(away).unwrap().chip(peer).unwrap();
+        assert_eq!(arrived.conceal().unwrap().receipt_id, "rcpt-moved");
+    }
+
+    #[test]
+    fn a_moved_id_follows_every_move_until_64_newer_push_it_out() {
+        let (mut store, _) = store();
+        store.note_moved(ChipId(1), ChipId(2));
+        store.note_moved(ChipId(2), ChipId(3));
+        assert_eq!(store.moved_to(ChipId(1)), ChipId(3), "moved twice");
+        assert_eq!(store.moved_to(ChipId(2)), ChipId(3));
+        assert_eq!(store.moved_to(ChipId(9)), ChipId(9));
+
+        for n in 0..MOVED_CAP - 1 {
+            let n = u64::try_from(n).unwrap();
+            store.note_moved(ChipId(100 + n), ChipId(1_000 + n));
+        }
+        assert_eq!(store.moved_chips.len(), MOVED_CAP);
+        assert_eq!(store.moved_to(ChipId(1)), ChipId(1), "the oldest is gone");
+        assert_eq!(store.moved_to(ChipId(2)), ChipId(3));
+        assert_eq!(store.moved_to(ChipId(100)), ChipId(1_000));
+    }
+
+    #[test]
+    fn a_restore_forgets_moved_ids_since_it_mints_chip_ids_afresh() {
+        let (mut store, home, _, chip, _) = standing_elsewhere_here();
+        remove_at(&mut store, home, 4);
+        assert_ne!(store.moved_to(chip), chip);
+        let snapshot = store.snapshot(1_000);
+        assert!(store.restore(&snapshot, 1_000).is_ok());
+        assert!(store.moved_chips.is_empty());
     }
 
     /// One page on each device holding `one ￼two three`, its object sealed on alpha.
