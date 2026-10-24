@@ -168,6 +168,8 @@ impl<C: Clock> SheetStore<C> {
         let pages: Vec<ItemId> = self.sheets().map(Sheet::uuid).collect();
         self.metadata_pending
             .retain(|(page, _)| pages.contains(page));
+        self.note_pending
+            .retain(|(page, _, _)| pages.contains(page));
         Ok(restored)
     }
 
@@ -320,11 +322,14 @@ struct PageExport {
     blob: Zeroizing<Vec<u8>>,
     /// The block section (ADR-0013).
     meta: Zeroizing<Vec<u8>>,
-    /// Each chip's note text, in chip order; an empty note writes none.
-    notes: Vec<Option<Zeroizing<String>>>,
+    /// Each chip's note, in chip order; one with no text and no history writes none.
+    notes: Vec<Option<NoteExport>>,
     /// The same for the detached chips (ADR-0046 point 1).
-    detached_notes: Vec<Option<Zeroizing<String>>>,
+    detached_notes: Vec<Option<NoteExport>>,
 }
+
+/// A note's text and the operation log written beside it (ADR-0058 point 9).
+type NoteExport = (Zeroizing<String>, Option<Zeroizing<Vec<u8>>>);
 
 impl PageExport {
     fn of(sheet: &Sheet) -> Self {
@@ -337,15 +342,14 @@ impl PageExport {
     }
 }
 
-/// Each chip's note text, taken once at its exact size (Law 0004).
-fn notes_of(chips: &[SealedChip]) -> Vec<Option<Zeroizing<String>>> {
+/// Each chip's note text and log, taken once at their exact sizes (Law 0004).
+fn notes_of(chips: &[SealedChip]) -> Vec<Option<NoteExport>> {
     chips
         .iter()
         .map(|chip| {
-            chip.note
-                .as_ref()
-                .map(Note::text)
-                .filter(|text| !text.is_empty())
+            let note = chip.note.as_ref()?;
+            let (text, history) = (note.text(), note.history());
+            (!text.is_empty() || history.is_some()).then_some((text, history))
         })
         .collect()
 }
@@ -433,8 +437,7 @@ fn emit_sheet((sheet, export, cut): PageWrite<'_>, now: Instant, out: &mut dyn S
     // Chips first, so every identity is known before a mark resolves one.
     out.u64(sheet.chips.len() as u64);
     for (chip, note) in sheet.chips.iter().zip(&export.notes) {
-        let note = note.as_ref().map(|text| text.as_str());
-        framed(&mut *out, |out| emit_chip(chip, note, out));
+        framed(&mut *out, |out| emit_chip(chip, note.as_ref(), out));
     }
     // The whole document, history included; the projection derives from it.
     out.bytes(&export.blob);
@@ -452,8 +455,7 @@ fn emit_sheet((sheet, export, cut): PageWrite<'_>, now: Instant, out: &mut dyn S
     // Trailing: the chips the body no longer shows, framed as attached ones are.
     out.u64(sheet.detached.len() as u64);
     for (chip, note) in sheet.detached.iter().zip(&export.detached_notes) {
-        let note = note.as_ref().map(|text| text.as_str());
-        framed(&mut *out, |out| emit_chip(chip, note, out));
+        framed(&mut *out, |out| emit_chip(chip, note.as_ref(), out));
     }
     // Then the active cut's envelope, on the page it came from.
     match cut {
@@ -468,7 +470,7 @@ fn emit_sheet((sheet, export, cut): PageWrite<'_>, now: Instant, out: &mut dyn S
 /// One chip record: its availability, then a value's kind, receipt and
 /// bytes or a peer record's kind and size class. The face is recomputed on
 /// the way back in.
-fn emit_chip(chip: &SealedChip, note: Option<&str>, out: &mut dyn Sink) {
+fn emit_chip(chip: &SealedChip, note: Option<&NoteExport>, out: &mut dyn Sink) {
     out.raw(chip.uuid.as_bytes());
     match &chip.availability {
         Availability::Local(local) => {
@@ -522,9 +524,11 @@ fn emit_chip(chip: &SealedChip, note: Option<&str>, out: &mut dyn Sink) {
     }
     match note {
         None => out.u8(0),
-        Some(text) => {
+        Some((text, history)) => {
             out.u8(1);
             out.bytes(text.as_bytes());
+            // The note's operation log, empty for none (ADR-0058 point 9).
+            out.bytes(history.as_deref().map_or(&[], Vec::as_slice));
         }
     }
 }
@@ -1037,7 +1041,15 @@ fn read_chip(
     } else {
         match record.u8().ok_or(Malformed)? {
             0 => None,
-            1 => Some(Note::holding(record.str().ok_or(Malformed)?)),
+            1 => {
+                let text = record.str().ok_or(Malformed)?;
+                // `MAGIC_V4` wrote no operation log, so its notes come back with none.
+                let history = match reading.layout {
+                    ChipLayout::Valued => &[][..],
+                    ChipLayout::Tagged => record.bytes().ok_or(Malformed)?,
+                };
+                Some(Note::restored(text, history))
+            }
             _ => return Err(Malformed),
         }
     };
@@ -2410,11 +2422,19 @@ mod tests {
         doc.export_snapshot()
     }
 
-    /// A present name or note: flag 1, then the length prefixed text.
+    /// A present name or `OTSSNAP4` note: flag 1, then the length prefixed text.
     fn text_field(text: &str) -> Vec<u8> {
         let mut field = vec![1u8];
         field.extend_from_slice(&(text.len() as u64).to_le_bytes());
         field.extend_from_slice(text.as_bytes());
+        field
+    }
+
+    /// A present `OTSSNAP5` note: its text field, then a length prefixed log.
+    fn note_field(text: &str, history: &[u8]) -> Vec<u8> {
+        let mut field = text_field(text);
+        field.extend_from_slice(&(history.len() as u64).to_le_bytes());
+        field.extend_from_slice(history);
         field
     }
 
@@ -2475,7 +2495,7 @@ mod tests {
         let (mut store, _clock) = store();
         let uuid = ItemId::random();
         let mut tail = vec![0u8, 0]; // no name, no name version
-        tail.extend_from_slice(&text_field("kept \u{1F600} beside it"));
+        tail.extend_from_slice(&note_field("kept \u{1F600} beside it", &[]));
         let snapshot =
             sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
         assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
@@ -2498,7 +2518,7 @@ mod tests {
         let uuid = ItemId::random();
         let mut tail = text_field("API_KEY");
         tail.push(0); // no name version
-        tail.extend_from_slice(&text_field("kept \u{1F600} beside it"));
+        tail.extend_from_slice(&note_field("kept \u{1F600} beside it", &[]));
         let snapshot =
             sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
         assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
@@ -2540,7 +2560,7 @@ mod tests {
         let uuid = ItemId::random();
         let note = "kept \u{1F600} beside it";
         let mut tail = vec![0u8, 0]; // no name, no name version
-        tail.extend_from_slice(&text_field(note));
+        tail.extend_from_slice(&note_field(note, &[]));
         let snapshot =
             sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
         assert_eq!(store.restore(&snapshot, 1_000_000).unwrap(), 1);
@@ -3408,7 +3428,14 @@ mod tests {
         if tagged {
             chip.push(0); // no name version
         }
-        chip.extend(note.map_or_else(|| vec![0], text_field));
+        let note_of = |text| {
+            if tagged {
+                note_field(text, &[])
+            } else {
+                text_field(text)
+            }
+        };
+        chip.extend(note.map_or_else(|| vec![0], note_of));
         chip
     }
 
@@ -3501,6 +3528,63 @@ mod tests {
             MAGIC,
             "written back as the new version"
         );
+    }
+
+    #[test]
+    fn a_v4_note_restores_with_no_log_and_its_first_export_reaches_a_peer_whole() {
+        let object = ItemId::random();
+        let record = value_record(
+            false,
+            object,
+            0,
+            None,
+            b"ghp_written-by-v4",
+            [None, Some("rotate monthly")],
+        );
+        let ids = (ItemId::random(), ItemId::random());
+        let fixture = snapshot_of(MAGIC_V4, ids, &[record], &one_chip_document(object), &[]);
+        let (mut old, _) = store();
+        assert_eq!(old.restore(&fixture, 0), Ok(1));
+        let id = old.sheets().next().unwrap().id();
+        let note = old
+            .sheets()
+            .next()
+            .unwrap()
+            .chips()
+            .next()
+            .unwrap()
+            .note
+            .as_ref();
+        assert!(note.and_then(Note::resting).is_some(), "the note woke");
+        assert!(
+            note.and_then(Note::history).is_none(),
+            "a v4 note has a log"
+        );
+
+        let pristine = SheetDocument::pristine_version();
+        let batch = old.export_note_updates(id, object, &pristine).unwrap();
+        let (mut peer, _) = store();
+        let p = peer.new_tab().1;
+        let chip = peer.stand_peer_record_as(p, 0, object, None, None).unwrap();
+        let page = peer.sheet(p).unwrap().uuid();
+        assert_eq!(
+            peer.apply_remote_note_update(page, object, &batch),
+            Ok(true)
+        );
+        assert_eq!(&**peer.note_text(chip).unwrap(), "rotate monthly");
+    }
+
+    #[test]
+    fn an_otssnap5_note_without_its_log_is_malformed_and_the_store_is_untouched() {
+        let uuid = ItemId::random();
+        let mut tail = vec![0u8, 0]; // no name, no name version
+        tail.extend_from_slice(&text_field("rotate monthly"));
+        let snapshot =
+            sheet_snapshot_with_tails(&[(uuid, "ghp_noted")], &one_chip_document(uuid), &tail);
+        let (mut store, survivor) = occupied();
+        assert_eq!(store.restore(&snapshot, 0), Err(RestoreError::Malformed));
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
     }
 
     /// A record with no value: its availability tag, kind and size class, no

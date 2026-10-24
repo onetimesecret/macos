@@ -111,6 +111,9 @@ pub enum RemoteRefusal {
     /// A key frame was offered to a page whose document already holds
     /// history (relay decision background sections 1 and 5).
     NotFresh,
+    /// A note's update or rebuild would stand a sealed object in the note:
+    /// sealed objects do not nest (ADR-0058 point 6).
+    NestedObject,
 }
 
 impl std::fmt::Display for RemoteRefusal {
@@ -123,6 +126,9 @@ impl std::fmt::Display for RemoteRefusal {
             }
             RemoteRefusal::NotFresh => {
                 write!(f, "a key frame lands only on a fresh page")
+            }
+            RemoteRefusal::NestedObject => {
+                write!(f, "a note never stands a sealed object")
             }
         }
     }
@@ -209,6 +215,9 @@ pub struct SheetStore<C: Clock> {
     /// Entries for objects with no record on their page yet, by page identity,
     /// oldest first. Never persisted.
     pub(crate) metadata_pending: VecDeque<(ItemId, ObjectMetadata)>,
+    /// Note batches for objects with no record on their page yet, by page
+    /// identity and object, oldest first. Never persisted.
+    pub(crate) note_pending: VecDeque<(ItemId, ItemId, Zeroizing<Vec<u8>>)>,
     /// Pages whose records or steps changed by another page's edit, burn or
     /// end, until the shell takes them. Never persisted.
     pub(crate) restated: BTreeSet<SheetId>,
@@ -234,6 +243,7 @@ impl<C: Clock> SheetStore<C> {
             writer: [0; 32],
             metadata_dirty: BTreeMap::new(),
             metadata_pending: VecDeque::new(),
+            note_pending: VecDeque::new(),
             restated: BTreeSet::new(),
             moved_chips: VecDeque::new(),
         }
@@ -1152,6 +1162,7 @@ impl<C: Clock> SheetStore<C> {
                 sheet.chips.push(record);
             }
             self.drain_pending_metadata(id, uuid);
+            self.drain_pending_notes(id, uuid);
             if followed {
                 self.note_metadata(id, uuid);
             }
@@ -1253,6 +1264,13 @@ impl<C: Clock> SheetStore<C> {
         match dest.chips.iter_mut().find(|chip| chip.uuid == uuid) {
             Some(slot) => {
                 crate::metadata::absorb(&mut record, slot, writer);
+                // The standing note keeps its place, and takes the arriving one's edits
+                // only over a base they share (ADR-0058 point 6).
+                let arriving = record.note.take();
+                record.note = slot.note.take();
+                if let Some(arriving) = arriving {
+                    Note::fold(&mut record.note, arriving);
+                }
                 // The shell's block, menus and drafts name the standing one's id.
                 moved = Some((record.id, slot.id));
                 record.id = slot.id;
@@ -1266,6 +1284,7 @@ impl<C: Clock> SheetStore<C> {
             self.note_moved(from, to);
         }
         self.drain_pending_metadata(there, uuid);
+        self.drain_pending_notes(there, uuid);
         self.note_metadata(there, uuid);
         self.restated.insert(there);
     }
@@ -1322,7 +1341,9 @@ impl<C: Clock> SheetStore<C> {
     /// Join a fresh page to a channel's key frame (relay decision
     /// background section 5), taking over the cross-device identity
     /// `page` (relay decision background section 6). A page that
-    /// already has history is refused.
+    /// already has history is refused. The frame's note rebuilds go to
+    /// their records after the page's (ADR-0058 point 6); a frame that is
+    /// only a page rebuild has none.
     pub fn adopt_key_frame(
         &mut self,
         id: SheetId,
@@ -1335,15 +1356,26 @@ impl<C: Clock> SheetStore<C> {
         if !sheet.document.is_pristine() {
             return Err(RemoteRefusal::NotFresh);
         }
+        let parts = crate::frame::decode(frame).ok_or(RemoteRefusal::Malformed)?;
+        // Every rebuild is judged before the page moves, so one bad note refuses the frame whole.
+        let notes = parts
+            .notes
+            .iter()
+            .map(|(object, rebuild)| {
+                let note = Note::rebuilt(rebuild).map_err(refusal_from)?;
+                Ok((*object, *rebuild, note))
+            })
+            .collect::<Result<Vec<_>, RemoteRefusal>>()?;
         let owned = sheet.owned_uuids();
         let arrived = sheet
             .document
-            .import_update(frame, &owned)
+            .import_update(parts.page, &owned)
             .map_err(refusal_from)?;
         sheet.uuid = page;
         self.admit(id, arrived);
         self.settle_document(id);
         self.take_out_standings(id);
+        self.adopt_frame_notes(id, notes);
         Ok(())
     }
 
@@ -1378,8 +1410,9 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Perform a confirmed ceremony on a deferred page and return the new
-    /// key frame (relay decision background sections 1 and 5). `None`,
-    /// changing nothing, unless deferred, or for a page past its
+    /// key frame (relay decision background sections 1 and 5): the page's
+    /// rebuild and each standing object's note rebuild (ADR-0058 point 6).
+    /// `None`, changing nothing, unless deferred, or for a page past its
     /// deadline (Law 0001, expiry row). The caller pairs it with the
     /// GOP key rotation.
     pub fn perform_ceremony(&mut self, id: SheetId) -> Option<Zeroizing<Vec<u8>>> {
@@ -1390,7 +1423,15 @@ impl<C: Clock> SheetStore<C> {
         }
         sheet.compact();
         sheet.ceremony = CeremonyState::Deferred { due: false };
-        Some(sheet.document.export_snapshot())
+        let notes: Vec<(ItemId, Zeroizing<Vec<u8>>)> = sheet
+            .chips
+            .iter()
+            .filter_map(|chip| Some((chip.uuid, chip.note.as_ref()?.history()?)))
+            .collect();
+        Some(crate::frame::encode(
+            &sheet.document.export_snapshot(),
+            &notes,
+        ))
     }
 
     /// The wall-clock expiry pair a device publishes for a page (relay
@@ -2143,6 +2184,7 @@ impl<C: Clock> SheetStore<C> {
         // The page has left the strip, so a cut it held ends here.
         self.end_a_broken_cut();
         self.forget_page_metadata(sheet.id, sheet.uuid);
+        self.forget_page_notes(sheet.uuid);
         // A detached chip is a payload the page held, though nothing shows it.
         let recorded = sheet.has_content() || sheet.detached.iter().any(SealedChip::is_local);
         self.rehome_values(&mut sheet);
@@ -2196,10 +2238,11 @@ fn millis_up(duration: Duration) -> u64 {
 
 /// The document's refusal in the store's vocabulary. Spelled out so a
 /// new arm on either side fails to compile.
-fn refusal_from(refusal: UpdateRefusal) -> RemoteRefusal {
+pub(crate) fn refusal_from(refusal: UpdateRefusal) -> RemoteRefusal {
     match refusal {
         UpdateRefusal::Malformed => RemoteRefusal::Malformed,
         UpdateRefusal::MissingHistory => RemoteRefusal::MissingHistory,
+        UpdateRefusal::NestedObject => RemoteRefusal::NestedObject,
     }
 }
 

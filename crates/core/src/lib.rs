@@ -7,6 +7,8 @@ pub mod clock;
 mod document;
 pub mod file_persist;
 pub mod files;
+// The key frame: a page's rebuild and its notes' (ADR-0058 point 6).
+mod frame;
 // The sealed fragment's envelope; the shell carries its bytes unread
 // (ADR-0045 point 1).
 mod fragment;

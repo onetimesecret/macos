@@ -179,7 +179,7 @@ fn record_on(sheet: &Sheet, object: ItemId) -> Option<&SealedChip> {
 }
 
 /// The same, mutably.
-fn record_on_mut(sheet: &mut Sheet, object: ItemId) -> Option<&mut SealedChip> {
+pub(crate) fn record_on_mut(sheet: &mut Sheet, object: ItemId) -> Option<&mut SealedChip> {
     sheet
         .chips
         .iter_mut()

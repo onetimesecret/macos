@@ -151,6 +151,9 @@ pub(crate) enum UpdateRefusal {
     /// The update depends on operations this document lacks. Refused, never
     /// queued: recovery is rejoining at the key frame (ADR-0021).
     MissingHistory,
+    /// The update would leave a chip sentinel in a note: sealed objects do not
+    /// nest (ADR-0058 point 6).
+    NestedObject,
 }
 
 /// What the op log can still prove about a span, frozen into the block
@@ -790,6 +793,46 @@ impl SheetDocument {
         Ok(arrived)
     }
 
+    /// Apply a peer's batch to chipless ink, a note's (ADR-0058 point 6), only if a
+    /// trial on a fork is clean and leaves no sentinel, marked or not. Returns whether
+    /// the batch brought an operation this document lacked.
+    pub(crate) fn import_ink_update(&self, bytes: &[u8]) -> Result<bool, UpdateRefusal> {
+        let trial = self.doc.fork();
+        let body = trial.get_text("body");
+        let status = trial.import(bytes).map_err(|_| UpdateRefusal::Malformed)?;
+        if status.pending.is_some() {
+            return Err(UpdateRefusal::MissingHistory);
+        }
+        let nested = runs_of(&body).iter().any(|run| match run {
+            DocRun::Chip(_) => true,
+            DocRun::Ink(ink) => holds_sentinel(ink),
+        });
+        if nested {
+            return Err(UpdateRefusal::NestedObject);
+        }
+        let before = self.doc.oplog_vv();
+        let status = self
+            .doc
+            .import(bytes)
+            .expect("the same bytes imported cleanly into a fork a moment ago");
+        debug_assert!(
+            status.pending.is_none(),
+            "a batch the fork applied whole cannot leave pending ops here"
+        );
+        Ok(self.doc.oplog_vv() != before)
+    }
+
+    /// Whether this document and `other` both have operations of one peer, the base
+    /// two histories must share before a merge folds their edits in once.
+    pub(crate) fn shares_base(&self, other: &Self) -> bool {
+        let ours = self.doc.oplog_vv();
+        other
+            .doc
+            .oplog_vv()
+            .iter()
+            .any(|(peer, counter)| *counter > 0 && ours.get(peer).is_some_and(|ours| *ours > 0))
+    }
+
     /// The body's length in UTF-16 code units.
     pub(crate) fn utf16_len(&self) -> usize {
         self.body.len_utf16()
@@ -966,6 +1009,14 @@ impl SheetDocument {
     #[cfg(test)]
     pub(crate) fn peer_id(&self) -> u64 {
         self.doc.peer_id()
+    }
+
+    /// Every peer the log has operations from, ascending (test-only).
+    #[cfg(test)]
+    pub(crate) fn history_peers(&self) -> Vec<u64> {
+        let mut peers: Vec<u64> = self.doc.oplog_vv().keys().copied().collect();
+        peers.sort_unstable();
+        peers
     }
 
     /// Commit timestamp of the body's first character (test-only).

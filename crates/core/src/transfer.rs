@@ -400,6 +400,7 @@ impl<C: Clock> SheetStore<C> {
                         sheet.detached.push(chip);
                     }
                     self.drain_pending_metadata(id, uuid);
+                    self.drain_pending_notes(id, uuid);
                     self.note_metadata(id, uuid);
                     if !sources.contains(&from) {
                         sources.push(from);
