@@ -329,13 +329,14 @@ private final class MarkdownPreviewRenderer {
 
     private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "preview")
 
-    /// A limit is an expected refusal; any other error is a broken invariant, logged as a fault.
+    /// A limit, or Markdown inside a CommonMark raw-text element a page left open, is a refusal an
+    /// ordinary page can reach; any other error is a broken invariant, logged as a fault.
     private static func log(_ error: Error) {
         switch error {
         case MarkdownParseError.inputLimit, MarkdownParseError.depthLimit, MarkdownParseError.tableCellLimit,
              MarkdownParseError.noPlaceholderWindow, CompositionError.inputLimit, CompositionError.eventLimit,
-             CompositionError.depthLimit, CompositionError.outputLimit, HTMLTokenizationError.inputLimit,
-             HTMLTokenizationError.tokenLimit:
+             CompositionError.depthLimit, CompositionError.outputLimit, CompositionError.structuredEventInRawText,
+             HTMLTokenizationError.inputLimit, HTMLTokenizationError.tokenLimit:
             logger.info("plain text preview: \(String(describing: error), privacy: .public)")
         default:
             logger.fault("plain text preview: \(String(describing: error), privacy: .public)")
@@ -468,7 +469,8 @@ private final class MarkdownPreviewRenderer {
     /// An HTML block without the whitespace its source lines leave at either end.
     private func trimmed(_ text: NSAttributedString) -> NSAttributedString {
         let string = text.string as NSString
-        let kept = CharacterSet.whitespacesAndNewlines.inverted
+        // U+2028 is what `br` composes to, a break the block keeps at either end.
+        let kept = CharacterSet.whitespacesAndNewlines.subtracting(CharacterSet(charactersIn: "\u{2028}")).inverted
         let first = string.rangeOfCharacter(from: kept)
         guard first.location != NSNotFound else { return NSAttributedString(string: "") }
         let last = string.rangeOfCharacter(from: kept, options: .backwards)

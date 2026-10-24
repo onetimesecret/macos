@@ -292,6 +292,8 @@ final class MarkdownPreviewCompositionTests: XCTestCase {
         """)
         XCTAssertEqual(rendered.string, "Line one Line two\u{2028}Line three\nLogo\n")
         XCTAssertEqual(images(in: rendered).map(\.0.destination), [.unreviewed("logo.png")])
+        // The trim takes source whitespace, not the break a `br` at either end composes to.
+        XCTAssertEqual(render("<div><br>a<br></div>").string, "\u{2028}a\u{2028}\n")
     }
 
     /// The dialect reaches composition: GFM escapes a `script` tag and formats inside it;
