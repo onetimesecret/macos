@@ -91,7 +91,8 @@ while (($#)); do
         echo "--build-number must contain decimal digits only (got: $2)" >&2
         exit 1
       fi
-      REQUESTED_BUILD_NUMBER="$2"
+      # Base 10, so 007 names the same build and the same tag as 7.
+      REQUESTED_BUILD_NUMBER="$((10#$2))"
       shift
       ;;
     *)
