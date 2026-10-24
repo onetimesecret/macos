@@ -5,6 +5,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 # ADR-0017: Durable tabs, expiring pages
 
 - **Status:** accepted
+- **Superseded in part by:** [ADR-0039](0039-pad-selection-and-associations.md), numbered shortcut ownership when multiple pads are enabled
 - **Date:** 2026-08-20
 - **Depends on:** [ADR-0016](0016-content-persists-across-restart.md). The object-graph change shipped in the same persistence format break.
 - **Supersedes in part:** [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md), specifically its object-graph portions and the title-ownership portions its Supersession section names: the user-set title and the `MMDD-HHmm` placeholder stamp become properties of the durable Tab, and `title_is_user_set` disappears. Title derivation, its 80 character cap, and its documented exception stand, page-side.
@@ -97,3 +98,9 @@ removes the state file.
   restore path no longer treats a wider strip as malformed, and ⌘1 to ⌘9
   remain shortcuts to the first nine slots. Everything else in this decision,
   including Tab retention, stands.
+
+- 2026-10-03: ADR-0039 replaces the ⌘1–⌘9 slot shortcut clause only when
+  multiple pads are enabled: Scratch uses ⌘0 and the first nine other pads
+  use ⌘1–⌘9. With pads disabled, the existing map remains. Slot neighbour
+  navigation and configurable direct-selection commands remain available.
+  Tab/Page identity, lifetime, and expiry decisions are unchanged.

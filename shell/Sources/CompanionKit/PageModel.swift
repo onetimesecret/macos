@@ -487,7 +487,7 @@ public final class PageModel: ObservableObject {
     /// selected slot. Selecting any tab clears this, so the two are
     /// never both live.
     @Published public private(set) var selectedFile: UInt64? {
-        didSet { if selectedFile != nil { expandedPageID = nil } }
+        didSet { if selectedFile != nil { expandedPageID = nil; rollRequest = nil } }
     }
 
     /// What the surface is showing, as one value: the open file when
@@ -565,7 +565,7 @@ public final class PageModel: ObservableObject {
 
     /// The ledger tab is showing instead of a page.
     @Published public var showingLedger = false {
-        didSet { if showingLedger { expandedPageID = nil } }
+        didSet { if showingLedger { expandedPageID = nil; rollRequest = nil } }
     }
 
     /// Temporary presentation state, scoped to the page being expanded.
@@ -976,6 +976,7 @@ public final class PageModel: ObservableObject {
     @Published public var showsTimeUnits: Bool {
         didSet {
             defaults.set(showsTimeUnits, forKey: Self.timeUnitsKey)
+            if !showsTimeUnits { rollRequest = nil }
             // One direction, and one state. Leaving the mode gives the
             // strip back, and the strip draws every slot, so there is
             // nothing to fall off; and a selection this mode does draw
@@ -1186,6 +1187,55 @@ public final class PageModel: ObservableObject {
     /// page and read on the way onto one; nothing draws from it, so it
     /// is deliberately not published.
     var viewStates = PageViewStates()
+
+    // Session-only reading positions. Pad selection and ordering can move every
+    // preceding page, so these carry a page and text anchor rather than pixels.
+    private var padReadingPlaces: [UUID: RollPlace] = [:]
+
+    // Session-only, and never pruned: the pads a roll has shown. ADR-0060's selected page step
+    // applies to any remount of one, a switch back or a return from a file or the Ledger.
+    private var padsShown: Set<UUID> = []
+
+    /// Records that the roll now shows `pad`, and answers whether it had shown it earlier
+    /// this session. Call it only where the roll renders a pad.
+    func markShown(pad: UUID) -> Bool {
+        !padsShown.insert(pad).inserted
+    }
+
+    func rememberPadReadingPlace(_ place: RollPlace?, for pad: UUID) {
+        // A detached or not-yet-measured roll has no new reading to contribute.
+        // Dead pages are removed by refresh and checked again on retrieval.
+        guard let place else { return }
+        padReadingPlaces[pad] = place
+    }
+
+    func readingPlace(for pad: UUID) -> RollPlace? {
+        guard let place = padReadingPlaces[pad],
+              tabs.contains(where: { $0.pageID == place.page && pads.owner(ofTabUUID: $0.uuid) == pad })
+        else { return nil }
+        return place
+    }
+
+    /// Where the next owned roll opens for the latest gesture that found no roll to move,
+    /// ahead of a pad's saved place or Day 0. Each such gesture overwrites it.
+    enum RollRequest: Equatable {
+        case today
+        case page(UInt64)
+    }
+
+    private var rollRequest: RollRequest?
+
+    func takeRollRequest() -> RollRequest? {
+        defer { rollRequest = nil }
+        return showsTimeUnits ? rollRequest : nil
+    }
+
+    /// The one rule for a gesture that selects a page: it opens the next roll on that page when a
+    /// stand in or another pad gave way or no roll is mounted, and otherwise drops any older request.
+    private func requestRoll(onPickedPageLeaving standIn: Bool) {
+        let noRoll = standIn || onAnchorToday == nil
+        rollRequest = noRoll && showsTimeUnits ? selectedPageID.map { .page($0) } : nil
+    }
 
     /// Each visible day's page as the roll renders it while the editor
     /// is standing somewhere else (issue #79): the same ink and the same
@@ -3081,7 +3131,12 @@ public final class PageModel: ObservableObject {
             // The inline conceal offer belongs to the pad surface being left.
             // Dismissing it cannot cancel a request already confirmed in flight.
             concealDraft = nil
+            rollRequest = nil
             if lastPadsEnabled {
+                if showsTimeUnits && !showingLedger && selectedFile == nil,
+                   rollGeometry.currentPadID == lastPadID {
+                    rememberPadReadingPlace(rollGeometry.currentPlace, for: lastPadID)
+                }
                 pads.rememberSelection(tabUUID: selectedTab?.uuid,
                     filePath: activeFile?.path, for: lastPadID)
             }
@@ -3250,6 +3305,7 @@ public final class PageModel: ObservableObject {
         // under the same exemption: a file's place is dropped by the
         // roster, never by a set it was never in.
         viewStates.prune(keeping: livePages)
+        padReadingPlaces = padReadingPlaces.filter { livePages.contains($0.value.page) }
         // The roll's renderings of the days the editor is not standing
         // on go the same way and on the same set. They are plaintext of
         // a page, so an entry outliving its page would be exactly the
@@ -5091,23 +5147,28 @@ public final class PageModel: ObservableObject {
     /// `refresh()` reconciles, so a page that expires under the cursor
     /// leaves an empty tab rather than a fresh countdown on nothing.
     public func select(_ id: UInt64) {
+        // Read before a pad switch, which restores the incoming pad's file and drops any request.
+        let leavingLedger = showingLedger
+        let fileWasShowing = selectedFile != nil
+        var changedPad = false
         if pads.isEnabled, let tab = tabs.first(where: { $0.id == id }) {
             let target = pads.owner(ofTabUUID: tab.uuid)
             if target != pads.activeID {
                 activatePad(target)
                 guard pads.activeID == target else { return }
+                changedPad = true
             }
         }
-        let leavingLedger = showingLedger
         clearPendingFileClose()
         // A slot and a file are never both showing, so choosing a slot
         // puts the file away. The file itself stays open and keeps its
         // place in the FILES group; only the surface moved.
-        let leavingFile = selectedFile != nil
+        let leavingFile = fileWasShowing || selectedFile != nil
         selectedFile = nil
         showingLedger = false
         selection = id
         let minted = openPageIfSlotIsEmpty(id)
+        requestRoll(onPickedPageLeaving: leavingLedger || leavingFile || changedPad)
         // Both arms change what is *mounted*, rather than what the one
         // persistent editor is showing, and a mount nobody focuses is
         // the lit ember over a keystroke that beeps (issue #22).
@@ -5628,8 +5689,9 @@ public final class PageModel: ObservableObject {
     /// anything: Tabs mode, a page asked for from the ledger or a file,
     /// and today's place all take this path.
     private func createBlankPage() {
+        let leavingStandIn = selectedFile != nil || showingLedger
         guard let created = mintTab() else { return }
-        adoptCreatedTab(created)
+        adoptCreatedTab(created, leavingStandIn: leavingStandIn)
     }
 
     /// Ask the core for a new tab and refresh. Nil when the core could not answer.
@@ -5648,7 +5710,7 @@ public final class PageModel: ObservableObject {
         return created == 0 ? nil : created
     }
 
-    private func adoptCreatedTab(_ created: UInt64) {
+    private func adoptCreatedTab(_ created: UInt64, leavingStandIn: Bool = false) {
         // A new page cannot borrow a plain tab switch's assumption
         // that the editor still holds the keys (issue #22). A switch
         // keeps one persistent editor focused and swaps its content
@@ -5666,6 +5728,7 @@ public final class PageModel: ObservableObject {
         // no-op on the switch paths where focus never left.
         showingLedger = false
         selection = created
+        requestRoll(onPickedPageLeaving: leavingStandIn)
         if pads.isEnabled { pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID) }
         refocusEditorIfKeyed()
     }
@@ -5745,11 +5808,15 @@ public final class PageModel: ObservableObject {
     /// opens at Day 0.
     public func anchorOnToday() {
         guard showsTimeUnits else { return }
+        let rollStood = selectedFile == nil && !showingLedger
         if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first,
            tab != selection {
             select(tab)
         }
         viewStates.leaveRollPlace(nil)
+        // Only a roll on screen after the summon, and one with no live anchor to move, waits for Today.
+        let rollShows = selectedFile == nil && !showingLedger
+        rollRequest = rollShows && (!rollStood || onAnchorToday == nil) ? .today : nil
         onAnchorToday?()
     }
 
@@ -7596,7 +7663,13 @@ public final class PageModel: ObservableObject {
     /// the other window. The window that owns now reports its own, and
     /// until it does the honest reading is that nobody holds the keys.
     private func relinquishPresentation() {
-        viewStates.leaveRollPlace(rollGeometry.relinquish())
+        let pad = rollGeometry.currentPadID
+        let place = rollGeometry.relinquish()
+        // Also kept for the rendered pad, since a pad switch before the next mount drops the hand off.
+        if pads.isEnabled, showsTimeUnits, !showingLedger, selectedFile == nil, let pad {
+            rememberPadReadingPlace(place, for: pad)
+        }
+        viewStates.leaveRollPlace(place)
         if let editor = activeEditor as? InkTextView, let coordinator = editor.coordinator {
             let scroll = editor.enclosingScrollView
             coordinator.leavePage(
@@ -7679,10 +7752,11 @@ public final class PageModel: ObservableObject {
         scrubber: ((CGFloat) -> Void)? = nil,
         wheel: ((NSEvent) -> Void)? = nil,
         place: (() -> RollPlace?)? = nil,
+        pad: (() -> UUID?)? = nil,
         from surface: PresentationOwner
     ) {
         guard admits(.rollGeometry, from: surface) else { return }
-        rollGeometry.claim(by: roll, scroller: scroller, scrubber: scrubber, wheel: wheel, place: place)
+        rollGeometry.claim(by: roll, scroller: scroller, scrubber: scrubber, wheel: wheel, place: place, pad: pad)
     }
 
     /// A window reporting its key status. Only the owner's counts: the

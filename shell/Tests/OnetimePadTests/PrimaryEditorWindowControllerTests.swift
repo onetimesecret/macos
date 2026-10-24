@@ -59,4 +59,12 @@ final class PrimaryEditorWindowControllerTests: XCTestCase {
         XCTAssertEqual(PrimaryEditorWindowController.titleVisibility(padsEnabled: true), .hidden)
         XCTAssertEqual(PrimaryEditorWindowController.titleVisibility(padsEnabled: false), .visible)
     }
+
+    /// `TimeRailTests.testTheNavigatorKeepsItsActiveRowAtEveryWindowsMinimumHeight` hosts the rail
+    /// at these floors; a change here changes the heights that test must use.
+    func testTheWindowFloorsTheRailTestUses() {
+        XCTAssertEqual(PrimaryEditorWindowController.minimumSize.height, 280)
+        XCTAssertEqual(BackdropGeometry.minHeight, 260)
+        XCTAssertEqual(BackdropRootView.headerHeight, 32, "the card's header over the rail")
+    }
 }

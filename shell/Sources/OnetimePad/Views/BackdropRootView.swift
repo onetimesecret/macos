@@ -83,6 +83,9 @@ struct BackdropRootView: View {
         sync = model.pages.sync
     }
 
+    /// The header's height over its divider; the timeline rail's floor test subtracts both.
+    nonisolated static let headerHeight: CGFloat = 32
+
     /// Where the pointer was when the manipulation in flight began, in
     /// AppKit's screen coordinates. Nil except while the mouse is down;
     /// its presence is what tells `onEnded` there is a real gesture to
@@ -177,7 +180,7 @@ struct BackdropRootView: View {
         VStack(spacing: 0) {
             header
                 .padding(.horizontal, 12)
-                .frame(height: 32)
+                .frame(height: Self.headerHeight)
             Divider()
             if pages.pads.isEnabled {
                 PadPickerView(model: pages)

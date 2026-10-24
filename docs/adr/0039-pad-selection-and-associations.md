@@ -4,8 +4,9 @@ documentation_status: needs-review
 
 # ADR-0039: Pad selection and associations
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-10-01
+- **Supersedes in part:** [ADR-0017](0017-durable-tabs-expiring-pages.md), numbered shortcut ownership when multiple pads are enabled
 
 ## Context
 
@@ -13,28 +14,32 @@ A note-taking pad can collect pages across related directories and applications.
 The [reviewed one-pad-picker mockup](../mockups/multiple-pads/one-pad-picker-design.md)
 uses a single selector so that a directory is context for a pad, rather than a
 competing destination. The user requested a native implementation attempt of
-that mockup, including folder and application associations. This is a proposal
-for that attempt; the browser prototype implements the picker interactions,
+that mockup, including folder and application associations. The maintainer
+approved this decision on 2026-10-03; the browser prototype implements the
+picker interactions,
 not native routing, filesystem access, process activation, or persistence.
 
 The user's explicit exploration constraint is:
 
 > we are not interested in background clipboard collection, or any automatic copying of information that is not readily available in the given context. Paths, applications, and what NSPasteboard/UTI can afford.
 
-This instruction defines the proposal's permitted context. It does not prove
+This instruction defines the decision's permitted context. It does not prove
 that the existing application enforces the boundary. The
 [macOS research](../research/2026-1001-macos-context-and-pasteboard.md)
 separates supplied paths from app identity and explains why an app name does
 not identify the focused project in another app. Clipboard transfers remain
 the distinct topic of [ADR-0038](0038-explicit-clipboard-operations.md).
 
-The pad shortcuts requested in the latest mockup conflict with accepted
+The pad shortcuts conflict with accepted
 [ADR-0017](0017-durable-tabs-expiring-pages.md), which states:
 “⌘1 to ⌘9 are shortcuts to the first nine slots and the rest have no chord
-(issue #158).” Acceptance of this proposal would supersede that shortcut
-ownership clause only; the Tab/Page split and expiry decisions remain outside
-its scope. Until acceptance, this is a proposed successor and does not alter
-the accepted record.
+(issue #158).” Approval supersedes that shortcut ownership clause when
+multiple pads are enabled. The Tab/Page split and expiry decisions remain
+outside this scope. With pads disabled, the existing single-pad map remains.
+Slot navigation retains the keymap commands `page::Previous`, `page::Next`,
+and `page::Select1` through `page::Select9`; the bundled neighbour route is
+⌥⌘←/→ and direct selection can be rebound through a user keymap.
+Approval is a product decision, not evidence of native validation.
 
 ## Decision
 
@@ -43,7 +48,7 @@ specific directory identity. Treat an application association as a weaker
 hint to an already active/recent pad, not a source of directory or document
 identity.
 
-The proposed rules are:
+The approved rules are:
 
 - Scratch has no directory bindings. Other pads may have zero or several.
   Add/remove controls sit within that pad's menu cell; a folder label itself
@@ -54,22 +59,21 @@ The proposed rules are:
   binding**. Defining filesystem identity, nested-root resolution, and failed
   bookmark handling is a prerequisite to calling routing deterministic.
 - Application identity may suggest an already active/recent associated pad;
-  most recently active is the proposed tie-breaker. This is an **app hint**.
+  most recently active is the tie-breaker. This is an **app hint**.
   It does not establish clipboard provenance, a window's project, or permission
   to inspect another app. A uniquely resolved folder binding takes precedence
   over a redundant app hint. The bounded recent-set policy remains unresolved.
 - Header icons represent explicitly associated applications. Selecting one is
   a deliberate request to activate that application. Several icons appear
   horizontally at the right edge; the browser version reports a simulation.
-- In the proposed native command context, Scratch owns `⌘0` and the first nine
-  remaining pads own `⌘1`–`⌘9`. Holding Command reveals the current assignments
+- When multiple pads are enabled in the native command context, Scratch owns
+  `⌘0` and the first nine remaining pads own `⌘1`–`⌘9`. Holding Command reveals the current assignments
   in the picker. The prototype contains four named pads and demonstrates
-  `⌘1`–`⌘4`. Pads beyond nine need an ordinary picker route. Acceptance must
-  record the replacement of the slot shortcut clause in ADR-0017 and settle
-  the slots' replacement keyboard route through the keymap.
+  `⌘1`–`⌘4`. Pads beyond nine need an ordinary picker route. The single-pad
+  slot map remains when pads are disabled; the slot commands and neighbour route above remain available through the keymap.
 - Preserve existing page lifetimes. No directory binding grants permission to
   modify or scan a checkout, and no app association permits background
-  clipboard collection. These are requirements of this proposal, not claims
+  clipboard collection. These are requirements of this decision, not claims
   verified by the mockup.
 
 The first native attempt may use an opt-in catalog in UserDefaults for pad
@@ -93,8 +97,7 @@ Storage choice, migration, and metadata removal still require review.
   The closed header stays compact with a folder tally; detailed bindings remain
   available inside the menu.
 - Redirecting numbered shortcuts from slots to pads changes an existing
-  command contract. It needs explicit successor acceptance and native keymap
-  validation; browser interception is not that validation.
+  command contract. Native keymap validation remains required; browser interception is not that validation.
 - ADR-0017 is not the only record that gives ⌘1 to ⌘9 to slots. The cap
   paragraph and keyboard map of
   [2026-0707-interaction-model.md](../spec/design/2026-0707-interaction-model.md), the
@@ -107,9 +110,9 @@ Storage choice, migration, and metadata removal still require review.
   state the same ownership. The keyboard map, the capacity proposal and the
   checklist also give ⌘0 to the ledger, while `default-keymap.json` leaves
   `cmd-0` unbound (issue #78). Plans, open questions and historical ADRs
-  mention the map in passing. Acceptance must sweep `docs/` for these chords,
-  then update or supersede each normative record alongside ADR-0017; none is
-  edited while this ADR is proposed.
+  mention the map in passing. Scoped successor notices in these records
+  identify this decision as the replacement map when multiple pads are enabled. Historical and
+  single-pad instructions remain readable; native validation is separate.
 - Stable ownership must survive native tab restoration. A restore-reminted
   numeric handle is insufficient as the persistent catalog identity; the
   implementation must use stable identity and verify restart behavior.
@@ -124,7 +127,7 @@ Storage choice, migration, and metadata removal still require review.
   the RFC defines `unix_ts_ms` as a “48-bit big-endian unsigned number of the
   Unix Epoch timestamp in milliseconds”.
   The earlier fully-random-identity rationale cannot be carried forward as
-  an unchanged privacy claim. This proposal records that scope explicitly.
+  an unchanged privacy claim. This decision records that scope explicitly.
   UUIDv7 timestamps are not trusted evidence of real creation time: the
   proposed generators clamp clocks before the Unix epoch to zero and clocks
   beyond the 48-bit field to `2^48 - 1` milliseconds. The Swift generator also
@@ -148,13 +151,14 @@ Storage choice, migration, and metadata removal still require review.
   association editing, and bounded recency need tests and documented failure
   behavior. Sample chooser exclusivity does not prove any of them.
 - Independent day/checkpoint sorting is recorded in the mockup design record.
-  Replacing the accepted newest-first day policy requires a separate successor
-  design decision; this ADR does not silently supersede it.
+  [ADR-0060](0060-shared-pad-timeline-navigation.md) separately records the
+  approved successor to the newest-first day policy and shared navigator.
+  This ADR does not establish timeline ordering by itself.
 
 ## Amendment 1: switch from a menu, manage in Settings
 
-Proposed 2026-10-14 with the HIG audit's fixes; this record stays
-proposed. The Decision's first rule put add and remove controls "within
+Proposed 2026-10-14 with the HIG audit's fixes; this amendment remains
+proposed. The original decision was accepted on 2026-10-03. The Decision's first rule put add and remove controls "within
 that pad's menu cell" and the footer's options in the same list, which
 built a popover three rows tall per pad. The audit's convention is a
 switcher that is a menu, with management in a separate window or a
@@ -189,7 +193,7 @@ section 8 names four.
   different pad. Stop automatic routing and repair stable ownership before
   expanding the feature.
 - Numbered pad shortcuts interfere with an essential slot/editor operation
-  without a usable replacement. Revisit command ownership before acceptance.
+  without a usable replacement. Revisit command ownership before rollout.
 - The catalog's metadata cannot fit the agreed storage threat boundary.
   Revisit its storage location and opt-in policy; do not advertise encrypted
   context metadata based on encrypted note storage.
@@ -198,5 +202,12 @@ section 8 names four.
 
 - 2026-10-01: Proposed after the one-pad-picker mockup review. Acceptance and
   the supersession of ADR-0017's slot shortcut clause remain outstanding.
+
+- 2026-10-03: The maintainer instructed “Set ADR-0039 to approved.” Recorded
+  as accepted using this repository's canonical ADR status. Multiple-pad
+  product behavior and the scoped shortcut successor are approved. Storage
+  choice, migration, metadata removal, deterministic routing prerequisites,
+  and native verification remain the review conditions stated above; approval
+  does not assert that these conditions have been met.
 - 2026-10-14: Amendment 1 proposed: the switcher is a menu and the pads are
   managed in a Pads tab of Settings.

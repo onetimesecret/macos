@@ -34,7 +34,7 @@ public enum StreamNavigator {
     public static let windowDays = 7
 
     /// What a node past the window says in place of a gauge.
-    public static let retainedLabel = "7d+ · retained"
+    public static var retainedLabel: String { CompanionL10n.string("pad.stream.retained") }
 
     /// One checkpoint on the stream: a page under its day, or the empty
     /// place today keeps while it holds no page.
@@ -158,7 +158,7 @@ public enum StreamNavigator {
     }
 
     /// The days with no drawn page between two consecutive nodes'
-    /// days, counted where they fall. `above` is nearer today.
+    /// days, counted where they fall; either argument may be the newer day.
     ///
     /// The seven day mark is not an empty day, and the days past it
     /// belong to the retained stretch: between a page four days ago and
@@ -166,14 +166,16 @@ public enum StreamNavigator {
     /// and what lies past the seventh is drawn as the window's end
     /// rather than counted as absence.
     public static func emptyDays(between above: Int, and below: Int) -> Int {
-        let last = !isTrailing(bucket: above) && isTrailing(bucket: below) ? -windowDays : below
-        return max(0, above - last - 1)
+        let newer = max(above, below)
+        let older = min(above, below)
+        let last = !isTrailing(bucket: newer) && isTrailing(bucket: older) ? -windowDays : older
+        return max(0, newer - last - 1)
     }
 
     /// "1 empty day", "2 empty days": the note above a node whose day
     /// does not follow the one above it.
     public static func emptyDaysLabel(_ count: Int) -> String {
-        "\(count) empty day\(count == 1 ? "" : "s")"
+        CompanionL10n.format(count == 1 ? "pad.stream.emptyDay.one" : "pad.stream.emptyDay.many", count)
     }
 
     /// How a page's birth time reads where its day is already said.
@@ -350,10 +352,17 @@ public enum StreamNavigator {
         /// the surface a page's remaining life is drawn while pages
         /// are organized by day.
         public static let gaugeWidth: CGFloat = 44
+        /// The room between two rows of the dense rail's checkpoint list.
+        public static let listSpacing: CGFloat = 3
+        /// The gap between the dense rail's map and its checkpoint list.
+        public static let mapGap: CGFloat = 4
 
         /// How far above its node's y a row is drawn; a day's first row rises a point more
         /// so its larger dot centres on the same line as a later row's.
         public static func rowLift(firstOfDay: Bool) -> CGFloat { firstOfDay ? 7 : 6 }
+
+        /// The side of a node's mark on the track, larger for a day's first page.
+        public static func markerSize(firstOfDay: Bool) -> CGFloat { firstOfDay ? 7 : 5 }
     }
 
     /// A node with its place on the rail.
@@ -423,14 +432,22 @@ public enum StreamNavigator {
         /// The track runs from here to the window's end or the foot.
         public let trackTop: CGFloat
         public let trackBottom: CGFloat
-        /// Where the seven day window ends, when a node lies past it.
+        /// Where the seven day mark is drawn, when a node lies past the window; the compact map
+        /// draws its tick only where the track between two marks fits one.
         public let windowY: CGFloat?
+        /// The track inside the window, drawn solid, and the track past it, drawn dashed when
+        /// a node lies there; the nodes' order (`runsOldestFirst`) decides which end each takes.
+        public let windowTrack: Segment
+        public let retainedTrack: Segment?
         public let band: Band?
         public let activeSegment: Segment?
         public let slivers: [Sliver]
         /// How tall the drawing is: the column's height, or more when the rows outrun it,
         /// in which case the column scrolls (#277). `.empty` alone reads 0, having no column.
         public let contentHeight: CGFloat
+        /// The rows packed from the top with nothing between them, the gauge counted under the row
+        /// it makes tallest, so the least column that fits them reads the same whichever node is active.
+        public let packedHeight: CGFloat
         /// The map, kept so a click on bare track can be inverted.
         public let anchors: [Anchor]
 
@@ -438,10 +455,14 @@ public enum StreamNavigator {
         /// piece by piece.
         public func documentOffset(atY y: CGFloat) -> CGFloat {
             guard anchors.count >= 2 else { return 0 }
+            if y <= anchors[0].y { return anchors[0].document }
+            if y >= anchors[anchors.count - 1].y { return anchors[anchors.count - 1].document }
             for index in 1..<anchors.count {
                 let a = anchors[index - 1], b = anchors[index]
                 if y <= b.y {
-                    let share = (y - a.y) / max(1, b.y - a.y)
+                    let span = b.y - a.y
+                    guard span > 0 else { continue }
+                    let share = (y - a.y) / span
                     return a.document + share * (b.document - a.document)
                 }
             }
@@ -457,9 +478,92 @@ public enum StreamNavigator {
         }
 
         public static let empty = Layout(
-            placed: [], trackTop: 0, trackBottom: 0, windowY: nil, band: nil,
-            activeSegment: nil, slivers: [], contentHeight: 0, anchors: []
+            placed: [], trackTop: 0, trackBottom: 0, windowY: nil,
+            windowTrack: Segment(y: 0, height: 0), retainedTrack: nil, band: nil,
+            activeSegment: nil, slivers: [], contentHeight: 0, packedHeight: 0, anchors: []
         )
+    }
+
+    /// Whether the rows outrun the column even packed tight, so the view draws the compact
+    /// map and the checkpoint list (ADR-0060); a column the placed rows merely outrun scrolls (#277).
+    public static func isDense(_ layout: Layout, columnHeight: CGFloat) -> Bool {
+        layout.packedHeight > columnHeight
+    }
+
+    /// A node's drawn row: the words for its day and minute, the gauge under it while it is the
+    /// active page inside the window, and the retained words past the window.
+    public static func rowHeight(of node: Node, active: Bool) -> CGFloat {
+        var height = node.firstOfDay ? Metrics.firstRow : Metrics.row
+        if active, !node.trailing, node.hasPage { height += Metrics.gaugeReserve }
+        if node.trailing { height += Metrics.trailingReserve }
+        return height
+    }
+
+    /// The room the dense list keeps for its active row whichever node that is: the tallest row
+    /// any node would draw as the active one, so moving the selection never moves the split.
+    public static func activeRowRoom(_ nodes: [Node]) -> CGFloat {
+        nodes.map { rowHeight(of: $0, active: true) }.max() ?? Metrics.firstRow
+    }
+
+    /// The dense rail's map height: two fifths of the column and 40 points at least, unless the
+    /// list's `row` needs the room, which outranks that floor; 0 where a compact map draws nothing.
+    public static func denseMapHeight(columnHeight: CGFloat, row: CGFloat) -> CGFloat {
+        let height = min(max(40, columnHeight * 0.4), columnHeight - Metrics.mapGap - row)
+        return height > Metrics.top + Metrics.bottom ? height : 0
+    }
+
+    /// The view that offers VoiceOver the adjustable reading position.
+    public enum ReadingPositionHost: Equatable, Sendable {
+        /// The lane beside the full drawing, or beside the dense rail's map.
+        case drawing, map
+        /// The dense list's leading edge, in a column with no room for the map.
+        case list
+    }
+
+    /// Where the rail offers the reading position: nowhere unless it drives a roll the reader can
+    /// scroll (a band), and on the list when a dense column omits its map (ADR-0060).
+    public static func readingPositionHost(
+        _ layout: Layout, columnHeight: CGFloat, mapHeight: CGFloat, drivesRoll: Bool
+    ) -> ReadingPositionHost? {
+        guard drivesRoll, layout.band != nil else { return nil }
+        guard isDense(layout, columnHeight: columnHeight) else { return .drawing }
+        return mapHeight > 0 ? .map : .list
+    }
+
+    /// The dense rail's checkpoint list (ADR-0060): every placed node's row stacked from the
+    /// list's top in node order, `Metrics.listSpacing` apart, with no note or mark between.
+    public struct CheckpointList: Equatable, Sendable {
+        public struct Row: Equatable, Identifiable, Sendable {
+            public let placed: Placed
+            /// The row's top, down from the list's top.
+            public let top: CGFloat
+            public var id: UInt64 { placed.id }
+            public var bottom: CGFloat { top + placed.rowHeight }
+        }
+
+        public let rows: [Row]
+        /// From the first row's top to the last row's bottom.
+        public let contentHeight: CGFloat
+
+        /// The row the list reveals when the selection moves to it.
+        public var active: Row? { rows.first { $0.placed.node.active } }
+    }
+
+    public static func checkpointList(_ placed: [Placed]) -> CheckpointList {
+        var rows: [CheckpointList.Row] = []
+        var top: CGFloat = 0
+        for row in placed {
+            rows.append(CheckpointList.Row(placed: row, top: top))
+            top += row.rowHeight + Metrics.listSpacing
+        }
+        return CheckpointList(rows: rows, contentHeight: rows.last?.bottom ?? 0)
+    }
+
+    /// Whether the nodes run oldest first: the last node's day is newer than the first's.
+    /// Newest first is the projection's own order, so a rail of one day reads that way.
+    public static func runsOldestFirst(_ nodes: [Node]) -> Bool {
+        guard let first = nodes.first, let last = nodes.last else { return false }
+        return first.bucket < last.bucket
     }
 
     /// A minimap drag uses the map captured at mouse-down, so viewport
@@ -569,12 +673,23 @@ public enum StreamNavigator {
     /// ends, so the extents landing moves the nodes instead of
     /// unstacking them.
     public static func layout(
-        nodes: [Node], geometry: RollGeometry, height: CGFloat, width: CGFloat
+        nodes: [Node], geometry: RollGeometry, height: CGFloat, width: CGFloat,
+        compact: Bool = false
     ) -> Layout {
         guard height > 0, !nodes.isEmpty else { return .empty }
+        if compact && height <= Metrics.top + Metrics.bottom { return .empty }
         let documentHeight = resolvedDocumentHeight(geometry)
         let document = max(1, documentHeight)
-        let windowIndex = nodes.firstIndex(where: \.trailing)
+        // Newest first, the mark stands above the first retained node; oldest first, above the
+        // first node back inside the window, or past the last node (index `count`) when none is.
+        let oldestFirst = runsOldestFirst(nodes)
+        let firstRetained = nodes.firstIndex(where: \.trailing)
+        let windowIndex = oldestFirst
+            ? firstRetained.map { first in nodes[first...].firstIndex { !$0.trailing } ?? nodes.count }
+            : firstRetained
+        let markAfterLast = windowIndex == nodes.count
+        // Room under the last row for a mark standing past it.
+        let tail = markAfterLast && !compact ? Metrics.windowReserve : 0
         let documentTops = resolvedDocumentTops(
             nodes: nodes, geometry: geometry, documentHeight: documentHeight)
         var reserves: [CGFloat] = []
@@ -584,19 +699,16 @@ public enum StreamNavigator {
             let atWindow = index == windowIndex
             let gapBand = node.emptyDays > 0
                 ? (atWindow ? Metrics.gapBandAtWindow : Metrics.gapBand) : 0
-            let reserve = gapBand + (atWindow ? Metrics.windowReserve : 0)
-            var rowHeight = node.firstOfDay ? Metrics.firstRow : Metrics.row
-            if node.active, !node.trailing, node.hasPage { rowHeight += Metrics.gaugeReserve }
-            if node.trailing { rowHeight += Metrics.trailingReserve }
+            let reserve = compact ? 0 : gapBand + (atWindow ? Metrics.windowReserve : 0)
             gapBands.append(gapBand)
             reserves.append(reserve)
-            heights.append(rowHeight + reserve)
+            heights.append(compact ? 0 : rowHeight(of: node, active: node.active) + reserve)
         }
         // A row drawn higher than the one above it (`Metrics.rowLift`) needs that difference,
         // less its own reserve, between the two.
         let lifts = nodes.map { Metrics.rowLift(firstOfDay: $0.firstOfDay) }
         let liftGaps = nodes.indices.map { index in
-            index == 0 ? 0 : max(0, lifts[index] - lifts[index - 1] - reserves[index])
+            compact || index == 0 ? 0 : max(0, lifts[index] - lifts[index - 1] - reserves[index])
         }
         let span = max(0, height - Metrics.top - Metrics.bottom)
         var ys = documentTops.map { Metrics.top + ($0 / document) * span }
@@ -604,7 +716,13 @@ public enum StreamNavigator {
             ys[index] = max(ys[index], ys[index - 1] + heights[index - 1] + liftGaps[index])
         }
         let lastBottom = ys[ys.count - 1] + heights[ys.count - 1]
-        let contentHeight = max(height, lastBottom + Metrics.bottom)
+        let contentHeight = max(height, lastBottom + tail + Metrics.bottom)
+        // Packed with no node active, plus the most any one node adds by being the active one.
+        let resting = nodes.indices.map { compact ? 0 : rowHeight(of: nodes[$0], active: false) + reserves[$0] }
+        let gauge = compact ? 0 : nodes.map { rowHeight(of: $0, active: true) - rowHeight(of: $0, active: false) }
+            .max() ?? 0
+        let packedHeight = Metrics.top + resting.reduce(0, +) + gauge + liftGaps.reduce(0, +)
+            + tail + Metrics.bottom
         let limit = contentHeight - Metrics.bottom
         let nodeYs = ys.indices.map { ys[$0] + reserves[$0] }
 
@@ -620,7 +738,7 @@ public enum StreamNavigator {
                 node: nodes[index], y: nodeYs[index],
                 rowHeight: heights[index] - reserves[index],
                 groundTop: min(ys[index], (nodeYs[index] - lifts[index]).rounded(.down) - 1),
-                noteY: nodes[index].emptyDays > 0 ? ys[index] + 1 : nil,
+                noteY: !compact && nodes[index].emptyDays > 0 ? ys[index] + 1 : nil,
                 documentTop: documentTops[index]
             )
         }
@@ -635,21 +753,52 @@ public enum StreamNavigator {
             segment = Segment(y: from, height: max(2, to - from))
         }
 
-        let windowY = windowIndex.map { ys[$0] + gapBands[$0] + 2 }
+        let trackTop = Metrics.top - 8
+        // Compact, the boundary is the middle of the free track between the marks on either
+        // side, and its one point tick is drawn only where that stretch fits it.
+        var boundary: CGFloat?
+        var windowY: CGFloat?
+        if let index = windowIndex, compact {
+            let upper = nodes.indices.prefix(index).map {
+                nodeYs[$0] + Metrics.markerSize(firstOfDay: nodes[$0].firstOfDay)
+            }.max() ?? trackTop
+            let lower = index < nodes.count ? nodeYs[index] : limit
+            boundary = (upper + lower - 1) / 2
+            windowY = lower - upper >= 1 ? boundary : nil
+        } else if let index = windowIndex {
+            boundary = index < nodes.count ? ys[index] + gapBands[index] + 2 : lastBottom + 2
+            windowY = boundary
+        }
+        let stretch = { (from: CGFloat, to: CGFloat) in Segment(y: from, height: max(0, to - from)) }
+        let windowTrack: Segment
+        let retainedTrack: Segment?
+        if firstRetained == nil {
+            windowTrack = stretch(trackTop, limit)
+            retainedTrack = nil
+        } else if oldestFirst {
+            let end = boundary ?? limit
+            windowTrack = stretch(end, limit)
+            retainedTrack = stretch(trackTop, end)
+        } else {
+            let start = boundary ?? trackTop
+            windowTrack = stretch(trackTop, start)
+            retainedTrack = stretch(start, limit)
+        }
 
         let available = width - Metrics.trackX - Metrics.sliverInset - Metrics.sliverTrailing
         var slivers: [Int: Sliver] = [:]
         if available > 2 {
             // A node's words, and the note and the mark reserved above
             // them, are ground no sliver may cross.
-            let rows = placed.map { ($0.groundTop, $0.rowBottom) }
+            var rows = placed.map { ($0.groundTop, $0.rowBottom) }
+            if tail > 0, let last = placed.last { rows.append((last.rowBottom, lastBottom + tail)) }
             for extent in geometry.extents {
                 for line in extent.lines {
                     // Whole points: a one point sliver is drawn on a
                     // point, and two lines landing on the same one are
                     // one sliver.
                     let y = map(line.y).rounded()
-                    if rows.contains(where: { y >= $0.0 && y <= $0.1 }) { continue }
+                    if !compact && rows.contains(where: { y >= $0.0 && y <= $0.1 }) { continue }
                     let key = Int(y)
                     let sliver = Sliver(
                         id: key,
@@ -665,13 +814,16 @@ public enum StreamNavigator {
 
         return Layout(
             placed: placed,
-            trackTop: Metrics.top - 8,
+            trackTop: trackTop,
             trackBottom: limit,
             windowY: windowY,
+            windowTrack: windowTrack,
+            retainedTrack: retainedTrack,
             band: band,
             activeSegment: segment,
             slivers: slivers.values.sorted { $0.y < $1.y },
             contentHeight: contentHeight,
+            packedHeight: packedHeight,
             anchors: anchors
         )
     }
@@ -695,10 +847,13 @@ public enum StreamNavigator {
             trackTop: layout.trackTop,
             trackBottom: layout.trackBottom,
             windowY: layout.windowY,
+            windowTrack: layout.windowTrack,
+            retainedTrack: layout.retainedTrack,
             band: band,
             activeSegment: layout.activeSegment,
             slivers: slivers,
             contentHeight: layout.contentHeight,
+            packedHeight: layout.packedHeight,
             anchors: layout.anchors
         )
     }
@@ -713,7 +868,9 @@ public enum StreamNavigator {
         for index in 1..<anchors.count {
             let a = anchors[index - 1], b = anchors[index]
             if offset <= b.document {
-                let share = (offset - a.document) / max(1, b.document - a.document)
+                let span = b.document - a.document
+                guard span > 0 else { return a.y }
+                let share = (offset - a.document) / span
                 return a.y + share * (b.y - a.y)
             }
         }

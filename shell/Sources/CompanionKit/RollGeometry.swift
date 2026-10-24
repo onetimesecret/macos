@@ -193,6 +193,11 @@ public final class RollGeometryModel: ObservableObject {
     /// on the roll that does not depend on an editor being mounted in
     /// it: a roll showing an empty Today has a place and no editor.
     private var placeReader: (() -> RollPlace?)?
+    private var padReader: (() -> UUID?)?
+
+    /// Read a semantic position without withdrawing the mounted roll's claim.
+    var currentPlace: RollPlace? { placeReader?() }
+    var currentPadID: UUID? { padReader?() }
 
     /// A roll has been mounted. It speaks for the rail from here on, and
     /// it has nothing laid out yet, so the rail stops drawing the shape
@@ -207,13 +212,15 @@ public final class RollGeometryModel: ObservableObject {
         scroller: ((CGFloat) -> Void)? = nil,
         scrubber: ((CGFloat) -> Void)? = nil,
         wheel: ((NSEvent) -> Void)? = nil,
-        place: (() -> RollPlace?)? = nil
+        place: (() -> RollPlace?)? = nil,
+        pad: (() -> UUID?)? = nil
     ) {
         publisher = ObjectIdentifier(roll)
         self.scroller = scroller
         self.scrubber = scrubber
         wheelRelay = wheel
         placeReader = place
+        padReader = pad
         reset(from: roll)
     }
 
@@ -252,6 +259,7 @@ public final class RollGeometryModel: ObservableObject {
         scrubber = nil
         wheelRelay = nil
         placeReader = nil
+        padReader = nil
         book(.unmeasured)
         return place
     }
