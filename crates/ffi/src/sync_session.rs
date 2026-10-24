@@ -409,6 +409,9 @@ pub struct SyncSession {
     /// Pages whose ops failed to encode at a seal, until the driver takes
     /// them to export again ([`SyncSession::take_unencoded_ops`]).
     unencoded_ops: Vec<ItemId>,
+    /// Each page and object whose note ops failed to encode at a seal, until
+    /// the driver takes them to export again ([`SyncSession::take_unencoded_notes`]).
+    unencoded_notes: Vec<(ItemId, ItemId)>,
     /// Each page and the objects whose metadata failed to encode at a seal,
     /// until the driver marks them changed again
     /// ([`SyncSession::take_unencoded_metadata`]).
@@ -471,6 +474,7 @@ impl SyncSession {
             in_flight: None,
             in_flight_id: 0,
             unencoded_ops: Vec::new(),
+            unencoded_notes: Vec::new(),
             unencoded_metadata: Vec::new(),
             last_publish_ms: None,
             proposed_entropy: None,
@@ -670,15 +674,27 @@ impl SyncSession {
         }
     }
 
-    /// Drop a page's ops and metadata still waiting for a seal, as for a
-    /// page past its deadline or gone (Law 0001, expiry row). Its expiry,
-    /// hold and marker stay queued.
+    /// Queue one note's fresh operations for the next publish tick
+    /// (ADR-0058 point 6).
+    pub fn queue_note_ops(&mut self, page: ItemId, object: ItemId, ops: &[u8]) {
+        self.outbox.push(DeltaEnvelope::NoteOps {
+            page: page_wire_id(page),
+            object: page_wire_id(object),
+            ops: ByteBlob::from(ops),
+        });
+    }
+
+    /// Drop a page's ops, metadata and note ops still waiting for a seal, as
+    /// for a page past its deadline or gone (Law 0001, expiry row). Its
+    /// expiry, hold and marker stay queued.
     pub fn withdraw_ops(&mut self, page: ItemId) {
         let wire = page_wire_id(page);
         self.outbox.retain(|envelope| {
             !matches!(
                 envelope,
-                DeltaEnvelope::Ops { page, .. } | DeltaEnvelope::Metadata { page, .. }
+                DeltaEnvelope::Ops { page, .. }
+                    | DeltaEnvelope::Metadata { page, .. }
+                    | DeltaEnvelope::NoteOps { page, .. }
                     if *page == wire
             )
         });
@@ -746,7 +762,8 @@ impl SyncSession {
     /// epoch that sealed it. `None` when the clock says wait, nothing is
     /// queued, a seal refuses, or no access token is held. An envelope that
     /// fails to encode raises a fault and goes unsent: its page's ops wait
-    /// in [`SyncSession::take_unencoded_ops`] to export again, its objects in
+    /// in [`SyncSession::take_unencoded_ops`] to export again, its notes in
+    /// [`SyncSession::take_unencoded_notes`], its objects in
     /// [`SyncSession::take_unencoded_metadata`], and an expiry, hold or
     /// terminal envelope stays queued.
     #[must_use]
@@ -802,11 +819,11 @@ impl SyncSession {
                 .map(|(envelope, _)| envelope.clone())
                 .collect();
             // Every seal succeeded; only now does the queue let go. A fact that
-            // failed to encode stays queued; failed ops and metadata go back to the driver.
+            // failed to encode stays queued; failed ops, notes and metadata go back to the driver.
             let unencoded = encoded.iter().filter(|encoded| !**encoded).count();
             if unencoded > 0 {
                 crate::diagnostics::diag_fault!(
-                    "companion-ffi: {unencoded} queued sync envelope(s) failed to encode; ops export again, metadata is marked to send again, expiry, hold and terminal envelopes stay queued, ceremony messages are dropped."
+                    "companion-ffi: {unencoded} queued sync envelope(s) failed to encode; ops and note ops export again, metadata is marked to send again, expiry, hold and terminal envelopes stay queued, ceremony messages are dropped."
                 );
             }
             let failed = self.outbox.iter().zip(&encoded).filter(|(_, ok)| !**ok);
@@ -825,6 +842,14 @@ impl SyncSession {
                                 .map(ItemId::from_bytes)
                                 .collect();
                             self.unencoded_metadata.push((page, objects));
+                        }
+                    }
+                    DeltaEnvelope::NoteOps { page, object, .. } => {
+                        if let Some(page) = page_from_wire(page)
+                            && let Some(object) = lower_hex(object)
+                        {
+                            self.unencoded_notes
+                                .push((page, ItemId::from_bytes(object)));
                         }
                     }
                     _ => {}
@@ -856,6 +881,13 @@ impl SyncSession {
     #[must_use]
     pub(crate) fn take_unencoded_ops(&mut self) -> Vec<ItemId> {
         std::mem::take(&mut self.unencoded_ops)
+    }
+
+    /// Each page and object whose note ops a seal could not encode, once, so
+    /// the driver rewinds that note's export cursor.
+    #[must_use]
+    pub(crate) fn take_unencoded_notes(&mut self) -> Vec<(ItemId, ItemId)> {
+        std::mem::take(&mut self.unencoded_notes)
     }
 
     /// Each page and the objects whose metadata a seal could not encode,
@@ -1040,6 +1072,32 @@ impl SyncSession {
                         if store.apply_object_metadata(page, entries) > 0
                             && !events.contains(&applied)
                         {
+                            events.push(applied);
+                        }
+                    }
+                    DeltaAdmission::RejoinRequired => events.push(SyncEvent::RejoinRequired),
+                    DeltaAdmission::Refused => {}
+                }
+            }
+            DeltaEnvelope::NoteOps { page, object, ops } => {
+                let (Some(page), Some(object)) = (page_from_wire(&page), lower_hex(&object)) else {
+                    return;
+                };
+                match self
+                    .channels
+                    .entry(page)
+                    .or_default()
+                    .admit_delta(wire_epoch)
+                {
+                    DeltaAdmission::Apply => {
+                        // A refused batch is dropped alone (ADR-0058 point 7).
+                        let changed = store.apply_remote_note_update(
+                            page,
+                            ItemId::from_bytes(object),
+                            ops.as_slice(),
+                        );
+                        let applied = SyncEvent::Applied(page);
+                        if changed == Ok(true) && !events.contains(&applied) {
                             events.push(applied);
                         }
                     }
@@ -1477,7 +1535,7 @@ fn marker_trusted(marker: &[u8], page: ItemId, trusted: &[Vec<u8>]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use companion_core::{Availability, ChipId, EditOp, ManualClock, SealedChip};
+    use companion_core::{Availability, ChipId, EditIntent, EditOp, ManualClock, SealedChip};
     use serde_json::Value;
 
     use super::*;
@@ -2787,8 +2845,10 @@ mod tests {
         let object = unnamed(ItemId::random());
         session.queue_ops(gone, b"ops past the deadline");
         session.queue_metadata(gone, std::slice::from_ref(&object));
+        session.queue_note_ops(gone, object.object, b"note ops past the deadline");
         session.queue_ops(kept, b"ops still readable");
         session.queue_metadata(kept, std::slice::from_ref(&object));
+        session.queue_note_ops(kept, object.object, b"note ops still readable");
         session.queue_expiry(
             gone,
             ExpiryPolicy {
@@ -2810,6 +2870,11 @@ mod tests {
                 DeltaEnvelope::Metadata {
                     page: page_wire_id(kept),
                     entries: vec![metadata_entry(&object)],
+                },
+                DeltaEnvelope::NoteOps {
+                    page: page_wire_id(kept),
+                    object: page_wire_id(object.object),
+                    ops: ByteBlob::from(b"note ops still readable".as_slice()),
                 },
                 DeltaEnvelope::Expiry {
                     page: page_wire_id(gone),
@@ -3048,6 +3113,38 @@ mod tests {
             self.sessions[0].queue_metadata(self.uuid, &entries);
         }
 
+        /// Write `text` at the start of `chip`'s note on A.
+        fn write_note_on_a(&mut self, chip: ChipId, text: &str) {
+            let ops = [EditOp::Insert {
+                pos_u16: 0,
+                text: text.into(),
+            }];
+            assert!(
+                self.stores[0].apply_note_ops(chip, &ops, EditIntent::Paste, None),
+                "a note on A takes {text}"
+            );
+        }
+
+        /// Queue `object`'s note ops on A past B's note version.
+        fn queue_note_of_a(&mut self, object: ItemId) {
+            let held = self.stores[1]
+                .note_version(self.pages[1], object)
+                .unwrap_or_else(SheetStore::<ManualClock>::pristine_document_version);
+            let update = self.stores[0]
+                .export_note_updates(self.pages[0], object, &held)
+                .unwrap();
+            self.sessions[0].queue_note_ops(self.uuid, object, &update);
+        }
+
+        /// B's note for `object`, `None` while its record there has none.
+        fn note_on_b(&self, object: ItemId) -> Option<String> {
+            if !self.stores[1].notes_on(self.pages[1]).contains(&object) {
+                return None;
+            }
+            let chip = self.on_b(object)?.id();
+            Some(self.stores[1].note_text(chip)?.to_string())
+        }
+
         /// A publishes its queue to the relay, at the relay's epoch.
         fn publish_from_a(&mut self) -> u64 {
             let since = u64::try_from(self.relay.blobs.len()).unwrap();
@@ -3247,6 +3344,104 @@ mod tests {
         assert!(events.contains(&SyncEvent::RejoinRequired));
         assert!(!events.contains(&SyncEvent::Applied(pair.uuid)));
         assert_eq!(pair.on_b(objects[0]).unwrap().name(), None);
+    }
+
+    #[test]
+    fn a_note_ops_envelope_that_cannot_encode_hands_back_its_note_and_the_ops_still_go() {
+        let chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut session = session("fp-a");
+        let (page, object) = (ItemId::random(), ItemId::random());
+        session.queue_ops(page, b"ops");
+        session.queue_note_ops(page, object, b"note ops");
+        let refuse_notes = |envelope: &DeltaEnvelope| match envelope {
+            DeltaEnvelope::NoteOps { .. } => None,
+            _ => envelope.encode().ok(),
+        };
+        let request = session
+            .publish_request_with(0, chain.epoch(), refuse_notes, |plaintext| {
+                chain.seal(plaintext)
+            })
+            .expect("the ops still go");
+        assert!(session.outbox.is_empty(), "note ops export again, unqueued");
+        assert!(session.in_flight.as_ref().unwrap().restate.is_empty());
+        assert_eq!(session.take_unencoded_notes(), [(page, object)]);
+        assert!(session.take_unencoded_notes().is_empty());
+        assert!(session.take_unencoded_ops().is_empty());
+        let mut relay = FakeRelay::default();
+        relay.accept_publish(&request);
+        let batch = RelayApi::parse_deltas(&relay.serve_fetch(0)).unwrap();
+        assert_eq!(batch.blobs.len(), 1);
+        let opened = chain.open(&batch.blobs[0]).unwrap();
+        assert_eq!(
+            DeltaEnvelope::decode(pad::unpad(&opened).unwrap()),
+            Some(DeltaEnvelope::Ops {
+                page: page_wire_id(page),
+                ops: ByteBlob::from(b"ops".as_slice()),
+            })
+        );
+    }
+
+    #[test]
+    fn a_note_sent_before_its_sentinel_waits_and_applies_when_the_ops_arrive() {
+        let mut pair = SealedPair::new();
+        let (chips, objects) = pair.seal_on_a();
+        pair.write_note_on_a(chips[0], "rotate quarterly");
+        pair.queue_note_of_a(objects[0]);
+        let events = pair.deliver();
+        assert!(events.is_empty(), "no record changed yet: {events:?}");
+        assert!(pair.on_b(objects[0]).is_none());
+
+        pair.queue_ops_of_a();
+        assert_eq!(pair.deliver(), [SyncEvent::Applied(pair.uuid)]);
+        assert!(!pair.on_b(objects[0]).unwrap().is_local());
+        assert_eq!(
+            pair.note_on_b(objects[0]).as_deref(),
+            Some("rotate quarterly")
+        );
+        assert_eq!(pair.note_on_b(objects[1]), None);
+        pair.assert_no_payload();
+    }
+
+    #[test]
+    fn a_note_batch_standing_a_chip_is_refused_and_the_rest_of_its_batch_applies() {
+        let mut pair = SealedPair::new();
+        let (chips, objects) = pair.seal_on_a();
+        // A page's own export stands a chip; as a note's batch it nests one.
+        let mut rogue = SheetStore::new(ManualClock::new());
+        let rogue_page = rogue.new_tab().1;
+        rogue.seal_text_at(rogue_page, "rogue", 0, 0).unwrap();
+        let nesting = rogue
+            .export_document_updates(
+                rogue_page,
+                &SheetStore::<ManualClock>::pristine_document_version(),
+            )
+            .unwrap();
+        pair.queue_ops_of_a();
+        pair.sessions[0].queue_note_ops(pair.uuid, objects[0], &nesting);
+        pair.write_note_on_a(chips[1], "the neighbour");
+        pair.queue_note_of_a(objects[1]);
+
+        assert_eq!(pair.deliver(), [SyncEvent::Applied(pair.uuid)]);
+        assert!(objects.iter().all(|object| pair.on_b(*object).is_some()));
+        assert_eq!(pair.note_on_b(objects[0]), None, "the refusal made no note");
+        assert_eq!(pair.note_on_b(objects[1]).as_deref(), Some("the neighbour"));
+        pair.assert_no_payload();
+    }
+
+    #[test]
+    fn note_ops_at_another_epoch_apply_nothing() {
+        let mut pair = SealedPair::new();
+        let (chips, objects) = pair.seal_on_a();
+        pair.queue_ops_of_a();
+        assert_eq!(pair.deliver(), [SyncEvent::Applied(pair.uuid)]);
+        pair.write_note_on_a(chips[0], "late note");
+        pair.queue_note_of_a(objects[0]);
+        let since = pair.publish_from_a();
+        pair.relay.epoch = 1;
+        let events = pair.drain_b(since);
+        assert!(events.contains(&SyncEvent::RejoinRequired));
+        assert!(!events.contains(&SyncEvent::Applied(pair.uuid)));
+        assert_eq!(pair.note_on_b(objects[0]), None);
     }
 
     #[test]

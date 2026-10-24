@@ -172,12 +172,13 @@ pub(crate) struct PageTracking {
     /// The epoch at which every metadata entry of the page was last queued;
     /// `None` owes that restate (ADR-0058 point 5).
     pub metadata_restated_at: Option<u64>,
+    /// Each note's cursors, by object identity (ADR-0058 point 6).
+    pub notes: BTreeMap<ItemId, NoteCursor>,
 }
 
 impl PageTracking {
     fn at_enrolment() -> Self {
-        let pristine =
-            companion_core::SheetStore::<companion_core::SystemClock>::pristine_document_version();
+        let pristine = pristine_version();
         Self {
             frontier: pristine.clone(),
             acked: pristine,
@@ -185,8 +186,34 @@ impl PageTracking {
             hold: None,
             terminal_sent: false,
             metadata_restated_at: None,
+            notes: BTreeMap::new(),
         }
     }
+}
+
+/// A note's delta cursors, the page's own pair for its history of its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NoteCursor {
+    /// The version the last export left; pristine for a note first met, so
+    /// its first export sends its whole history.
+    pub frontier: Vec<u8>,
+    /// The version the relay has acknowledged.
+    pub acked: Vec<u8>,
+}
+
+impl NoteCursor {
+    fn first_met() -> Self {
+        let pristine = pristine_version();
+        Self {
+            frontier: pristine.clone(),
+            acked: pristine,
+        }
+    }
+}
+
+/// The version of a history with no operation, a page's or a note's.
+fn pristine_version() -> Vec<u8> {
+    companion_core::SheetStore::<companion_core::SystemClock>::pristine_document_version()
 }
 
 /// A publish batch in flight and the cursors it carries, one per page
@@ -195,6 +222,8 @@ pub(crate) struct StagedBatch {
     /// [`SyncSession::in_flight_batch`], so a resend keeps this record.
     pub id: u64,
     pub cursors: BTreeMap<ItemId, Vec<u8>>,
+    /// Each page's note export cursors as the batch was sealed, by object.
+    pub notes: BTreeMap<ItemId, BTreeMap<ItemId, Vec<u8>>>,
 }
 
 /// A begun sign-in ceremony: consumed whole by the finish, dropped
@@ -788,6 +817,7 @@ pub(crate) fn sweep_outbound(
                         tracking.frontier = version;
                     }
                     queue_page_metadata(store, engine, *page, sheet, tracking);
+                    queue_page_notes(store, &mut engine.session, *page, sheet, tracking);
                 }
                 if let Some(policy) = store.expiry_policy(sheet) {
                     let deadline = policy.deadline_wall_ms();
@@ -851,6 +881,34 @@ fn queue_page_metadata(
     engine.session.queue_metadata(page, &entries);
 }
 
+/// Queue, after the page's metadata, each note's operations past its export
+/// cursor (ADR-0058 point 6); a cursor whose record left the page goes with it.
+fn queue_page_notes(
+    store: &mut companion_core::SheetStore<companion_core::SystemClock>,
+    session: &mut SyncSession,
+    page: ItemId,
+    sheet: SheetId,
+    tracking: &mut PageTracking,
+) {
+    let objects = store.notes_on(sheet);
+    tracking.notes.retain(|object, _| objects.contains(object));
+    for object in objects {
+        let Some(version) = store.note_version(sheet, object) else {
+            continue;
+        };
+        let cursor = tracking
+            .notes
+            .entry(object)
+            .or_insert_with(NoteCursor::first_met);
+        if version != cursor.frontier
+            && let Some(update) = store.export_note_updates(sheet, object, &cursor.frontier)
+        {
+            session.queue_note_ops(page, object, &update);
+            cursor.frontier = version;
+        }
+    }
+}
+
 /// The first enrolled page held here before its deadline, the anchor of a
 /// rotation no page is owed; a page past it would refuse (Law 0001, expiry row).
 fn live_anchor(
@@ -889,12 +947,11 @@ fn hold_moved(last: Option<HoldRegister>, next: HoldRegister) -> bool {
     }
 }
 
-/// Move a page's export and acknowledged cursors to its rebuilt
-/// version without exporting, drop the page from any staged batch, and
-/// withdraw its unsealed ops and metadata, owing the metadata's restate:
-/// the rebuild travels only as the frame (client protocol §7.6).
+/// Settle a page's cursors, and each standing note's, on the rebuild without exporting, drop
+/// them from any staged batch and withdraw the page's unsealed envelopes, owing the metadata's
+/// restate: the rebuild travels only as the frame (client protocol §7.6; ADR-0058 point 6).
 fn settle_frontier(
-    store: &companion_core::SheetStore<companion_core::SystemClock>,
+    store: &mut companion_core::SheetStore<companion_core::SystemClock>,
     enrolled: &mut BTreeMap<ItemId, PageTracking>,
     staged: &mut Option<StagedBatch>,
     session: &mut SyncSession,
@@ -906,9 +963,10 @@ fn settle_frontier(
         return;
     };
     tracking.metadata_restated_at = None;
-    if let Some(sheet) = sheet_of(store, page)
-        && let Some(version) = store.document_version(sheet)
-    {
+    let Some(sheet) = sheet_of(store, page) else {
+        return;
+    };
+    if let Some(version) = store.document_version(sheet) {
         tracking.frontier = version.clone();
         tracking.acked = version;
         // A late acknowledgement must not lower a settled cursor.
@@ -916,13 +974,42 @@ fn settle_frontier(
             staged.cursors.remove(&page);
         }
     }
+    let standing: Vec<ItemId> = store
+        .sheet(sheet)
+        .into_iter()
+        .flat_map(companion_core::Sheet::chips)
+        .map(companion_core::SealedChip::uuid)
+        .collect();
+    // The withdrawal took a detached note's queued ops, and no frame rebuilds that note.
+    let _ = rewind_notes(tracking);
+    for object in store.notes_on(sheet) {
+        if !standing.contains(&object) {
+            continue;
+        }
+        let Some(version) = store.note_version(sheet, object) else {
+            continue;
+        };
+        tracking.notes.insert(
+            object,
+            NoteCursor {
+                frontier: version.clone(),
+                acked: version,
+            },
+        );
+        if let Some(notes) = staged
+            .as_mut()
+            .and_then(|staged| staged.notes.get_mut(&page))
+        {
+            notes.remove(&object);
+        }
+    }
 }
 
 /// Build the publish request and, for a newly sealed batch, record each
-/// page's export cursor; a resend keeps the first record, a batch the
-/// chain has moved past is dropped and its pages rewound, and nothing
+/// page's and note's export cursor; a resend keeps the first record, a batch
+/// the chain has moved past is dropped and its pages rewound, and nothing
 /// goes while this device's frame for the epoch waits (client protocol
-/// §4.4). A page whose ops failed to encode is rewound to export again.
+/// §4.4). A page or note whose ops failed to encode is rewound to export again.
 fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::HttpRequest> {
     stage_publish_with(companion, now_ms, SyncSession::publish_request)
 }
@@ -944,7 +1031,8 @@ fn stage_publish_with(
     if session.drop_stale_batch(chain) {
         companion.sync.staged_batch = None;
         for (page, tracking) in &mut companion.sync.enrolled {
-            if rewind_export(tracking) {
+            let page_moved = rewind_export(tracking);
+            if rewind_notes(tracking) || page_moved {
                 session.withdraw_ops(*page);
                 tracking.metadata_restated_at = None;
             }
@@ -960,6 +1048,16 @@ fn stage_publish_with(
     for page in session.take_unencoded_ops() {
         if let Some(tracking) = companion.sync.enrolled.get_mut(&page) {
             let _ = rewind_export(tracking);
+        }
+    }
+    for (page, object) in session.take_unencoded_notes() {
+        if let Some(note) = companion
+            .sync
+            .enrolled
+            .get_mut(&page)
+            .and_then(|tracking| tracking.notes.get_mut(&object))
+        {
+            let _ = rewind_cursor(&mut note.frontier, &note.acked);
         }
     }
     // Metadata that failed to encode is changed again for the next sweep (ADR-0058 point 7).
@@ -979,13 +1077,20 @@ fn stage_publish_with(
         && !known
     {
         // A batch this call sealed carries each cursor as it stands now.
+        let enrolled = &companion.sync.enrolled;
         companion.sync.staged_batch = Some(StagedBatch {
             id,
-            cursors: companion
-                .sync
-                .enrolled
+            cursors: enrolled
                 .iter()
                 .map(|(page, tracking)| (*page, tracking.frontier.clone()))
+                .collect(),
+            notes: enrolled
+                .iter()
+                .map(|(page, tracking)| {
+                    let notes = tracking.notes.iter();
+                    let sealed = notes.map(|(object, note)| (*object, note.frontier.clone()));
+                    (*page, sealed.collect())
+                })
                 .collect(),
         });
     }
@@ -1014,6 +1119,16 @@ fn absorb_publish_locked(
                 tracking.acked = carried;
             }
         }
+        for (page, notes) in staged.notes {
+            let Some(tracking) = companion.sync.enrolled.get_mut(&page) else {
+                continue;
+            };
+            for (object, sent) in notes {
+                if let Some(note) = tracking.notes.get_mut(&object) {
+                    note.acked = sent;
+                }
+            }
+        }
     }
     note_reachable(companion);
     Some(Ok(()))
@@ -1022,20 +1137,33 @@ fn absorb_publish_locked(
 /// Rewind a page's export cursor to its acknowledged one, so the next
 /// sweep exports what the relay never took. Whether it moved.
 fn rewind_export(tracking: &mut PageTracking) -> bool {
-    if tracking.frontier == tracking.acked {
+    rewind_cursor(&mut tracking.frontier, &tracking.acked)
+}
+
+/// [`rewind_export`] for each of the page's notes: whether any moved.
+fn rewind_notes(tracking: &mut PageTracking) -> bool {
+    tracking.notes.values_mut().fold(false, |moved, note| {
+        rewind_cursor(&mut note.frontier, &note.acked) || moved
+    })
+}
+
+/// Move an export cursor back to its acknowledged one. Whether it moved.
+fn rewind_cursor(frontier: &mut Vec<u8>, acked: &[u8]) -> bool {
+    if frontier.as_slice() == acked {
         return false;
     }
-    tracking.frontier = tracking.acked.clone();
+    acked.clone_into(frontier);
     true
 }
 
 /// Dissolve the engine, handing back its keeper, and rewind every page
-/// to its acknowledged cursor (client protocol §2).
+/// and note to its acknowledged cursor (client protocol §2).
 pub(crate) fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> {
     // The batch and its record die with the session that sealed it.
     companion.sync.staged_batch = None;
     for tracking in companion.sync.enrolled.values_mut() {
         let _ = rewind_export(tracking);
+        let _ = rewind_notes(tracking);
         tracking.deadline_wall_ms = None;
         tracking.hold = None;
         tracking.terminal_sent = false;
@@ -3810,6 +3938,12 @@ mod tests {
                 .unwrap()
         }
 
+        /// The object's note on device `i`, empty for none.
+        fn note(&self, i: usize) -> String {
+            let device = [&self.a, &self.b][i];
+            device.store.note_text(self.chips[i]).unwrap().to_string()
+        }
+
         /// Both devices sweep and publish, in that order, at the next tick.
         fn publish_both(&mut self) -> [ots_client::HttpRequest; 2] {
             let now_ms = self.now_ms;
@@ -4184,6 +4318,487 @@ mod tests {
         );
         let engine = companion.sync.engine.as_mut().unwrap();
         assert!(engine.session.take_frame().is_some(), "the frame sealed");
+    }
+
+    /// Write `text` into `chip`'s note at `at_u16`.
+    fn write_note(
+        companion: &mut Companion,
+        chip: companion_core::ChipId,
+        at_u16: u32,
+        text: &str,
+    ) {
+        let ops = [companion_core::EditOp::Insert {
+            pos_u16: at_u16,
+            text: text.into(),
+        }];
+        assert!(companion.store.apply_note_ops(
+            chip,
+            &ops,
+            companion_core::EditIntent::Paste,
+            None
+        ));
+    }
+
+    /// A page `key: here` with [`PAYLOAD`] sealed over `here` and `note`
+    /// written on it: the page, the chip and its object.
+    fn sealed_note(
+        companion: &mut Companion,
+        note: &str,
+    ) -> (SheetId, companion_core::ChipId, ItemId) {
+        let page = inked_page(companion, "key: here");
+        let chip = companion.store.seal_text_at(page, PAYLOAD, 5, 4).unwrap();
+        write_note(companion, chip, 0, note);
+        let object = companion
+            .store
+            .sheet(page)
+            .unwrap()
+            .chip(chip)
+            .unwrap()
+            .uuid();
+        (page, chip, object)
+    }
+
+    /// The objects each queued `NoteOps` envelope for `page` names, with its ops.
+    fn queued_notes(companion: &Companion, page: ItemId) -> Vec<(String, Vec<u8>)> {
+        let wire = crate::sync_session::page_wire_id(page);
+        let session = &companion.sync.engine.as_ref().unwrap().session;
+        session
+            .queued()
+            .iter()
+            .filter_map(|envelope| match envelope {
+                DeltaEnvelope::NoteOps { page, object, ops } if *page == wire => {
+                    Some((object.clone(), ops.as_slice().to_vec()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Whether `envelopes` include note ops for `object` whose bytes contain `text`.
+    fn sends_note(envelopes: &[DeltaEnvelope], object: ItemId, text: &str) -> bool {
+        let wire = crate::sync_session::page_wire_id(object);
+        envelopes.iter().any(|envelope| {
+            matches!(
+                envelope,
+                DeltaEnvelope::NoteOps { object, ops, .. } if *object == wire
+                    && ops.as_slice().windows(text.len()).any(|w| w == text.as_bytes())
+            )
+        })
+    }
+
+    #[test]
+    fn a_note_reaches_the_peer_s_record_with_no_value_and_one_written_there_comes_back() {
+        let mut devices = Devices::new();
+        write_note(&mut devices.a, devices.chips[0], 0, "rotate quarterly");
+        let [first, echo] = devices.publish_both();
+        let chain = &devices.a.sync.engine.as_ref().unwrap().chain;
+        assert!(sends_note(
+            &opened_envelopes(chain, &first),
+            devices.object,
+            "rotate quarterly"
+        ));
+        let events = deliver(&mut devices.b, &first);
+        assert!(events.iter().any(|event| event["kind"] == "applied"));
+        assert!(!devices.record(1).is_local());
+        assert_eq!(devices.note(1), "rotate quarterly");
+        deliver(&mut devices.a, &echo);
+        assert_eq!(devices.note(0), "rotate quarterly");
+
+        // Written on the record with no value, the note reaches the value's device.
+        write_note(&mut devices.b, devices.chips[1], 0, "and log it, ");
+        let reply = publish_swept(&mut devices.b, devices.now_ms);
+        let events = deliver(&mut devices.a, &reply);
+        assert!(events.iter().any(|event| event["kind"] == "applied"));
+        assert_eq!(devices.note(0), "and log it, rotate quarterly");
+        assert!(devices.record(0).is_local());
+
+        // The payload boundary: no request body and no envelope contains the value.
+        let chain = &devices.a.sync.engine.as_ref().unwrap().chain;
+        for request in [&first, &echo, &reply] {
+            assert!(!contains_payload(request.body.as_ref().unwrap()));
+            for envelope in opened_envelopes(chain, request) {
+                assert!(!contains_payload(&envelope.encode().unwrap()));
+            }
+        }
+    }
+
+    #[test]
+    fn concurrent_note_edits_on_two_devices_converge_after_an_exchange_in_both_orders() {
+        for a_first in [true, false] {
+            let mut devices = Devices::new();
+            write_note(&mut devices.a, devices.chips[0], 0, "base");
+            let [from_a, from_b] = devices.publish_both();
+            deliver(&mut devices.b, &from_a);
+            deliver(&mut devices.a, &from_b);
+            assert_eq!(devices.note(1), "base");
+
+            write_note(&mut devices.a, devices.chips[0], 4, " alpha");
+            write_note(&mut devices.b, devices.chips[1], 0, "beta ");
+            let [from_a, from_b] = devices.publish_both();
+            if a_first {
+                deliver(&mut devices.b, &from_a);
+                deliver(&mut devices.a, &from_b);
+            } else {
+                deliver(&mut devices.a, &from_b);
+                deliver(&mut devices.b, &from_a);
+            }
+            assert_eq!(devices.note(0), "beta base alpha", "a first {a_first}");
+            assert_eq!(devices.note(1), "beta base alpha", "a first {a_first}");
+        }
+    }
+
+    #[test]
+    fn an_acknowledged_batch_moves_each_note_s_acked_cursor_to_what_it_sent() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let (page, chip, object) = sealed_note(&mut companion, "the first line");
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let cursor = |companion: &Companion| companion.sync.enrolled[&uuid].notes[&object].clone();
+
+        // A note first met exports its whole history; the answer goes missing.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        let first = companion.store.note_version(page, object).unwrap();
+        assert_eq!(
+            cursor(&companion),
+            NoteCursor {
+                frontier: first.clone(),
+                ..NoteCursor::first_met()
+            }
+        );
+        assert!(stage_publish(&mut companion, 0).is_some());
+
+        // A second edit queues behind the resent batch; only the first is acknowledged.
+        write_note(&mut companion, chip, 0, "the second line ");
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        assert!(stage_publish(&mut companion, 4_000).is_some());
+        let live = companion.store.note_version(page, object).unwrap();
+        assert_ne!(live, first);
+        assert_eq!(cursor(&companion).frontier, live);
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+        assert_eq!(cursor(&companion).acked, first);
+
+        // The batch sealed with the second edit acknowledges it.
+        assert!(stage_publish(&mut companion, 6_000).is_some());
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+        assert_eq!(
+            cursor(&companion),
+            NoteCursor {
+                frontier: live.clone(),
+                acked: live,
+            }
+        );
+
+        // So a dissolve rewinds no further than the acknowledgement.
+        sign_out_locked(&mut companion);
+        assert_eq!(cursor(&companion).frontier, cursor(&companion).acked);
+    }
+
+    #[test]
+    fn a_note_ops_envelope_the_encoder_refuses_leaves_the_ops_published_and_goes_next_sweep() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let (page, _, object) = sealed_note(&mut companion, "the note the encoder refuses");
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let wire = crate::sync_session::page_wire_id(uuid);
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert_eq!(queued_notes(&companion, uuid).len(), 1);
+
+        let refuse = |envelope: &DeltaEnvelope| match envelope {
+            DeltaEnvelope::NoteOps { .. } => None,
+            _ => envelope.encode().ok(),
+        };
+        let request = stage_publish_with(&mut companion, 0, |session, now_ms, chain| {
+            session.publish_request_with(now_ms, chain.epoch(), refuse, |plaintext| {
+                chain.seal(plaintext)
+            })
+        })
+        .expect("the page's ops");
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        let sealed = opened_envelopes(chain, &request);
+        assert!(
+            sealed
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == wire))
+        );
+        assert!(
+            !sealed
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::NoteOps { .. }))
+        );
+        let cursor = companion.sync.enrolled[&uuid].notes[&object].clone();
+        assert_eq!(
+            cursor,
+            NoteCursor::first_met(),
+            "rewound to what was acknowledged"
+        );
+        let staged = companion.sync.staged_batch.as_ref().unwrap();
+        assert_eq!(staged.notes[&uuid][&object], cursor.acked);
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        let request = stage_publish(&mut companion, 2_000).expect("the note again");
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        assert!(sends_note(
+            &opened_envelopes(chain, &request),
+            object,
+            "encoder refuses"
+        ));
+    }
+
+    #[test]
+    fn a_409_drops_the_batch_s_note_record_and_leaves_the_note_s_cursor_as_the_page_s() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let (page, _, object) = sealed_note(&mut companion, "a note the relay refuses");
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(stage_publish(&mut companion, 0).is_some());
+
+        let conflict = HttpResponse {
+            status: 409,
+            body: Vec::new(),
+        };
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &conflict),
+            Some(Err(RelayRefusal::EpochConflict))
+        );
+        assert!(companion.sync.staged_batch.is_none());
+        // Client protocol §4.4: a 409 rewinds no export frontier, the page's or a note's.
+        let exported = companion.store.note_version(page, object).unwrap();
+        let tracking = &companion.sync.enrolled[&uuid];
+        assert_ne!(tracking.frontier, tracking.acked);
+        assert_eq!(
+            tracking.notes[&object],
+            NoteCursor {
+                frontier: exported,
+                ..NoteCursor::first_met()
+            }
+        );
+    }
+
+    #[test]
+    fn a_stale_batch_rewinds_each_note_and_the_next_sweep_exports_it_again() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let (page, _, object) = sealed_note(&mut companion, "a note no peer has yet");
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let due = inked_page(&mut companion, "the page that comes due");
+        let due_tab = companion.store.tabs().last().unwrap().id();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        assert!(enrol_page(&mut companion, due, true));
+
+        // A batch sealed at epoch 0 hears no answer, and the channel rotates.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(stage_publish(&mut companion, 0).is_some());
+        companion.store.cycle_rung(due_tab).unwrap();
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert_eq!(companion.sync.engine.as_ref().unwrap().chain.epoch(), 1);
+
+        // Its drop rewinds the note with the page.
+        assert!(stage_publish(&mut companion, 4_000).is_none());
+        assert_eq!(
+            companion.sync.enrolled[&uuid].notes[&object],
+            NoteCursor::first_met()
+        );
+        assert_eq!(land_frame(&mut companion), Some(1));
+        let request = stage_publish(&mut companion, 4_000).expect("the restated facts");
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        assert!(
+            !opened_envelopes(chain, &request)
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::NoteOps { .. }))
+        );
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+
+        // The next sweep exports the note again, sealed at epoch 1.
+        sweep_outbound(&mut companion, 6_000, &mut events);
+        let request = stage_publish(&mut companion, 6_000).expect("the note's ops");
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        assert!(sends_note(
+            &opened_envelopes(chain, &request),
+            object,
+            "no peer has yet"
+        ));
+    }
+
+    #[test]
+    fn a_page_past_its_deadline_queues_no_note_ops_and_withdraws_what_was_queued() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let uuid = short_lived_page(&mut companion, "key: here");
+        let page = companion.store.sheet_id_of(uuid).unwrap();
+        let chip = companion.store.seal_text_at(page, PAYLOAD, 5, 4).unwrap();
+        write_note(&mut companion, chip, 0, "due soon");
+        let object = companion
+            .store
+            .sheet(page)
+            .unwrap()
+            .chip(chip)
+            .unwrap()
+            .uuid();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert_eq!(
+            queued_notes(&companion, uuid).len(),
+            1,
+            "queued, not sealed"
+        );
+
+        age_by(&mut companion, THREE_HOURS_MS);
+        let page = companion.store.sheet_id_of(uuid).expect("no sweep took it");
+        assert!(companion.store.is_due(page));
+        let cursor = companion.sync.enrolled[&uuid].notes[&object].clone();
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert!(queued_notes(&companion, uuid).is_empty());
+        assert_eq!(companion.sync.enrolled[&uuid].notes[&object], cursor);
+    }
+
+    #[test]
+    fn after_a_ceremony_no_note_ops_from_before_the_rebuild_go_out_and_the_frame_gives_a_joiner_the_note()
+     {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let (page, chip, object) = sealed_note(&mut companion, "kept DOOMED");
+        let ops = [companion_core::EditOp::Delete {
+            pos_u16: 4,
+            len_u16: 7,
+        }];
+        assert!(companion.store.apply_note_ops(
+            chip,
+            &ops,
+            companion_core::EditIntent::Deletion,
+            None
+        ));
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(
+            queued_notes(&companion, uuid)
+                .iter()
+                .any(|(_, ops)| ops.windows(6).any(|w| w == b"DOOMED")),
+            "the note's history before the rebuild is queued"
+        );
+
+        // The rotation withdraws it and settles the note on its rebuild.
+        let tab = companion.store.tabs().next().unwrap().id();
+        companion.store.cycle_rung(tab).unwrap();
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert!(
+            events
+                .iter()
+                .any(|event| event["kind"] == "ceremony_committed")
+        );
+        assert!(queued_notes(&companion, uuid).is_empty());
+        let rebuilt = companion.store.note_version(page, object).unwrap();
+        assert_eq!(
+            companion.sync.enrolled[&uuid].notes[&object],
+            NoteCursor {
+                frontier: rebuilt.clone(),
+                acked: rebuilt,
+            }
+        );
+
+        // The frame gives a joiner the note, with nothing from behind the boundary.
+        let engine = companion.sync.engine.as_mut().unwrap();
+        let frame = engine.session.take_frame().expect("a frame to publish");
+        let opened = engine.chain.open(frame.sealed()).unwrap();
+        assert!(!opened.windows(6).any(|w| w == b"DOOMED"));
+        assert!(!contains_payload(&opened));
+        let mut joiner = companion_core::SheetStore::new(companion_core::ManualClock::new());
+        let joined = joiner.new_tab().1;
+        joiner.adopt_key_frame(joined, uuid, &opened).unwrap();
+        let record = joiner
+            .sheet(joined)
+            .unwrap()
+            .chips()
+            .find(|chip| chip.uuid() == object)
+            .unwrap()
+            .id();
+        assert_eq!(joiner.note_text(record).unwrap().as_str(), "kept");
+        assert!(
+            !staged_envelopes(&mut companion, 2_000)
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::NoteOps { .. }))
+        );
+
+        // A later edit travels past the rebuild and merges on the joiner.
+        write_note(&mut companion, chip, 0, "now ");
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        let queued = queued_notes(&companion, uuid);
+        assert_eq!(queued.len(), 1);
+        assert_eq!(
+            joiner.apply_remote_note_update(uuid, object, &queued[0].1),
+            Ok(true)
+        );
+        assert_eq!(joiner.note_text(record).unwrap().as_str(), "now kept");
+    }
+
+    #[test]
+    fn a_ceremony_rewinds_a_detached_record_s_note_rather_than_settling_it() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let (page, _, object) = sealed_note(&mut companion, "detached later");
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert_eq!(queued_notes(&companion, uuid).len(), 1);
+
+        // The sentinel goes, so the record detaches and its note keeps its history.
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Delete {
+                pos_u16: 5,
+                len_u16: 1,
+            }],
+        ));
+        let sheet = companion.store.sheet(page).unwrap();
+        assert!(sheet.detached().any(|chip| chip.uuid() == object));
+        let tab = companion.store.tabs().next().unwrap().id();
+        companion.store.cycle_rung(tab).unwrap();
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert_eq!(companion.sync.engine.as_ref().unwrap().chain.epoch(), 1);
+        assert!(queued_notes(&companion, uuid).is_empty(), "withdrawn");
+        assert_eq!(
+            companion.sync.enrolled[&uuid].notes[&object],
+            NoteCursor::first_met()
+        );
+
+        // No frame rebuilds it, so the next sweep exports it again.
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(engine.session.take_frame().is_some());
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        let queued = queued_notes(&companion, uuid);
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].0, crate::sync_session::page_wire_id(object));
     }
 
     fn mailbox_response(messages: &[serde_json::Value], next_seq: u64) -> HttpResponse {

@@ -1,7 +1,7 @@
 //! The plaintext inside a sealed delta blob (relay-protocol.md §4-5).
 //! Everything the channel replicates travels in this one shape:
-//! document ops, sealed objects' metadata, the expiry policy and hold
-//! register, terminal markers, and the ceremony ballots. Control and
+//! document ops, sealed objects' metadata and notes, the expiry policy
+//! and hold register, terminal markers, and the ceremony ballots. Control and
 //! content share the stream, so the relay cannot distinguish them.
 //!
 //! This module encodes and decodes strictly on the client side of the
@@ -60,6 +60,16 @@ pub enum DeltaEnvelope {
         page: String,
         /// At most [`METADATA_ENTRY_CAP`], one per object.
         entries: Vec<MetadataEntry>,
+    },
+    /// Updates to one sealed object's note, a history of its own beside the
+    /// page's (ADR-0058 point 6).
+    NoteOps {
+        /// The page the object stands on.
+        page: String,
+        /// The object's identity, 32 lowercase hex characters, as a page id is.
+        object: String,
+        /// The exported update bytes.
+        ops: ByteBlob,
     },
     /// The page's expiry policy: the policy, never the deadline
     /// (relay decision background §6, `companion_core::ExpiryPolicy`).
@@ -238,7 +248,7 @@ mod tests {
     const OBJECT: &str = "0123456789abcdef0123456789abcdef";
     const WRITER: &str = "abababababababababababababababababababababababababababababababab";
 
-    /// The envelope set a build from before `Metadata` decodes.
+    /// The envelope set a build from before `Metadata` and `NoteOps` decodes.
     #[derive(Debug, Deserialize)]
     #[serde(tag = "kind", rename_all = "snake_case")]
     #[expect(dead_code, reason = "only whether a shape decodes is read")]
@@ -309,6 +319,11 @@ mod tests {
                     name: None,
                 }],
             },
+            DeltaEnvelope::NoteOps {
+                page: "page-1".into(),
+                object: OBJECT.into(),
+                ops: ByteBlob::from(vec![1, 2, 3]),
+            },
             DeltaEnvelope::Expiry {
                 page: "page-1".into(),
                 anchor_wall_ms: 1_000,
@@ -344,6 +359,7 @@ mod tests {
             r#"{"kind":"ops","page":"page-1","ops":"AQID"}"#,
             r#"{"kind":"metadata","page":"page-1","entries":[{"object":"0123456789abcdef0123456789abcdef","kind":"text","size":"tiny","name":{"counter":2,"writer":"abababababababababababababababababababababababababababababababab","value":"REVQTE9ZX0tFWQ=="}},{"object":"0123456789abcdef0123456789abcdef","kind":null,"size":null,"name":{"counter":3,"writer":"abababababababababababababababababababababababababababababababab","value":null}}]}"#,
             r#"{"kind":"metadata","page":"page-1","entries":[{"object":"0123456789abcdef0123456789abcdef","kind":"image","size":"huge","name":null}]}"#,
+            r#"{"kind":"note_ops","page":"page-1","object":"0123456789abcdef0123456789abcdef","ops":"AQID"}"#,
             r#"{"kind":"expiry","page":"page-1","anchor_wall_ms":1000,"ttl_ms":60000}"#,
             r#"{"kind":"hold","page":"page-1","hold":[30000,90000,false]}"#,
             r#"{"kind":"hold","page":"page-1","hold":null}"#,
@@ -428,6 +444,8 @@ mod tests {
             r#"{"kind":"ops","page":"p","ops":"/x=="}"#,
             r#"{"kind":"ops","page":"p","ops":"c2VjcmV0""#,
             r#"{"kind":"metadata","page":"p","entries":[{"object":"0f","name":{"counter":1,"writer":"ab","value":"c2VjcmV0!"}}]}"#,
+            r#"{"kind":"note_ops","page":"p","object":"0f","ops":"c2VjcmV0!"}"#,
+            r#"{"kind":"note_ops","page":"p","ops":"c2VjcmV0"}"#,
         ] {
             assert!(DeltaEnvelope::decode(wire.as_bytes()).is_none());
         }
@@ -491,6 +509,49 @@ mod tests {
         assert_eq!(
             encoded.as_slice(),
             br#"{"kind":"metadata","page":"p","entries":[{"object":"0f","kind":null,"size":null,"name":{"counter":1,"writer":"ab","value":"U0VDUkVUX05BTUU="}}]}"#
+        );
+    }
+
+    #[test]
+    fn a_build_from_before_note_ops_skips_them_and_still_reads_ops() {
+        let notes = DeltaEnvelope::NoteOps {
+            page: "p".into(),
+            object: OBJECT.into(),
+            ops: ByteBlob::from(vec![1]),
+        }
+        .encode()
+        .unwrap();
+        assert!(serde_json::from_slice::<Earlier>(&notes).is_err());
+        let ops = DeltaEnvelope::Ops {
+            page: "p".into(),
+            ops: ByteBlob::from(vec![1]),
+        }
+        .encode()
+        .unwrap();
+        assert!(serde_json::from_slice::<Earlier>(&ops).is_ok());
+    }
+
+    #[test]
+    fn a_note_ops_envelope_decodes_escapes_and_redacts_its_ops() {
+        let wire = br#"{"ops":"U0VDUkVUX05PVEU=","object":"0f","page":"p","kind":"note_ops"}"#;
+        let envelope = DeltaEnvelope::decode(wire).unwrap();
+        assert_eq!(
+            envelope,
+            DeltaEnvelope::NoteOps {
+                page: "p".into(),
+                object: "0f".into(),
+                ops: ByteBlob::from(b"SECRET_NOTE".as_slice()),
+            }
+        );
+        let debug = format!("{envelope:?}");
+        assert!(!debug.contains("SECRET_NOTE"));
+        assert!(!debug.contains("U0VDUkVUX05PVEU"));
+        assert!(debug.contains("[REDACTED]"));
+        let encoded = envelope.encode().unwrap();
+        assert_eq!(encoded.len(), encoded.capacity());
+        assert_eq!(
+            encoded.as_slice(),
+            br#"{"kind":"note_ops","page":"p","object":"0f","ops":"U0VDUkVUX05PVEU="}"#
         );
     }
 }
