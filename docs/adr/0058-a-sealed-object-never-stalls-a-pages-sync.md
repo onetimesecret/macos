@@ -73,10 +73,10 @@ Loro text of its own; its value never travels.
    settles. Malformed bytes and missing history stay refusals. The
    record is the page's own for every roster purpose: it detaches,
    reattaches and ends with its page as ADR-0046 says.
-2. **One standing per identity.** When a merge leaves an identity
-   standing twice in one body, the page's settle keeps the first
-   standing in body order and takes the later ones out, outside the
-   undo stack. Every device removes the same element, so the deletes
+2. **One standing per identity.** When a merge, or a local undo or
+   redo, leaves an identity standing twice in one body, the page keeps
+   the first standing in body order and takes the later ones out,
+   outside the undo stack. Every device removes the same element, so the deletes
    converge. A local fragment or restore that names an identity twice
    stays refused.
 3. **The value follows its sentinel.** When a record with the value
@@ -102,24 +102,31 @@ Loro text of its own; its value never travels.
    order; the greater wins, and a clear is a versioned empty name. A
    local rename takes one more than the highest counter known for that
    name. Equal versions with different names keep the local name.
-   Versions persist. An envelope names at most 128 objects. An entry
-   for an identity this device has no record for waits in a cache of
-   at most 256 entries until its sentinel arrives. A device restates
-   every entry of an enrolled page at attach and at each new epoch.
+   Versions persist; one written before the device had a fingerprint
+   takes it when sync starts. An envelope names at most 128 objects. An
+   entry applies to the object's records wherever they stand on this
+   device, and one for an identity this device has no record for waits
+   in a cache of at most 256 entries until its sentinel arrives. A
+   device restates every entry of an enrolled page at attach and at
+   each new epoch.
 6. **Notes.** A note is a Loro text with a history of its own. Its ops
    travel as a `NoteOps` envelope beside the page's `Ops`, exported,
    acknowledged, rewound and withdrawn by the rules the page's ops
    follow, and a peer imports them with the page's refusals plus one:
-   a note never stands a chip. A note persists its operation log beside
-   its text and restores with an empty undo stack. A standing record's
-   note compacts with its page, under a fresh peer id, and the key
-   frame includes each such note's rebuild beside the page's; a
-   detached record's note keeps its history, since a copy of it
-   elsewhere may still meet it. When a value moves into a standing
-   record, the two notes merge if their histories share a peer, and
-   otherwise the standing note stays. Note ops for an identity this
-   device has no record for wait, as metadata entries do, in a cache
-   bounded at 256 KiB.
+   a note never stands a chip, and a note with text refuses ops that
+   build on none of its history. A note's history is shared once any
+   of it has left this device or come from another. A shared note
+   persists its operation log beside its text, and keeps it through a
+   page's compaction, since a copy of it elsewhere may still meet it;
+   a note no other device has seen persists and compacts as its text
+   alone. Each restores with an empty undo stack. A ceremony rebuilds
+   each standing record's note under a fresh peer id, and the key
+   frame includes each rebuild beside the page's. When a value moves
+   into a standing record, the two notes merge if their histories
+   share a peer, and otherwise the standing note stays. Note ops apply
+   to the object's records wherever they stand on this device, and
+   those for an identity this device has no record for wait, as
+   metadata entries do, in a cache of at most 256 batches and 256 KiB.
 7. **The ops never wait.** A `Metadata` or `NoteOps` envelope that
    fails to encode, is refused or is skipped leaves the page's ops
    applied, and its loss is made good by the next change or restate.
@@ -135,10 +142,16 @@ Loro text of its own; its value never travels.
    and the note's operation log. This build reads the previous version.
    An earlier build refuses the new one, and by ADR-0016 the file is
    left untouched.
+10. **A seal in place sheds its ink.** A seal that replaces ink on the
+    page compacts a solo page at once and owes an enrolled page its
+    ceremony, so the ink's insert leaves the page's history at the next
+    rebuild on each member. Until that ceremony commits, an enrolled
+    page's peers can receive the ink as page history, as they receive
+    any text typed there.
 
-Never on the wire: the value, the excerpt made from it, the exact
-character and line counts, the conceal receipt and the note's undo
-stack.
+Never on the wire, except as point 10 says of ink a seal replaces: the
+value, the excerpt made from it, the exact character and line counts,
+the conceal receipt and the note's undo stack.
 
 ## Consequences
 
@@ -154,9 +167,16 @@ stack.
 - The name and the note's text leave the device over sync, sealed. A
   person who writes a secret into a note syncs it to every enrolled
   device.
-- A note's deleted text now persists at rest until its page compacts,
-  as the body's does, and a detached record's until its page ends.
-  Before this record a relaunch shed it.
+- A shared note's deleted text now persists at rest until a ceremony
+  rebuilds it or its page ends. A note no other device has seen keeps
+  no history at rest, as before this record.
+- A seal in place compacts its page outside the rung schedule: a solo
+  page loses its edit history at that seal, and an enrolled page's
+  ceremony rotates the channel's key.
+- Two devices that each write an object's first note while apart, and
+  two members that both commit one ceremony (client protocol §7.8, as
+  for the page's body), refuse each other's later note ops, so their
+  notes for that object stay apart.
 - A peer can show `value on another device` for an object its sealer
   burned, until the page ends or the sealer's device sees that
   identity stand again.
@@ -178,7 +198,7 @@ stack.
   negotiation exists. No
   user meets this before the relay ships.
 - An earlier app build cannot open content this build writes.
-- On acceptance: ADR-0043 point 4 is superseded in part (the note
+- On acceptance: ADR-0043 point 4 is superseded in part (a shared note
   persists its operation log, and the record is no longer readable by
   a build that predates it), and ADR-0043's and ADR-0046's first open
   questions are answered here; each gains a reciprocal line. Client
@@ -220,3 +240,9 @@ stack.
 - 2026-10-23: Rewritten to the maintainer's gate answers after #256's
   buffers merged: kind, size class and name travel, notes merge as a
   CRDT, burns stay on the device. Still proposed.
+- 2026-10-23: Two adversarial reviews of the built branch. Point 10
+  added (a seal in place sheds its ink); points 2, 5 and 6 sharpened
+  (an undo keeps one standing, entries and note ops follow the object
+  across pages, a note's history persists and survives compaction once
+  shared, an unrelated note history is refused); two consequences name
+  the cases where notes stay apart. Still proposed.
