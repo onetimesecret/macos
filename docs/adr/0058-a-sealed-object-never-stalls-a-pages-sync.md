@@ -111,10 +111,15 @@ Loro text of its own; its value never travels.
    acknowledged, rewound and withdrawn by the rules the page's ops
    follow, and a peer imports them with the page's refusals plus one:
    a note never stands a chip. A note persists its operation log beside
-   its text and restores with an empty undo stack. It compacts with its
-   page, under a fresh peer id, and the key frame includes each note's
-   rebuild beside the page's. Note ops for an identity this device has
-   no record for wait in the metadata cache, bounded at 256 KiB.
+   its text and restores with an empty undo stack. A standing record's
+   note compacts with its page, under a fresh peer id, and the key
+   frame includes each such note's rebuild beside the page's; a
+   detached record's note keeps its history, since a copy of it
+   elsewhere may still meet it. When a value moves into a standing
+   record, the two notes merge if their histories share a peer, and
+   otherwise the standing note stays. Note ops for an identity this
+   device has no record for wait, as metadata entries do, in a cache
+   bounded at 256 KiB.
 7. **The ops never wait.** A `Metadata` or `NoteOps` envelope that
    fails to encode, is refused or is skipped leaves the page's ops
    applied, and its loss is made good by the next change or restate.
@@ -150,7 +155,8 @@ stack.
   person who writes a secret into a note syncs it to every enrolled
   device.
 - A note's deleted text now persists at rest until its page compacts,
-  as the body's does. Before this record a relaunch shed it.
+  as the body's does, and a detached record's until its page ends.
+  Before this record a relaunch shed it.
 - A peer can show `value on another device` for an object its sealer
   burned, until the page ends or the sealer's device sees that
   identity stand again.
