@@ -61,7 +61,7 @@ only between round trips.
 | Step | Code | Rule |
 | --- | --- | --- |
 | 1 | `ensure_access` | refresh if no access token (§4.2); a failure ends the turn |
-| 2 | `sweep_outbound` | seal a frame a refused seal left owed (§7.6); for each live page queue `Ops` past its export frontier, then `Metadata` for its changed objects, or for all of them when a restate is owed (§4.4), then each note's `NoteOps` past that note's export frontier, in that order (code reading); expiry when its deadline moved over 1 s, hold when changed, a dead page's marker (§6); rotate if owed (§7.1). A page past its deadline (Law 0001, expiry row) or gone queues none of the three, and `withdraw_ops` drops all three where they wait unsealed (`a_page_past_its_deadline_gives_the_relay_no_ops_queued_or_new`, `a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`, `a_page_past_its_deadline_queues_no_metadata_and_withdraws_what_was_queued`, `a_page_past_its_deadline_queues_no_note_ops_and_withdraws_what_was_queued`, `withdrawn_ops_leave_the_page_s_expiry_and_every_other_page_queued`); its expiry, hold and marker still queue |
+| 2 | `sweep_outbound` | seal a frame a refused seal left owed (§7.6); for each live page queue `Ops` past its export frontier, then `Metadata` for its changed objects, or for all of them when a restate is owed (§4.4), then each note's `NoteOps` past that note's export frontier, in that order (code reading); expiry when its deadline moved over 1 s, hold when changed. After every live page, the markers a stale batch kept aside (§4.4), then each dead page's marker (§6), so a peer meets a move off a dead page before that page's end and the value follows the move (proposed ADR-0058 point 3; `a_page_s_end_goes_after_the_move_off_it_so_the_value_follows_on_the_holding_device`, `a_stale_batch_s_page_end_goes_after_the_move_exported_again_so_the_value_follows`); rotate if owed (§7.1). A page past its deadline (Law 0001, expiry row) or gone queues none of the three, and `withdraw_ops` drops all three where they wait unsealed (`a_page_past_its_deadline_gives_the_relay_no_ops_queued_or_new`, `a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`, `a_page_past_its_deadline_queues_no_metadata_and_withdraws_what_was_queued`, `a_page_past_its_deadline_queues_no_note_ops_and_withdraws_what_was_queued`, `withdrawn_ops_leave_the_page_s_expiry_and_every_other_page_queued`); its expiry, hold and marker still queue |
 | 3 | `tick` | abandon a ballot open 60 s (`BALLOT_PATIENCE_MS`, relay-protocol §5; §7.7) |
 | 4 | `publish_round` | if `PUBLISH_INTERVAL_MS` (2 s, relay-protocol §8) has passed, anything is queued or in flight, and no frame of this device's for the chain's epoch waits (§4.4) |
 | 5 | `fetch_request` | long poll, `wait` at most 25 s (`LONG_POLL_WAIT_S`, relay-protocol §8; §4.5) |
@@ -144,11 +144,19 @@ page's and every note's export cursor to its acknowledged one and, for
 each page where one moved, withdraws the ops, metadata and note ops
 queued for it and owes its metadata a restate,
 so the next sweep exports them again under the deadline
-gate, and queues the batch's expiry, hold and terminal envelopes again
+gate, and queues the batch's expiry and hold envelopes again at the
+front of the queue
 (`a_batch_sealed_behind_the_chain_s_epoch_never_goes_out_and_its_ops_export_again`,
 `a_batch_the_chain_moved_past_never_goes_out_and_queues_its_facts_again`,
 `a_stale_batch_rewinds_each_note_and_the_next_sweep_exports_it_again`,
 `metadata_a_stale_batch_drop_withdraws_is_restated_at_the_next_sweep`).
+Its terminal envelopes wait aside, in order, until the next sweep has
+walked every live page (§3 step 2), so a page's end goes behind the
+ops that export again
+(`a_stale_batch_s_page_end_goes_after_the_move_exported_again_so_the_value_follows`);
+a dissolve drops them with the session, and the next engine signs the
+page's marker again (§2;
+`a_page_s_end_a_stale_batch_kept_aside_dies_with_its_session_and_a_fresh_one_is_signed`).
 Its control envelopes are not queued again, since the commit that
 moved the chain ended their ballot here (interpretation). Nothing is
 sealed or sent while this device's frame for the chain's epoch is

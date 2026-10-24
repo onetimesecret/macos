@@ -400,6 +400,9 @@ pub struct SyncSession {
     channels: HashMap<ItemId, PageChannel>,
     /// Envelopes queued since the last publish tick.
     outbox: Vec<DeltaEnvelope>,
+    /// The terminal envelopes of a stale batch, in order, until the sweep queues
+    /// them behind the ops it exports again ([`SyncSession::release_held_terminals`]).
+    held_terminals: Vec<DeltaEnvelope>,
     /// A publish batch built and not yet acknowledged, kept so a `401`
     /// can retry the one request after a refresh.
     in_flight: Option<InFlightBatch>,
@@ -441,7 +444,8 @@ struct InFlightBatch {
     epoch: u64,
     blobs: Vec<Vec<u8>>,
     /// Its expiry, hold and terminal envelopes, unsealed, to queue again
-    /// if the chain moves before the relay takes it; its ops export again.
+    /// if the chain moves before the relay takes it, the terminals behind the
+    /// ops that export again.
     restate: Vec<DeltaEnvelope>,
 }
 
@@ -471,6 +475,7 @@ impl SyncSession {
             next_seq: 0,
             channels: HashMap::new(),
             outbox: Vec::new(),
+            held_terminals: Vec::new(),
             in_flight: None,
             in_flight_id: 0,
             unencoded_ops: Vec::new(),
@@ -897,15 +902,28 @@ impl SyncSession {
         std::mem::take(&mut self.unencoded_metadata)
     }
 
-    /// Drop a batch in flight the chain has moved past, unsent, and queue
-    /// its expiry, hold and terminal envelopes again (client protocol
-    /// §4.4). Whether one dropped.
+    /// Drop a batch in flight the chain has moved past, unsent: queue its
+    /// expiry and hold envelopes again and keep its terminal envelopes aside
+    /// for [`SyncSession::release_held_terminals`] (client protocol §4.4).
+    /// Whether one dropped.
     pub fn drop_stale_batch(&mut self, chain: &crate::gop::GopKeyChain) -> bool {
         let Some(stale) = crate::gop::take_stale(&mut self.in_flight, chain) else {
             return false;
         };
-        self.outbox.splice(0..0, stale.restate);
+        let (ends, facts): (Vec<_>, Vec<_>) = stale
+            .restate
+            .into_iter()
+            .partition(|envelope| matches!(envelope, DeltaEnvelope::Terminal { .. }));
+        self.outbox.splice(0..0, facts);
+        self.held_terminals.extend(ends);
         true
+    }
+
+    /// Queue the terminal envelopes a stale batch kept aside behind everything
+    /// queued, so a peer meets the ops exported again before a page's end
+    /// (ADR-0058 point 3).
+    pub fn release_held_terminals(&mut self) {
+        self.outbox.append(&mut self.held_terminals);
     }
 
     /// Absorb the publish answer: a 2xx clears the batch, a `401` keeps
@@ -1978,12 +1996,30 @@ mod tests {
                 [
                     DeltaEnvelope::Expiry { page: a, .. },
                     DeltaEnvelope::Hold { page: b, hold: None },
-                    DeltaEnvelope::Terminal { page: c, .. },
-                ] if *a == wire && *b == wire && *c == dead_wire
+                ] if *a == wire && *b == wire
             ),
-            "its ops export again and its ballot is over: {:?}",
+            "its ops export again, its ballot is over and its end waits: {:?}",
             session.queued()
         );
+
+        // The end goes behind the ops the driver exports again.
+        session.queue_ops(page, b"ops");
+        session.release_held_terminals();
+        assert!(
+            matches!(
+                session.queued(),
+                [
+                    DeltaEnvelope::Expiry { .. },
+                    DeltaEnvelope::Hold { .. },
+                    DeltaEnvelope::Ops { page: a, .. },
+                    DeltaEnvelope::Terminal { page: b, .. },
+                ] if *a == wire && *b == dead_wire
+            ),
+            "{:?}",
+            session.queued()
+        );
+        session.release_held_terminals();
+        assert_eq!(session.queued().len(), 4, "once");
 
         // They seal at the epoch the chain stands at.
         let request = session.publish_request(4_000, &chain).unwrap();

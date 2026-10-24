@@ -769,9 +769,9 @@ fn sign_out_locked(companion: &mut Companion) {
 }
 
 /// One outbound sweep, under the lock and off the network: seal an owed
-/// frame, queue each page's new ops, moved deadline or hold, or a dead
-/// page's marker, then rotate when a page is due (client protocol §3
-/// step 2, §7.1, §7.6).
+/// frame, queue each live page's new ops, moved deadline or hold, then the
+/// markers a stale batch kept aside and a newly dead page's, then rotate
+/// when a page is due (client protocol §3 step 2, §7.1, §7.6).
 pub(crate) fn sweep_outbound(
     companion: &mut Companion,
     now_ms: u64,
@@ -850,7 +850,8 @@ pub(crate) fn sweep_outbound(
         }
     }
     // After every live page's envelopes, so a peer meets a move off a gone page
-    // before its end (ADR-0058 point 3).
+    // before its end (ADR-0058 point 3); a stale batch's ends go first.
+    engine.session.release_held_terminals();
     for page in gone {
         let Some(tracking) = enrolled.get_mut(&page) else {
             continue;
@@ -4950,6 +4951,129 @@ mod tests {
             });
             assert!(!ended, "after {after}");
         }
+    }
+
+    #[test]
+    fn a_stale_batch_s_page_end_goes_after_the_move_exported_again_so_the_value_follows() {
+        for after in [true, false] {
+            let mut devices = Devices::new();
+            let second = devices.second_page("to: ", after);
+            let _ = devices.second_page("the page that comes due", !after);
+            let due_tab = devices.a.store.tabs().last().unwrap().id();
+            devices.pair();
+            let [from_a, from_b] = devices.publish_both();
+            deliver(&mut devices.b, &from_a);
+            deliver(&mut devices.a, &from_b);
+
+            // A proposes the ceremony a page of its own owes, and B accepts.
+            devices.a.store.cycle_rung(due_tab).unwrap();
+            let proposal = publish_swept(&mut devices.a, devices.now_ms);
+            deliver(&mut devices.b, &proposal);
+            let acceptance = publish_swept(&mut devices.b, devices.now_ms);
+
+            // B moves its record with no value off the first page and closes it; no answer comes.
+            let first = devices.pages[1];
+            let moved = devices.b.store.move_range_to(first, 5, 1, second[1], 4);
+            assert!(moved.is_some());
+            assert!(devices.b.store.discard_page(first));
+            devices.now_ms += 2_000;
+            let mut events = Vec::new();
+            sweep_outbound(&mut devices.b, devices.now_ms, &mut events);
+            assert!(stage_publish(&mut devices.b, devices.now_ms).is_some());
+
+            // Both accepts come back on the stream, and each device commits past that batch's epoch.
+            let mut committed = deliver(&mut devices.a, &proposal);
+            committed.extend(deliver(&mut devices.a, &acceptance));
+            committed.extend(deliver(&mut devices.b, &acceptance));
+            let commits = committed
+                .iter()
+                .filter(|event| event["kind"] == "ceremony_committed")
+                .count();
+            assert_eq!(commits, 2, "after {after}");
+
+            // The drop queues the end again only once the move has exported again.
+            assert!(stage_publish(&mut devices.b, devices.now_ms).is_none());
+            let session = &devices.b.sync.engine.as_ref().unwrap().session;
+            let queued = session.queued();
+            assert!(
+                !queued
+                    .iter()
+                    .any(|envelope| matches!(envelope, DeltaEnvelope::Terminal { .. })),
+                "after {after}: {queued:?}"
+            );
+            assert_eq!(land_frame(&mut devices.b), Some(1));
+            devices.now_ms += 2_000;
+            let request = publish_swept(&mut devices.b, devices.now_ms);
+            let chain = &devices.b.sync.engine.as_ref().unwrap().chain;
+            let sealed = opened_envelopes(chain, &request);
+            let wire = crate::sync_session::page_wire_id;
+            let (from, to) = (
+                wire(devices.uuid),
+                wire(devices.b.store.sheet(second[1]).unwrap().uuid()),
+            );
+            let ops = sealed.iter().position(
+                |envelope| matches!(envelope, DeltaEnvelope::Ops { page, .. } if *page == to),
+            );
+            let terminal = sealed.iter().position(
+                |envelope| matches!(envelope, DeltaEnvelope::Terminal { page, .. } if *page == from),
+            );
+            assert!(
+                ops.is_some_and(|ops| terminal.is_some_and(|terminal| ops < terminal)),
+                "after {after}: {sealed:?}"
+            );
+
+            let events = deliver(&mut devices.a, &request);
+            assert!(events.iter().any(|event| event["kind"] == "terminal"));
+            assert!(sheet_of(&devices.a.store, devices.uuid).is_none());
+            let object = devices.object;
+            assert_eq!(stands_local(&devices.a, second[0], object), Some(true));
+            assert_eq!(stands_local(&devices.b, second[1], object), Some(false));
+            let ended = devices.a.store.ledger().any(|record| {
+                record.item() == object
+                    && matches!(
+                        record.event(),
+                        companion_core::LedgerEvent::Expired
+                            | companion_core::LedgerEvent::Discarded
+                    )
+            });
+            assert!(!ended, "after {after}");
+        }
+    }
+
+    #[test]
+    fn a_page_s_end_a_stale_batch_kept_aside_dies_with_its_session_and_a_fresh_one_is_signed() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "short lived");
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        assert!(companion.store.discard_page(page));
+
+        // The end goes in a batch the chain moves past, and the drop keeps it aside.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        drain_nothing(&mut companion);
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(stage_publish(&mut companion, 0).is_some());
+        let engine = companion.sync.engine.as_mut().unwrap();
+        engine.chain.advance(b"a ceremony elsewhere");
+        assert!(stage_publish(&mut companion, 2_000).is_none());
+        let session = &companion.sync.engine.as_ref().unwrap().session;
+        assert!(session.queued().is_empty());
+
+        // A dissolve drops the session with the end it kept; the next engine signs one, once.
+        let _ = dissolve_engine(&mut companion);
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        drain_nothing(&mut companion);
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        let wire = crate::sync_session::page_wire_id(uuid);
+        let session = &companion.sync.engine.as_ref().unwrap().session;
+        let ends = session.queued().iter().filter(
+            |envelope| matches!(envelope, DeltaEnvelope::Terminal { page, .. } if *page == wire),
+        );
+        assert_eq!(ends.count(), 1);
     }
 
     /// Ink typed and then sealed in place, which no relay body, envelope,
