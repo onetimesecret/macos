@@ -191,9 +191,12 @@ struct PreviewCompositionStream {
     }
 
     /// Unclosed HTML ends here; unbalanced Markdown is an error.
-    func finish() throws {
+    mutating func finish() throws {
         guard !failed else { throw CompositionError.streamFailed }
-        guard markdown.isEmpty, markdownLinks.isEmpty else { throw CompositionError.unbalancedMarkdown }
+        guard markdown.isEmpty, markdownLinks.isEmpty else {
+            failed = true
+            throw CompositionError.unbalancedMarkdown
+        }
     }
 
     /// Spends the input budget on `event` and returns its object identities in order.

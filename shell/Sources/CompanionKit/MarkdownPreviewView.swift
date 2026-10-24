@@ -506,8 +506,8 @@ private final class MarkdownPreviewRenderer {
         alignments: [MarkdownAlignment?], rows: [[[PreviewEvent]]], context: Context
     ) throws {
         let columnCount = alignments.count
-        guard rows.allSatisfy({ $0.count <= columnCount }) else { throw RenderFailure.rowWiderThanTable }
         guard columnCount > 0 else { throw RenderFailure.tableWithoutColumns }
+        guard rows.allSatisfy({ $0.count <= columnCount }) else { throw RenderFailure.rowWiderThanTable }
         let table = NSTextTable()
         table.numberOfColumns = columnCount
         table.layoutAlgorithm = .fixedLayoutAlgorithm
