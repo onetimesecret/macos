@@ -84,10 +84,14 @@ is refused whole and the name stands.
 | `companion_chip_set_name(handle, chip, name) -> bool` | false for an unknown chip, a page past its deadline, a refused draft or a spent version, the name then unchanged |
 
 Each write takes a version, `NameVersion` in `metadata.rs`: a counter
-one more than the highest known for that name, then the writing
-device's fingerprint, 32 bytes, compared in that order
+one more than the highest known for that name across the object's
+records here, then the writing device's fingerprint, 32 bytes, compared
+in that order, and every record of the object on a readable page,
+attached or detached, takes the name and version
 (`name_versions_order_by_counter_then_writer_bytes`,
-`a_local_rename_after_a_received_higher_counter_takes_one_more`). A
+`a_local_rename_after_a_received_higher_counter_takes_one_more`,
+`a_rename_names_every_record_of_its_object_here`,
+`a_refused_rename_changes_no_record_of_its_object`). A
 clear is a versioned empty name
 (`a_clear_beats_an_older_name_and_loses_to_a_newer_one`), a rename to
 the name already set takes no version (code reading), and a counter
@@ -325,10 +329,13 @@ the rest of its entry applies
 `equal_versions_with_different_names_keep_the_local_one`,
 `an_invalid_received_name_is_skipped_and_the_rest_of_its_entry_applies`).
 Past its deadline a page gives and takes none
-(`a_page_past_its_deadline_gives_and_takes_no_metadata`). An entry for
-an object with no record on its page applies to the object's records on
-this device's other readable pages
-(`a_rename_sent_for_the_page_an_object_left_reaches_it_where_it_moved`).
+(`a_page_past_its_deadline_gives_and_takes_no_metadata`). An entry
+applies to every record of its object on this device's readable pages,
+and marks each page other than the one it was sent for changed, so that
+page's channel gets it
+(`a_rename_sent_for_the_page_an_object_left_reaches_it_where_it_moved`,
+`an_entry_for_one_page_is_owed_to_the_other_pages_its_object_stands_on`,
+`a_held_entry_sent_for_the_page_it_drains_onto_marks_nothing`).
 One for an identity with no record here waits in `metadata_pending`,
 folded into any entry held for the object, the oldest going past 256
 (`PENDING_CAP`), until the identity's record arrives on any page

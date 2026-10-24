@@ -257,12 +257,12 @@ impl<C: Clock> SheetStore<C> {
         }
     }
 
-    /// Apply a peer's entries to the page whose cross-device identity is
-    /// `page`, or, for an object with no record there, to its records on this
-    /// device's other readable pages. An entry for an object with no record
-    /// here waits until one arrives; a page past its deadline, ended or
-    /// unknown here takes none. Applying marks nothing changed. Returns how
-    /// many entries changed a record.
+    /// Apply a peer's entries to their objects' records on every readable page
+    /// here, sent for the page whose cross-device identity is `page`. An entry
+    /// for an object with no record here waits until one arrives; a page past
+    /// its deadline, ended or unknown here takes none. A record it changes on
+    /// another page is marked changed there, and one on `page` is not. Returns
+    /// how many entries changed a record.
     pub fn apply_object_metadata(&mut self, page: ItemId, entries: Vec<ObjectMetadata>) -> usize {
         let now = self.clock.now();
         // A name is content, so none waits on a page that ended or never stood here.
@@ -283,36 +283,38 @@ impl<C: Clock> SheetStore<C> {
         changed
     }
 
-    /// Adopt `entry` into its record on page `named`, or else into each of its
-    /// records on the other readable pages, marking those. Returns whether a
-    /// record changed, or the entry back when no record of its object is here.
+    /// Adopt `entry` into each record of its object on the readable pages,
+    /// marking those it changed on pages other than `named`, the one it was
+    /// sent for. Returns whether a record changed, or the entry back when no
+    /// record of its object is here.
     fn apply_entry(
         &mut self,
         named: SheetId,
         entry: ObjectMetadata,
     ) -> Result<bool, ObjectMetadata> {
         let writer = self.writer;
-        if let Some(record) = self
-            .sheet_mut(named)
-            .and_then(|sheet| record_on_mut(sheet, entry.object))
-        {
-            return Ok(adopt(record, entry, writer));
-        }
         let mut found = false;
-        let mut restated = Vec::new();
-        for sheet in self.readable_sheets_mut().filter(|sheet| sheet.id != named) {
+        let mut changed = false;
+        let mut elsewhere = Vec::new();
+        for sheet in self.readable_sheets_mut() {
             if let Some(record) = record_on_mut(sheet, entry.object) {
                 found = true;
                 if adopt(record, entry.clone(), writer) {
-                    restated.push(sheet.id);
+                    changed = true;
+                    if sheet.id != named {
+                        elsewhere.push(sheet.id);
+                    }
                 }
             }
         }
         if !found {
             return Err(entry);
         }
-        let changed = !restated.is_empty();
-        self.restated.extend(restated);
+        // The sender's channel has it; another page's channel owes it to its peers.
+        for page in elsewhere {
+            self.note_metadata(page, entry.object);
+            self.restated.insert(page);
+        }
         Ok(changed)
     }
 
@@ -338,27 +340,33 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Apply every entry held for `object`, whichever page it was sent for, oldest
-    /// first, now that readable page `id` has its record.
+    /// first, now that readable page `id` has its record. The record is marked
+    /// changed when an entry sent for another page changed it.
     pub(crate) fn drain_pending_metadata(&mut self, id: SheetId, object: ItemId) {
-        let has_record = self
+        let Some(here) = self
             .readable_sheet(id)
-            .is_some_and(|sheet| record_on(sheet, object).is_some());
-        if !has_record {
+            .filter(|sheet| record_on(sheet, object).is_some())
+            .map(Sheet::uuid)
+        else {
             return;
-        }
+        };
         let (waiting, kept): (VecDeque<_>, VecDeque<_>) =
             std::mem::take(&mut self.metadata_pending)
                 .into_iter()
                 .partition(|(_, held)| held.object == object);
         self.metadata_pending = kept;
         let writer = self.writer;
+        let mut elsewhere = false;
         if let Some(record) = self
             .sheet_mut(id)
             .and_then(|sheet| record_on_mut(sheet, object))
         {
-            for (_, entry) in waiting {
-                adopt(record, entry, writer);
+            for (sent_for, entry) in waiting {
+                elsewhere |= adopt(record, entry, writer) && sent_for != here;
             }
+        }
+        if elsewhere {
+            self.note_metadata(id, object);
         }
     }
 
@@ -716,9 +724,11 @@ mod tests {
         assert_eq!(record(&beta, moved_to, object).name(), Some("MOVED_KEY"));
         assert!(beta.metadata_pending.is_empty());
         assert_eq!(beta.take_restated_pages(), [moved_to]);
-        assert!(
-            beta.take_metadata_changes(moved_to).is_empty(),
-            "an applied entry is no change here"
+        let owed = beta.take_metadata_changes(moved_to);
+        assert_eq!(
+            owed.iter().map(|entry| entry.object).collect::<Vec<_>>(),
+            [object],
+            "owed to the peers of the page it moved to"
         );
     }
 
@@ -738,6 +748,240 @@ mod tests {
         ship(&alpha, a, &mut beta, arrived_on);
         assert_eq!(record(&beta, arrived_on, object).name(), Some("API_KEY"));
         assert!(beta.metadata_pending.is_empty());
+        let owed = beta.take_metadata_changes(arrived_on);
+        assert_eq!(owed.len(), 1, "owed to the peers of the page it arrived on");
+        assert_eq!(
+            owed[0].name,
+            Some((
+                version(1, ALPHA),
+                Some(Zeroizing::new("API_KEY".to_owned()))
+            ))
+        );
+    }
+
+    #[test]
+    fn a_held_entry_sent_for_the_page_it_drains_onto_marks_nothing() {
+        let (mut alpha, _) = store(ALPHA);
+        let (mut beta, _) = store(BETA);
+        let a = alpha.new_tab().1;
+        let b = beta.new_tab().1;
+        type_on(&mut alpha, a, "one two");
+        let chip = alpha.seal_text_at(a, SECRET, 4, 0).unwrap();
+        alpha.set_chip_name(chip, "API_KEY").unwrap();
+        assert_eq!(send(&mut alpha, a, &mut beta, b), 0);
+
+        ship(&alpha, a, &mut beta, b);
+        assert!(beta.metadata_pending.is_empty());
+        assert!(beta.take_metadata_changes(b).is_empty());
+    }
+
+    /// Alpha's object standing on beta's first page, from alpha, and on beta's
+    /// second, whose peer is gamma's page; nothing is left to send.
+    struct TwoChannels {
+        shared: Shared,
+        gamma: Store,
+        other: SheetId,
+        g: SheetId,
+    }
+
+    impl TwoChannels {
+        fn new() -> Self {
+            let mut shared = Shared::new();
+            let (mut gamma, _) = store([3; 32]);
+            let other = shared.beta.new_tab().1;
+            let g = gamma.new_tab().1;
+            shared
+                .beta
+                .stand_peer_record_as(other, 0, shared.object, None, None)
+                .unwrap();
+            ship(&shared.beta, other, &mut gamma, g);
+            for page in [shared.b, other] {
+                shared.beta.take_metadata_changes(page);
+            }
+            shared.beta.take_restated_pages();
+            gamma.take_metadata_changes(g);
+            Self {
+                shared,
+                gamma,
+                other,
+                g,
+            }
+        }
+    }
+
+    #[test]
+    fn an_entry_for_one_page_is_owed_to_the_other_pages_its_object_stands_on() {
+        let TwoChannels {
+            shared:
+                Shared {
+                    mut alpha,
+                    mut beta,
+                    a,
+                    b,
+                    chip,
+                    object,
+                    ..
+                },
+            mut gamma,
+            other,
+            g,
+        } = TwoChannels::new();
+        alpha.set_chip_name(chip, "SHARED_KEY").unwrap();
+        let sent = alpha.take_metadata_changes(a);
+        assert_eq!(
+            beta.apply_object_metadata(page_of(&beta, b), sent.clone()),
+            1
+        );
+        for page in [b, other] {
+            let here = record(&beta, page, object);
+            assert_eq!(
+                (here.name(), here.name_version()),
+                (Some("SHARED_KEY"), Some(version(1, ALPHA)))
+            );
+        }
+        assert_eq!(beta.take_restated_pages(), [other]);
+        assert!(
+            beta.take_metadata_changes(b).is_empty(),
+            "its sender's channel has it"
+        );
+        let owed = beta.take_metadata_changes(other);
+        assert_eq!(
+            owed.iter().map(|entry| entry.object).collect::<Vec<_>>(),
+            [object]
+        );
+
+        assert_eq!(
+            gamma.apply_object_metadata(page_of(&gamma, g), owed.clone()),
+            1
+        );
+        assert_eq!(record(&gamma, g, object).name(), Some("SHARED_KEY"));
+        assert!(gamma.take_metadata_changes(g).is_empty());
+
+        // Each echo meets an equal version, so it adopts nothing and marks nothing.
+        assert_eq!(beta.apply_object_metadata(page_of(&beta, other), owed), 0);
+        assert_eq!(beta.apply_object_metadata(page_of(&beta, b), sent), 0);
+        for page in [b, other] {
+            assert!(beta.take_metadata_changes(page).is_empty());
+        }
+        assert!(beta.take_restated_pages().is_empty());
+    }
+
+    #[test]
+    fn a_rename_names_every_record_of_its_object_here() {
+        let (mut alpha, _) = store(ALPHA);
+        let (here, there) = (alpha.new_tab().1, alpha.new_tab().1);
+        let chip = alpha.seal_text_at(here, SECRET, 0, 0).unwrap();
+        let object = alpha.sheet(here).unwrap().chip(chip).unwrap().uuid();
+        let standing = alpha
+            .stand_peer_record_as(there, 0, object, None, None)
+            .unwrap();
+        for page in [here, there] {
+            alpha.take_metadata_changes(page);
+        }
+        alpha.take_restated_pages();
+
+        alpha.set_chip_name(chip, "BOTH").unwrap();
+        for page in [here, there] {
+            let named = record(&alpha, page, object);
+            assert_eq!(
+                (named.name(), named.name_version()),
+                (Some("BOTH"), Some(version(1, ALPHA)))
+            );
+            let owed = alpha.take_metadata_changes(page);
+            assert_eq!(
+                owed.iter().map(|entry| entry.object).collect::<Vec<_>>(),
+                [object]
+            );
+        }
+        assert_eq!(alpha.take_restated_pages(), [there]);
+
+        // A record that kept a higher version sets the next one for both.
+        record_on_mut(alpha.sheet_mut(there).unwrap(), object)
+            .unwrap()
+            .name_version = Some(version(5, BETA));
+        alpha.set_chip_name(standing, "FROM_THERE").unwrap();
+        for page in [here, there] {
+            let named = record(&alpha, page, object);
+            assert_eq!(
+                (named.name(), named.name_version()),
+                (Some("FROM_THERE"), Some(version(6, ALPHA)))
+            );
+        }
+        assert_eq!(alpha.take_restated_pages(), [here]);
+    }
+
+    #[test]
+    fn a_rename_reaches_a_record_kept_detached_on_another_page() {
+        let (mut alpha, _) = store(ALPHA);
+        let (kept, there) = (alpha.new_tab().1, alpha.new_tab().1);
+        let chip = alpha.seal_text_at(kept, SECRET, 0, 0).unwrap();
+        let object = alpha.sheet(kept).unwrap().chip(chip).unwrap().uuid();
+        assert!(alpha.apply_ops(
+            kept,
+            &[EditOp::Delete {
+                pos_u16: 0,
+                len_u16: 1
+            }]
+        ));
+        let standing = alpha
+            .stand_peer_record_as(there, 0, object, None, None)
+            .unwrap();
+        assert_eq!(alpha.sheet(kept).unwrap().detached().count(), 1);
+        alpha.take_metadata_changes(kept);
+
+        alpha.set_chip_name(standing, "KEPT").unwrap();
+        let detached = record(&alpha, kept, object);
+        assert!(detached.is_local());
+        assert_eq!(
+            (detached.name(), detached.name_version()),
+            (Some("KEPT"), Some(version(1, ALPHA)))
+        );
+        assert_eq!(alpha.take_metadata_changes(kept).len(), 1);
+    }
+
+    #[test]
+    fn a_refused_rename_changes_no_record_of_its_object() {
+        let (mut alpha, _) = store(ALPHA);
+        let (here, there) = (alpha.new_tab().1, alpha.new_tab().1);
+        let chip = alpha.seal_text_at(here, SECRET, 0, 0).unwrap();
+        let object = alpha.sheet(here).unwrap().chip(chip).unwrap().uuid();
+        alpha
+            .stand_peer_record_as(there, 0, object, None, None)
+            .unwrap();
+        alpha.set_chip_name(chip, "FULL").unwrap();
+        let spent = version(u64::MAX, BETA);
+        record_on_mut(alpha.sheet_mut(there).unwrap(), object)
+            .unwrap()
+            .name_version = Some(spent);
+        for page in [here, there] {
+            alpha.take_metadata_changes(page);
+        }
+        alpha.take_restated_pages();
+
+        assert_eq!(
+            alpha.set_chip_name(chip, "NEXT"),
+            Err(NameRefusal::VersionsSpent),
+            "the highest version here is spent"
+        );
+        assert_eq!(
+            alpha.set_chip_name(chip, "9_LEADS_WITH_A_DIGIT"),
+            Err(NameRefusal::OutsideCharset)
+        );
+        let faces = [here, there].map(|page| {
+            let face = record(&alpha, page, object);
+            (face.name(), face.name_version())
+        });
+        assert_eq!(
+            faces,
+            [
+                (Some("FULL"), Some(version(1, ALPHA))),
+                (Some("FULL"), Some(spent))
+            ]
+        );
+        for page in [here, there] {
+            assert!(alpha.take_metadata_changes(page).is_empty());
+        }
+        assert!(alpha.take_restated_pages().is_empty());
     }
 
     #[test]

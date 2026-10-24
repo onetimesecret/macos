@@ -1102,8 +1102,9 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Drain the pages another page's edit, burn or end moved a record onto,
-    /// off or out of, or cleared the steps of, for the shell to read again
-    /// (ADR-0058 points 3 and 8). Ended pages are left out.
+    /// off or out of, or cleared the steps of, and those a rename or a peer's
+    /// entry for another page renamed a record on, for the shell to read again
+    /// (ADR-0058 points 3, 5 and 8). Ended pages are left out.
     pub fn take_restated_pages(&mut self) -> Vec<SheetId> {
         let restated = std::mem::take(&mut self.restated);
         restated
@@ -1648,8 +1649,10 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Name a sealed object by [`judge_name`]'s rule; an empty draft clears
-    /// the name. A change takes the next name version (ADR-0058 point 5); the
-    /// name it already has changes nothing. A refusal changes nothing, and no
+    /// the name. A change takes one more than the highest name version of the
+    /// object's records on the readable pages (ADR-0058 point 5), and every
+    /// one of those records, attached or detached, takes it; the name the
+    /// chip already has changes nothing. A refusal changes nothing, and no
     /// outcome is recorded.
     ///
     /// # Errors
@@ -1657,26 +1660,38 @@ impl<C: Clock> SheetStore<C> {
     /// deadline (Law 0001, expiry row), the rule's own refusal, or
     /// [`NameRefusal::VersionsSpent`].
     pub fn set_chip_name(&mut self, id: ChipId, draft: &str) -> Result<(), NameRefusal> {
-        let writer = self.writer;
-        let (page, chip) = self
-            .readable_sheets_mut()
-            .find_map(|sheet| {
-                let page = sheet.id;
-                sheet
-                    .chips
-                    .iter_mut()
-                    .find(|c| c.id == id)
-                    .map(|c| (page, c))
-            })
-            .ok_or(NameRefusal::UnknownChip)?;
+        let (page, chip) = self.chip_home(id).ok_or(NameRefusal::UnknownChip)?;
         let name = judge_name(draft)?;
         if chip.name() == name {
             return Ok(());
         }
-        chip.name_version = Some(NameVersion::after(chip.name_version, writer)?);
-        chip.name = name.map(|name| Zeroizing::new(name.to_owned()));
         let uuid = chip.uuid;
-        self.note_metadata(page, uuid);
+        let highest = self
+            .readable_sheets()
+            .flat_map(|sheet| sheet.chips.iter().chain(&sheet.detached))
+            .filter(|record| record.uuid == uuid)
+            .filter_map(|record| record.name_version)
+            .max();
+        let version = NameVersion::after(highest, self.writer)?;
+        let name = name.map(|name| Zeroizing::new(name.to_owned()));
+        let mut named = Vec::new();
+        for sheet in self.readable_sheets_mut() {
+            let at = sheet.id;
+            for record in sheet.chips.iter_mut().chain(&mut sheet.detached) {
+                if record.uuid == uuid {
+                    record.name_version = Some(version);
+                    record.name.clone_from(&name);
+                    named.push(at);
+                }
+            }
+        }
+        for at in named {
+            self.note_metadata(at, uuid);
+            // The shell reads another page's face again; its own page it reads anyway.
+            if at != page {
+                self.restated.insert(at);
+            }
+        }
         Ok(())
     }
 
