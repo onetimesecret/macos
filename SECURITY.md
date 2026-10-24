@@ -49,8 +49,9 @@ build. Dev and local builds are recorded under `refs/builds/`, which
 
 No digest is published for this lane, so compare that line with one
 from another clean build of the same commit. Each `build/app-store`
-tag's annotation names that build's pre-signature digest, which differs
-from this recipe's, as below. The build script stamps
+tag's annotation names the pre-signature digest of the first build
+packaged under that number, which differs from this recipe's, as below.
+The build script stamps
 `CFBundleVersion` with the first 12 characters of the commit, plus a
 `.dirty` marker for an uncommitted tree, and `Info.plist` is inside the
 digest, so an uncommitted change to any file git does not ignore changes

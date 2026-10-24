@@ -36,12 +36,14 @@ The build is also dirty when any index entry is flagged assume-unchanged or
 skip-worktree (`git ls-files -v` shows a lowercase letter or `S`), because
 `git add -A` does not see edits to those files. The script names up to five
 of them, and the build gets no snapshot and no record. A sparse checkout flags
-entries skip-worktree, so it gets no records.
+every entry outside it skip-worktree, so it gets no records; the script says to
+package from a full checkout instead of clearing the flags.
 
 After compiling, the script reads the tree again. If the tree changed or
-cannot be read, including a file written during the build such as agent memory
-under `.claude/agent-memory/`, the script warns, stamps the build dirty against
-the HEAD it first read, and writes no record. `--app-store` exits there,
+cannot be read, the script warns, stamps the build dirty against the HEAD it
+first read, and writes no record. Changes only under `.claude/`, where agent
+definitions and memory live, are noted and void nothing, since the build reads
+none of those files. `--app-store` exits there,
 before reserving a build number. A HEAD that moved while the tree did not
 voids nothing. For dev and local, if the new commit's tree is the one built,
 that commit becomes the source; otherwise, and always for `--app-store`, the
@@ -82,8 +84,9 @@ tag already names another commit, or git would refuse to create it, the run
 stops before stamping or signing, and the number stays unused.
 
 A record that already points at the same commit is reused and keeps its first
-annotation; the script says so. One that points at another commit is left as
-it is, with a warning, and the build gets no record under that name.
+annotation, or stays a plain ref when the hand command below made it; the
+script says which. One that points at another commit is left as it is, with a
+warning, and the build gets no record under that name.
 
 When git refuses a write, the script prints git's error and a shell quoted
 command to run by hand:
@@ -221,3 +224,11 @@ unreachable objects older than `gc.pruneExpire`, two weeks by default. A
 snapshot includes every untracked file git does not ignore, and every build
 writes the contents of changed and untracked files into the object store as it
 reads the tree, with or without a record.
+
+A credential left untracked in the checkout outside the ignore rules is
+therefore copied into git objects by the next build, and a dirty dev or local
+build's snapshot keeps it reachable from `refs/builds/` until the record is
+deleted; `git push --mirror` would publish it. Keep signing material outside
+the checkout, as
+[handling signing assets](handling-signing-assets-and-credentials.md) says,
+and run `git status --short` before packaging when in doubt.
