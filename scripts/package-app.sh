@@ -279,12 +279,13 @@ fi
 worktree_tree() { # <scratch index>
   local scratch=$1 index output
   index="$(git rev-parse --git-path index 2>/dev/null)" || return 1
+  # Owner-only, since the copy lists every path; the index's mtime keeps git's racy entry checks.
   if [[ -f "$index" ]]; then
-    cp -p "$index" "$scratch" || return 1
+    cp "$index" "$scratch" && touch -r "$index" "$scratch" || return 1
   else
     rm -f "$scratch"
   fi
-  if ! output="$(GIT_INDEX_FILE="$scratch" git add -A 2>&1)"; then
+  if ! output="$(umask 077 && GIT_INDEX_FILE="$scratch" git add -A 2>&1)"; then
     printf '%s\n' "$output" | sed 's/^/    /' >&2
     return 1
   fi
@@ -320,7 +321,11 @@ read_source_state() {
     echo "    warning: these index entries are flagged assume-unchanged or skip-worktree, so git" >&2
     echo "    cannot see edits to them, and this build counts as dirty with no record (first 5):" >&2
     printf '%s\n' "$hidden" | sed -n '1,5s/^/      /p' >&2
-    echo "    clear the flags with git update-index --no-assume-unchanged or --no-skip-worktree." >&2
+    if [[ "$(git config --type=bool core.sparseCheckout 2>/dev/null)" == true ]]; then
+      echo "    a sparse checkout flags every path outside it; for a record, package from a full checkout." >&2
+    else
+      echo "    clear the flags with git update-index --no-assume-unchanged or --no-skip-worktree." >&2
+    fi
   fi
   echo "==> Source: $SOURCE_SHORT${SOURCE_DIRTY:+ with uncommitted changes}"
 }
@@ -329,10 +334,17 @@ read_source_state() {
 # move is followed for dev and local when the new commit's tree is the one built; an App Store
 # build keeps the commit the operator started from.
 check_source_unchanged() {
-  local head tree
+  local head tree paths
   [[ -n "$SOURCE_TREE" ]] || return 0
   head="$(git rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null || true)"
   tree="$(worktree_tree "$SOURCE_INDEX")" || tree=""
+  # Agent definitions and memory under .claude/ are not build inputs, so writes there void nothing.
+  if [[ -n "$tree" && "$tree" != "$SOURCE_TREE" ]] \
+    && paths="$(git diff-tree -r --name-only --no-renames "$SOURCE_TREE" "$tree" 2>/dev/null)" \
+    && [[ -n "$paths" ]] && ! grep -qv '^\.claude/' <<<"$paths"; then
+    echo "    note: only files under .claude/ changed during the build; recording the tree read before it."
+    tree=$SOURCE_TREE
+  fi
   if [[ "$tree" != "$SOURCE_TREE" ]]; then
     echo "    warning: files changed during the build, or the tree could not be read again." >&2
     echo "    warning: stamping the build dirty against $SOURCE_SHORT, with no record." >&2
@@ -444,6 +456,15 @@ build_annotation() {
     "Built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 
+# Describes the annotation of a record that already names this build's commit.
+earlier_annotation() { # <ref>
+  if [[ "$(git cat-file -t "$1" 2>/dev/null)" == tag ]]; then
+    echo "its annotation is from an earlier build."
+  else
+    echo "it is a plain ref with no annotation, and stays so."
+  fi
+}
+
 # Tags the commit a build came from, unsigned so the end of a build never waits on a prompt.
 # Returns 0 when the tag names that commit, whether made now or already there; otherwise 1.
 create_build_tag() { # <name> <commit> <message>
@@ -451,7 +472,7 @@ create_build_tag() { # <name> <commit> <message>
   ref_name_ok "refs/tags/$name" || return 1
   if existing="$(git rev-parse -q --verify "refs/tags/$name^{commit}" 2>/dev/null)"; then
     if [[ "$existing" == "$commit" ]]; then
-      echo "    tag $name already names this commit; its annotation is from an earlier build."
+      echo "    tag $name already names this commit; $(earlier_annotation "refs/tags/$name")"
       return 0
     fi
     echo "    warning: tag $name names ${existing:0:12}, not this build's commit; left as it is." >&2
@@ -493,7 +514,7 @@ write_build_record() { # <ref> <commit> <message>
   ref_name_ok "$ref" || return 1
   if existing="$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null)"; then
     if [[ "$existing" == "$commit" ]]; then
-      echo "    record $ref already names this commit; its annotation is from an earlier build."
+      echo "    record $ref already names this commit; $(earlier_annotation "$ref")"
       return 0
     fi
     echo "    warning: $ref names ${existing:0:12}, not this build's source; left as it is." >&2
