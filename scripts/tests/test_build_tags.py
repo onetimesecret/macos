@@ -31,7 +31,15 @@ READ_CALL = "\nread_source_state\n"
 COMPILE = '\nif [[ "$CONFIG" == "debug" ]]; then\n  scripts/build-core.sh'
 STAMPS_START = "# The stamps below and the record name"
 STAMPS_END = "\n# Each lane writes its own id"
-NAME_PROBE = '  ref_name_ok "refs/tags/build/$BUILD_LANE/$VERSION-1" || exit 1\n'
+VERSION_PROBE = (
+    '  if ! git check-ref-format "refs/tags/build/$BUILD_LANE/$VERSION-1"; then\n'
+)
+DIRTY_REFUSAL = (
+    '  if [[ -n "$SOURCE_DIRTY" ]]; then\n    echo "--app-store packages only'
+)
+AFTER_PACKAGING = (
+    "# After packaging, so only a build that packaged gets a record.\ntag_build\n"
+)
 CI_REFUSAL = "if ((APP_STORE_MODE)) && in_ci; then\n"
 REQUESTED_CHECK = (
     '  if [[ -n "$REQUESTED_BUILD_NUMBER" ]]'
@@ -44,9 +52,19 @@ FUNCTIONS = section("worktree_tree() {", READ_CALL)
 READ_SOURCE = section(READ_CALL, COMPILE)
 STAMPS = section(STAMPS_START, STAMPS_END)
 RESERVE = section("reserve_app_store_build_number() {", "\n}\n", include_end=True)
+PARSE = section(
+    "APP_STORE_MODE=0\n",
+    '\nif [[ "$CONFIG" == "debug" ]]; then\n  select_build_lane dev\n',
+)
+TAIL = SCRIPT[SCRIPT.index(AFTER_PACKAGING) :]
 
 CORE_MARKER_START = 'BUILD_START="$(mktemp -t companion-core-build-start)"'
-CORE_MARKER = section(CORE_MARKER_START, "\n\nfor t in", text=CORE_SCRIPT)
+CORE_MARKER = section(
+    CORE_MARKER_START,
+    "trap 'rm -f \"$BUILD_START\"' EXIT\n",
+    include_end=True,
+    text=CORE_SCRIPT,
+)
 CORE_DATE = 'touch -r "$BUILD_START" "$XCF"\n'
 CORE_CURRENT = section(
     '[[ -d "$XCF" && -f "$STAMP"',
@@ -211,6 +229,7 @@ class BuildRecordTests(unittest.TestCase):
         during="",
         before_tag="",
         real_counter=False,
+        args=None,
         ci=None,
         cwd=None,
         tools=None,
@@ -229,6 +248,7 @@ class BuildRecordTests(unittest.TestCase):
             "NEXT_NUMBER": NUMBER,
             "APP_STORE_BUILD_NUMBER_FILE": str(self.counter),
             "APP": f"{self.tmp}/dist/OnetimePad.app",
+            "PKG": f"{self.tmp}/dist/OnetimePad.pkg",
             "BUILD_ENVIRONMENT_FILE": f"{self.tmp}/environments/{lane}/.env",
             "PROVISIONING_PROFILE": "",
             "CODESIGN_IDENTITY": "",
@@ -243,6 +263,8 @@ class BuildRecordTests(unittest.TestCase):
                 "set -euo pipefail",
                 CLEANUP,
                 *(f"{k}={shlex.quote(v)}" for k, v in values.items()),
+                # Real arguments, when given, go through the script's own parser.
+                PARSE if args is not None else "",
                 PLUTIL_STUB,
                 RESERVE if real_counter else RESERVE_STUB,
                 tool_stubs(TOOLS if tools is None else tools),
@@ -252,14 +274,14 @@ class BuildRecordTests(unittest.TestCase):
                 during,
                 STAMPS,
                 before_tag,
-                "tag_build",
+                TAIL,
             ]
         )
         env = {**self.env, **(env or {})}
         if ci is not None:
             env["CI"] = ci
         result = subprocess.run(
-            ["bash", "-c", program, "package-app.sh"],
+            ["bash", "-c", program, "package-app.sh", *(args or ())],
             cwd=cwd or self.repo,
             env=env,
             capture_output=True,
@@ -267,8 +289,13 @@ class BuildRecordTests(unittest.TestCase):
         )
         if self.mktemp_log.exists():
             for path in self.mktemp_log.read_text().split():
-                self.assertFalse(Path(path).exists(), f"temp file left: {path}")
+                for left in (path, path + ".lock"):
+                    self.assertFalse(Path(left).exists(), f"temp file left: {left}")
         return result
+
+    def require_lockf(self):
+        if shutil.which("lockf") is None:
+            self.skipTest("needs lockf for the real build number counter")
 
     def stamps(self, result):
         return dict(
@@ -352,20 +379,22 @@ class BuildRecordTests(unittest.TestCase):
             STAMPS_END,
             "\ncheck_source_unchanged\n",
             "\nsnapshot_source\n",
-            NAME_PROBE,
             CI_REFUSAL,
+            DIRTY_REFUSAL,
+            VERSION_PROBE,
             REQUESTED_CHECK,
             RESERVE_CALL,
             RESERVED_CHECK,
+            AFTER_PACKAGING,
             "\ntag_build\n",
         ):
             self.assertEqual(SCRIPT.count(marker), 1, marker)
-        for call in (CI_REFUSAL, REQUESTED_CHECK):
+        self.assertNotIn('ref_name_ok "refs/tags/build/$BUILD_LANE/$VERSION-1"', SCRIPT)
+        for call in (CI_REFUSAL, DIRTY_REFUSAL, VERSION_PROBE, REQUESTED_CHECK):
             self.assertIn(call, READ_SOURCE)
         for call in (
             "\ncheck_source_unchanged\n",
             "\nsnapshot_source\n",
-            NAME_PROBE,
             RESERVE_CALL,
             RESERVED_CHECK,
         ):
@@ -373,19 +402,22 @@ class BuildRecordTests(unittest.TestCase):
         order = [
             READ_CALL,
             CI_REFUSAL,
+            DIRTY_REFUSAL,
+            VERSION_PROBE,
             REQUESTED_CHECK,
             COMPILE,
             'swift build --package-path shell -c "$CONFIG" --product OnetimePad',
             "\ncheck_source_unchanged\n",
             "\nsnapshot_source\n",
-            NAME_PROBE,
             RESERVE_CALL,
             RESERVED_CHECK,
             "plutil -replace CFBundleVersion",
             "plutil -replace OnetimePadSourceRevision",
             "codesign --verify",
+            'productbuild --component "$APP"',
+            AFTER_PACKAGING,
+            'echo "Built $APP and $PKG',
             'echo "Built $APP. Launch with',
-            "\ntag_build\n",
         ]
         positions = [SCRIPT.index(marker) for marker in order]
         self.assertEqual(positions, sorted(positions))
@@ -448,7 +480,7 @@ class BuildRecordTests(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", record), old)
         self.assertEqual(self.refs("refs/builds", "refs/tags"), [record])
 
-    def test_signing_config_signs_no_record_and_blocks_only_the_version_tag(self):
+    def test_signing_config_signs_no_record_or_build_tag(self):
         failing = shutil.which("false")
         self.assertIsNotNone(failing)
         for key, value in (
@@ -471,11 +503,11 @@ class BuildRecordTests(unittest.TestCase):
         self.assertEqual(app.returncode, 0, app.stderr)
         self.assertEqual(self.refs("refs/tags"), [f"refs/tags/{build_tag}"])
         self.annotation(f"refs/tags/{build_tag}")
-        self.assertIn(f"warning: could not create tag v{VERSION}:", app.stderr)
-        self.assertNotIn("error: the App Store package", app.stderr)
+        self.assertNotIn("could not create tag", app.stderr)
         self.assertEqual(
             self.push_hints(app), [f"    push with: git push origin {build_tag}"]
         )
+        self.assertIn(f"Built {self.tmp}/dist/OnetimePad.app and", app.stdout)
 
         self.dirty()
         dirty = self.build("local")
@@ -567,6 +599,21 @@ class BuildRecordTests(unittest.TestCase):
         self.assertEqual(self.git("show", f"{snapshot}:a.txt"), "linked")
         self.assertEqual(self.stamps(result)["OnetimePadSourceRevision"], snapshot)
 
+    def test_scratch_index_lock_voids_the_build_and_is_removed(self):
+        # A lock left beside the scratch index makes the second read fail.
+        during = ': > "$SOURCE_INDEX.lock"'
+        for lane, code in (("local", 0), ("app-store", 1)):
+            with self.subTest(lane=lane):
+                result = self.build(lane, during=during)
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertIn(
+                    "warning: files changed during the build, or the tree could not"
+                    " be read again.",
+                    result.stderr,
+                )
+                self.assertEqual(self.refs("refs/builds", "refs/tags"), [])
+                self.assertTrue(self.mktemp_log.read_text().split())
+
     def test_tree_change_during_the_build_leaves_no_record(self):
         scenarios = (
             ("edit on a clean tree", False, "echo more >> a.txt"),
@@ -607,7 +654,7 @@ class BuildRecordTests(unittest.TestCase):
         cases = (
             ("clean", "local", False, "git commit -q --allow-empty -m moved"),
             ("dirty", "local", True, "git add -A && git commit -q -m moved"),
-            ("app store", "app-store", False, "git commit -q --allow-empty -m moved"),
+            ("dev", "dev", False, "git commit -q --allow-empty -m moved"),
         )
         for index, (name, lane, dirty, during) in enumerate(cases):
             with self.subTest(name):
@@ -628,14 +675,7 @@ class BuildRecordTests(unittest.TestCase):
                 self.assertEqual(self.unreachable_commits(cwd=repo), [])
                 stamps = self.stamps(result)
                 self.assertEqual(stamps["OnetimePadSourceRevision"], new)
-                if lane == "app-store":
-                    names = [f"build/app-store/{VERSION}-{NUMBER}", f"v{VERSION}"]
-                    for tag in names:
-                        self.assertEqual(
-                            self.git("rev-parse", f"{tag}^{{commit}}", cwd=repo), new
-                        )
-                    continue
-                record = f"refs/builds/local/{VERSION}-{new[:12]}"
+                record = f"refs/builds/{lane}/{VERSION}-{new[:12]}"
                 self.assertEqual(
                     self.refs("refs/builds", "refs/tags", cwd=repo), [record]
                 )
@@ -660,8 +700,8 @@ class BuildRecordTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(self.git("rev-parse", "HEAD", cwd=repo), first)
                 self.assertIn(
-                    "note: HEAD moved during the build, but the tree did not;"
-                    f" recording against {original[:12]}.",
+                    "note: HEAD moved during the build; recording against"
+                    f" {original[:12]}, the commit it started from.",
                     result.stdout,
                 )
                 records = self.refs("refs/builds", "refs/tags", cwd=repo)
@@ -685,6 +725,35 @@ class BuildRecordTests(unittest.TestCase):
                 self.assertEqual(
                     stamps["CFBundleVersion"], f"{VERSION}+{original[:12]}.dirty"
                 )
+
+    def test_app_store_keeps_the_commit_it_started_from(self):
+        moves = (
+            ("to a commit with the built tree", "git commit -q --allow-empty -m moved"),
+            ("to a commit with another tree", "git reset -q --soft HEAD~1"),
+        )
+        name = f"build/app-store/{VERSION}-{NUMBER}"
+        for index, (label, during) in enumerate(moves):
+            with self.subTest(label):
+                repo = self.init_repo(self.tmp / f"app-store-moved{index}")
+                original = self.second_commit(repo)
+                result = self.build("app-store", during=during, cwd=repo)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotEqual(self.git("rev-parse", "HEAD", cwd=repo), original)
+                self.assertIn(
+                    "note: HEAD moved during the build; recording against"
+                    f" {original[:12]}, the commit it started from.",
+                    result.stdout,
+                )
+                self.assertNotIn("recording that commit", result.stdout)
+                self.assertEqual(
+                    self.refs("refs/tags", cwd=repo), [f"refs/tags/{name}"]
+                )
+                self.assertEqual(
+                    self.git("rev-parse", f"{name}^{{commit}}", cwd=repo), original
+                )
+                stamps = self.stamps(result)
+                self.assertEqual(stamps["OnetimePadSourceRevision"], original)
+                self.assertEqual(stamps["CFBundleVersion"], NUMBER)
 
     def test_ignored_output_during_the_build_is_no_change(self):
         during = "mkdir -p .build && echo x > .build/out && echo x > build.log"
@@ -850,23 +919,25 @@ class BuildRecordTests(unittest.TestCase):
         self.assertEqual(self.stamps(result), {})
         self.assertEqual(self.refs("refs/tags", "refs/builds"), [])
 
-    def test_app_store_build_tags_number_and_version(self):
+    def test_app_store_build_tags_its_number_only(self):
         head = self.git("rev-parse", "HEAD")
         build_tag = f"build/app-store/{VERSION}-{NUMBER}"
         result = self.build("app-store")
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.refs("refs/tags"), [f"refs/tags/{build_tag}"])
         self.assertEqual(
-            sorted(self.refs("refs/tags")),
-            [f"refs/tags/{build_tag}", f"refs/tags/v{VERSION}"],
+            self.git("rev-parse", f"refs/tags/{build_tag}^{{commit}}"), head
         )
-        for name in (build_tag, f"v{VERSION}"):
-            self.assertEqual(
-                self.git("rev-parse", f"refs/tags/{name}^{{commit}}"), head
-            )
         self.assertEqual(self.git("cat-file", "-t", f"refs/tags/{build_tag}"), "tag")
         self.assertEqual(
-            self.push_hints(result),
-            [f"    push with: git push origin {build_tag} v{VERSION}"],
+            self.push_hints(result), [f"    push with: git push origin {build_tag}"]
+        )
+        self.assertTrue(
+            result.stdout.endswith(
+                f"Built {self.tmp}/dist/OnetimePad.app and {self.tmp}/dist/"
+                f"OnetimePad.pkg (App Store build {NUMBER}).\n"
+            ),
+            result.stdout,
         )
         stamps = self.stamps(result)
         self.assertEqual(stamps["CFBundleVersion"], NUMBER)
@@ -882,43 +953,43 @@ class BuildRecordTests(unittest.TestCase):
         )
         self.assertEqual(self.refs("refs/builds"), [])
 
-        with self.subTest("v tag already on this commit"):
+        with self.subTest("second number on the same commit"):
             again = self.build("app-store", REQUESTED_BUILD_NUMBER="18")
             self.assertEqual(again.returncode, 0, again.stderr)
-            self.assertIn(f"tag v{VERSION} {REUSED}", again.stdout)
+            second = f"build/app-store/{VERSION}-18"
             self.assertEqual(
-                self.push_hints(again),
-                [
-                    "    push with: git push origin"
-                    f" build/app-store/{VERSION}-18 v{VERSION}"
-                ],
+                self.push_hints(again), [f"    push with: git push origin {second}"]
+            )
+            self.assertEqual(
+                self.refs("refs/tags"),
+                [f"refs/tags/{build_tag}", f"refs/tags/{second}"],
             )
 
-    def test_app_store_leaves_a_version_tag_on_another_commit(self):
+    def test_app_store_never_touches_a_version_tag(self):
         old = self.git("rev-parse", "HEAD")
         self.git("tag", "-a", "-m", "by hand", f"v{VERSION}", old)
         version_tag = self.git("rev-parse", f"refs/tags/v{VERSION}")
         self.second_commit()
         result = self.build("app-store")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(
-            f"warning: tag v{VERSION} names {old[:12]}, not this build's commit;"
-            " left as it is.",
-            result.stderr,
-        )
+        self.assertNotIn(f"v{VERSION}", result.stdout + result.stderr)
         self.assertEqual(
             self.push_hints(result),
             [f"    push with: git push origin build/app-store/{VERSION}-{NUMBER}"],
         )
         self.assertEqual(self.git("rev-parse", f"refs/tags/v{VERSION}"), version_tag)
+        self.assertEqual(self.refs("refs/tags/v*"), [f"refs/tags/v{VERSION}"])
 
-    def test_app_store_build_tag_failure_exits_1_before_the_version_tag(self):
+    def test_app_store_build_tag_failure_exits_1_with_no_record(self):
         name = f"build/app-store/{VERSION}-{NUMBER}"
-        error = (
-            "    error: the App Store package was built, but it has no record:"
-            f" tag {name} was not written,\n"
-            f"    so v{VERSION} was not tagged and there is nothing to push.\n"
-        )
+
+        def error(commit):
+            return (
+                f"    error: tag {name} was not written, so the package in dist/"
+                " has no record;\n"
+                f"    upload it only once that tag names {commit}.\n"
+            )
+
         # The blocking tag appears after both early checks, as during signing.
         with self.subTest("git refuses the tag"):
             head = self.git("rev-parse", "HEAD")
@@ -928,13 +999,16 @@ class BuildRecordTests(unittest.TestCase):
             self.assertIn(f"warning: could not create tag {name}:", result.stderr)
             probe = self.run_git("tag", "-a", "--no-sign", "-m", "probe", name, head)
             self.assert_git_text_shown(probe, result.stderr)
-            self.assertIn(error, result.stderr)
+            self.assertIn(error(head), result.stderr)
             self.assertLess(
-                result.stderr.index("run by hand: "), result.stderr.index(error)
+                result.stderr.index("run by hand: "), result.stderr.index(error(head))
             )
             self.assertEqual(self.refs("refs/tags", "refs/builds"), ["refs/tags/build"])
             self.assertEqual(self.push_hints(result), [])
+            self.assertNotIn("Built ", result.stdout)
             command = self.hand_command(result.stderr, "run by hand: ")
+            self.assertTrue(command.startswith("git tag -a --no-sign -m "), command)
+            self.assertTrue(command.endswith(f" {shlex.quote(name)} {head}"), command)
             self.git("tag", "-d", "build")
             by_hand = self.run_bash(command)
             self.assertEqual(by_hand.returncode, 0, by_hand.stderr)
@@ -945,7 +1019,7 @@ class BuildRecordTests(unittest.TestCase):
         with self.subTest("tag taken after the stamps"):
             repo = self.init_repo(self.tmp / "taken-late")
             old = self.git("rev-parse", "HEAD", cwd=repo)
-            self.second_commit(repo)
+            head = self.second_commit(repo)
             result = self.build(
                 "app-store",
                 cwd=repo,
@@ -958,45 +1032,76 @@ class BuildRecordTests(unittest.TestCase):
                 " left as it is.",
                 result.stderr,
             )
-            self.assertIn(error, result.stderr)
+            self.assertIn(error(head), result.stderr)
             self.assertEqual(self.refs("refs/tags", cwd=repo), [f"refs/tags/{name}"])
             self.assertEqual(self.git("rev-parse", f"{name}^{{commit}}", cwd=repo), old)
             self.assertEqual(self.push_hints(result), [])
+            self.assertNotIn("Built ", result.stdout)
         with self.subTest("version tag left untouched"):
             repo = self.init_repo(self.tmp / "blocked")
             old = self.git("rev-parse", "HEAD", cwd=repo)
             self.git("tag", "-a", "-m", "by hand", f"v{VERSION}", old, cwd=repo)
-            self.second_commit(repo)
+            version_tag = self.git("rev-parse", f"refs/tags/v{VERSION}", cwd=repo)
+            head = self.second_commit(repo)
             result = self.build("app-store", cwd=repo, before_tag="git tag build")
             self.assertEqual(result.returncode, 1, result.stderr)
-            self.assertIn(error, result.stderr)
-            self.assertNotIn(f"tag v{VERSION}", result.stderr)
+            self.assertIn(error(head), result.stderr)
+            self.assertNotIn(f"v{VERSION}", result.stdout + result.stderr)
+            self.assertEqual(
+                self.git("rev-parse", f"refs/tags/v{VERSION}", cwd=repo), version_tag
+            )
             self.assertEqual(self.push_hints(result), [])
 
     def test_app_store_checks_the_build_tag_before_compiling_and_stamping(self):
         name = f"build/app-store/{VERSION}-{NUMBER}"
-        lockf = shutil.which("lockf") is not None
+        before_compiling = (
+            "--app-store stops before compiling; choose another --build-number.\n"
+        )
+        before_stamping = (
+            "--app-store stops before stamping or signing;"
+            " package again to take another build number.\n"
+        )
 
-        def taken_repo(directory):
+        def taken_repo(directory, number=NUMBER):
             repo = self.init_repo(self.tmp / directory)
             old = self.git("rev-parse", "HEAD", cwd=repo)
-            self.git("tag", "-a", "-m", "by hand", name, old, cwd=repo)
+            tag = f"build/app-store/{VERSION}-{number}"
+            self.git("tag", "-a", "-m", "by hand", tag, old, cwd=repo)
             return repo, old, self.second_commit(repo)
+
+        def taken(tag, old):
+            return (
+                f"    error: tag {tag} already names {old[:12]},"
+                " not this build's commit.\n"
+            )
 
         with self.subTest("requested number taken"):
             repo, old, _ = taken_repo("requested-taken")
-            result = self.build("app-store", cwd=repo, real_counter=lockf)
+            result = self.build("app-store", cwd=repo)
             self.assertEqual(result.returncode, 1, result.stderr)
-            self.assertIn(
-                f"    error: tag {name} already names {old[:12]},"
-                " not this build's commit.\n"
-                "--app-store stops before compiling; choose another --build-number.\n",
-                result.stderr,
-            )
+            self.assertIn(taken(name, old) + before_compiling, result.stderr)
             self.assertNotIn(COMPILED, result.stdout)
             self.assertNotIn(RESERVED, result.stdout)
-            self.assertFalse(self.counter.exists())
             self.assertEqual(self.refs("refs/tags", cwd=repo), [f"refs/tags/{name}"])
+        with self.subTest("requested number taken spends no number"):
+            self.require_lockf()
+            repo, _, _ = taken_repo("requested-taken-counter")
+            result = self.build("app-store", cwd=repo, real_counter=True)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertFalse(self.counter.exists())
+        with self.subTest("--build-number 007 names tag 7"):
+            seven = f"build/app-store/{VERSION}-7"
+            repo, old, _ = taken_repo("leading-zeros", number="7")
+            args = ("--app-store", "--build-number", "007")
+            result = self.build("app-store", cwd=repo, args=args)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn(taken(seven, old) + before_compiling, result.stderr)
+            self.assertNotIn(COMPILED, result.stdout)
+            free = self.init_repo(self.tmp / "leading-zeros-free")
+            result = self.build("app-store", cwd=free, args=args)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.refs("refs/tags", cwd=free), [f"refs/tags/{seven}"])
+            self.assertEqual(self.stamps(result)["CFBundleVersion"], "7")
         with self.subTest("requested number on this commit"):
             repo = self.init_repo(self.tmp / "requested-here")
             head = self.git("rev-parse", "HEAD", cwd=repo)
@@ -1005,35 +1110,26 @@ class BuildRecordTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(f"tag {name} {REUSED}", result.stdout)
             self.assertEqual(
-                self.push_hints(result),
-                [f"    push with: git push origin {name} v{VERSION}"],
+                self.push_hints(result), [f"    push with: git push origin {name}"]
             )
         with self.subTest("automatic number taken"):
-            repo, old, head = taken_repo("automatic-taken")
-            if lockf:
-                self.counter.write_text(f"{int(NUMBER) - 1}\n")
-            result = self.build(
-                "app-store", cwd=repo, REQUESTED_BUILD_NUMBER="", real_counter=lockf
-            )
+            repo, old, _ = taken_repo("automatic-taken")
+            result = self.build("app-store", cwd=repo, REQUESTED_BUILD_NUMBER="")
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertIn(COMPILED, result.stdout)
             self.assertIn(f"{RESERVED} {NUMBER} ", result.stdout)
-            self.assertIn(
-                f"    error: tag {name} already names {old[:12]},"
-                " not this build's commit.\n"
-                "--app-store stops before stamping or signing;"
-                " package again to take another build number.\n",
-                result.stderr,
-            )
+            self.assertIn(taken(name, old) + before_stamping, result.stderr)
             self.assertEqual(self.stamps(result), {})
             self.assertEqual(self.refs("refs/tags", cwd=repo), [f"refs/tags/{name}"])
-            if not lockf:
-                return
-            # The real counter keeps the number as a gap, so the next run moves on.
+        with self.subTest("automatic number taken leaves a gap"):
+            self.require_lockf()
+            repo, _, head = taken_repo("automatic-taken-counter")
+            self.counter.write_text(f"{int(NUMBER) - 1}\n")
+            settings = {"REQUESTED_BUILD_NUMBER": "", "real_counter": True}
+            result = self.build("app-store", cwd=repo, **settings)
+            self.assertEqual(result.returncode, 1, result.stderr)
             self.assertEqual(self.counter.read_text(), f"{NUMBER}\n")
-            again = self.build(
-                "app-store", cwd=repo, REQUESTED_BUILD_NUMBER="", real_counter=True
-            )
+            again = self.build("app-store", cwd=repo, **settings)
             self.assertEqual(again.returncode, 0, again.stderr)
             following = f"build/app-store/{VERSION}-{int(NUMBER) + 1}"
             self.assertEqual(
@@ -1043,7 +1139,6 @@ class BuildRecordTests(unittest.TestCase):
 
     def test_app_store_dry_run_finds_a_tag_in_the_way(self):
         name = f"build/app-store/{VERSION}-{NUMBER}"
-        lockf = shutil.which("lockf") is not None
         stops = {
             False: "--app-store stops before compiling; choose another --build-number.",
             True: "--app-store stops before stamping or signing;"
@@ -1054,12 +1149,8 @@ class BuildRecordTests(unittest.TestCase):
                 repo = self.init_repo(self.tmp / f"in-the-way-{int(automatic)}")
                 head = self.git("rev-parse", "HEAD", cwd=repo)
                 self.git("tag", "build", cwd=repo)
-                if automatic and lockf:
-                    self.counter.write_text(f"{int(NUMBER) - 1}\n")
                 settings = {"REQUESTED_BUILD_NUMBER": ""} if automatic else {}
-                result = self.build(
-                    "app-store", cwd=repo, real_counter=lockf, **settings
-                )
+                result = self.build("app-store", cwd=repo, **settings)
                 self.assertEqual(result.returncode, 1, result.stderr)
                 probe = subprocess.run(
                     ["git", "update-ref", "--stdin"],
@@ -1087,12 +1178,25 @@ class BuildRecordTests(unittest.TestCase):
                 if not automatic:
                     self.assertNotIn(COMPILED, result.stdout)
                     self.assertNotIn(RESERVED, result.stdout)
-                    self.assertFalse(self.counter.exists())
                     continue
                 self.assertIn(COMPILED, result.stdout)
                 self.assertIn(f"{RESERVED} {NUMBER} ", result.stdout)
-                if lockf:
+        with self.subTest("the real counter spends a number only after compiling"):
+            self.require_lockf()
+            for automatic in (False, True):
+                repo = self.init_repo(self.tmp / f"in-the-way-counter-{int(automatic)}")
+                self.git("tag", "build", cwd=repo)
+                settings = {"REQUESTED_BUILD_NUMBER": ""} if automatic else {}
+                if automatic:
+                    self.counter.write_text(f"{int(NUMBER) - 1}\n")
+                result = self.build(
+                    "app-store", cwd=repo, real_counter=True, **settings
+                )
+                self.assertEqual(result.returncode, 1, result.stderr)
+                if automatic:
                     self.assertEqual(self.counter.read_text(), f"{NUMBER}\n")
+                else:
+                    self.assertFalse(self.counter.exists())
 
     def test_ci_writes_no_record_and_refuses_app_store(self):
         refusal = (
@@ -1137,7 +1241,6 @@ class BuildRecordTests(unittest.TestCase):
                     [
                         f"refs/builds/local/{VERSION}-{head[:12]}",
                         f"refs/tags/build/app-store/{VERSION}-{NUMBER}",
-                        f"refs/tags/v{VERSION}",
                     ],
                 )
 
@@ -1209,28 +1312,27 @@ class BuildRecordTests(unittest.TestCase):
             self.assertEqual(stamps["CFBundleVersion"], f"{version}+{short}.dirty")
             self.assertEqual(stamps["OnetimePadSourceRevision"], f"{head}.dirty")
         repo = self.init_repo(self.tmp / "app-store")
-        with self.subTest("app store with a requested number"):
-            result = self.build("app-store", VERSION=version, cwd=repo)
-            self.assertEqual(result.returncode, 1, result.stdout)
-            self.assertIn(
-                f"warning: refs/tags/build/app-store/{version}-{NUMBER} {invalid}",
-                result.stderr,
-            )
-            self.assertNotIn(COMPILED, result.stdout)
-            self.assertEqual(self.refs("refs/tags", "refs/builds", cwd=repo), [])
-        with self.subTest("app store with an automatic number"):
-            result = self.build(
-                "app-store", VERSION=version, REQUESTED_BUILD_NUMBER="", cwd=repo
-            )
-            self.assertEqual(result.returncode, 1, result.stdout)
-            self.assertIn(
-                f"warning: refs/tags/build/app-store/{version}-1 {invalid}",
-                result.stderr,
-            )
-            self.assertIn(COMPILED, result.stdout)
-            self.assertNotIn(RESERVED, result.stdout)
-            self.assertEqual(self.stamps(result), {})
-            self.assertEqual(self.refs("refs/tags", "refs/builds", cwd=repo), [])
+        refusal = (
+            f"--app-store stops before compiling: version {version}"
+            " (CFBundleShortVersionString in\n"
+            "shell/OnetimePad-Info.plist) does not make a valid tag name for"
+            " git check-ref-format.\n"
+        )
+        for requested in (NUMBER, ""):
+            with self.subTest("app store", requested=requested):
+                result = self.build(
+                    "app-store",
+                    VERSION=version,
+                    REQUESTED_BUILD_NUMBER=requested,
+                    cwd=repo,
+                )
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertTrue(result.stderr.endswith(refusal), result.stderr)
+                self.assertNotIn(invalid, result.stderr)
+                self.assertNotIn(COMPILED, result.stdout)
+                self.assertNotIn(RESERVED, result.stdout)
+                self.assertEqual(self.stamps(result), {})
+                self.assertEqual(self.refs("refs/tags", "refs/builds", cwd=repo), [])
 
     def test_hand_commands_paste_with_shell_characters_in_the_version(self):
         version = "1.4.0(rc)&x;y"
@@ -1247,8 +1349,7 @@ class BuildRecordTests(unittest.TestCase):
             pushed = self.run_bash(hints[0].split("push with: ", 1)[1])
             self.assertEqual(pushed.returncode, 0, pushed.stderr)
             self.assertEqual(
-                self.refs("refs/tags", cwd=remote),
-                sorted([f"refs/tags/{build_tag}", f"refs/tags/v{version}"]),
+                self.refs("refs/tags", cwd=remote), [f"refs/tags/{build_tag}"]
             )
         with self.subTest("record hint"):
             self.git("update-ref", "refs/builds/local", "HEAD")
@@ -1315,7 +1416,7 @@ class BuildRecordTests(unittest.TestCase):
             result = self.build(lane, tools=tools, **settings)
             self.assertEqual(result.returncode, 0, result.stderr)
         refs = self.refs("refs/tags", "refs/builds")
-        self.assertEqual(len(refs), 4, refs)
+        self.assertEqual(len(refs), 3, refs)
         for ref in refs:
             with self.subTest(ref=ref):
                 message, fields = self.annotation(ref)
@@ -1331,8 +1432,6 @@ class BuildRecordTests(unittest.TestCase):
                         str(self.home),
                     ):
                         self.assertNotIn(path, line)
-                if ref.startswith("refs/tags/v"):
-                    continue
                 values = dict(fields)
                 self.assertEqual(values["Signing"], "team ABCDE12345")
                 for key in ("Swift", "Rust", "Xcode"):
@@ -1408,9 +1507,13 @@ class CoreBuildDateTests(unittest.TestCase):
     def test_marker_is_made_before_cargo_and_dates_the_finished_xcframework(self):
         for marker in (CORE_MARKER_START, CORE_DATE):
             self.assertEqual(CORE_SCRIPT.count(marker), 1, marker)
+        self.assertNotIn("rustup", CORE_MARKER)
         order = [
             "--if-stale) IF_STALE=1",
+            'echo "==> $XCF is current',
             CORE_MARKER_START,
+            "export MACOSX_DEPLOYMENT_TARGET",
+            'rustup target add "${TARGETS[@]}"',
             "  cargo build --locked",
             'cp THIRD_PARTY_NOTICES.md "$XCF/THIRD_PARTY_NOTICES.md"',
             CORE_DATE,
