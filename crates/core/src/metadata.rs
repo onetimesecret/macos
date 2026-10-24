@@ -243,14 +243,16 @@ impl<C: Clock> SheetStore<C> {
 
     /// Apply a peer's entries to the page whose cross-device identity is
     /// `page`. An entry for an object with no record there waits until one
-    /// arrives; a page past its deadline takes none. Applying marks nothing
-    /// changed. Returns how many entries changed a record.
+    /// arrives; a page past its deadline, ended or unknown here takes none.
+    /// Applying marks nothing changed. Returns how many entries changed a record.
     pub fn apply_object_metadata(&mut self, page: ItemId, entries: Vec<ObjectMetadata>) -> usize {
         let now = self.clock.now();
         let mut changed = 0;
         for entry in entries {
             let entry = entry.judged();
             let waiting = match self.sheet_mut_by_uuid(page) {
+                // A name is content, so none waits on a page that ended or never stood here.
+                None => None,
                 Some(sheet) if sheet.is_due(now) => None,
                 Some(sheet) => match record_on_mut(sheet, entry.object) {
                     Some(record) => {
@@ -259,7 +261,6 @@ impl<C: Clock> SheetStore<C> {
                     }
                     None => Some(entry),
                 },
-                None => Some(entry),
             };
             if let Some(entry) = waiting {
                 self.hold_metadata(page, entry);
@@ -315,6 +316,12 @@ impl<C: Clock> SheetStore<C> {
         }
     }
 
+    /// Drop every entry held for the page whose identity is `page`, as it ends;
+    /// each name wipes with its owner.
+    pub(crate) fn forget_pending_metadata(&mut self, page: ItemId) {
+        self.metadata_pending.retain(|(at, _)| *at != page);
+    }
+
     /// Mark `object` changed on `page`, forgetting pages that have ended.
     pub(crate) fn note_metadata(&mut self, page: SheetId, object: ItemId) {
         let live: Vec<SheetId> = self.sheets().map(Sheet::id).collect();
@@ -326,7 +333,8 @@ impl<C: Clock> SheetStore<C> {
 
     /// Fold `from`, a record about to drop, into the record standing its
     /// identity on `there`, marking that page when it learned something.
-    pub(crate) fn keep_newer_metadata(&mut self, there: SheetId, from: &SealedChip) {
+    /// Returns whether it did.
+    pub(crate) fn keep_newer_metadata(&mut self, there: SheetId, from: &SealedChip) -> bool {
         let learned = self
             .sheet_mut(there)
             .and_then(|sheet| sheet.chips.iter_mut().find(|chip| chip.uuid == from.uuid))
@@ -334,6 +342,7 @@ impl<C: Clock> SheetStore<C> {
         if learned {
             self.note_metadata(there, from.uuid);
         }
+        learned
     }
 }
 
@@ -638,6 +647,37 @@ mod tests {
             beta.take_metadata_changes(b).is_empty(),
             "an applied entry is no change here"
         );
+    }
+
+    #[test]
+    fn an_entry_for_a_page_with_no_sheet_here_is_not_held() {
+        let (mut beta, _) = store(BETA);
+        let b = beta.new_tab().1;
+        let ended = page_of(&beta, b);
+        assert!(beta.discard_page(b));
+        for page in [ItemId::random(), ended] {
+            let entry = named(ItemId::random(), version(1, ALPHA), Some("ORPHAN"));
+            assert_eq!(beta.apply_object_metadata(page, vec![entry]), 0);
+            assert!(beta.metadata_pending.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_held_entry_goes_when_its_page_ends() {
+        let (mut beta, _) = store(BETA);
+        let [kept, ended] = [beta.new_tab().1, beta.new_tab().1];
+        for id in [kept, ended] {
+            let entry = named(ItemId::random(), version(1, ALPHA), Some("WAITING"));
+            assert_eq!(
+                beta.apply_object_metadata(page_of(&beta, id), vec![entry]),
+                0
+            );
+        }
+        assert_eq!(beta.metadata_pending.len(), 2);
+
+        assert!(beta.discard_page(ended));
+        let held: Vec<ItemId> = beta.metadata_pending.iter().map(|(at, _)| *at).collect();
+        assert_eq!(held, [page_of(&beta, kept)]);
     }
 
     #[test]

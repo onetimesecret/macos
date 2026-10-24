@@ -162,6 +162,11 @@ impl<C: Clock> SheetStore<C> {
         self.active_cut = active_cut;
         // Page ids are minted afresh, and nothing restored is a change.
         self.metadata_dirty.clear();
+        self.restated.clear();
+        // An entry held for a page this restore did not bring back has no page to wait on.
+        let pages: Vec<ItemId> = self.sheets().map(Sheet::uuid).collect();
+        self.metadata_pending
+            .retain(|(page, _)| pages.contains(page));
         Ok(restored)
     }
 
@@ -1057,11 +1062,7 @@ fn read_chip(
             }
             chip
         }
-        Written::Peer { kind, size } => {
-            let mut chip = SealedChip::peer(chip_id, chip_uuid);
-            chip.availability = Availability::Peer { kind, size };
-            chip
-        }
+        Written::Peer { kind, size } => SealedChip::peer_known(chip_id, chip_uuid, kind, size),
     };
     chip.name = name;
     chip.name_version = name_version;

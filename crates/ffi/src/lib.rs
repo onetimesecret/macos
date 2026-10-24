@@ -428,8 +428,10 @@ pub unsafe extern "C" fn companion_test_ink_below_the_guard(
 
 /// Stand a record with no value at `pos_u16` of page `sheet`, as a peer's
 /// batch stands one (ADR-0058 point 1), of `kind` (`"text"`, `"image"`, or
-/// null for unknown) and size class `size` (`"tiny"` to `"huge"`, or null).
-/// Returns its chip id, or 0 on refusal. `test-util` only (ADR-0018).
+/// null for unknown) and size class `size` (`"tiny"` to `"huge"`, or null),
+/// under the identity of the chip `of_chip` stands on any page, or a fresh
+/// one for 0 (ADR-0058 point 3). Returns its chip id, or 0 on refusal.
+/// `test-util` only (ADR-0018).
 ///
 /// # Safety
 /// `handle` must be null or a valid handle. `kind` and `size` must each be
@@ -442,6 +444,7 @@ pub unsafe extern "C" fn companion_test_stand_peer_record(
     pos_u16: u32,
     kind: *const c_char,
     size: *const c_char,
+    of_chip: u64,
 ) -> u64 {
     use companion_core::{PeerKind, SizeClass};
     if is_file_id(sheet) {
@@ -478,10 +481,23 @@ pub unsafe extern "C" fn companion_test_stand_peer_record(
     let Ok(mut guard) = handle.inner.lock() else {
         return 0;
     };
-    guard
-        .store
-        .stand_peer_record(SheetId::from_raw(sheet), pos_u16, kind, size)
-        .map_or(0, ChipId::raw)
+    let sheet = SheetId::from_raw(sheet);
+    let stood = if of_chip == 0 {
+        guard.store.stand_peer_record(sheet, pos_u16, kind, size)
+    } else {
+        let of_chip = ChipId::from_raw(of_chip);
+        let Some(uuid) = guard
+            .store
+            .sheets()
+            .find_map(|page| page.chip(of_chip).map(SealedChip::uuid))
+        else {
+            return 0;
+        };
+        guard
+            .store
+            .stand_peer_record_as(sheet, pos_u16, uuid, kind, size)
+    };
+    stood.map_or(0, ChipId::raw)
 }
 
 fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
@@ -2285,6 +2301,32 @@ pub unsafe extern "C" fn companion_expire_due(handle: *mut CompanionHandle) -> u
         return 0;
     };
     guard.store.expire_due().len() as u64
+}
+
+/// Drain the pages another page's edit, burn or end changed since the last
+/// call, as a JSON array of page ids, for the shell to read again as it reads
+/// a peer's batch (ADR-0058 points 3 and 8). Free with
+/// [`companion_string_free`]; null on error.
+///
+/// # Safety
+/// `handle` must be null or a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_take_restated_pages_json(
+    handle: *mut CompanionHandle,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let pages: Vec<u64> = guard
+        .store
+        .take_restated_pages()
+        .into_iter()
+        .map(SheetId::raw)
+        .collect();
+    to_c_json(&pages)
 }
 
 // ---- Persistence: the sealed state file ----
@@ -4425,7 +4467,7 @@ mod tests {
             let (sheet, local) = page_with_a_chip(handle, MARKER);
             let image = cstring("image");
             let peer =
-                companion_test_stand_peer_record(handle, sheet, 0, image.as_ptr(), ptr::null());
+                companion_test_stand_peer_record(handle, sheet, 0, image.as_ptr(), ptr::null(), 0);
             assert_ne!(peer, 0);
             assert!(companion_chip_set_name(
                 handle,
@@ -4497,7 +4539,7 @@ mod tests {
         unsafe {
             let (_tab, sheet) = new_page(handle);
             let stand = |handle, sheet, at, kind: &CString, size: &CString| {
-                companion_test_stand_peer_record(handle, sheet, at, kind.as_ptr(), size.as_ptr())
+                companion_test_stand_peer_record(handle, sheet, at, kind.as_ptr(), size.as_ptr(), 0)
             };
             assert_eq!(stand(ptr::null_mut(), sheet, 0, &text, &small), 0);
             assert_eq!(
@@ -4536,7 +4578,7 @@ mod tests {
             let peer = stand(handle, sheet, 0, &text, &small);
             assert_ne!(peer, 0);
             let unknown =
-                companion_test_stand_peer_record(handle, sheet, 1, ptr::null(), ptr::null());
+                companion_test_stand_peer_record(handle, sheet, 1, ptr::null(), ptr::null(), 0);
             assert_ne!(unknown, 0);
             let runs = json_of(companion_sheet_document_json(handle, sheet));
             let faces: Vec<&serde_json::Value> = runs
@@ -4554,6 +4596,79 @@ mod tests {
             assert_eq!(faces[1]["available"], false);
             assert_eq!(faces[1]["kind"], "unknown");
             assert_eq!(faces[1]["size_label"], "");
+            companion_free(handle);
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn a_page_another_page_s_edit_or_burn_restated_is_drained_once_over_the_seam() {
+        const MARKER: &str = "ghp_payload-marker-7a2d";
+        let restated = |handle| unsafe { json_of(companion_take_restated_pages_json(handle)) };
+        assert!(unsafe { companion_take_restated_pages_json(ptr::null_mut()) }.is_null());
+        let handle = handle();
+        unsafe {
+            for burn in [false, true] {
+                let (home, chip) = page_with_a_chip(handle, MARKER);
+                let (_, away) = new_page(handle);
+                assert_eq!(
+                    companion_test_stand_peer_record(
+                        handle,
+                        away,
+                        0,
+                        ptr::null(),
+                        ptr::null(),
+                        4_242
+                    ),
+                    0,
+                    "an identity that stands nowhere"
+                );
+                let peer = companion_test_stand_peer_record(
+                    handle,
+                    away,
+                    0,
+                    ptr::null(),
+                    ptr::null(),
+                    chip,
+                );
+                assert_ne!(peer, 0);
+                assert_eq!(
+                    companion_test_stand_peer_record(
+                        handle,
+                        away,
+                        0,
+                        ptr::null(),
+                        ptr::null(),
+                        chip
+                    ),
+                    0,
+                    "one record per identity on a page"
+                );
+                assert_eq!(restated(handle), serde_json::json!([]));
+
+                if burn {
+                    assert!(companion_chip_delete(handle, chip));
+                } else {
+                    let backspace = cstring(r#"[{"del": {"at": 2, "len": 1}}]"#);
+                    assert!(companion_sheet_apply_ops(handle, home, backspace.as_ptr()));
+                }
+                assert_eq!(restated(handle), serde_json::json!([away]), "{burn}");
+                assert_eq!(restated(handle), serde_json::json!([]));
+                let runs = json_of(companion_sheet_document_json(handle, away));
+                let faces: Vec<&serde_json::Value> = runs
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|run| run.get("chip"))
+                    .collect();
+                if burn {
+                    assert!(faces.is_empty(), "the burn took out its standing {runs}");
+                } else {
+                    assert_eq!(faces.len(), 1, "{runs}");
+                    assert_eq!(faces[0]["chip_id"], peer, "the id the page showed");
+                    assert_eq!(faces[0]["available"], true);
+                }
+            }
             companion_free(handle);
         }
     }

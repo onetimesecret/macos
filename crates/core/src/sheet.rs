@@ -351,14 +351,18 @@ impl SealedChip {
     /// A record for an object sealed on another device: no value, kind or
     /// size class until told (ADR-0058 point 1).
     pub(crate) fn peer(id: ChipId, uuid: ItemId) -> Self {
-        Self::record(
-            id,
-            uuid,
-            Availability::Peer {
-                kind: None,
-                size: None,
-            },
-        )
+        Self::peer_known(id, uuid, None, None)
+    }
+
+    /// A record with no value whose kind and size class are already known,
+    /// as a restore or a test seam stands one.
+    pub(crate) fn peer_known(
+        id: ChipId,
+        uuid: ItemId,
+        kind: Option<PeerKind>,
+        size: Option<SizeClass>,
+    ) -> Self {
+        Self::record(id, uuid, Availability::Peer { kind, size })
     }
 
     /// A record with no name, no note and no standing yet.

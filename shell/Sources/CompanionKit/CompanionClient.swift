@@ -559,7 +559,10 @@ public struct PlacedFragment: Codable, Hashable, Sendable {
     public let cloned: Int
     public let expired: Int
     public let burned: Int
+    /// Placed as unavailable with no record here; never one `elsewhere` counts.
     public let unavailable: Int
+    /// Placed as unavailable because the value is on another device (ADR-0058 point 4).
+    public let elsewhere: Int
     /// The envelope could not be read, so its public text was placed.
     public let unreadable: Bool
     /// Due pages the core swept first; the caller settles as its timer does (Law 0001, expiry row).
@@ -569,7 +572,7 @@ public struct PlacedFragment: Codable, Hashable, Sendable {
     public var range: NSRange { NSRange(location: locationUTF16, length: lengthUTF16) }
 
     enum CodingKeys: String, CodingKey {
-        case reattached, cloned, expired, burned, unavailable, unreadable
+        case reattached, cloned, expired, burned, unavailable, elsewhere, unreadable
         case locationUTF16 = "location_utf16"
         case lengthUTF16 = "length_utf16"
         case pagesExpired = "pages_expired"
@@ -1526,6 +1529,12 @@ public class CompanionClient: @unchecked Sendable {
     @discardableResult
     public func expireDue() -> UInt64 {
         companion_expire_due(handle)
+    }
+
+    /// The pages another page's edit, burn or end changed in the core since the last ask, each
+    /// to be read again as a peer's batch is (ADR-0058 points 3 and 8); empty on a refusal.
+    public func takeRestatedPages() -> [UInt64] {
+        decodeOwnedJSON([UInt64].self, from: companion_take_restated_pages_json(handle)) ?? []
     }
 
     /// Click the countdown label: one rung shorter, clock reset. Tab

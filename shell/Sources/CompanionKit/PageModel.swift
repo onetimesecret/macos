@@ -3197,6 +3197,8 @@ public final class PageModel: ObservableObject {
         // a step, a seal, a settle that reaped a chip, a page that
         // died. The menu's two items are asked again on every one of
         // them rather than at a list of paths someone has to keep.
+        // Pages another page's route moved come first, on the same terms.
+        settleRestatedPages()
         refreshEditSteps()
         // A cut ends at a paste, an undo, a burn or its page's death; the core says which.
         let cut = client.activeCut()
@@ -6477,6 +6479,10 @@ public final class PageModel: ObservableObject {
     public static let pastedPublicTextLine =
         "this build cannot read the copied sealed content, so its text was pasted."
 
+    /// The line when a paste placed a record with no value as unavailable (ADR-0058 point 4).
+    public static let pastedValueElsewhereLine =
+        "the copied sealed content has its value on another device, so it was placed as unavailable."
+
     /// The line when the core placed nothing for a fragment on the board.
     public static let pasteRefusedLine = "the paste could not be placed."
 
@@ -6522,7 +6528,11 @@ public final class PageModel: ObservableObject {
             return .refused
         }
         settleTransfer(sheet)
-        if placed.unreadable { flash(Self.pastedPublicTextLine) }
+        if placed.unreadable {
+            flash(Self.pastedPublicTextLine)
+        } else if placed.elsewhere > 0 {
+            flash(Self.pastedValueElsewhereLine)
+        }
         return .placed(placed)
     }
 
@@ -7216,17 +7226,29 @@ public final class PageModel: ObservableObject {
     /// the one a surface shows, and the dirty mark schedules the sealed write as a local
     /// keystroke would.
     func settleRemoteEdits(on pages: Set<UInt64>) {
-        for page in pages {
-            invalidateQuietRendering(for: page)
-            if let shown = surface(showing: page) {
-                mergeIntoShownStorage(sheet: page, shown: shown)
-                restateChipFaces(onSheet: page)
-            } else {
-                restateStorage(sheet: page)
-            }
-        }
+        for page in pages { readAgain(page) }
         markDirty()
         refresh()
+    }
+
+    /// A page the core moved under the shell, read again into the storage that shows it.
+    private func readAgain(_ page: UInt64) {
+        invalidateQuietRendering(for: page)
+        if let shown = surface(showing: page) {
+            mergeIntoShownStorage(sheet: page, shown: shown)
+            restateChipFaces(onSheet: page)
+        } else {
+            restateStorage(sheet: page)
+        }
+    }
+
+    /// The pages another page's edit, burn or end moved in the core (ADR-0058 points 3 and 8),
+    /// read again as a peer's are; a step there is gone, so its removal's Undo goes too.
+    private func settleRestatedPages() {
+        for page in client.takeRestatedPages() {
+            countEdit(.sheet(page))
+            readAgain(page)
+        }
     }
 
     /// Mirror the page's document to the core wholesale: the recovery
@@ -7856,12 +7878,12 @@ public final class PageModel: ObservableObject {
     }
 
     /// A core route refused object `chip`: settle, and say the page expired only when the
-    /// object stood and its own page went with it (Law 0001, expiry row); otherwise `line`, when there is one.
-    func settleRefusal(chip: UInt64, otherwise line: String?) {
+    /// object stood and its own page went with it (Law 0001, expiry row); otherwise `line`, asked only then.
+    func settleRefusal(chip: UInt64, otherwise line: @autoclosure () -> String?) {
         let stood = client.chipStands(chip)
         if settleIfDue(), stood, !client.chipStands(chip) {
             flash(Self.pageExpiredLine)
-        } else if let line {
+        } else if let line = line() {
             flash(line)
         }
     }

@@ -206,6 +206,9 @@ pub struct SheetStore<C: Clock> {
     /// Entries for objects with no record on their page yet, by page identity,
     /// oldest first. Never persisted.
     pub(crate) metadata_pending: VecDeque<(ItemId, ObjectMetadata)>,
+    /// Pages whose records or steps changed by another page's edit, burn or
+    /// end, until the shell takes them. Never persisted.
+    pub(crate) restated: BTreeSet<SheetId>,
 }
 
 impl<C: Clock> SheetStore<C> {
@@ -225,6 +228,7 @@ impl<C: Clock> SheetStore<C> {
             writer: [0; 32],
             metadata_dirty: BTreeMap::new(),
             metadata_pending: VecDeque::new(),
+            restated: BTreeSet::new(),
         }
     }
 
@@ -701,10 +705,30 @@ impl<C: Clock> SheetStore<C> {
         kind: Option<crate::sheet::PeerKind>,
         size: Option<SizeClass>,
     ) -> Result<ChipId, Refusal> {
+        self.stand_peer_record_as(id, at_u16, ItemId::random(), kind, size)
+    }
+
+    /// The same under identity `uuid`, as a peer's move stands an object this
+    /// device keeps on another page (ADR-0058 point 3). `test-util` only (ADR-0018).
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn stand_peer_record_as(
+        &mut self,
+        id: SheetId,
+        at_u16: u32,
+        uuid: ItemId,
+        kind: Option<crate::sheet::PeerKind>,
+        size: Option<SizeClass>,
+    ) -> Result<ChipId, Refusal> {
         self.check_seal_range(id, at_u16, 0)?;
+        // One record per identity on a page.
+        if self
+            .sheet(id)
+            .is_some_and(|sheet| sheet.owned_uuids().contains(&uuid))
+        {
+            return Err(Refusal::AlreadySealed);
+        }
         let chip = ChipId(self.next_chip_id);
-        let mut record = SealedChip::peer(chip, ItemId::random());
-        record.availability = crate::sheet::Availability::Peer { kind, size };
+        let record = SealedChip::peer_known(chip, uuid, kind, size);
         self.sheet_mut(id)
             .ok_or(Refusal::UnknownSheet)?
             .chips
@@ -1040,6 +1064,17 @@ impl<C: Clock> SheetStore<C> {
         self.end_a_broken_cut();
     }
 
+    /// Drain the pages another page's edit, burn or end moved a record onto,
+    /// off or out of, or cleared the steps of, for the shell to read again
+    /// (ADR-0058 points 3 and 8). Ended pages are left out.
+    pub fn take_restated_pages(&mut self) -> Vec<SheetId> {
+        let restated = std::mem::take(&mut self.restated);
+        restated
+            .into_iter()
+            .filter(|id| self.sheet(*id).is_some())
+            .collect()
+    }
+
     /// A page's sync frontier, as opaque bytes (issue #96). `None` for an
     /// unknown page.
     #[must_use]
@@ -1113,13 +1148,16 @@ impl<C: Clock> SheetStore<C> {
     /// Take `uuid`'s record out of another readable page's detached store,
     /// and that page's steps with it, since one could stand the sentinel again.
     fn take_detached(&mut self, id: SheetId, uuid: ItemId) -> Option<SealedChip> {
-        self.readable_sheets_mut()
+        let (from, record) = self
+            .readable_sheets_mut()
             .filter(|sheet| sheet.id != id)
             .find_map(|sheet| {
                 let index = sheet.detached.iter().position(|chip| chip.uuid == uuid)?;
                 sheet.document.forget_undo();
-                Some(sheet.detached.remove(index))
-            })
+                Some((sheet.id, sheet.detached.remove(index)))
+            })?;
+        self.restated.insert(from);
+        Some(record)
     }
 
     /// Move each record detached here into the record with no value standing its identity
@@ -1150,7 +1188,9 @@ impl<C: Clock> SheetStore<C> {
             // A step here could stand the moved sentinel a second time.
             sheet.document.forget_undo();
             if local_there {
-                self.keep_newer_metadata(there, &record);
+                if self.keep_newer_metadata(there, &record) {
+                    self.restated.insert(there);
+                }
             } else {
                 self.stand_in(there, record);
             }
@@ -1188,8 +1228,8 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Put `record` in place of the record standing its identity on `there`,
-    /// keeping any newer name that one learned, or keep it detached there if
-    /// none stands.
+    /// under that one's chip id and keeping any newer name it learned, or keep
+    /// it detached there if none stands.
     fn stand_in(&mut self, there: SheetId, mut record: SealedChip) {
         let Some(dest) = self.sheet_mut(there) else {
             return;
@@ -1198,6 +1238,9 @@ impl<C: Clock> SheetStore<C> {
         match dest.chips.iter_mut().find(|chip| chip.uuid == uuid) {
             Some(slot) => {
                 crate::metadata::absorb(&mut record, slot);
+                // The shell's block, menus and drafts name the standing one's id.
+                record.id = slot.id;
+                record.stood = slot.stood;
                 *slot = record;
             }
             None => dest.detached.push(record),
@@ -1205,6 +1248,7 @@ impl<C: Clock> SheetStore<C> {
         dest.rebuild_segments();
         self.drain_pending_metadata(there, uuid);
         self.note_metadata(there, uuid);
+        self.restated.insert(there);
     }
 
     /// Take out each later standing of an identity, and each of an ended one
@@ -1746,6 +1790,7 @@ impl<C: Clock> SheetStore<C> {
         for id in touched {
             self.settle_document(id);
             self.take_out_standings(id);
+            self.restated.insert(id);
         }
     }
 
@@ -2054,6 +2099,7 @@ impl<C: Clock> SheetStore<C> {
     fn entomb(&mut self, mut sheet: Sheet, label: Zeroizing<String>, event: LedgerEvent) {
         // The page has left the strip, so a cut it held ends here.
         self.end_a_broken_cut();
+        self.forget_pending_metadata(sheet.uuid);
         // A detached chip is a payload the page held, though nothing shows it.
         let recorded = sheet.has_content() || sheet.detached.iter().any(SealedChip::is_local);
         self.rehome_values(&mut sheet);
@@ -5615,21 +5661,43 @@ mod tests {
         (pair, chip, uuid)
     }
 
+    /// The chip id of the record standing `uuid` on page `id`, if one stands.
+    fn standing_id(store: &SheetStore<ManualClock>, id: SheetId, uuid: ItemId) -> Option<ChipId> {
+        store
+            .sheet(id)?
+            .chips()
+            .find(|chip| chip.uuid() == uuid)
+            .map(SealedChip::id)
+    }
+
     #[test]
     fn a_peers_move_between_pages_takes_the_value_to_the_destination_in_either_order() {
         for order in [[1, 0], [0, 1]] {
             let (mut pair, chip, uuid) = moved_by_the_peer();
+            let away = pair.pages[1].0;
+            let mut shown = None;
             for page in order {
                 assert_eq!(pair.return_to_alpha(page), Ok(()));
                 assert!(pair.agree(page));
+                shown = shown.or_else(|| standing_id(&pair.alpha, away, uuid));
             }
-            let away = pair.pages[1].0;
+            let shown = shown.expect("the object stands away");
+            let home = pair.pages[0].0;
+            // Each batch names its own page; the other one is restated.
+            let restated = if order == [0, 1] {
+                assert_eq!(shown, chip, "the detached record arrives under its own id");
+                home
+            } else {
+                away
+            };
+            assert_eq!(pair.alpha.take_restated_pages(), [restated], "{order:?}");
+            assert!(pair.alpha.take_restated_pages().is_empty());
             let records = records_of(&pair.alpha, uuid);
             assert_eq!(records.len(), 1, "the value moved, never copied");
             assert_eq!(records[0].0, away);
-            assert!(pair.alpha.sheet(away).unwrap().chip(chip).is_some());
+            assert_eq!(records[0].1.id(), shown, "the id the page showed first");
             assert_eq!(
-                pair.alpha.copy_out_chip(chip).unwrap().0.as_slice(),
+                pair.alpha.copy_out_chip(shown).unwrap().0.as_slice(),
                 b"the secret"
             );
             assert_eq!(ended_on_record(&pair.alpha, uuid), 0);
@@ -5648,16 +5716,21 @@ mod tests {
             "the value at home, a record with none away"
         );
         let home_uuid = pair.alpha.sheet(home).unwrap().uuid();
+        let shown = standing_id(&pair.alpha, away, uuid).unwrap();
+        assert_ne!(shown, chip);
+        assert!(pair.alpha.take_restated_pages().is_empty());
 
         assert!(pair.alpha.discard_page(home));
         let records = records_of(&pair.alpha, uuid);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].0, away);
-        assert!(pair.alpha.sheet(away).unwrap().chip(chip).is_some());
+        assert_eq!(records[0].1.id(), shown, "the id the page already showed");
         assert_eq!(
-            pair.alpha.copy_out_chip(chip).unwrap().0.as_slice(),
+            pair.alpha.copy_out_chip(shown).unwrap().0.as_slice(),
             b"the secret"
         );
+        assert_eq!(pair.alpha.take_restated_pages(), [away]);
+        assert!(pair.alpha.take_restated_pages().is_empty());
         assert_eq!(
             ended_on_record(&pair.alpha, uuid),
             0,
@@ -5671,6 +5744,9 @@ mod tests {
         let (mut pair, chip, uuid) = moved_by_the_peer();
         let (home, away) = (pair.pages[0].0, pair.pages[1].0);
         assert_eq!(pair.return_to_alpha(1), Ok(()));
+        let shown = standing_id(&pair.alpha, away, uuid).unwrap();
+        assert_ne!(shown, chip);
+        assert!(pair.alpha.take_restated_pages().is_empty());
 
         pair.alpha.cut_fragment(home, 4, 1).unwrap();
         assert!(
@@ -5684,11 +5760,105 @@ mod tests {
         let records = records_of(&pair.alpha, uuid);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].0, away);
-        assert!(pair.alpha.sheet(away).unwrap().chip(chip).is_some());
+        assert_eq!(records[0].1.id(), shown, "the id the page already showed");
         assert_eq!(
-            pair.alpha.copy_out_chip(chip).unwrap().0.as_slice(),
+            pair.alpha.copy_out_chip(shown).unwrap().0.as_slice(),
             b"the secret"
         );
+        assert_eq!(pair.alpha.take_restated_pages(), [away]);
+        assert!(pair.alpha.take_restated_pages().is_empty());
+    }
+
+    /// Two inked pages on one store, a value sealed on the first and a record
+    /// with no value for its identity standing on the second, as a peer's move leaves them.
+    fn standing_elsewhere_here() -> (SheetStore<ManualClock>, SheetId, SheetId, ChipId, ChipId) {
+        let (mut store, _) = store();
+        let (home, away) = (store.new_tab().1, store.new_tab().1);
+        type_on(&mut store, home, "ink ");
+        type_on(&mut store, away, "dest ");
+        let chip = store.seal_text_at(home, "the secret", 4, 0).unwrap();
+        let uuid = uuid_of(&store, chip);
+        let peer = store
+            .stand_peer_record_as(away, 0, uuid, None, None)
+            .unwrap();
+        assert_eq!(
+            store.stand_peer_record_as(away, 0, uuid, None, None),
+            Err(Refusal::AlreadySealed),
+            "one record per identity on a page"
+        );
+        assert!(store.take_restated_pages().is_empty());
+        (store, home, away, chip, peer)
+    }
+
+    #[test]
+    fn a_backspace_that_moves_a_value_restates_the_page_it_arrives_on_once_under_its_id() {
+        let (mut store, home, away, chip, peer) = standing_elsewhere_here();
+        let uuid = uuid_of(&store, chip);
+        assert!(!store.sheet(away).unwrap().chip(peer).unwrap().is_local());
+
+        remove_at(&mut store, home, 4);
+        let arrived = store
+            .sheet(away)
+            .unwrap()
+            .chip(peer)
+            .expect("the id away showed");
+        assert!(arrived.is_local(), "the value followed its sentinel");
+        assert_eq!(arrived.uuid(), uuid);
+        assert_eq!(records_of(&store, uuid).len(), 1);
+        assert_eq!(
+            store.take_restated_pages(),
+            [away],
+            "the edited page is the caller's"
+        );
+        assert!(store.take_restated_pages().is_empty());
+        assert_eq!(
+            store.copy_out_chip(peer).unwrap().0.as_slice(),
+            b"the secret"
+        );
+    }
+
+    #[test]
+    fn a_dropped_record_with_no_value_restates_the_value_s_page_only_when_it_learned_a_name() {
+        for named in [false, true] {
+            let (mut store, home, away, chip, peer) = standing_elsewhere_here();
+            if named {
+                store.set_chip_name(peer, "PEER_NAME").unwrap();
+            }
+            // Away's record with no value detaches where its value stands, and drops.
+            remove_at(&mut store, away, 0);
+            let uuid = uuid_of(&store, chip);
+            assert_eq!(records_of(&store, uuid).len(), 1, "{named}");
+            let expected: &[SheetId] = if named { &[home] } else { &[] };
+            assert_eq!(store.take_restated_pages(), expected, "{named}");
+            assert!(store.take_restated_pages().is_empty());
+            let name = store.sheet(home).unwrap().chip(chip).unwrap().name();
+            assert_eq!(name, named.then_some("PEER_NAME"));
+        }
+    }
+
+    #[test]
+    fn a_cut_placed_on_another_page_restates_the_page_whose_steps_it_took() {
+        let (mut store, _) = store();
+        let (home, away) = (store.new_tab().1, store.new_tab().1);
+        type_on(&mut store, home, "ink ");
+        type_on(&mut store, away, "dest ");
+        store.seal_text_at(home, "the secret", 4, 0).unwrap();
+        store.cut_fragment(home, 4, 1).unwrap();
+        assert!(store.take_restated_pages().is_empty(), "the cut's own page");
+
+        let placed = store.paste_active_cut(away, 0, 0).unwrap();
+        assert_eq!(placed.reattached, 1);
+        assert!(!store.can_undo(home));
+        assert_eq!(store.take_restated_pages(), [home]);
+        assert!(store.take_restated_pages().is_empty());
+    }
+
+    #[test]
+    fn a_restated_page_that_ended_is_not_taken() {
+        let (mut store, home, away, _, _) = standing_elsewhere_here();
+        remove_at(&mut store, home, 4);
+        assert!(store.discard_page(away));
+        assert!(store.take_restated_pages().is_empty());
     }
 
     /// One page on each device holding `one ￼two three`, its object sealed on alpha.
@@ -5824,11 +5994,18 @@ mod tests {
         store.settle_document(away);
         assert_eq!(records_of(&store, uuid).len(), 3);
         assert!(store.can_undo(aside));
+        assert!(store.take_restated_pages().is_empty());
 
         assert!(store.delete_chip(chip));
         assert!(records_of(&store, uuid).is_empty());
         assert!(standings(&store, away).is_empty());
         assert_eq!(body(&store, away), "dest ");
+        assert_eq!(
+            store.take_restated_pages(),
+            [away, aside],
+            "the burned page is the caller's"
+        );
+        assert!(store.take_restated_pages().is_empty());
         assert_eq!(ended_on_record(&store, uuid), 1, "only the value's end");
         assert!(!store.can_undo(aside), "a step could stand it again");
         assert!(store.undo(away), "the typing stays a step");

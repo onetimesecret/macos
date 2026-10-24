@@ -73,14 +73,15 @@ final class SealedDecryptedDragTests: XCTestCase {
     }
 
     /// A new page reading `ab # cd` whose object's value is on another device, stood in the
-    /// core as a peer's batch stands one and read in by the remote settle (ADR-0058 point 1).
-    private func mountPeerPage(on model: PageModel) throws -> Page {
+    /// core as a peer's batch stands one and read in by the remote settle (ADR-0058 point 1),
+    /// under the identity of `chip` when one is named.
+    private func mountPeerPage(on model: PageModel, of chip: UInt64 = 0) throws -> Page {
         let page: () throws -> UInt64 = {
             let sheet = try self.newPage(on: model)
             XCTAssertTrue(model.coreClient.applyOps(
                 sheet: sheet, json: #"[{"ins":{"at":0,"text":"ab  cd"}}]"#))
             XCTAssertNotNil(model.coreClient.standPeerRecordForTests(
-                sheet: sheet, at: UInt32(self.object), kind: "text", size: "small"))
+                sheet: sheet, at: UInt32(self.object), kind: "text", size: "small", of: chip))
             model.settleRemoteEdits(on: [sheet])
             return sheet
         }
@@ -498,6 +499,90 @@ final class SealedDecryptedDragTests: XCTestCase {
         XCTAssertEqual(draft.error, "sealed content on this page has its value on another device")
         XCTAssertNil(model.coreClient.lastWireForTests(), "something was sent")
         XCTAssertEqual(shape(page), "ab # cd")
+    }
+
+    // MARK: Another page's edit (ADR-0058 points 3 and 8)
+
+    private func menuTitles(_ page: Page) throws -> [String?] {
+        try XCTUnwrap(page.coordinator.chipMenu(at: object)).items.map {
+            $0.isSeparatorItem ? nil : $0.title
+        }
+    }
+
+    /// A backspace that takes the value off its page moves it into the record standing its
+    /// identity on another, whose block keeps its id, shows the value's face and offers its copies.
+    func testABackspaceThatMovesAValueGivesTheBlockStandingItItsFaceAndCopies() throws {
+        let model = try makeModel()
+        let home = try mountPage(on: model)
+        let original = try XCTUnwrap(home.coordinator.chipAttachment(at: object)?.info)
+        let away = try mountPeerPage(on: model, of: original.chipId)
+        let standing = try XCTUnwrap(away.coordinator.chipAttachment(at: object)?.info)
+        XCTAssertFalse(standing.available, "the control")
+        XCTAssertEqual(try menuTitles(away), ["Name", "Note…", nil, "Remove Sealed Content"])
+
+        // Two presses: the caret after the object selects it, the second removes it.
+        home.textView.setSelectedRange(NSRange(location: object + 1, length: 0))
+        home.textView.deleteBackward(nil)
+        home.textView.deleteBackward(nil)
+        XCTAssertEqual(shape(home), "ab  cd")
+
+        let face = try XCTUnwrap(away.coordinator.chipAttachment(at: object)?.info)
+        XCTAssertEqual(face.chipId, standing.chipId, "the block kept its id")
+        XCTAssertTrue(face.available)
+        XCTAssertEqual(face.excerpt, original.excerpt)
+        XCTAssertEqual(face.sizeLabel, original.sizeLabel)
+        XCTAssertEqual(
+            try menuTitles(away),
+            InkEditorView.Coordinator.chipMenuTitles(
+                named: false, hasNote: false, kind: "text", available: true))
+        XCTAssertTrue(away.coordinator.copyOutChip(at: object))
+        XCTAssertEqual(sent(model).count, 1)
+    }
+
+    /// A burn on the page holding the value drops every record standing its identity on other
+    /// pages, and their glyphs leave both a mounted page and a storage no surface shows.
+    func testABurnStripsTheGlyphOfEveryRecordStandingItsIdentity() throws {
+        let model = try makeModel()
+        let home = try mountPage(on: model)
+        let chip = try XCTUnwrap(chipID(home))
+        let away = try mountPeerPage(on: model, of: chip)
+        let aside = try newPage(on: model)
+        XCTAssertTrue(model.coreClient.applyOps(
+            sheet: aside, json: #"[{"ins":{"at":0,"text":"ef"}}]"#))
+        XCTAssertNotNil(model.coreClient.standPeerRecordForTests(sheet: aside, at: 0, of: chip))
+        XCTAssertEqual(model.storage(for: aside).string, "\u{FFFC}ef", "the control")
+        XCTAssertNotNil(away.coordinator.chipAttachment(at: object), "the control")
+
+        var draft = ConcealDraft(target: .chip(chip), ttlSecs: 3600)
+        draft.receiptId = "receipt-for-the-chip"
+        model.concealDraft = draft
+        model.burnConcealedCopy()
+
+        XCTAssertEqual(home.textView.string, "ab  cd")
+        XCTAssertEqual(shape(away), "ab  cd")
+        XCTAssertEqual(away.textView.string, "ab  cd", "the mounted page still draws the glyph")
+        XCTAssertEqual(model.storage(for: aside).string, "ef", "the storage still draws the glyph")
+    }
+
+    /// A copy of a record with no value pasted back places the unavailable placeholder, counted
+    /// apart from an unknown reference's, and the line says why (ADR-0058 point 4).
+    func testAPastedCopyOfARecordWithNoValueSaysItsValueIsOnAnotherDevice() throws {
+        let model = try makeModel()
+        let page = try mountPeerPage(on: model)
+        page.textView.setSelectedRange(NSRange(location: object, length: 1))
+        page.textView.copy(nil)
+        model.notice = nil
+
+        let end = try XCTUnwrap(page.textView.textStorage?.length)
+        guard case .placed(let placed) = model.pasteFragment(
+            from: model.ambientPasteboard, sheet: page.sheet,
+            ranges: [NSRange(location: end, length: 0)])
+        else { return XCTFail("the paste placed nothing") }
+        XCTAssertEqual(placed.elsewhere, 1)
+        XCTAssertEqual(placed.unavailable, 0, "counted twice")
+        XCTAssertEqual(placed.cloned, 0)
+        XCTAssertEqual(shape(page), "ab # cd[sealed content · unavailable]")
+        XCTAssertEqual(model.notice, PageModel.pastedValueElsewhereLine)
     }
 }
 

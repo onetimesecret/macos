@@ -79,9 +79,11 @@ extension CompanionClient {
     }
 
     /// Stand a record whose value is on another device in page `sheet`, as a peer's batch
-    /// stands one (`companion_test_stand_peer_record`, gated with the seams above); nil on refusal.
+    /// stands one (`companion_test_stand_peer_record`, gated with the seams above), under
+    /// the identity of `chip` when one is named; nil on refusal.
     func standPeerRecordForTests(
-        sheet: UInt64, at position: UInt32, kind: String? = nil, size: String? = nil
+        sheet: UInt64, at position: UInt32, kind: String? = nil, size: String? = nil,
+        of chip: UInt64 = 0
     ) -> UInt64? {
         func withOptionalCString<T>(_ text: String?, _ body: (UnsafePointer<CChar>?) -> T) -> T {
             guard let text else { return body(nil) }
@@ -89,7 +91,7 @@ extension CompanionClient {
         }
         let chip = withOptionalCString(kind) { kind in
             withOptionalCString(size) { size in
-                companion_test_stand_peer_record(rawHandleForTests, sheet, position, kind, size)
+                companion_test_stand_peer_record(rawHandleForTests, sheet, position, kind, size, chip)
             }
         }
         return chip == 0 ? nil : chip

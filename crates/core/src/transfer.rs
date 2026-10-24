@@ -59,10 +59,11 @@ pub struct Placed {
     pub expired: u32,
     /// References placed as `[sealed content · burned]`.
     pub burned: u32,
-    /// References placed as `[sealed content · unavailable]`.
+    /// References placed as `[sealed content · unavailable]` with no record
+    /// and no terminal record here; never one counted in `elsewhere`.
     pub unavailable: u32,
     /// References placed as `[sealed content · unavailable]` because the
-    /// value is on another device (ADR-0058 point 4).
+    /// value is on another device (ADR-0058 point 4), beside `unavailable`.
     pub elsewhere: u32,
     /// The envelope could not be read, so its public text was placed.
     pub unreadable: bool,
@@ -419,6 +420,7 @@ impl<C: Clock> SheetStore<C> {
         for source in sources {
             if let Some(sheet) = self.sheet_mut(source) {
                 sheet.document.forget_undo();
+                self.restated.insert(source);
             }
         }
         // The settle stands every chip the edit placed, which ends a reattached cut.

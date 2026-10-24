@@ -210,14 +210,18 @@ bool companion_test_ink_below_the_guard(CompanionHandle *handle,
 /* Stand a sealed object record with no value at UTF-16 offset
  * `pos_u16` of page `sheet`, as a peer's batch stands one (ADR-0058
  * point 1): of `kind` ("text", "image", or null for unknown) and size
- * class `size` ("tiny" to "huge", or null for unknown). Returns its chip
- * id; a file, an unknown page, a point off the body, a kind or size
- * this build does not name, or a null handle answers 0. The symbol
- * exists only in test-util builds of the core (ADR-0018), on the same
- * terms as companion_new_ephemeral() above. */
+ * class `size` ("tiny" to "huge", or null for unknown), under the
+ * identity of the chip `of_chip` that stands on any page, or a fresh
+ * one for 0 (ADR-0058 point 3). Returns its chip id; a file, an unknown
+ * page, a point off the body, a kind or size this build does not name,
+ * an `of_chip` that stands nowhere or whose identity the page already
+ * has, or a null handle answers 0. The symbol exists only in test-util
+ * builds of the core (ADR-0018), on the same terms as
+ * companion_new_ephemeral() above. */
 uint64_t companion_test_stand_peer_record(CompanionHandle *handle,
                                           uint64_t sheet, uint32_t pos_u16,
-                                          const char *kind, const char *size);
+                                          const char *kind, const char *size,
+                                          uint64_t of_chip);
 
 void companion_free(CompanionHandle *handle);
 
@@ -841,7 +845,8 @@ char *companion_sheet_compose_fragment(CompanionHandle *handle, uint64_t sheet,
  * resolves in order: the active cut's objects, from its own envelope,
  * reattach; any other live object is cloned with the envelope's name
  * and note, but one whose value is on another device places
- * "[sealed content · unavailable]", counted as "elsewhere"; else the
+ * "[sealed content · unavailable]", counted as "elsewhere" and never
+ * also as "unavailable", which counts only the last case; else the
  * ledger's newest terminal record places
  * "[sealed content · expired]" or "[sealed content · burned]"; else
  * "[sealed content · unavailable]". An envelope the core cannot read
@@ -960,6 +965,16 @@ int64_t companion_next_event_ms(CompanionHandle *handle);
  * expired. Call on timer fire, then re-arm.
  */
 uint64_t companion_expire_due(CompanionHandle *handle);
+
+/*
+ * Drain the pages another page's edit, burn or end changed since the
+ * last call (a value that followed its sentinel there, a record with no
+ * value a burn dropped, a page whose steps were taken), as a JSON array
+ * of page ids: [u64]. Read each again as a peer's batch is read
+ * (ADR-0058 points 3 and 8). Pages that ended are left out. Free with
+ * companion_string_free(); null on error.
+ */
+char *companion_take_restated_pages_json(CompanionHandle *handle);
 
 /* Cycle a TAB's countdown one rung SHORTER (clock reset to the full
  * rung, each click resets the clock). The ladder tapers, 7d -> 3d ->
