@@ -449,6 +449,13 @@ private final class TreeWalker {
         return parts
     }
 
+    /// A link or image's destination and title. Each sees every object emitted since `mark`, the
+    /// element's own text and then its destination, as already shown.
+    private func addresses(of node: UnsafeRawPointer, since mark: Int) throws -> ([HTMLPart], [HTMLPart]) {
+        let destination = try address(library.url, of: node, shown: Set(log[mark...]))
+        return (destination, try address(library.title, of: node, shown: Set(log[mark...])))
+    }
+
     private func span(_ node: UnsafeRawPointer) -> (SourcePosition, SourcePosition) {
         (SourcePosition(line: Int(library.startLine(node)), column: Int(library.startColumn(node))),
          SourcePosition(line: Int(library.endLine(node)), column: Int(library.endColumn(node))))
@@ -595,9 +602,7 @@ private final class TreeWalker {
             let mark = log.count
             var label: [PreviewEvent] = []
             try appendInlines(of: node, to: &label)
-            let shown = Set(log[mark...])
-            let destination = try address(library.url, of: node, shown: shown)
-            let title = try address(library.title, of: node, shown: shown)
+            let (destination, title) = try addresses(of: node, since: mark)
             // The address's own objects follow the label, outside the link, as an image's follow its alt text.
             events.append(.enterLink(destination: destination.standingIn, title: title.standingIn))
             events += label
@@ -609,11 +614,8 @@ private final class TreeWalker {
             let mark = log.count
             var alt: [HTMLPart] = []
             try appendAlt(of: node, to: &alt)
-            let shown = Set(log[mark...])
-            let destination = try address(library.url, of: node, shown: shown)
-            events.append(.markdownImage(
-                alt: alt, destination: destination, title: try address(library.title, of: node, shown: shown)
-            ))
+            let (destination, title) = try addresses(of: node, since: mark)
+            events.append(.markdownImage(alt: alt, destination: destination, title: title))
         default:
             try enter()
             defer { leave() }
@@ -643,9 +645,8 @@ private final class TreeWalker {
                 let mark = log.count
                 var inner: [HTMLPart] = []
                 try appendAlt(of: node, to: &inner)
-                let shown = Set(log[mark...])
-                let own = try address(library.url, of: node, shown: shown)
-                    + address(library.title, of: node, shown: shown)
+                let (destination, title) = try addresses(of: node, since: mark)
+                let own = destination + title
                 alt.appendParts(inner)
                 alt.appendParts(own.objectIdentities.map(HTMLPart.object))
             default:
