@@ -207,6 +207,18 @@ bool companion_test_ink_below_the_guard(CompanionHandle *handle,
                                         uint64_t sheet, uint32_t pos_u16,
                                         const char *text);
 
+/* Stand a sealed object record with no value at UTF-16 offset
+ * `pos_u16` of page `sheet`, as a peer's batch stands one (ADR-0058
+ * point 1): of `kind` ("text", "image", or null for unknown) and size
+ * class `size` ("tiny" to "huge", or null for unknown). Returns its chip
+ * id; a file, an unknown page, a point off the body, a kind or size
+ * this build does not name, or a null handle answers 0. The symbol
+ * exists only in test-util builds of the core (ADR-0018), on the same
+ * terms as companion_new_ephemeral() above. */
+uint64_t companion_test_stand_peer_record(CompanionHandle *handle,
+                                          uint64_t sheet, uint32_t pos_u16,
+                                          const char *kind, const char *size);
+
 void companion_free(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */

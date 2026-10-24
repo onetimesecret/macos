@@ -1,6 +1,6 @@
 ---
 name: project-issue257-peer-records
-description: Issue #257 units 1 and 2 (2026-10-23) made a sealed record with no value a chip state and made sync admit and reconcile it; SealedChip availability, OTSSNAP5, the peer seam, admission and the value-follows rules
+description: Issue #257 units 1 to 3 (2026-10-23): a sealed record with no value as a chip state, sync admission and value-follows rules, and the shell face, menu and seam
 metadata:
   type: project
 ---
@@ -19,6 +19,9 @@ Unit 2: `import_update` returns the identities a batch stands that the page lack
 - A core helper an ffi test needs must be `#[cfg(any(test, feature = "test-util"))] pub`; a `#[cfg(test)]` helper in core is invisible to ffi tests. `SheetStore::stand_peer_record` mints a random identity, so a test needing a peer record for a real object builds it by shipping a batch.
 - Two restores of equivalent snapshots re-snapshot byte for byte (Loro's export is deterministic), so `assert_eq!(a.snapshot(0), b.snapshot(0))` is a usable equivalence check.
 - `copy_out_chip` reads attached chips only; read a detached chip's bytes in a core test through `local().unwrap().bytes`.
-- The Swift conceal error allow list (`readerReason(forCoreRefusal:)`) does not yet know the two new refusal strings; unit 3 owes that.
+- Unit 3 (shell, 2026-10-23): `stand_peer_record` returns `Result` now (an FFI seam must never panic); the seam `companion_test_stand_peer_record` is named in two seam regexes, `scripts/package-app.sh` and `scripts/verify-release-core.sh`, so a new gated seam needs both.
+- `mergeIntoShownStorage` compares objects by chip id only, so a face change under the mounted page (availability, a peer's rename) needs `restateChipFaces(onSheet:)` after it; unmounted pages are rebuilt whole.
+- `ChipInfo.available` decodes with `decodeIfPresent ?? true`, so older fixtures still decode. `readerReason` translates both value-elsewhere refusals into sealed content wording (ADR-0055 rule 3).
+- The only burn path in the shell is Burn Local Copy after a successful conceal, so hiding Create One-Time Link plus the core's conceal refusal keeps the burn from being offered.
 
 Related: [[project-issue241-243-core]], [[project-adr0018-gated-seams]]

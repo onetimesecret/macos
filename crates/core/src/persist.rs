@@ -3299,10 +3299,12 @@ mod tests {
         }];
         assert!(original.apply_ops(id, &ink));
         let local = original.seal_text_at(id, "ghp_sealed-here", 3, 0).unwrap();
-        let peer = original.stand_peer_record(id, 0, Some(PeerKind::Text), Some(SizeClass::Small));
+        let peer = original
+            .stand_peer_record(id, 0, Some(PeerKind::Text), Some(SizeClass::Small))
+            .unwrap();
         original.set_chip_name(peer, "PEER_KEY").unwrap();
         assert!(original.apply_note_ops(peer, &ink, EditIntent::Paste, None));
-        let gone = original.stand_peer_record(id, 0, None, None);
+        let gone = original.stand_peer_record(id, 0, None, None).unwrap();
         let take_out = [EditOp::Delete {
             pos_u16: 0,
             len_u16: 1,

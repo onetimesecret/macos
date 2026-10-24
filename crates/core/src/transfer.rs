@@ -2112,7 +2112,9 @@ mod tests {
     fn with_a_peer_record(store: &mut SheetStore<ManualClock>) -> (SheetId, ChipId) {
         let id = store.new_tab().1;
         type_at(store, id, 0, "abcd");
-        let peer = store.stand_peer_record(id, 2, Some(PeerKind::Text), Some(SizeClass::Tiny));
+        let peer = store
+            .stand_peer_record(id, 2, Some(PeerKind::Text), Some(SizeClass::Tiny))
+            .unwrap();
         (id, peer)
     }
 
@@ -2164,7 +2166,7 @@ mod tests {
     fn a_paste_after_copy_places_unavailable_for_a_record_with_no_value_and_counts_elsewhere() {
         let (mut store, _) = store();
         let (id, peer) = with_a_peer_record(&mut store);
-        let unknown = store.stand_peer_record(id, 5, None, None);
+        let unknown = store.stand_peer_record(id, 5, None, None).unwrap();
         let uuids = vec![uuid_of(&store, peer), uuid_of(&store, unknown)];
         let copied = store.copy_fragment(id, 1, 5).unwrap();
         assert_eq!(

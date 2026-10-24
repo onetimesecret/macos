@@ -2833,16 +2833,26 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// The object's menu in D-41's order as Law 0001's presentation invariants extend it, nil
         /// marking a separator: the copies and the link, the object's own
-        /// words, then the removal set apart.
-        static func chipMenuItems(named: Bool, hasNote: Bool, kind: String) -> [ChipMenuItem?] {
-            (named ? [.copyName] : []) + [.copyDecrypted]
-                + (named && SealedBlockLayout.copiesNameValue(kind: kind) ? [.copyNameValue] : [])
-                + [.createLink, nil, named ? .rename : .name, hasNote ? .editNote : .note, nil, .remove]
+        /// words, then the removal set apart; no value item without a value (ADR-0058 point 4).
+        static func chipMenuItems(
+            named: Bool, hasNote: Bool, kind: String, available: Bool = true
+        ) -> [ChipMenuItem?] {
+            let value: [ChipMenuItem] = available
+                ? [.copyDecrypted]
+                    + (named && SealedBlockLayout.copiesNameValue(kind: kind) ? [.copyNameValue] : [])
+                    + [.createLink]
+                : []
+            let copies = (named ? [.copyName] : []) + value
+            return (copies.isEmpty ? [] : copies + [nil])
+                + [named ? .rename : .name, hasNote ? .editNote : .note, nil, .remove]
         }
 
         /// The menu's titles, pinned by a test rather than read off a screen.
-        static func chipMenuTitles(named: Bool, hasNote: Bool, kind: String) -> [String?] {
-            chipMenuItems(named: named, hasNote: hasNote, kind: kind).map { $0?.title }
+        static func chipMenuTitles(
+            named: Bool, hasNote: Bool, kind: String, available: Bool = true
+        ) -> [String?] {
+            chipMenuItems(named: named, hasNote: hasNote, kind: kind, available: available)
+                .map { $0?.title }
         }
 
         /// A plain click on a chip selects the whole object and never
@@ -2924,7 +2934,7 @@ public struct InkEditorView: NSViewRepresentable {
             guard let attachment = chipAttachment(at: charIndex) else { return }
             for entry in Self.chipMenuItems(
                 named: attachment.info.name != nil, hasNote: attachment.info.hasNote,
-                kind: attachment.info.kind)
+                kind: attachment.info.kind, available: attachment.info.available)
             {
                 guard let entry else {
                     menu.addItem(.separator())
@@ -3226,6 +3236,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// whose payload the core writes when a destination asks. Nil while a field holds the keys.
         func beginDecryptedDrag(at index: Int) -> (source: DecryptedDrag, item: NSPasteboardItem)? {
             guard !writesNote, let textView, let attachment = chipAttachment(at: index),
+                  attachment.info.available,
                   let type = DecryptedDrag.pasteboardType(forKind: attachment.info.kind)
             else { return nil }
             guard textView.answersChords else {
@@ -7327,20 +7338,35 @@ final class SealedBlockCell: NSTextAttachmentCell {
     /// captured at init so a chip follows the page's typeface without
     /// the storage being rebuilt around it.
     @MainActor
-    private var excerpt: NSAttributedString {
+    private func excerpt(selected: Bool) -> NSAttributedString {
         // The excerpt is drawn into a rect that stops short of the size
         // class, and it is the tail that goes when the rect is too
         // narrow: the head is what identifies the object.
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byTruncatingTail
-        return NSAttributedString(
-            string: info.excerpt,
-            attributes: [
-                .font: InkStyle.chipFont,
-                .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: style,
-            ]
-        )
+        var attributes = Self.valueAttributes(available: info.available, selected: selected)
+        attributes[.paragraphStyle] = style
+        return NSAttributedString(string: Self.valueText(of: info), attributes: attributes)
+    }
+
+    /// The line where a record with no value draws its excerpt (ADR-0058 point 4).
+    nonisolated static let unavailableWords = "value on another device"
+
+    /// What the bottom row says of the value: its excerpt, or for a record with no
+    /// value its kind when known and `unavailableWords`.
+    nonisolated static func valueText(of info: ChipInfo) -> String {
+        guard !info.available else { return info.excerpt }
+        guard ["text", "image"].contains(info.kind) else { return unavailableWords }
+        return "\(info.kind) · \(unavailableWords)"
+    }
+
+    /// The value's ink, or the quieter ink of a line about a value on another device.
+    @MainActor
+    static func valueAttributes(available: Bool, selected: Bool) -> [NSAttributedString.Key: Any] {
+        [
+            .font: InkStyle.chipFont,
+            .foregroundColor: available ? NSColor.labelColor : quietInk(selected: selected),
+        ]
     }
 
     /// The block's quieter words: the secondary ink at rest, ink on a
@@ -7470,16 +7496,16 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let nameAttributes: [NSAttributedString.Key: Any] = [
             .font: InkStyle.chipNameFont, .foregroundColor: NSColor.labelColor,
         ]
-        let valueAttributes: [NSAttributedString.Key: Any] = [
-            .font: InkStyle.chipFont, .foregroundColor: NSColor.labelColor,
-        ]
-        let equals = NSAttributedString(string: "=", attributes: [
+        let valueAttributes = Self.valueAttributes(available: info.available, selected: selected)
+        let valueText = Self.valueText(of: info)
+        // A name has no `=` to a value that is on another device.
+        let equals = NSAttributedString(string: info.available ? "=" : " · ", attributes: [
             .font: InkStyle.chipFont, .foregroundColor: Self.quietInk(selected: selected),
         ])
         let floor = NSAttributedString(
             string: String(name.prefix(Self.nameFloorCharacters)) + "…",
             attributes: nameAttributes)
-        let wholeValue = NSAttributedString(string: info.excerpt, attributes: valueAttributes)
+        let wholeValue = NSAttributedString(string: valueText, attributes: valueAttributes)
         let available = SealedBlockLayout.excerptWidth(
             containerWidth: cellFrame.width, metadataWidth: Self.widestSeatWidth)
         let allotment = editingWidth.map {
@@ -7492,8 +7518,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
             nameFloor: floor.size().width
         )
         let fittedName = Self.fitted(name, attributes: nameAttributes, width: allotment.name)
-        let fittedValue = Self.fitted(
-            info.excerpt, attributes: valueAttributes, width: allotment.value)
+        let fittedValue = Self.fitted(valueText, attributes: valueAttributes, width: allotment.value)
         return NamedRow(
             name: fittedName,
             equals: equals,
@@ -7503,7 +7528,9 @@ final class SealedBlockCell: NSTextAttachmentCell {
                 equalsWidth: equals.size().width,
                 valueWidth: fittedValue.size().width,
                 height: wholeValue.size().height,
-                copiesNameValue: SealedBlockLayout.copiesNameValue(kind: info.kind)
+                copiesNameValue: info.available
+                    && SealedBlockLayout.copiesNameValue(kind: info.kind),
+                copiesValue: info.available
             )
         )
     }
@@ -7564,9 +7591,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     /// The block as VoiceOver names it: what it is, its name, its size.
     override func accessibilityLabel() -> String? {
-        [Self.classification.lowercased(), info.name, Self.displayedSizeClass(info.sizeLabel)]
-            .compactMap { $0 }
-            .joined(separator: ", ")
+        [
+            Self.classification.lowercased(), info.name, Self.displayedSizeClass(info.sizeLabel),
+            info.available ? nil : Self.valueText(of: info),
+        ]
+        .compactMap { $0 }
+        .joined(separator: ", ")
     }
 
     struct ContentLayout {
@@ -7598,14 +7628,14 @@ final class SealedBlockCell: NSTextAttachmentCell {
         /// the widths they are drawn at.
         func namedRow(
             nameWidth: CGFloat, equalsWidth: CGFloat, valueWidth: CGFloat, height: CGFloat,
-            copiesNameValue: Bool
+            copiesNameValue: Bool, copiesValue: Bool = true
         ) -> SealedBlockLayout.NamedRow {
             let name = NSRect(x: left, y: bottomRowY, width: nameWidth, height: height)
             let equals = NSRect(x: name.maxX, y: bottomRowY, width: equalsWidth, height: height)
             let value = NSRect(x: equals.maxX, y: bottomRowY, width: valueWidth, height: height)
             return SealedBlockLayout.NamedRow(
                 name: name, equals: equals, value: value, band: rowBand, metrics: metrics,
-                copiesNameValue: copiesNameValue)
+                copiesNameValue: copiesNameValue, copiesValue: copiesValue)
         }
 
         /// Where the excerpt is drawn and where its tail is cut: the
@@ -7707,8 +7737,11 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     /// The handle in a block drawn at `cellFrame`, measured in the faces it is drawn in;
     /// nil for a kind with no type to drag as.
-    /// Whether the block's kind has a type to drag decrypted as, and so a decrypted drag handle.
-    var dragsDecrypted: Bool { DecryptedDrag.pasteboardType(forKind: info.kind) != nil }
+    /// Whether the block's value is on this device and its kind has a type to drag decrypted
+    /// as, and so a decrypted drag handle (ADR-0058 point 4).
+    var dragsDecrypted: Bool {
+        info.available && DecryptedDrag.pasteboardType(forKind: info.kind) != nil
+    }
 
     @MainActor
     func decryptedDragRect(in cellFrame: NSRect) -> NSRect? {
@@ -8033,7 +8066,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
         guard let row = namedRow(in: cellFrame, editingWidth: editingWidth, selected: selected)
         else {
-            let excerptLine = excerpt
+            let excerptLine = excerpt(selected: selected)
             let metadata = metadata(selected: selected)
             let metadataSize = metadata.size()
             if face == .page {

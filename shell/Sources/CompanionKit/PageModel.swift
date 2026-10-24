@@ -3541,6 +3541,24 @@ public final class PageModel: ObservableObject {
         invalidateQuietRendering(for: sheet)
     }
 
+    /// Stands the core's face in for each block on page `sheet` whose face it no longer
+    /// matches, as after a peer's batch moved a value here (ADR-0058 point 3).
+    func restateChipFaces(onSheet sheet: UInt64) {
+        guard let storage = storages[sheet] else { return }
+        var faces: [UInt64: ChipInfo] = [:]
+        for case .chip(let face) in client.documentRuns(sheet: sheet) { faces[face.chipId] = face }
+        let whole = NSRange(location: 0, length: storage.length)
+        storage.enumerateAttribute(.attachment, in: whole) { value, range, _ in
+            guard let attachment = value as? ChipAttachment,
+                  let face = faces[attachment.info.chipId], face != attachment.info
+            else { return }
+            attachment.info = face
+            for manager in storage.layoutManagers {
+                manager.invalidateDisplay(forCharacterRange: range)
+            }
+        }
+    }
+
     /// Snapshot of the fence-language labels a page carries in its
     /// presentation state, keyed by the paragraph location of each
     /// bare fence's opening rule. Read by both the mounted editor's
@@ -6161,7 +6179,7 @@ public final class PageModel: ObservableObject {
     @discardableResult
     public func copyOutChip(_ id: UInt64, size: String? = nil) -> Bool {
         guard client.copyOutChip(id: id) else {
-            settleRefusal(chip: id, otherwise: Self.copyRefusedLine)
+            settleRefusal(chip: id, otherwise: copyRefusalLine(for: id))
             return false
         }
         markDirty()
@@ -6175,7 +6193,7 @@ public final class PageModel: ObservableObject {
     @discardableResult
     public func copyChipNameValue(_ id: UInt64, size: String? = nil) -> Bool {
         guard client.copyNameValue(chip: id) else {
-            settleRefusal(chip: id, otherwise: Self.copyRefusedLine)
+            settleRefusal(chip: id, otherwise: copyRefusalLine(for: id))
             return false
         }
         markDirty()
@@ -7121,7 +7139,7 @@ public final class PageModel: ObservableObject {
 
     /// One character, a surrogate pair as one so no edit leaves half of it standing, or the
     /// object standing there, so two objects never read as one character; an object is its id,
-    /// since no edit a peer sends changes a face.
+    /// and `restateChipFaces` follows the merge for a face a peer's batch moved.
     private enum ProjectionUnit: Equatable {
         case character(unichar)
         case pair(unichar, unichar)
@@ -7202,6 +7220,7 @@ public final class PageModel: ObservableObject {
             invalidateQuietRendering(for: page)
             if let shown = surface(showing: page) {
                 mergeIntoShownStorage(sheet: page, shown: shown)
+                restateChipFaces(onSheet: page)
             } else {
                 restateStorage(sheet: page)
             }
@@ -7822,6 +7841,19 @@ public final class PageModel: ObservableObject {
 
     /// The line when the core refused to copy an object whose page still stands.
     public static let copyRefusedLine = "the sealed content could not be copied."
+
+    /// The line when a copy meets a record whose value is on another device (ADR-0058 point 4).
+    public static let valueElsewhereLine = "this sealed content has its value on another device."
+
+    /// Why a copy of `chip` was refused, from the core's face rather than a block's.
+    private func copyRefusalLine(for chip: UInt64) -> String {
+        for page in livePageIDs {
+            for case .chip(let face) in client.documentRuns(sheet: page) where face.chipId == chip {
+                return face.available ? Self.copyRefusedLine : Self.valueElsewhereLine
+            }
+        }
+        return Self.copyRefusedLine
+    }
 
     /// A core route refused object `chip`: settle, and say the page expired only when the
     /// object stood and its own page went with it (Law 0001, expiry row); otherwise `line`, when there is one.

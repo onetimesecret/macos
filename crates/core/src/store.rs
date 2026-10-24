@@ -676,7 +676,8 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Stand a record with no value at `at_u16`, as admission from a peer
-    /// will (ADR-0058 point 1). `test-util` only (ADR-0018).
+    /// will (ADR-0058 point 1). Refused, standing nothing, off a live page
+    /// or off a point on it. `test-util` only (ADR-0018).
     #[cfg(any(test, feature = "test-util"))]
     pub fn stand_peer_record(
         &mut self,
@@ -684,14 +685,17 @@ impl<C: Clock> SheetStore<C> {
         at_u16: u32,
         kind: Option<crate::sheet::PeerKind>,
         size: Option<SizeClass>,
-    ) -> ChipId {
+    ) -> Result<ChipId, Refusal> {
+        self.check_seal_range(id, at_u16, 0)?;
         let chip = ChipId(self.next_chip_id);
-        self.next_chip_id += 1;
         let mut record = SealedChip::peer(chip, ItemId::random());
         record.availability = crate::sheet::Availability::Peer { kind, size };
-        self.sheet_mut(id).expect("a live page").chips.push(record);
+        self.sheet_mut(id)
+            .ok_or(Refusal::UnknownSheet)?
+            .chips
+            .push(record);
+        self.next_chip_id += 1;
         self.place_chip(id, chip, at_u16, 0, None)
-            .expect("a point on the page")
     }
 
     /// Apply a batch of edits to a page's body (ADR-0013). The batch is
@@ -7086,7 +7090,9 @@ mod tests {
         let (mut store, clock) = store();
         let id = store.new_tab().1;
         assert!(store.apply_ops(id, &typed(0, "before after")));
-        let chip = store.stand_peer_record(id, 7, Some(PeerKind::Text), Some(SizeClass::Small));
+        let chip = store
+            .stand_peer_record(id, 7, Some(PeerKind::Text), Some(SizeClass::Small))
+            .unwrap();
         (store, clock, id, chip)
     }
 
@@ -7189,7 +7195,7 @@ mod tests {
     fn a_record_with_no_value_ends_with_its_page_and_leaves_no_record_of_its_own() {
         let (mut store, clock, id, standing) = page_with_a_peer_record();
         let local = store.seal_text_at(id, "sealed here", 0, 0).unwrap();
-        let detached = store.stand_peer_record(id, 0, None, None);
+        let detached = store.stand_peer_record(id, 0, None, None).unwrap();
         take_out(&mut store, id, 0);
         assert_eq!(detached_ids(&store, id), vec![detached]);
         let sheet = store.sheet(id).unwrap();
@@ -7217,7 +7223,9 @@ mod tests {
     fn a_page_left_with_only_a_detached_record_with_no_value_ends_unrecorded() {
         let (mut store, _clock) = store();
         let id = store.new_tab().1;
-        store.stand_peer_record(id, 0, Some(PeerKind::Image), None);
+        store
+            .stand_peer_record(id, 0, Some(PeerKind::Image), None)
+            .unwrap();
         take_out(&mut store, id, 0);
         let ledger = events(&store);
         assert!(store.discard_page(id));

@@ -426,6 +426,64 @@ pub unsafe extern "C" fn companion_test_ink_below_the_guard(
         .ink_below_the_guard(SheetId::from_raw(sheet), pos_u16, text)
 }
 
+/// Stand a record with no value at `pos_u16` of page `sheet`, as a peer's
+/// batch stands one (ADR-0058 point 1), of `kind` (`"text"`, `"image"`, or
+/// null for unknown) and size class `size` (`"tiny"` to `"huge"`, or null).
+/// Returns its chip id, or 0 on refusal. `test-util` only (ADR-0018).
+///
+/// # Safety
+/// `handle` must be null or a valid handle. `kind` and `size` must each be
+/// null or a valid, NUL-terminated UTF-8 C string.
+#[cfg(feature = "test-util")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_test_stand_peer_record(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    pos_u16: u32,
+    kind: *const c_char,
+    size: *const c_char,
+) -> u64 {
+    use companion_core::{PeerKind, SizeClass};
+    if is_file_id(sheet) {
+        return 0;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return 0;
+    };
+    let kind = if kind.is_null() {
+        None
+    } else {
+        match unsafe { cstr(kind) } {
+            Some("text") => Some(PeerKind::Text),
+            Some("image") => Some(PeerKind::Image),
+            _ => return 0,
+        }
+    };
+    let size = if size.is_null() {
+        None
+    } else {
+        let word = unsafe { cstr(size) };
+        let classes = [
+            SizeClass::Tiny,
+            SizeClass::Small,
+            SizeClass::Medium,
+            SizeClass::Large,
+            SizeClass::Huge,
+        ];
+        let Some(class) = classes.into_iter().find(|c| Some(c.as_str()) == word) else {
+            return 0;
+        };
+        Some(class)
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return 0;
+    };
+    guard
+        .store
+        .stand_peer_record(SheetId::from_raw(sheet), pos_u16, kind, size)
+        .map_or(0, ChipId::raw)
+}
+
 fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
     companion_core::harden_process();
     #[cfg(target_os = "macos")]
@@ -4355,12 +4413,10 @@ mod tests {
                 cstring(r#"{"server_url": "https://eu.onetimesecret.com"}"#).as_ptr()
             ));
             let (sheet, local) = page_with_a_chip(handle, MARKER);
-            let peer = {
-                let mut guard = (*handle).inner.lock().unwrap();
-                let page = SheetId::from_raw(sheet);
-                let kind = Some(companion_core::PeerKind::Image);
-                guard.store.stand_peer_record(page, 0, kind, None).raw()
-            };
+            let image = cstring("image");
+            let peer =
+                companion_test_stand_peer_record(handle, sheet, 0, image.as_ptr(), ptr::null());
+            assert_ne!(peer, 0);
             assert!(companion_chip_set_name(
                 handle,
                 peer,
@@ -4418,6 +4474,76 @@ mod tests {
                     "nothing was recorded as sent"
                 );
             }
+            companion_free(handle);
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn the_peer_record_seam_stands_a_face_with_no_value_and_refuses_off_a_point() {
+        let handle = handle();
+        let (text, small) = (cstring("text"), cstring("small"));
+        let (file, gibberish) = (cstring("file"), cstring("enormous"));
+        unsafe {
+            let (_tab, sheet) = new_page(handle);
+            let stand = |handle, sheet, at, kind: &CString, size: &CString| {
+                companion_test_stand_peer_record(handle, sheet, at, kind.as_ptr(), size.as_ptr())
+            };
+            assert_eq!(stand(ptr::null_mut(), sheet, 0, &text, &small), 0);
+            assert_eq!(
+                stand(
+                    handle,
+                    companion_core::FILE_ID_TAG | sheet,
+                    0,
+                    &text,
+                    &small
+                ),
+                0
+            );
+            assert_eq!(
+                stand(handle, sheet + 4_242, 0, &text, &small),
+                0,
+                "an unknown page"
+            );
+            assert_eq!(
+                stand(handle, sheet, 1, &text, &small),
+                0,
+                "past the body's end"
+            );
+            assert_eq!(
+                stand(handle, sheet, 0, &file, &small),
+                0,
+                "a kind no face has"
+            );
+            assert_eq!(
+                stand(handle, sheet, 0, &text, &gibberish),
+                0,
+                "not a size class"
+            );
+            let document = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(!document.contains("\"chip\""), "a refusal stood {document}");
+
+            let peer = stand(handle, sheet, 0, &text, &small);
+            assert_ne!(peer, 0);
+            let unknown =
+                companion_test_stand_peer_record(handle, sheet, 1, ptr::null(), ptr::null());
+            assert_ne!(unknown, 0);
+            let runs = json_of(companion_sheet_document_json(handle, sheet));
+            let faces: Vec<&serde_json::Value> = runs
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|run| run.get("chip"))
+                .collect();
+            assert_eq!(faces.len(), 2, "{runs}");
+            assert_eq!(faces[0]["chip_id"], peer);
+            assert_eq!(faces[0]["available"], false);
+            assert_eq!(faces[0]["kind"], "text");
+            assert_eq!(faces[0]["size_label"], "small");
+            assert_eq!(faces[1]["chip_id"], unknown);
+            assert_eq!(faces[1]["available"], false);
+            assert_eq!(faces[1]["kind"], "unknown");
+            assert_eq!(faces[1]["size_label"], "");
             companion_free(handle);
         }
     }

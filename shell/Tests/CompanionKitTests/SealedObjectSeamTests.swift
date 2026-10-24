@@ -167,4 +167,76 @@ final class SealedObjectSeamTests: XCTestCase {
             XCTAssertFalse(entry.title.contains("ROTA"), "\(entry)")
         }
     }
+
+    // MARK: A record whose value is on another device (ADR-0058 point 4)
+
+    /// A page with a sealed object of its own and, before it, a text record whose value is
+    /// on another device, as the core's faces read them.
+    private func pageWithAPeerRecord(
+        _ client: CompanionClient
+    ) throws -> (sheet: UInt64, local: ChipInfo, peer: ChipInfo) {
+        let (sheet, sealed) = try sealedChip(client)
+        let id = try XCTUnwrap(
+            client.standPeerRecordForTests(sheet: sheet, at: 0, kind: "text", size: "small"))
+        let local = try XCTUnwrap(faceOf(sealed.chipId, client, sheet: sheet))
+        let peer = try XCTUnwrap(faceOf(id, client, sheet: sheet))
+        return (sheet, local, peer)
+    }
+
+    private func faceOf(_ chip: UInt64, _ client: CompanionClient, sheet: UInt64) -> ChipInfo? {
+        for case .chip(let face) in client.documentRuns(sheet: sheet) where face.chipId == chip {
+            return face
+        }
+        return nil
+    }
+
+    func testARecordWithNoValueTakesANameAndANoteAndGivesOutNothing() throws {
+        let client = CompanionClient.ephemeral(tag: #function)
+        XCTAssertTrue(client.useMemoryPasteboardForTests())
+        let (sheet, local, peer) = try pageWithAPeerRecord(client)
+        XCTAssertTrue(local.available, "the control")
+        XCTAssertFalse(peer.available)
+        XCTAssertEqual(peer.kind, "text")
+        XCTAssertEqual(peer.sizeLabel, "small")
+        XCTAssertEqual(peer.excerpt, "")
+        XCTAssertNil(client.standPeerRecordForTests(sheet: sheet, at: 99), "off the body")
+
+        XCTAssertTrue(client.setChipName("PEER_KEY", chip: peer.chipId))
+        XCTAssertTrue(
+            client.applyNoteOps(
+                chip: peer.chipId, json: #"[{"ins":{"at":0,"text":"rotates monthly"}}]"#))
+        let named = try XCTUnwrap(faceOf(peer.chipId, client, sheet: sheet))
+        XCTAssertEqual(named.name, "PEER_KEY")
+        XCTAssertTrue(named.hasNote)
+        XCTAssertFalse(named.available, "a name and a note bring no value")
+        XCTAssertEqual(noteText(client, chip: peer.chipId), "rotates monthly")
+
+        let before = client.ledger()
+        XCTAssertFalse(client.copyOutChip(id: peer.chipId))
+        XCTAssertFalse(client.copyNameValue(chip: peer.chipId))
+        XCTAssertFalse(client.deleteChip(id: peer.chipId), "only the device with the value burns it")
+        XCTAssertFalse(client.clearClipboardIfOurs(), "a refusal wrote nothing of ours")
+        XCTAssertEqual(client.ledger(), before, "a refusal recorded something")
+        XCTAssertTrue(client.chipStands(peer.chipId))
+    }
+
+    /// Each conceal of a page standing a record with no value says the value is on another
+    /// device, in the sheet's words, sends nothing and leaves no receipt to offer a burn by.
+    func testEachConcealOverARecordWithNoValueSaysWhyAndSendsNothing() throws {
+        let client = CompanionClient.ephemeral(tag: #function)
+        XCTAssertTrue(client.configureConnection(
+            serverUrl: "https://eu.onetimesecret.com", shareDomain: "", extid: "", token: nil))
+        XCTAssertTrue(client.stubWireForTests(status: 0))
+        let (sheet, _, peer) = try pageWithAPeerRecord(client)
+
+        let chip = client.concealChip(id: peer.chipId, ttlSecs: nil, passphrase: "", recipient: "")
+        XCTAssertFalse(chip.ok)
+        XCTAssertNil(chip.receiptId)
+        XCTAssertEqual(chip.error, "this sealed content has its value on another device")
+        let page = client.concealSheet(id: sheet, ttlSecs: nil, passphrase: "", recipient: "")
+        XCTAssertFalse(page.ok)
+        XCTAssertNil(page.receiptId)
+        XCTAssertEqual(page.error, "sealed content on this page has its value on another device")
+        XCTAssertNil(client.lastWireForTests(), "something was sent")
+    }
 }

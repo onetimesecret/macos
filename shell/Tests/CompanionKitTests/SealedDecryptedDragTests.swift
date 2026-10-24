@@ -64,9 +64,41 @@ final class SealedDecryptedDragTests: XCTestCase {
     /// A new page reading `ab <secret> cd` with the secret sealed, in a window of its
     /// own with the keys: `ab # cd`, the object at index 3.
     private func mountPage(on model: PageModel) throws -> Page {
-        let coordinator = InkEditorView.Coordinator(model: model)
+        try mount(on: model, page: { try self.newPage(on: model) }) { textView, coordinator in
+            textView.insertText(
+                "ab \(secret) cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+            textView.setSelectedRange(NSRange(location: object, length: secret.count))
+            coordinator.sealSelectionOrLine()
+        }
+    }
+
+    /// A new page reading `ab # cd` whose object's value is on another device, stood in the
+    /// core as a peer's batch stands one and read in by the remote settle (ADR-0058 point 1).
+    private func mountPeerPage(on model: PageModel) throws -> Page {
+        let page: () throws -> UInt64 = {
+            let sheet = try self.newPage(on: model)
+            XCTAssertTrue(model.coreClient.applyOps(
+                sheet: sheet, json: #"[{"ins":{"at":0,"text":"ab  cd"}}]"#))
+            XCTAssertNotNil(model.coreClient.standPeerRecordForTests(
+                sheet: sheet, at: UInt32(self.object), kind: "text", size: "small"))
+            model.settleRemoteEdits(on: [sheet])
+            return sheet
+        }
+        return try mount(on: model, page: page) { _, _ in }
+    }
+
+    private func newPage(on model: PageModel) throws -> UInt64 {
         model.newPage()
-        let sheet = try XCTUnwrap(model.selectedPageID)
+        return try XCTUnwrap(model.selectedPageID)
+    }
+
+    /// The page `page` makes, in a window of its own with the keys, after `write` on its editor.
+    private func mount(
+        on model: PageModel, page: () throws -> UInt64,
+        write: (InkTextView, InkEditorView.Coordinator) -> Void
+    ) throws -> Page {
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let sheet = try page()
         let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: sheet, coordinator: coordinator))
         let window = NSWindow(
@@ -81,10 +113,7 @@ final class SealedDecryptedDragTests: XCTestCase {
         content.addSubview(field)
         window.contentView = content
         textView.isEditable = true
-        textView.insertText(
-            "ab \(secret) cd", replacementRange: NSRange(location: NSNotFound, length: 0))
-        textView.setSelectedRange(NSRange(location: object, length: secret.count))
-        coordinator.sealSelectionOrLine()
+        write(textView, coordinator)
         textView.layoutManager?.ensureLayout(for: try XCTUnwrap(textView.textContainer))
         XCTAssertTrue(window.makeFirstResponder(textView))
         textView.setSelectedRange(NSRange(location: 0, length: 0))
@@ -390,6 +419,85 @@ final class SealedDecryptedDragTests: XCTestCase {
         XCTAssertTrue(page.window.firstResponder === page.textView)
         XCTAssertNotNil(page.coordinator.beginDecryptedDrag(at: object), "the drag came back")
         XCTAssertEqual(sent(model), [])
+    }
+
+    // MARK: A record whose value is on another device (ADR-0058 point 4)
+
+    /// A record with no value draws no decrypted handle and starts no decrypted drag, a
+    /// destination's ask of the core writes and records nothing, and the move handle stays.
+    func testARecordWithNoValueHasNoDecryptedDragAndKeepsItsMoveHandle() throws {
+        let model = try makeModel()
+        let page = try mountPeerPage(on: model)
+        XCTAssertEqual(shape(page), "ab # cd")
+        let id = try XCTUnwrap(chipID(page))
+        let cell = try XCTUnwrap(page.textView.chipCell(at: object))
+        XCTAssertFalse(cell.info.available)
+        let frame = NSRect(x: 0, y: 0, width: 400, height: SealedBlockCell.blockHeight)
+        XCTAssertNil(cell.decryptedDragRect(in: frame))
+        XCTAssertNotNil(cell.moveHandleRect(in: frame), "a move keeps the identity, so it stays")
+        XCTAssertNil(page.coordinator.beginDecryptedDrag(at: object))
+        XCTAssertNil(page.coordinator.decryptedDrag)
+
+        let source = DecryptedDrag(chip: id, type: .string) { board, item, type in
+            model.provideDecryptedDrag(chip: id, pasteboard: board, item: item, type: type)
+        }
+        let item = try XCTUnwrap(source.pasteboardItem())
+        let board = privateBoard()
+        XCTAssertTrue(board.writeObjects([item]))
+        XCTAssertNil(board.string(forType: .string), "the core wrote a value that is on another device")
+        XCTAssertEqual(source.asks, 1)
+        XCTAssertEqual(sent(model), [])
+        source.end(with: [])
+        XCTAssertEqual(shape(page), "ab # cd")
+    }
+
+    /// The object's menu offers a record with no value its name, its note and the removal,
+    /// and none of the value's items; the copy chord's route says why it copied nothing.
+    func testARecordWithNoValuesMenuOffersOnlyItsOwnWords() throws {
+        let model = try makeModel()
+        let page = try mountPeerPage(on: model)
+        let id = try XCTUnwrap(chipID(page))
+        func titles() throws -> [String?] {
+            try XCTUnwrap(page.coordinator.chipMenu(at: object)).items.map {
+                $0.isSeparatorItem ? nil : $0.title
+            }
+        }
+        XCTAssertEqual(try titles(), ["Name", "Note…", nil, "Remove Sealed Content"])
+        XCTAssertTrue(model.setChipName("PEER_KEY", chip: id, sheet: page.sheet))
+        XCTAssertEqual(
+            try titles(), ["Copy Name", nil, "Rename", "Note…", nil, "Remove Sealed Content"])
+        XCTAssertEqual(
+            InkEditorView.Coordinator.chipMenuTitles(
+                named: true, hasNote: true, kind: "text", available: false),
+            ["Copy Name", nil, "Rename", "Edit Note…", nil, "Remove Sealed Content"])
+
+        model.notice = nil
+        XCTAssertFalse(page.coordinator.copyOutChip(at: object))
+        XCTAssertEqual(model.notice, PageModel.valueElsewhereLine)
+        XCTAssertFalse(page.coordinator.copyNameValue(at: object))
+        XCTAssertEqual(model.notice, PageModel.valueElsewhereLine)
+        XCTAssertEqual(sent(model), [])
+    }
+
+    /// The whole page's conceal over a record with no value says why on its draft and
+    /// leaves no receipt, so no burn is offered.
+    func testThePageConcealOverARecordWithNoValueShowsWhy() throws {
+        let model = try makeModel()
+        let page = try mountPeerPage(on: model)
+        XCTAssertTrue(model.coreClient.configureConnection(
+            serverUrl: "https://eu.onetimesecret.com", shareDomain: "", extid: "", token: nil))
+        XCTAssertTrue(model.coreClient.stubWireForTests(status: 0))
+
+        model.beginConceal(.page(page.sheet))
+        model.confirmConceal()
+        waitUntil(model.$concealDraft, description: "the round trip came back") {
+            $0?.inFlight == false
+        }
+        let draft = try XCTUnwrap(model.concealDraft)
+        XCTAssertNil(draft.receiptId)
+        XCTAssertEqual(draft.error, "sealed content on this page has its value on another device")
+        XCTAssertNil(model.coreClient.lastWireForTests(), "something was sent")
+        XCTAssertEqual(shape(page), "ab # cd")
     }
 }
 
