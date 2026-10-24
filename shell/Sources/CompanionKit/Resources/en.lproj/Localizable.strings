@@ -68,6 +68,9 @@
 "pad.sort.days.title" = "Days";
 "pad.sort.checkpoints" = "checkpoints from %@";
 "pad.sort.checkpoints.title" = "Checkpoints from %@";
+"pad.day.today.title" = "Today";
+"pad.day.yesterday.title" = "Yesterday";
+"pad.day.ago.title" = "%ld Days Ago";
 "pad.sort.title" = "Sort %@";
 "pad.sort.label" = "sort %@";
 "pad.sort.natural" = "Natural Order";

@@ -47,8 +47,6 @@ public struct TimeRailView: View {
     /// band and no slivers, which is all a window with no roll mounted
     /// can honestly say about one.
     @StateObject private var unclaimedRoll = RollGeometryModel()
-    /// The tallest Files shelf row as drawn, nil until one has been measured.
-    @State private var fileRowHeight: CGFloat?
 
     public init(model: PageModel, readOnly: Bool) {
         self.model = model
@@ -118,12 +116,9 @@ public struct TimeRailView: View {
             surfaceShowsRoll: rollIsShowing,
             stampFormat: model.stampFormat
         )
-        // `Files` and `Pad` are group labels in one navigation column.
-        // The default stack centres its intrinsic text while the PAD
-        // heading itself fills the column for its trailing plus, which
-        // made the two labels look unrelated. One leading alignment line
-        // gives the shelf, its heading, and the stream a shared origin.
-        return VStack(alignment: .leading, spacing: 2) {
+        // One leading line for the labels, the shelf and the stream; the shelf gives way before
+        // the navigator drops under its active row (ADR-0060).
+        return RailColumn(spacing: 2) {
             // The Files shelf: fixed, above the days, and drawn only
             // when a file is open (ADR-0028). Files are navigation
             // peers and not dated regions, so they sit outside the roll
@@ -141,15 +136,12 @@ public struct TimeRailView: View {
                                 selected: model.selectedFile == file.id && !model.showingLedger,
                                 model: model
                             )
-                            .background(GeometryReader { row in
-                                Color.clear.preference(key: FileShelfRowHeightKey.self, value: row.size.height)
-                            })
                         }
                     }
                 }
-                .onPreferenceChange(FileShelfRowHeightKey.self) { fileRowHeight = $0 > 0 ? $0 : nil }
-                .frame(maxHeight: FileShelfRow.shelfHeight(
-                    rows: model.navigationFiles.count, row: fileRowHeight ?? FileShelfRow.estimatedHeight))
+                .layoutValue(
+                    key: RailColumn.RoleKey.self,
+                    value: .shelf(cap: FileShelfRow.shelfHeight(rows: model.navigationFiles.count)))
             }
             padHeading(nodes: nodes)
             StreamNavigatorView(
@@ -163,6 +155,8 @@ public struct TimeRailView: View {
                 nodes: nodes,
                 chords: chords(for: nodes, openFileCount: model.navigationFiles.count)
             )
+            .layoutValue(
+                key: RailColumn.RoleKey.self, value: .navigator(floor: StreamNavigator.activeRowRoom(nodes)))
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
@@ -1159,15 +1153,20 @@ struct PadSortSection: Hashable {
             title: CompanionL10n.string("pad.sort.days.title"))
     }
 
-    /// The day in the title is the spoken phrase with every word raised: "3 Days Ago".
+    /// The day as a menu title names it, from its own keys on the buckets `TimeUnit.spokenLabel` reads.
+    static func titleDay(bucket: Int) -> String {
+        if bucket >= 0 { return CompanionL10n.string("pad.day.today.title") }
+        if bucket == -1 { return CompanionL10n.string("pad.day.yesterday.title") }
+        return CompanionL10n.format("pad.day.ago.title", -bucket)
+    }
+
     @MainActor static func checkpoints(of node: StreamNavigator.Node, in model: PageModel) -> PadSortSection {
         PadSortSection(
             scope: .checkpoints(dayBucket: node.bucket),
             direction: model.pads.checkpointSortDirection(
                 for: model.pads.activeID, onDate: model.dateKey(forDayBucket: node.bucket)),
             subject: CompanionL10n.format("pad.sort.checkpoints", node.spokenDay),
-            title: CompanionL10n.format(
-                "pad.sort.checkpoints.title", node.spokenDay.capitalized(with: Locale.current)))
+            title: CompanionL10n.format("pad.sort.checkpoints.title", titleDay(bucket: node.bucket)))
     }
 
     /// A checkpoint row's sort menu and actions, or nil while pads are off and the row offers none.
@@ -1199,11 +1198,89 @@ struct PadSortPicker: View {
     }
 }
 
-/// The tallest Files shelf row as laid out, so the shelf counts in drawn rows.
-private struct FileShelfRowHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
+/// The rail's column, top to bottom and leading aligned: each row at its own height, the
+/// navigator at its floor or more, and the Files shelf in what is left, up to its cap.
+struct RailColumn: Layout {
+    enum Role: Equatable, Sendable {
+        case fixed
+        case shelf(cap: CGFloat)
+        case navigator(floor: CGFloat)
+    }
+
+    struct RoleKey: LayoutValueKey {
+        static let defaultValue: Role = .fixed
+    }
+
+    var spacing: CGFloat
+
+    /// The shelf's and the navigator's heights in `room` points: the even split a stack makes,
+    /// with the shelf at most its cap, except that the navigator never drops under `floor`.
+    nonisolated static func split(
+        room: CGFloat, shelfCap: CGFloat, floor: CGFloat
+    ) -> (shelf: CGFloat, navigator: CGFloat) {
+        let room = max(0, room)
+        let navigator = min(room, max(floor, room - shelfCap, room / 2))
+        return (min(max(0, shelfCap), max(0, room - navigator)), navigator)
+    }
+
+    /// Offered no height, the stack's ideal: each row's ideal, the shelf's up to its cap, and more
+    /// only where the navigator's floor needs it.
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
+        if let height = proposal.height { return CGSize(width: width, height: height) }
+        let ideal = ProposedViewSize(width: width, height: nil)
+        var stack = gaps(subviews)
+        var fixed = gaps(subviews)
+        var floor: CGFloat = 0
+        for subview in subviews {
+            let height = subview.sizeThatFits(ideal).height
+            switch subview[RoleKey.self] {
+            case .fixed: stack += height; fixed += height
+            case .shelf(let cap): stack += min(height, cap)
+            case .navigator(let navigatorFloor): stack += height; floor = max(floor, navigatorFloor)
+            }
+        }
+        return CGSize(width: width, height: max(stack, fixed + floor))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for (subview, height) in zip(subviews, heights(width: bounds.width, height: bounds.height, subviews: subviews)) {
+            subview.place(
+                at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
+                proposal: ProposedViewSize(width: bounds.width, height: height))
+            y += height + spacing
+        }
+    }
+
+    private func gaps(_ subviews: Subviews) -> CGFloat {
+        CGFloat(max(0, subviews.count - 1)) * spacing
+    }
+
+    /// Each row's height in `height` points.
+    private func heights(width: CGFloat, height: CGFloat, subviews: Subviews) -> [CGFloat] {
+        let roles = subviews.map { $0[RoleKey.self] }
+        let fixed = zip(subviews, roles).map { subview, role in
+            role == .fixed ? subview.sizeThatFits(ProposedViewSize(width: width, height: nil)).height : 0
+        }
+        var cap: CGFloat = 0
+        var floor: CGFloat = 0
+        for role in roles {
+            switch role {
+            case .fixed: break
+            case .shelf(let shelfCap): cap += shelfCap
+            case .navigator(let navigatorFloor): floor = max(floor, navigatorFloor)
+            }
+        }
+        let taken = fixed.reduce(0, +) + gaps(subviews)
+        let split = Self.split(room: height - taken, shelfCap: cap, floor: floor)
+        return zip(roles, fixed).map { role, fixedHeight in
+            switch role {
+            case .fixed: return fixedHeight
+            case .shelf: return split.shelf
+            case .navigator: return split.navigator
+            }
+        }
     }
 }
 
@@ -1239,14 +1316,15 @@ struct FileShelfRow: View {
     let selected: Bool
     @ObservedObject var model: PageModel
 
-    /// The shelf's unit before a row has been measured; the drawn row's height replaces it.
-    nonisolated static let estimatedHeight: CGFloat = 27
+    /// A row's height, the unit the shelf counts in; its fonts and padding are fixed, so a
+    /// test compares it with the hosted row.
+    nonisolated static let height: CGFloat = 27
     /// The room between two rows on the shelf.
     nonisolated static let spacing: CGFloat = 2
 
     /// The shelf's tallest, in rows of height `row`: every row up to two, then two and a half,
     /// so a third row shows there is more to scroll to.
-    nonisolated static func shelfHeight(rows: Int, row: CGFloat) -> CGFloat {
+    nonisolated static func shelfHeight(rows: Int, row: CGFloat = height) -> CGFloat {
         let shown = min(CGFloat(max(0, rows)), 2.5)
         return shown * row + max(0, shown.rounded(.up) - 1) * spacing
     }
