@@ -575,6 +575,12 @@ if ((APP_STORE_MODE)); then
     GIT_OPTIONAL_LOCKS=0 git status --short 2>&1 | sed -n '1,20p' >&2 || true
     exit 1
   fi
+  # A build number adds only digits, so probing with 1 checks the version's part of the tag name.
+  if ! git check-ref-format "refs/tags/build/$BUILD_LANE/$VERSION-1"; then
+    echo "--app-store stops before compiling: version $VERSION (CFBundleShortVersionString in" >&2
+    echo "shell/OnetimePad-Info.plist) does not make a valid tag name for git check-ref-format." >&2
+    exit 1
+  fi
   if [[ -n "$REQUESTED_BUILD_NUMBER" ]] && ! app_store_tag_free "$REQUESTED_BUILD_NUMBER"; then
     echo "--app-store stops before compiling; choose another --build-number." >&2
     exit 1
@@ -772,8 +778,6 @@ if ((APP_STORE_MODE)); then
   # Keep the App Store build number separate from the marketing version and
   # reserve it only now, after the compile, so a broken build does not
   # spend one.
-  # A build number adds only digits, so probing with 1 checks the tag name before one is spent.
-  ref_name_ok "refs/tags/build/$BUILD_LANE/$VERSION-1" || exit 1
   reserve_app_store_build_number "$APP_STORE_BUILD_NUMBER_FILE" "$REQUESTED_BUILD_NUMBER"
   echo "==> App Store build number: $APP_STORE_BUILD_NUMBER (counter: $APP_STORE_BUILD_NUMBER_FILE)"
   # A number whose tag names another commit cannot name this build; it is left as a gap.
