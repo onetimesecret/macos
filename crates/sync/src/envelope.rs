@@ -1,8 +1,8 @@
 //! The plaintext inside a sealed delta blob (relay-protocol.md §4-5).
-//! Everything the channel replicates travels in this one shape —
-//! document ops, the expiry policy and hold register, terminal
-//! markers, and the ceremony ballots — so control and content share
-//! the stream and the relay cannot distinguish them.
+//! Everything the channel replicates travels in this one shape:
+//! document ops, sealed objects' metadata, the expiry policy and hold
+//! register, terminal markers, and the ceremony ballots. Control and
+//! content share the stream, so the relay cannot distinguish them.
 //!
 //! This module encodes and decodes strictly on the client side of the
 //! seal: the bytes it produces exist only as input to
@@ -51,6 +51,15 @@ pub enum DeltaEnvelope {
         page: String,
         /// The exported update bytes.
         ops: ByteBlob,
+    },
+    /// What a peer learns of a page's sealed objects beside its ops: each
+    /// one's identity, kind, size class and versioned name, never its value
+    /// (ADR-0058 point 5).
+    Metadata {
+        /// The page the objects stand on.
+        page: String,
+        /// At most [`METADATA_ENTRY_CAP`], one per object.
+        entries: Vec<MetadataEntry>,
     },
     /// The page's expiry policy: the policy, never the deadline
     /// (relay decision background §6, `companion_core::ExpiryPolicy`).
@@ -106,6 +115,36 @@ impl DeltaEnvelope {
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         serde_json::from_slice(bytes).ok()
     }
+}
+
+/// The most entries one [`DeltaEnvelope::Metadata`] names: a sender
+/// chunks at it, and a receiver ignores an envelope past it (ADR-0058
+/// point 5).
+pub const METADATA_ENTRY_CAP: usize = 128;
+
+/// One object in a [`DeltaEnvelope::Metadata`], as it travels; the
+/// receiver judges each field on its own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MetadataEntry {
+    /// The object's identity, 32 lowercase hex characters, as a page id is.
+    pub object: String,
+    /// `text` or `image`, when known.
+    pub kind: Option<String>,
+    /// The ledger's size class word, `tiny` to `huge`, when known.
+    pub size: Option<String>,
+    /// The versioned name; `None` for a name never set.
+    pub name: Option<NameField>,
+}
+
+/// A name and its version: the greater `(counter, writer)` wins.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NameField {
+    /// One more than the highest counter the writer knew.
+    pub counter: u64,
+    /// The writing device's fingerprint, 64 lowercase hex characters.
+    pub writer: String,
+    /// The name's UTF-8 bytes; `None` for a clear.
+    pub value: Option<ByteBlob>,
 }
 
 /// Bytes that travel as base64 inside envelope JSON, so ops and
@@ -196,6 +235,37 @@ impl<'de> Deserialize<'de> for ByteBlob {
 mod tests {
     use super::*;
 
+    const OBJECT: &str = "0123456789abcdef0123456789abcdef";
+    const WRITER: &str = "abababababababababababababababababababababababababababababababab";
+
+    /// The envelope set a build from before `Metadata` decodes.
+    #[derive(Debug, Deserialize)]
+    #[serde(tag = "kind", rename_all = "snake_case")]
+    #[expect(dead_code, reason = "only whether a shape decodes is read")]
+    enum Earlier {
+        Ops {
+            page: String,
+            ops: ByteBlob,
+        },
+        Expiry {
+            page: String,
+            anchor_wall_ms: u64,
+            ttl_ms: u64,
+        },
+        Hold {
+            page: String,
+            hold: Option<(u64, u64, bool)>,
+        },
+        Terminal {
+            page: String,
+            marker: ByteBlob,
+        },
+        Control {
+            #[serde(flatten)]
+            payload: ControlPayload,
+        },
+    }
+
     #[test]
     fn every_variant_round_trips() {
         let mut entropy = BTreeMap::new();
@@ -204,6 +274,40 @@ mod tests {
             DeltaEnvelope::Ops {
                 page: "page-1".into(),
                 ops: ByteBlob::from(vec![1, 2, 3]),
+            },
+            DeltaEnvelope::Metadata {
+                page: "page-1".into(),
+                entries: vec![
+                    MetadataEntry {
+                        object: OBJECT.into(),
+                        kind: Some("text".into()),
+                        size: Some("tiny".into()),
+                        name: Some(NameField {
+                            counter: 2,
+                            writer: WRITER.into(),
+                            value: Some(ByteBlob::from(b"DEPLOY_KEY".as_slice())),
+                        }),
+                    },
+                    MetadataEntry {
+                        object: OBJECT.into(),
+                        kind: None,
+                        size: None,
+                        name: Some(NameField {
+                            counter: 3,
+                            writer: WRITER.into(),
+                            value: None,
+                        }),
+                    },
+                ],
+            },
+            DeltaEnvelope::Metadata {
+                page: "page-1".into(),
+                entries: vec![MetadataEntry {
+                    object: OBJECT.into(),
+                    kind: Some("image".into()),
+                    size: Some("huge".into()),
+                    name: None,
+                }],
             },
             DeltaEnvelope::Expiry {
                 page: "page-1".into(),
@@ -238,6 +342,8 @@ mod tests {
         ];
         let wire = [
             r#"{"kind":"ops","page":"page-1","ops":"AQID"}"#,
+            r#"{"kind":"metadata","page":"page-1","entries":[{"object":"0123456789abcdef0123456789abcdef","kind":"text","size":"tiny","name":{"counter":2,"writer":"abababababababababababababababababababababababababababababababab","value":"REVQTE9ZX0tFWQ=="}},{"object":"0123456789abcdef0123456789abcdef","kind":null,"size":null,"name":{"counter":3,"writer":"abababababababababababababababababababababababababababababababab","value":null}}]}"#,
+            r#"{"kind":"metadata","page":"page-1","entries":[{"object":"0123456789abcdef0123456789abcdef","kind":"image","size":"huge","name":null}]}"#,
             r#"{"kind":"expiry","page":"page-1","anchor_wall_ms":1000,"ttl_ms":60000}"#,
             r#"{"kind":"hold","page":"page-1","hold":[30000,90000,false]}"#,
             r#"{"kind":"hold","page":"page-1","hold":null}"#,
@@ -321,6 +427,7 @@ mod tests {
             r#"{"kind":"ops","page":"p","ops":"c2VjcmV0!"}"#,
             r#"{"kind":"ops","page":"p","ops":"/x=="}"#,
             r#"{"kind":"ops","page":"p","ops":"c2VjcmV0""#,
+            r#"{"kind":"metadata","page":"p","entries":[{"object":"0f","name":{"counter":1,"writer":"ab","value":"c2VjcmV0!"}}]}"#,
         ] {
             assert!(DeltaEnvelope::decode(wire.as_bytes()).is_none());
         }
@@ -330,5 +437,60 @@ mod tests {
     fn an_unknown_shape_is_refused() {
         assert!(DeltaEnvelope::decode(br#"{"kind":"future_thing"}"#).is_none());
         assert!(DeltaEnvelope::decode(b"not json").is_none());
+    }
+
+    #[test]
+    fn a_build_from_before_metadata_skips_it_and_still_reads_ops() {
+        let metadata = DeltaEnvelope::Metadata {
+            page: "p".into(),
+            entries: vec![MetadataEntry {
+                object: OBJECT.into(),
+                kind: Some("text".into()),
+                size: None,
+                name: None,
+            }],
+        }
+        .encode()
+        .unwrap();
+        assert!(serde_json::from_slice::<Earlier>(&metadata).is_err());
+        let ops = DeltaEnvelope::Ops {
+            page: "p".into(),
+            ops: ByteBlob::from(vec![1]),
+        }
+        .encode()
+        .unwrap();
+        assert!(serde_json::from_slice::<Earlier>(&ops).is_ok());
+    }
+
+    #[test]
+    fn a_metadata_envelope_decodes_escapes_and_absent_fields_and_redacts_its_names() {
+        let wire = br#"{"entries":[{"name":{"value":"U0VDUkVUX05BTUU=","writer":"ab","counter":1},"object":"0f"}],"page":"p","kind":"metadata"}"#;
+        let envelope = DeltaEnvelope::decode(wire).unwrap();
+        assert_eq!(
+            envelope,
+            DeltaEnvelope::Metadata {
+                page: "p".into(),
+                entries: vec![MetadataEntry {
+                    object: "0f".into(),
+                    kind: None,
+                    size: None,
+                    name: Some(NameField {
+                        counter: 1,
+                        writer: "ab".into(),
+                        value: Some(ByteBlob::from(b"SECRET_NAME".as_slice())),
+                    }),
+                }],
+            }
+        );
+        let debug = format!("{envelope:?}");
+        assert!(!debug.contains("SECRET_NAME"));
+        assert!(!debug.contains("U0VDUkVUX05BTUU"));
+        assert!(debug.contains("[REDACTED]"));
+        let encoded = envelope.encode().unwrap();
+        assert_eq!(encoded.len(), encoded.capacity());
+        assert_eq!(
+            encoded.as_slice(),
+            br#"{"kind":"metadata","page":"p","entries":[{"object":"0f","kind":null,"size":null,"name":{"counter":1,"writer":"ab","value":"U0VDUkVUX05BTUU="}}]}"#
+        );
     }
 }

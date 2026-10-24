@@ -30,7 +30,9 @@ pub mod secret_json;
 
 mod b64;
 
-pub use envelope::{ByteBlob, ControlPayload, DeltaEnvelope};
+pub use envelope::{
+    ByteBlob, ControlPayload, DeltaEnvelope, METADATA_ENTRY_CAP, MetadataEntry, NameField,
+};
 pub use oauth::{AuthCeremony, SyncAuthError, TokenGrant, TokenKeeper};
 pub use relay::{
     AttachAnswer, DeltaBatch, FrameAnswer, PeerAttachment, PublishAnswer, RelayApi, RelayRefusal,

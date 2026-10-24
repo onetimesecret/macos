@@ -169,6 +169,9 @@ pub(crate) struct PageTracking {
     pub hold: Option<HoldRegister>,
     /// Whether this device already queued the page's terminal marker.
     pub terminal_sent: bool,
+    /// The epoch at which every metadata entry of the page was last queued;
+    /// `None` owes that restate (ADR-0058 point 5).
+    pub metadata_restated_at: Option<u64>,
 }
 
 impl PageTracking {
@@ -181,6 +184,7 @@ impl PageTracking {
             deadline_wall_ms: None,
             hold: None,
             terminal_sent: false,
+            metadata_restated_at: None,
         }
     }
 }
@@ -470,6 +474,10 @@ fn attach_in_flight(handle: &CompanionHandle) -> serde_json::Value {
                     "frame_present": engine.session.frame_present(),
                     "peers": engine.session.attach_roster().len(),
                 });
+                // ADR-0058 point 5: an attach restates every enrolled page's metadata.
+                for tracking in guard.sync.enrolled.values_mut() {
+                    tracking.metadata_restated_at = None;
+                }
                 note_reachable(&mut guard);
                 return answer;
             }
@@ -770,12 +778,16 @@ pub(crate) fn sweep_outbound(
                 let past_deadline = store.is_due(sheet);
                 if past_deadline {
                     engine.session.withdraw_ops(*page);
-                } else if let Some(version) = store.document_version(sheet)
-                    && version != tracking.frontier
-                    && let Some(update) = store.export_document_updates(sheet, &tracking.frontier)
-                {
-                    engine.session.queue_ops(*page, &update);
-                    tracking.frontier = version;
+                } else {
+                    if let Some(version) = store.document_version(sheet)
+                        && version != tracking.frontier
+                        && let Some(update) =
+                            store.export_document_updates(sheet, &tracking.frontier)
+                    {
+                        engine.session.queue_ops(*page, &update);
+                        tracking.frontier = version;
+                    }
+                    queue_page_metadata(store, engine, *page, sheet, tracking);
                 }
                 if let Some(policy) = store.expiry_policy(sheet) {
                     let deadline = policy.deadline_wall_ms();
@@ -819,6 +831,26 @@ pub(crate) fn sweep_outbound(
     }
 }
 
+/// Queue, after the page's ops, the metadata of its objects that changed, or
+/// of every object when a restate is owed at this epoch (ADR-0058 point 5).
+fn queue_page_metadata(
+    store: &mut companion_core::SheetStore<companion_core::SystemClock>,
+    engine: &mut EngineState,
+    page: ItemId,
+    sheet: SheetId,
+    tracking: &mut PageTracking,
+) {
+    let epoch = engine.chain.epoch();
+    let changed = store.take_metadata_changes(sheet);
+    let entries = if tracking.metadata_restated_at == Some(epoch) {
+        changed
+    } else {
+        tracking.metadata_restated_at = Some(epoch);
+        store.all_metadata(sheet)
+    };
+    engine.session.queue_metadata(page, &entries);
+}
+
 /// The first enrolled page held here before its deadline, the anchor of a
 /// rotation no page is owed; a page past it would refuse (Law 0001, expiry row).
 fn live_anchor(
@@ -859,8 +891,8 @@ fn hold_moved(last: Option<HoldRegister>, next: HoldRegister) -> bool {
 
 /// Move a page's export and acknowledged cursors to its rebuilt
 /// version without exporting, drop the page from any staged batch, and
-/// withdraw its unsealed ops: the rebuild travels only as the frame
-/// (client protocol §7.6).
+/// withdraw its unsealed ops and metadata, owing the metadata's restate:
+/// the rebuild travels only as the frame (client protocol §7.6).
 fn settle_frontier(
     store: &companion_core::SheetStore<companion_core::SystemClock>,
     enrolled: &mut BTreeMap<ItemId, PageTracking>,
@@ -870,8 +902,11 @@ fn settle_frontier(
 ) {
     // Ops queued before the rebuild are history from behind the boundary.
     session.withdraw_ops(page);
-    if let Some(tracking) = enrolled.get_mut(&page)
-        && let Some(sheet) = sheet_of(store, page)
+    let Some(tracking) = enrolled.get_mut(&page) else {
+        return;
+    };
+    tracking.metadata_restated_at = None;
+    if let Some(sheet) = sheet_of(store, page)
         && let Some(version) = store.document_version(sheet)
     {
         tracking.frontier = version.clone();
@@ -911,6 +946,7 @@ fn stage_publish_with(
         for (page, tracking) in &mut companion.sync.enrolled {
             if rewind_export(tracking) {
                 session.withdraw_ops(*page);
+                tracking.metadata_restated_at = None;
             }
         }
     }
@@ -924,6 +960,12 @@ fn stage_publish_with(
     for page in session.take_unencoded_ops() {
         if let Some(tracking) = companion.sync.enrolled.get_mut(&page) {
             let _ = rewind_export(tracking);
+        }
+    }
+    // Metadata that failed to encode is changed again for the next sweep (ADR-0058 point 7).
+    for (page, objects) in session.take_unencoded_metadata() {
+        if let Some(sheet) = sheet_of(&companion.store, page) {
+            companion.store.mark_metadata_dirty(sheet, &objects);
         }
     }
     let request = request?;
@@ -3697,6 +3739,451 @@ mod tests {
                 .iter()
                 .any(|event| event["kind"] == "ceremony_committed" && event["page"] == wire)
         );
+    }
+
+    /// A sealed value no envelope or relay body may contain.
+    const PAYLOAD: &str = "ghp_payload_marker_driver_5b2e";
+
+    /// One channel secret for two devices.
+    const SHARED_SECRET: &[u8; 32] = b"0123456789abcdef0123456789abcdef";
+
+    /// Two devices with one page enrolled on one chain: A sealed [`PAYLOAD`]
+    /// on it, and B adopted the page, so B stands a record with no value.
+    struct Devices {
+        a: Companion,
+        b: Companion,
+        pages: [SheetId; 2],
+        uuid: ItemId,
+        chips: [companion_core::ChipId; 2],
+        object: ItemId,
+        now_ms: u64,
+    }
+
+    impl Devices {
+        fn new() -> Self {
+            let mut a = store_companion(Arc::new(InMemoryCredentialStore::default()));
+            let page_a = inked_page(&mut a, "key: here");
+            let chip_a = a.store.seal_text_at(page_a, PAYLOAD, 5, 4).unwrap();
+            let sheet = a.store.sheet(page_a).unwrap();
+            let (uuid, object) = (sheet.uuid(), sheet.chip(chip_a).unwrap().uuid());
+            let mut b = store_companion(Arc::new(InMemoryCredentialStore::default()));
+            let page_b = b.store.new_tab().1;
+            let pristine = b.store.document_version(page_b).unwrap();
+            let full = a.store.export_document_updates(page_a, &pristine).unwrap();
+            b.store.adopt_key_frame(page_b, uuid, &full).unwrap();
+            let chip_b = b
+                .store
+                .sheet(page_b)
+                .unwrap()
+                .chips()
+                .find(|chip| chip.uuid() == object)
+                .unwrap()
+                .id();
+            for (device, page) in [(&mut a, page_a), (&mut b, page_b)] {
+                let fingerprint = pairing::device_fingerprint(&*device.credentials).unwrap();
+                device.store.set_writer(writer_of(&fingerprint).unwrap());
+                let mut engine = attached_engine(&*device.credentials);
+                engine.chain = GopKeyChain::root(SHARED_SECRET).unwrap();
+                device.sync.engine = Some(engine);
+                assert!(enrol_page(device, page, true));
+            }
+            Self {
+                a,
+                b,
+                pages: [page_a, page_b],
+                uuid,
+                chips: [chip_a, chip_b],
+                object,
+                now_ms: 0,
+            }
+        }
+
+        /// The record standing the object on device `i` (A is 0, B is 1).
+        fn record(&self, i: usize) -> &companion_core::SealedChip {
+            let device = [&self.a, &self.b][i];
+            device
+                .store
+                .sheet(self.pages[i])
+                .unwrap()
+                .chips()
+                .find(|chip| chip.uuid() == self.object)
+                .unwrap()
+        }
+
+        /// Both devices sweep and publish, in that order, at the next tick.
+        fn publish_both(&mut self) -> [ots_client::HttpRequest; 2] {
+            let now_ms = self.now_ms;
+            self.now_ms += 2_000;
+            [&mut self.a, &mut self.b].map(|device| publish_swept(device, now_ms))
+        }
+    }
+
+    /// Sweep `device` and stage its publish, which the relay then takes.
+    fn publish_swept(device: &mut Companion, now_ms: u64) -> ots_client::HttpRequest {
+        let mut events = Vec::new();
+        sweep_outbound(device, now_ms, &mut events);
+        let request = stage_publish(device, now_ms).expect("a batch to publish");
+        assert_eq!(absorb_publish_locked(device, &accepted()), Some(Ok(())));
+        request
+    }
+
+    /// Hand `request`'s blobs to `device` as one long poll: its events as the
+    /// shell reads them.
+    fn deliver(
+        device: &mut Companion,
+        request: &ots_client::HttpRequest,
+    ) -> Vec<serde_json::Value> {
+        let mut body: serde_json::Value =
+            serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        body["next_seq"] = 1.into();
+        let response = HttpResponse {
+            status: 200,
+            body: body.to_string().into_bytes(),
+        };
+        let Companion { store, sync, .. } = device;
+        let EngineState {
+            session,
+            chain,
+            packages,
+            pending_packages,
+            ..
+        } = sync.engine.as_mut().unwrap();
+        let absorbed = session
+            .absorb_deltas(&response, store, chain, packages, pending_packages, &[], 0)
+            .unwrap();
+        absorbed
+            .iter()
+            .map(|event| event_json(event, store))
+            .collect()
+    }
+
+    /// Whether `bytes` contain [`PAYLOAD`].
+    fn contains_payload(bytes: &[u8]) -> bool {
+        bytes
+            .windows(PAYLOAD.len())
+            .any(|window| window == PAYLOAD.as_bytes())
+    }
+
+    #[test]
+    fn a_rename_reaches_the_peer_s_record_with_no_value_and_alone_is_an_arrival() {
+        let mut devices = Devices::new();
+        let wire = crate::sync_session::page_wire_id(devices.uuid);
+        let [first, _] = devices.publish_both();
+        let events = deliver(&mut devices.b, &first);
+        assert!(matches!(
+            devices.record(1).availability(),
+            companion_core::Availability::Peer {
+                kind: Some(companion_core::PeerKind::Text),
+                size: Some(companion_core::SizeClass::Tiny)
+            }
+        ));
+        assert_eq!(devices.record(1).name(), None);
+        assert!(events.iter().any(|event| event["kind"] == "applied"));
+
+        devices
+            .a
+            .store
+            .set_chip_name(devices.chips[0], "DEPLOY_KEY")
+            .unwrap();
+        let renamed = publish_swept(&mut devices.a, devices.now_ms);
+        let chain = &devices.a.sync.engine.as_ref().unwrap().chain;
+        let sealed = opened_envelopes(chain, &renamed);
+        assert!(
+            sealed
+                .iter()
+                .all(|envelope| matches!(envelope, DeltaEnvelope::Metadata { .. })),
+            "a rename is metadata alone: {sealed:?}"
+        );
+        let events = deliver(&mut devices.b, &renamed);
+        assert_eq!(
+            events,
+            [serde_json::json!({
+                "kind": "applied", "page": wire, "page_id": devices.pages[1].raw()
+            })]
+        );
+        let record = devices.record(1);
+        assert!(!record.is_local());
+        assert_eq!(record.name(), Some("DEPLOY_KEY"));
+
+        // The payload boundary: no request body and no envelope contains the value.
+        for request in [&first, &renamed] {
+            assert!(!contains_payload(request.body.as_ref().unwrap()));
+            for envelope in opened_envelopes(chain, request) {
+                assert!(!contains_payload(&envelope.encode().unwrap()));
+            }
+        }
+    }
+
+    #[test]
+    fn concurrent_renames_on_two_devices_converge_after_an_exchange_in_both_orders() {
+        for a_first in [true, false] {
+            let mut devices = Devices::new();
+            let [from_a, from_b] = devices.publish_both();
+            deliver(&mut devices.b, &from_a);
+            deliver(&mut devices.a, &from_b);
+
+            devices
+                .a
+                .store
+                .set_chip_name(devices.chips[0], "ALPHA_NAME")
+                .unwrap();
+            devices
+                .b
+                .store
+                .set_chip_name(devices.chips[1], "BETA_NAME")
+                .unwrap();
+            let [from_a, from_b] = devices.publish_both();
+            if a_first {
+                deliver(&mut devices.b, &from_a);
+                deliver(&mut devices.a, &from_b);
+            } else {
+                deliver(&mut devices.a, &from_b);
+                deliver(&mut devices.b, &from_a);
+            }
+            // Equal counters fall to the greater writer.
+            let winner = if devices.a.store.writer() > devices.b.store.writer() {
+                "ALPHA_NAME"
+            } else {
+                "BETA_NAME"
+            };
+            assert_eq!(devices.record(0).name(), Some(winner));
+            assert_eq!(devices.record(1).name(), Some(winner));
+            assert_eq!(
+                devices.record(0).name_version(),
+                devices.record(1).name_version()
+            );
+        }
+    }
+
+    /// The objects each queued `Metadata` envelope for `page` names.
+    fn queued_metadata(companion: &Companion, page: ItemId) -> Vec<Vec<String>> {
+        let wire = crate::sync_session::page_wire_id(page);
+        let session = &companion.sync.engine.as_ref().unwrap().session;
+        session
+            .queued()
+            .iter()
+            .filter_map(|envelope| match envelope {
+                DeltaEnvelope::Metadata { page, entries } if *page == wire => {
+                    Some(entries.iter().map(|entry| entry.object.clone()).collect())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Seal [`PAYLOAD`] over the word at `at_u16` of `page`: its object.
+    fn seal_word(companion: &mut Companion, page: SheetId, at_u16: u32, len_u16: u32) -> ItemId {
+        let chip = companion
+            .store
+            .seal_text_at(page, PAYLOAD, at_u16, len_u16)
+            .unwrap();
+        companion
+            .store
+            .sheet(page)
+            .unwrap()
+            .chip(chip)
+            .unwrap()
+            .uuid()
+    }
+
+    #[test]
+    fn a_metadata_envelope_the_encoder_refuses_leaves_the_ops_published_and_goes_next_sweep() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "key: here");
+        let object = seal_word(&mut companion, page, 5, 4);
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let wire = crate::sync_session::page_wire_id(uuid);
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert_eq!(queued_metadata(&companion, uuid).len(), 1);
+
+        let refuse = |envelope: &DeltaEnvelope| match envelope {
+            DeltaEnvelope::Metadata { .. } => None,
+            _ => envelope.encode().ok(),
+        };
+        let request = stage_publish_with(&mut companion, 0, |session, now_ms, chain| {
+            session.publish_request_with(now_ms, chain.epoch(), refuse, |plaintext| {
+                chain.seal(plaintext)
+            })
+        })
+        .expect("the page's ops");
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        let sealed = opened_envelopes(chain, &request);
+        assert!(
+            sealed
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Ops { page, .. } if *page == wire))
+        );
+        assert!(
+            !sealed
+                .iter()
+                .any(|e| matches!(e, DeltaEnvelope::Metadata { .. }))
+        );
+        assert!(queued_metadata(&companion, uuid).is_empty());
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        let request = stage_publish(&mut companion, 2_000).expect("the metadata again");
+        let chain = &companion.sync.engine.as_ref().unwrap().chain;
+        let object = crate::sync_session::page_wire_id(object);
+        assert!(opened_envelopes(chain, &request).iter().any(|e| matches!(
+            e,
+            DeltaEnvelope::Metadata { page, entries }
+                if *page == wire && entries.iter().any(|entry| entry.object == object)
+        )));
+    }
+
+    #[test]
+    fn a_page_past_its_deadline_queues_no_metadata_and_withdraws_what_was_queued() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let uuid = short_lived_page(&mut companion, "key: here");
+        let page = companion.store.sheet_id_of(uuid).unwrap();
+        let object = seal_word(&mut companion, page, 5, 4);
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert_eq!(
+            queued_metadata(&companion, uuid).len(),
+            1,
+            "queued, not sealed"
+        );
+
+        // Past its deadline, with a restate owed and the object changed again.
+        age_by(&mut companion, THREE_HOURS_MS);
+        let page = companion.store.sheet_id_of(uuid).expect("no sweep took it");
+        assert!(companion.store.is_due(page));
+        companion
+            .sync
+            .enrolled
+            .get_mut(&uuid)
+            .unwrap()
+            .metadata_restated_at = None;
+        companion.store.mark_metadata_dirty(page, &[object]);
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert!(queued_metadata(&companion, uuid).is_empty());
+    }
+
+    #[test]
+    fn an_enrolment_restates_every_entry_once_and_an_epoch_move_restates_again() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "one two");
+        let objects = [
+            seal_word(&mut companion, page, 4, 3),
+            seal_word(&mut companion, page, 0, 3),
+        ];
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let due = inked_page(&mut companion, "the page that comes due");
+        let due_tab = companion.store.tabs().last().unwrap().id();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        assert!(enrol_page(&mut companion, due, true));
+        let mut every: Vec<String> = objects
+            .iter()
+            .map(|object| crate::sync_session::page_wire_id(*object))
+            .collect();
+        every.sort();
+        let restated = |companion: &Companion| {
+            let mut queued = queued_metadata(companion, uuid);
+            for objects in &mut queued {
+                objects.sort();
+            }
+            queued
+        };
+
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert_eq!(restated(&companion), [every.clone()]);
+        assert!(!staged_envelopes(&mut companion, 0).is_empty());
+        let engine = companion.sync.engine.as_mut().unwrap();
+        engine.session.absorb_publish(&accepted()).unwrap();
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert!(restated(&companion).is_empty(), "nothing changed since");
+
+        // A solo rotation moves the channel to epoch 1; the next sweep restates.
+        companion.store.cycle_rung(due_tab).unwrap();
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        assert_eq!(companion.sync.engine.as_ref().unwrap().chain.epoch(), 1);
+        assert!(restated(&companion).is_empty());
+        sweep_outbound(&mut companion, 6_000, &mut events);
+        assert_eq!(restated(&companion), [every]);
+    }
+
+    #[test]
+    fn metadata_a_stale_batch_drop_withdraws_is_restated_at_the_next_sweep() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "key: here");
+        let object = seal_word(&mut companion, page, 5, 4);
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let due = inked_page(&mut companion, "the page that comes due");
+        let due_tab = companion.store.tabs().last().unwrap().id();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        assert!(enrol_page(&mut companion, due, true));
+
+        // A batch sealed at epoch 0 hears no answer, and the channel rotates.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(stage_publish(&mut companion, 0).is_some());
+        companion.store.cycle_rung(due_tab).unwrap();
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        assert_eq!(companion.sync.engine.as_ref().unwrap().chain.epoch(), 1);
+        sweep_outbound(&mut companion, 3_000, &mut events);
+        assert_eq!(
+            queued_metadata(&companion, uuid).len(),
+            1,
+            "the epoch's restate"
+        );
+
+        // Dropping the stale batch withdraws the page's queue, restate and all.
+        assert!(stage_publish(&mut companion, 4_000).is_none());
+        assert!(queued_metadata(&companion, uuid).is_empty());
+        sweep_outbound(&mut companion, 6_000, &mut events);
+        assert_eq!(
+            queued_metadata(&companion, uuid),
+            [vec![crate::sync_session::page_wire_id(object)]]
+        );
+    }
+
+    #[test]
+    fn metadata_a_settle_withdraws_is_restated_at_the_next_sweep() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "key: here");
+        let object = seal_word(&mut companion, page, 5, 4);
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let tab = companion.store.tabs().next().unwrap().id();
+        companion.store.cycle_rung(tab).unwrap();
+
+        // A solo commit whose frame seal refuses twice: each sweep settles the page.
+        let mut events = Vec::new();
+        for now_ms in [0, 2_000] {
+            let engine = companion.sync.engine.as_mut().unwrap();
+            engine.chain.refuse_next_seal();
+            sweep_outbound(&mut companion, now_ms, &mut events);
+        }
+        assert_eq!(companion.sync.engine.as_ref().unwrap().chain.epoch(), 1);
+        assert_eq!(queued_metadata(&companion, uuid).len(), 1);
+
+        // The frame seals; its settle withdraws that restate, and the loop restates.
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        assert_eq!(
+            queued_metadata(&companion, uuid),
+            [vec![crate::sync_session::page_wire_id(object)]]
+        );
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(engine.session.take_frame().is_some(), "the frame sealed");
     }
 
     fn mailbox_response(messages: &[serde_json::Value], next_seq: u64) -> HttpResponse {
