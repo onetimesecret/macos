@@ -1,6 +1,6 @@
 [package]
 name = "companion-ffi"
-version = "0.43.3"
+version = "0.44.0"
 description = "The C-ABI seam for the Onetime Secret macOS companion: the only crate a non-Rust shell may call. Hands out opaque handles and non-secret JSON — never plaintext."
 publish = false
 edition.workspace = true
@@ -24,6 +24,8 @@ test-util = ["companion-core/test-util"]
 base64 = "0.22"
 companion-core = { path = "../core" }
 companion-credentials = { path = "../credentials" }
+# The preview's Markdown reader, reached by companion_markdown_parse_json.
+companion-markdown = { path = "../markdown" }
 companion-pasteboard = { path = "../pasteboard" }
 companion-sync = { path = "../sync" }
 companion-transport = { path = "../transport" }

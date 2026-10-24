@@ -33,6 +33,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use companion_credentials::{CredentialStore, credential_store_for, default_credential_store};
+use companion_markdown::{Dialect, Document, Limits, ParseError};
 use conceal::{ConcealOpts, Concealed, Connection, Wire, conceal};
 use ots_client::Transport as _;
 
@@ -255,6 +256,78 @@ where
         detector(input).map_or(ptr::null_mut(), |slug| into_c_string(slug.to_owned()))
     })
     .unwrap_or(ptr::null_mut())
+}
+
+/// The dialect code `companion_markdown_parse_json` reads: 0 `CommonMark`, 1 GFM.
+fn markdown_dialect(code: c_int) -> Option<Dialect> {
+    match code {
+        0 => Some(Dialect::CommonMark),
+        1 => Some(Dialect::Gfm),
+        _ => None,
+    }
+}
+
+/// Read `len` bytes of UTF-8 page text as Markdown for the preview, without a
+/// handle (issue 332). `objects` are the UTF-16 offsets of the U+FFFC that are
+/// sealed objects, ascending; `(NULL, 0)` is none. Returns the document JSON or
+/// `{"error": refusal}`, freed with [`companion_string_free`]; null for null
+/// text, text that is not UTF-8, a bad `objects` or an unknown dialect.
+///
+/// # Safety
+/// `text` must be non-null and readable for `len` bytes until return, and a
+/// non-null `objects` readable for `objects_len` offsets.
+#[unsafe(no_mangle)]
+// The preview's three limits cross as plain integers.
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn companion_markdown_parse_json(
+    text: *const c_char,
+    len: usize,
+    objects: *const usize,
+    objects_len: usize,
+    dialect: c_int,
+    maximum_input_scalars: usize,
+    maximum_depth: usize,
+    maximum_table_cells: u64,
+) -> *mut c_char {
+    let Some(dialect) = markdown_dialect(dialect) else {
+        return ptr::null_mut();
+    };
+    if text.is_null()
+        || len > isize::MAX.unsigned_abs()
+        || objects_len > isize::MAX.unsigned_abs() / size_of::<usize>()
+        || (objects_len != 0 && (objects.is_null() || !objects.is_aligned()))
+    {
+        return ptr::null_mut();
+    }
+    let limits = Limits {
+        maximum_input_scalars,
+        maximum_depth,
+        maximum_table_cells,
+    };
+    // A scalar is at most four UTF-8 bytes, so a longer text is over the limit unread.
+    if maximum_input_scalars
+        .checked_mul(4)
+        .is_some_and(|most| len > most)
+    {
+        return markdown_parse_owned(|| Err(ParseError::InputLimit));
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(text.cast::<u8>(), len) };
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return ptr::null_mut();
+    };
+    let objects = if objects_len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(objects, objects_len) }
+    };
+    markdown_parse_owned(|| companion_markdown::parse_with_objects(text, objects, dialect, limits))
+}
+
+fn markdown_parse_owned<F>(parse: F) -> *mut c_char
+where
+    F: FnOnce() -> Result<Document, ParseError> + std::panic::UnwindSafe,
+{
+    std::panic::catch_unwind(|| content_json::markdown_json(parse())).unwrap_or(ptr::null_mut())
 }
 
 /// Create a handle; the caller frees it with [`companion_free`].
@@ -3997,6 +4070,178 @@ mod tests {
         for thread in threads {
             thread.join().expect("detection thread panicked");
         }
+    }
+
+    const COMMONMARK: c_int = 0;
+    const GFM: c_int = 1;
+
+    /// `text` read through the seam with `objects` at every U+FFFC, under `limits`.
+    fn parse_markdown(text: &str, dialect: c_int, limits: Limits) -> *mut c_char {
+        let objects = fffc_offsets(text);
+        unsafe {
+            companion_markdown_parse_json(
+                text.as_ptr().cast(),
+                text.len(),
+                objects.as_ptr(),
+                objects.len(),
+                dialect,
+                limits.maximum_input_scalars,
+                limits.maximum_depth,
+                limits.maximum_table_cells,
+            )
+        }
+    }
+
+    /// The UTF-16 offset of every U+FFFC in `text`.
+    fn fffc_offsets(text: &str) -> Vec<usize> {
+        let mut offset = 0;
+        let mut objects = Vec::new();
+        for scalar in text.chars() {
+            if scalar == '\u{FFFC}' {
+                objects.push(offset);
+            }
+            offset += scalar.len_utf16();
+        }
+        objects
+    }
+
+    #[test]
+    fn markdown_parse_returns_the_crates_document_json_for_each_dialect() {
+        for text in [
+            "",
+            "# Title\n\nsee \u{FFFC} and *more*\r\n",
+            "| a | b |\n| - | - |\n| \u{FFFC} | d |\n",
+            "- [x] done\n- \u{FFFC}\n\n<b>\0raw</b>",
+        ] {
+            let objects = fffc_offsets(text);
+            for (code, dialect) in [(COMMONMARK, Dialect::CommonMark), (GFM, Dialect::Gfm)] {
+                let expected = serde_json::to_string(
+                    &companion_markdown::parse_with_objects(
+                        text,
+                        &objects,
+                        dialect,
+                        Limits::default(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+                let json = unsafe { take_json(parse_markdown(text, code, Limits::default())) };
+                assert_eq!(json, expected, "{text:?} {dialect:?}");
+                let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+                assert_eq!(value["atoms"].as_array().unwrap().len(), objects.len());
+            }
+        }
+        let table = "| a |\n| - |\n";
+        let read = |code| unsafe { take_json(parse_markdown(table, code, Limits::default())) };
+        assert!(read(GFM).contains("\"table\""));
+        assert!(!read(COMMONMARK).contains("\"table\""));
+    }
+
+    #[test]
+    fn markdown_parse_names_each_refusal_the_page_can_reach() {
+        let refusal = |text: &str, limits| unsafe { take_json(parse_markdown(text, GFM, limits)) };
+        let ample = Limits::default();
+        for (text, limits, expected) in [
+            (
+                "123456",
+                Limits {
+                    maximum_input_scalars: 5,
+                    ..ample
+                },
+                r#"{"error":{"inputLimit":{}}}"#,
+            ),
+            (
+                "**a *b***",
+                Limits {
+                    maximum_depth: 1,
+                    ..ample
+                },
+                r#"{"error":{"depthLimit":{}}}"#,
+            ),
+            (
+                "|a|b|\n|-|-|",
+                Limits {
+                    maximum_table_cells: 1,
+                    ..ample
+                },
+                r#"{"error":{"tableCellLimit":{}}}"#,
+            ),
+        ] {
+            assert_eq!(refusal(text, limits), expected, "{text:?}");
+        }
+        let crowded = format!("\u{108000}{}", "\u{FFFC}".repeat(40_000));
+        assert_eq!(
+            refusal(&crowded, ample),
+            r#"{"error":{"noPlaceholderWindow":{}}}"#
+        );
+        let at = [1_usize];
+        let off = unsafe {
+            companion_markdown_parse_json(c"ab".as_ptr(), 2, at.as_ptr(), 1, GFM, 5, 1, 1)
+        };
+        assert_eq!(
+            unsafe { take_json(off) },
+            r#"{"error":{"objectOffset":{}}}"#
+        );
+
+        // Four bytes a scalar at most: a longer text is refused before it is read.
+        let unread = ptr::NonNull::<c_char>::dangling().as_ptr();
+        let over =
+            unsafe { companion_markdown_parse_json(unread, 21, ptr::null(), 0, GFM, 5, 1, 1) };
+        assert_eq!(unsafe { take_json(over) }, r#"{"error":{"inputLimit":{}}}"#);
+    }
+
+    #[test]
+    fn markdown_refusals_the_page_cannot_reach_keep_their_json() {
+        for (error, expected) in [
+            (
+                ParseError::ParserFailure,
+                r#"{"error":{"parserFailure":{}}}"#,
+            ),
+            (
+                ParseError::DuplicateObject("3".into()),
+                r#"{"error":{"duplicateObject":{"_0":"3"}}}"#,
+            ),
+        ] {
+            let json = unsafe { take_json(content_json::markdown_json(Err(error))) };
+            assert_eq!(json, expected);
+        }
+    }
+
+    #[test]
+    fn markdown_parse_refuses_bad_arguments_with_null() {
+        let text = "a \u{FFFC}";
+        let at = [2_usize];
+        let parse = |text: *const c_char, len, objects: *const usize, count, dialect| unsafe {
+            companion_markdown_parse_json(text, len, objects, count, dialect, 100, 8, 100)
+        };
+        let ok = text.as_ptr().cast::<c_char>();
+        assert!(unsafe { take_json(parse(ok, text.len(), at.as_ptr(), 1, GFM)) }.contains("atoms"));
+
+        assert!(parse(ptr::null(), 0, ptr::null(), 0, GFM).is_null());
+        assert!(parse(ptr::null(), 1, ptr::null(), 0, GFM).is_null());
+        let not_utf8 = [b'a', 0xff, b'b'];
+        assert!(parse(not_utf8.as_ptr().cast(), 3, ptr::null(), 0, GFM).is_null());
+        for dialect in [-1, 2, c_int::MAX] {
+            assert!(parse(ok, text.len(), at.as_ptr(), 1, dialect).is_null());
+        }
+        assert!(parse(ok, text.len(), ptr::null(), 1, GFM).is_null());
+        let misaligned = at.as_ptr().cast::<u8>().wrapping_add(1).cast::<usize>();
+        assert!(parse(ok, text.len(), misaligned, 1, GFM).is_null());
+        let none = unsafe { take_json(parse(ok, text.len(), misaligned, 0, GFM)) };
+        assert!(none.contains(r#""atoms":[]"#), "no objects reads none");
+
+        // Lengths no allocation can have are refused before either pointer is read.
+        let unread = ptr::NonNull::<usize>::dangling().as_ptr();
+        let unbounded = |len, count| unsafe {
+            companion_markdown_parse_json(ok, len, unread, count, GFM, usize::MAX, 8, 100)
+        };
+        assert!(unbounded(usize::MAX, 0).is_null());
+        assert!(unbounded(text.len(), usize::MAX / 2).is_null());
+    }
+
+    #[test]
+    fn markdown_parse_contains_panics() {
+        assert!(markdown_parse_owned(|| panic!("synthetic parser panic")).is_null());
     }
 
     /// A fresh tab and its page, as `(tab, page)`.
