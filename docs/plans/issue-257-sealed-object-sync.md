@@ -58,7 +58,7 @@ New #257 code uses these owners:
 | `crates/core/src/transfer.rs:422, 503` | `resolve` may clone any live record; `terminal_cause` reads the ledger | A record with no value moves by identity and never clones; a clone places the unavailable placeholder with its cause |
 | `crates/core/src/store.rs:1455` and the value routes | Copy, Name=Value, link, drag, conceal read the bytes | Each refuses a record with no value in the core |
 | `crates/sync/src/envelope.rs:46` | Ops, Expiry, Hold, Terminal, Control | Adds `Metadata` and `NoteOps` |
-| `crates/ffi/src/sync_driver.rs`, `sync_session.rs` | One cursor per page; frame is the raw page rebuild | Note cursors; metadata dirty set and restate; a versioned frame with note rebuilds and metadata |
+| `crates/ffi/src/sync_driver.rs`, `sync_session.rs` | One cursor per page; frame is the raw page rebuild | Note cursors; metadata dirty set and restate; a versioned frame (`OTSFRM02`) with each standing note's rebuild and no metadata, which reaches a joiner by the restate at each new epoch |
 | `shell/Sources/CompanionKit/CompanionClient.swift:462` `ChipInfo` | Kind, excerpt, size label | Adds availability; the face, menu, drag handle and page conceal read it |
 
 ## 4. Increments

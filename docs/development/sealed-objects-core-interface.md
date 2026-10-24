@@ -21,6 +21,13 @@ The looks and words are in the
 [sealed row, note and handles](../spec/feature/sealed-content/sealed-row-note-and-handles.md)
 spec.
 
+A record whose value is on another device, a name's version, the
+metadata a peer learns and a note's shared history (issue #257) follow
+proposed
+[ADR-0058](../adr/0058-a-sealed-object-never-stalls-a-pages-sync.md),
+which is not accepted; the parts below that cite it map the code, not
+an accepted decision.
+
 These notes were first written into the drafts ADR-0043 to ADR-0054 of
 2026-10-13, withdrawn on 2026-10-14 without ratification.
 Where this file and the code disagree, the code is right and this file
@@ -29,19 +36,26 @@ is fixed.
 ## The pieces, and where they live
 
 ```
-crates/core/src/sheet.rs      SealedChip (name, note), judge_name, NAME_CAP,
+crates/core/src/sheet.rs      SealedChip (availability, name, note),
+                              Availability, PeerKind, judge_name, NAME_CAP,
                               Sheet::is_due
-crates/core/src/note.rs       the note's own document and undo
+crates/core/src/note.rs       the note's own document and undo, its sync
+                              routes and their waiting cache
+crates/core/src/metadata.rs   NameVersion, ObjectMetadata, the metadata
+                              routes and their waiting cache
+crates/core/src/frame.rs      the key frame, OTSFRM02
 crates/core/src/store.rs      set_chip_name, copy_out_name_value, the note's
-                              routes, readable_sheets, chip_stands
+                              routes, readable_sheets, chip_stands, a peer's
+                              batch admitted (admit), take_restated_pages
 crates/core/src/fragment.rs   the envelope and the public text, VERSION,
                               ENVELOPE_CAP, REFERENCE_CAP, EnvelopeCap
 crates/core/src/transfer.rs   cut, paste, the slot, the drags, resolution,
                               the transaction
-crates/core/src/persist.rs    the chip record's and page record's trailing
-                              fields, the ledger's destination tags
-crates/ffi/src/lib.rs         the C entry points below, chip_face,
-                              placed_json
+crates/core/src/persist.rs    OTSSNAP5, the chip record's availability tag,
+                              the chip and page records' trailing fields,
+                              the ledger's destination tags
+crates/ffi/src/lib.rs         the C entry points below, placed_json
+crates/ffi/src/content_json.rs  chip_face
 crates/pasteboard/src/macos.rs  SystemDragItem, the decrypted drag's write
 
 shell/Sources/CompanionKit/CompanionClient.swift  the wrappers, the type name
@@ -67,7 +81,27 @@ is refused whole and the name stands.
 | Entry point | Answer |
 | --- | --- |
 | `companion_chip_name_refusal(draft) -> u32` | judges a draft without a handle: 0 takes it, an empty draft clearing; 1 is longer than 64 characters; 2 is outside the charset; null and non-UTF-8 answer 2 |
-| `companion_chip_set_name(handle, chip, name) -> bool` | false for an unknown chip, a page past its deadline or a refused draft, the name then unchanged |
+| `companion_chip_set_name(handle, chip, name) -> bool` | false for an unknown chip, a page past its deadline, a refused draft or a spent version, the name then unchanged |
+
+Each write takes a version, `NameVersion` in `metadata.rs`: a counter
+one more than the highest known for that name, then the writing
+device's fingerprint, 32 bytes, compared in that order
+(`name_versions_order_by_counter_then_writer_bytes`,
+`a_local_rename_after_a_received_higher_counter_takes_one_more`). A
+clear is a versioned empty name
+(`a_clear_beats_an_older_name_and_loses_to_a_newer_one`), a rename to
+the name already set takes no version (code reading), and a counter
+that cannot grow refuses the rename and nothing else
+(`NameRefusal::VersionsSpent`,
+`a_spent_version_refuses_the_rename_and_nothing_else`). A name restored
+from `OTSSNAP4` has no version and compares as counter 0 under this
+device's writer
+(`a_name_from_before_versions_restates_at_counter_zero_and_any_rename_passes_it`).
+The writer is zero until `companion_sync_configure` sets it from the
+identity at rest, minting none, or `ensure_engine` from the engine's
+(`lib.rs`
+`configuring_sync_names_the_identity_at_rest_as_the_name_writer_and_mints_none`,
+`sync_driver.rs` `starting_the_engine_names_the_device_as_the_name_writer`).
 
 The shell owns the words for each code, so a field can say why a draft
 will not take while it is typed. It marks the page dirty after a name is
@@ -104,18 +138,187 @@ rests as its text until an edit). `has_note` is true while it has a
 character that is not whitespace
 (`store.rs` `a_note_of_only_whitespace_opens_no_doorway`).
 
+Since issue #257 a note's history is shared with its peers (proposed
+ADR-0058 point 6: "A note is a Loro text with a history of its own.").
+Its sync routes are the store's own, in `note.rs`, keyed by page and the
+object's identity rather than a chip id, and no C entry point reaches
+them:
+
+- `notes_on(page)`: each record on the page, attached and detached,
+  that has a note.
+- `note_version(page, object)`: the note's version, opaque bytes; it
+  takes `&mut self`, since a note with no operation log has no version
+  until its document is made.
+- `export_note_updates(page, object, since)`: the note's operations past
+  `since`, plaintext for the seam to seal.
+- `apply_remote_note_update(page, object, bytes)`: merges a peer's batch
+  into the note on the page with that cross-device identity, never its
+  body, roster or ledger, a record with no note taking an empty one
+  first, and leaves the note's own undo steps as they were. It refuses
+  `Malformed`, `MissingHistory` and `NestedObject`, a batch that would
+  stand a sealed object in the note, each leaving the note as it was.
+
+Past its deadline a page gives and takes no note
+(`a_page_past_its_deadline_gives_no_note_and_takes_none`). A batch for
+an object with no record on its page waits in `note_pending`, the
+oldest going while the held bytes would pass 256 KiB
+(`PENDING_NOTE_BYTES`), one batch past the bound alone not kept, until
+the record arrives; a page's end drops what it held (code reading). A
+standing record's note compacts with its page under a fresh peer id, and a
+detached record's keeps its history. When a value moves into a
+standing record, the two notes merge if their histories share a base
+(`Note::merge_shared`), and otherwise the standing note stays. A clone's note starts a history
+of its own. Tests in `note.rs`:
+`two_devices_editing_one_note_converge_in_either_delivery_order`,
+`a_peers_note_edit_leaves_the_local_steps_as_they_were`,
+`missing_history_and_bad_bytes_are_refused_and_leave_the_note_as_it_was`,
+`a_note_batch_standing_an_object_is_refused_and_moves_nothing`,
+`a_note_batch_before_its_record_waits_and_applies_when_it_arrives`,
+`the_waiting_cache_evicts_its_oldest_past_256_kib`,
+`compaction_sheds_deleted_note_text_under_a_fresh_peer`,
+`a_detached_records_note_keeps_its_history_through_its_pages_compaction`,
+`a_value_moving_onto_a_record_whose_note_shares_its_base_merges_both_sides`,
+`a_value_moving_onto_a_record_with_no_shared_base_keeps_the_standing_note_once`,
+`a_clones_note_starts_a_history_of_its_own`.
+
 ## What the shell receives
 
-The chip face (`chip_face` in `lib.rs`), which the seal routes and
-`companion_sheet_document_json` both send, carries `chip_id`, `kind`
-(`text` or `image`), `excerpt`, `size_label`, `concealed`, `name` (a
-string or null) and `has_note`. Swift reads them as `ChipInfo`.
+The chip face (`chip_face` in `content_json.rs`), which the seal routes
+and `companion_sheet_document_json` both send, has `available` (false
+when the value is on another device), `chip_id`, `kind` (`text` or
+`image`, or `unknown` for a record with no value not yet told),
+`excerpt` (empty for a record with no value), `size_label` (its told
+size class, or empty), `concealed`, `name` (a string or null) and
+`has_note` (`lib.rs`
+`a_record_with_no_value_crosses_as_a_face_alone_and_every_value_route_refuses_it`).
+Swift reads them as `ChipInfo`, whose `available` reads true when the
+field is absent.
 
 The note's text crosses only through `companion_chip_note_runs_json`. No
 summary, meta, blocks or ledger output carries the name or the note, and
 neither conceal payload, one chip's or a whole page's, includes them
 (`lib.rs` `a_name_and_a_note_reach_no_ledger_record_and_no_other_output`,
 `store.rs` `a_name_and_a_note_are_never_payload`).
+
+## A record with no value
+
+Proposed ADR-0058 point 1: "A batch or key frame that stands an
+identity the page does not own creates a record with no value for it
+before the page settles." `SealedChip.availability` (`sheet.rs`) is
+`Availability::Local(LocalValue)`, the bytes, their meta, the excerpt,
+the size label and any conceal receipt, or `Availability::Peer { kind,
+size }`, each `None` until the device with the value tells it (Metadata,
+below). For a peer record `meta()` is `None`, `excerpt()` is empty,
+`size_label()` is the told size class or empty, and `duplicate()` is
+`None`, so nothing clones it.
+
+For each identity a batch or key frame stands that the page lacks,
+`apply_remote_update` and `adopt_key_frame` move in the record another
+page here keeps detached, or else stand a record with no value, and
+take out a standing whose end this device's ledger records
+(`store.rs` `a_remote_chip_the_page_does_not_own_admits_as_a_record_with_no_value`,
+`a_key_frame_standing_an_unknown_identity_admits_a_record_with_no_value`,
+`a_burned_identity_a_peer_stands_again_is_taken_out_and_the_peer_converges`).
+A value whose record detaches, or whose page ends, while a record with
+no value for it stands on another page here moves into that record,
+under the standing record's chip id
+(`a_source_page_that_ends_leaves_its_value_on_the_page_that_stands_it`,
+`a_value_standing_on_two_other_pages_moves_to_the_first_in_page_order_only`);
+`moved_chips` maps the value's old id to that one for `record_sent` and
+`mark_chip_concealed` alone, at most 64 entries, never persisted
+(`a_moved_id_follows_every_move_until_64_newer_push_it_out`,
+`a_restore_forgets_moved_ids_since_it_mints_chip_ids_afresh`). A page
+these moves change, other than the one the route names, is listed for
+`companion_take_restated_pages_json`, which the shell drains at the top
+of each refresh
+(`lib.rs` `a_page_another_page_s_edit_or_burn_restated_is_drained_once_over_the_seam`).
+
+The routes that refuse it, writing and recording nothing:
+
+| Route | Refusal |
+| --- | --- |
+| `companion_chip_copy_out`, `companion_chip_copy_name_value`, `companion_chip_provide_drag` | false |
+| `companion_chip_conceal` | `{"ok": false, "error": "this chip's value is on another device"}` |
+| `companion_sheet_conceal` | while one stands in the body, `PayloadError::ValueElsewhere` as the error, `an object on this page has its value on another device`; a detached one does not stop it |
+| `companion_chip_delete` | false, attached or detached, the page's undo kept |
+| `SheetStore::record_sent` (clipboard, one-time link, drag), `mark_chip_concealed`, `chip_payload` | false or `None` |
+
+Tests: `store.rs`
+`every_value_route_refuses_a_record_whose_value_is_elsewhere_and_records_nothing`,
+`the_page_conceal_refuses_while_a_record_with_no_value_stands_and_not_once_it_detaches`,
+`a_burn_of_a_record_whose_value_is_elsewhere_is_refused_and_records_nothing`;
+`lib.rs`
+`a_record_with_no_value_crosses_as_a_face_alone_and_every_value_route_refuses_it`.
+A rename, the note, a move, a cut, the cut's first paste and a removal
+take it by identity (`store.rs` `a_record_with_no_value_takes_a_name_and_a_note`;
+`transfer.rs` `a_cut_and_its_first_paste_keep_a_record_with_no_value_by_identity`,
+`a_drag_moves_a_record_with_no_value_keeping_its_identity_inside_a_page_and_between_pages`).
+A paste after a copy, a later paste of a cut and an ⌥ drag place
+`[sealed content · unavailable]` and count it in the placed JSON's
+`elsewhere`, beside `unavailable` and never inside it
+(`a_paste_after_copy_places_unavailable_for_a_record_with_no_value_and_counts_elsewhere`,
+`a_later_paste_of_a_cut_places_unavailable_for_a_record_with_no_value`,
+`an_option_drag_places_unavailable_for_a_record_with_no_value`). A page
+whose end takes one records no `expired` or `discarded` for it
+(`a_record_with_no_value_ends_with_its_page_and_leaves_no_record_of_its_own`).
+
+`companion_test_stand_peer_record(handle, sheet, pos_u16, kind, size,
+of_chip)` stands one for the Swift tests, under the identity `of_chip`
+stands or a fresh one for 0. It is `test-util` only
+([ADR-0018](../adr/0018-test-seams-compiled-out-of-release.md)),
+so the seam checks in `scripts/package-app.sh` and
+`scripts/verify-release-core.sh` name it.
+
+## Metadata
+
+`metadata.rs` keeps what a peer learns of an object beside the page's
+ops (proposed ADR-0058 point 5: "A `Metadata` envelope beside the
+page's `Ops`, under the same seal, padding and epoch, names each changed
+object's identity, kind, size class and name."). `ObjectMetadata` is the
+identity, the kind and size class when known, and the name with its
+version, a clear being a versioned `None`; its `Debug` prints no name
+(`no_payload_marker_reaches_a_metadata_debug`). The sync driver alone
+calls these routes, and no C entry point reaches them.
+
+| Route | What it does |
+| --- | --- |
+| `set_writer`, `writer` | this device's fingerprint, the writer of its name versions |
+| `take_metadata_changes(page)` | drains the objects whose metadata changed on the page, as they stand now |
+| `all_metadata(page)` | every record on the page, attached and detached, for a restate |
+| `mark_metadata_dirty(page, objects)` | marks objects changed again, as a send that failed to encode leaves them |
+| `apply_object_metadata(page, entries)` | applies a peer's entries to the page with that cross-device identity and answers how many changed a record |
+
+A seal, a rename and a clone mark their page changed; a restore and an
+applied entry mark nothing
+(`a_seal_a_rename_and_a_clone_mark_their_page_and_a_restore_marks_nothing`,
+`an_applied_entry_marks_nothing_changed`,
+`taking_changes_drains_them_and_a_second_take_is_empty`,
+`a_restate_lists_detached_records_too`). An applied entry fills a
+record with no value's kind or size class once and never a record's
+with its value; its name wins by the greater version, and equal
+versions keep the local name; a name the rule refuses is skipped and
+the rest of its entry applies
+(`kind_and_size_fill_a_record_with_no_value_once_and_never_flip`,
+`a_record_with_its_value_ignores_a_received_kind_and_size`,
+`concurrent_renames_converge_in_both_delivery_orders`,
+`equal_versions_with_different_names_keep_the_local_one`,
+`an_invalid_received_name_is_skipped_and_the_rest_of_its_entry_applies`).
+Past its deadline a page gives and takes none
+(`a_page_past_its_deadline_gives_and_takes_no_metadata`). An entry for
+an object with no record on its page waits in `metadata_pending`,
+folded into any entry held for the object, the oldest going past 256
+(`PENDING_CAP`), until the record arrives; an entry for a page not
+held here is not kept, and a page's end drops what it held and what
+changed
+(`an_entry_before_its_sentinel_waits_and_applies_when_the_record_arrives`,
+`the_waiting_cache_evicts_its_oldest_past_256`,
+`an_entry_for_a_page_with_no_sheet_here_is_not_held`,
+`a_held_entry_goes_when_its_page_ends`,
+`a_changed_entry_goes_when_its_page_ends`). A record about to drop
+folds a newer name into the record standing its identity
+(`a_value_that_follows_keeps_the_newer_name_its_stand_in_learned`).
+The changed set, the waiting cache and the restated pages are never
+persisted.
 
 ## `NAME=value`
 
@@ -172,13 +375,14 @@ exists, a cut's with its `cut` field.
 | `companion_sheet_clone_range` | the ⌥ drag inside a page, every object cloned, as one step | the placed JSON, or null |
 | `companion_active_cut_json` | the clipboard slot | `{"page_id": u64 or null, "objects": [face]}`, null and `[]` with no cut |
 | `companion_chip_provide_drag` | the decrypted drag's write into its item | false, writing and recording nothing, on refusal |
-| `companion_chip_delete` | the explicit burn, attached or detached | whether the chip existed |
+| `companion_chip_delete` | the explicit burn, attached or detached | whether the chip existed; false, changing nothing, for a record with no value |
 | `companion_chip_stands` | whether a chip stands on a live page, past its deadline or not, for wording a refusal | false for an unknown chip or a null handle |
 
 The placed JSON (`placed_json` in `lib.rs`) carries `location_utf16`,
 `length_utf16`, `reattached`, `cloned`, `expired`, `burned`,
-`unavailable`, `unreadable` and `pages_expired`, the last counting the
-pages the sweep before a paste took. The shell's `CompanionClient`
+`unavailable`, `elsewhere` (placed as unavailable because the value is
+on another device), `unreadable` and `pages_expired`, the last counting
+the pages the sweep before a paste took. The shell's `CompanionClient`
 wrappers decode a cap refusal as `FragmentRefusal.tooLarge(limit:)` or
 `.tooManyObjects(limit:)`, so the line can name the core's number.
 
@@ -193,20 +397,51 @@ names it.
 
 ## At rest
 
-`OTSSNAP4` stays; every field below is trailing, so an older build reads
-it as fields it does not know, not damage, and drops it at its next save.
+This build writes `OTSSNAP5` (proposed ADR-0058 point 9: "A new content
+snapshot version writes each record's availability as a tag ahead of
+any payload bytes, the name's version and the note's operation log.").
+It still reads `OTSSNAP4`, every chip record of which has its value, and
+refuses every other version as unknown
+(`persist.rs` `a_v4_snapshot_restores_as_it_did`,
+`superseded_and_unknown_magics_all_refuse_as_unknown_format`). An
+earlier build refuses `OTSSNAP5` as unknown, and by ADR-0016 the file is
+left untouched (code reading). Within a version the fields after the
+payload are trailing, so a record that ends before one restores without
+it. Lengths and the name's counter are u64 little endian; flags, tags,
+kinds and size classes are one byte each.
 
-- **The chip record**, after the payload: a name flag (0, or 1 and the
-  name), then a note flag (0, or 1 and the note's text). A record that
-  ends before either restores without it. A restored name the rule
-  refuses is dropped, not read as damage; a flag other than 0 or 1 is
-  damage, as the page floor's is. The note persists as text, not as its
-  operation log, and restore rebuilds it with an empty undo stack. Each
-  note's text is taken once, at its exact size, before the snapshot's two
-  passes (draft Law 0004). Since 2026-10-21 (issue #256) the restore, a
-  paste and a clone keep the note's text as one zeroizing copy, and the
-  note's document is made from it at its first edit
-  ([content buffer register](content-buffer-handling.md) C31).
+- **The chip record**, in `OTSSNAP5`: the identity (16 bytes), then an
+  availability tag. Tag 0, a value here, is followed by its kind (0
+  text, 1 image), a receipt flag (0, or 1 and the receipt id, length
+  prefixed) and the payload, length prefixed. Tag 1, a record with no
+  value, is followed by its kind (0 unknown, 1 text, 2 image) and its
+  size class (0 unknown, 1 tiny to 5 huge). Any other tag, kind or size
+  is damage
+  (`a_damaged_availability_record_refuses_the_whole_restore_and_leaves_the_store_untouched`).
+  Then a name flag (0, or 1 and the name); a name version flag (0, or 1,
+  the counter and the writer's 32 bytes); and a note flag (0, or 1, the
+  note's text and its operation log, each length prefixed, the log
+  empty for none)
+  (`a_record_with_no_value_round_trips_as_one`,
+  `a_name_version_round_trips_on_attached_and_detached_records`,
+  `an_unknown_or_short_name_version_is_malformed_and_the_store_is_untouched`,
+  `an_otssnap5_note_without_its_log_is_malformed_and_the_store_is_untouched`).
+  `OTSSNAP4`'s chip record has no tag, version or log: the identity, the
+  kind, the receipt flag and the payload, then a name flag and a note
+  flag with the text alone. A restored name the rule refuses is
+  dropped, not read as damage; a flag other than 0 or 1 is damage, as
+  the page floor's is. The note restores with an empty undo stack, its
+  history replayed from its log; an `OTSSNAP4` note has none, so its
+  first export reaches a peer whole
+  (`note.rs` `a_relaunch_keeps_the_shared_history_and_a_later_edit_merges_once`,
+  `persist.rs` `a_v4_note_restores_with_no_log_and_its_first_export_reaches_a_peer_whole`).
+  Each note's text and log are taken once, at their exact sizes, before
+  the snapshot's two passes (draft Law 0004). Since 2026-10-21 (issue
+  #256) the restore, a paste and a clone keep the note's text as one
+  zeroizing copy, and the note's document is made from it at its first
+  edit ([content buffer register](content-buffer-handling.md) C31); a
+  restored note rests with its log until then
+  (`an_unedited_restored_note_rests_with_its_log_when_only_shown`).
 - **The page record**, after the floor: its detached chips, framed as its
   attached chips are, then a cut flag (0, or 1 and the active cut's
   envelope) on the page the cut came from. A cut whose objects are not
@@ -215,6 +450,11 @@ it as fields it does not know, not damage, and drops it at its next save.
   (`persist.rs` `a_detached_chip_repeating_an_identity_is_malformed`).
 - **The ledger**: the destination class gains tag 3, `drag`. A ledger
   holding a `drag` record is damage to an older build.
+- **Not written**: the metadata waiting cache (at most 256 entries),
+  the note waiting cache (at most 256 KiB), the changed metadata set,
+  the restated pages and the moved chip ids live in memory only, and a
+  restore keeps a waiting entry only for a page it brought back (code
+  reading).
 
 ## The deadline gate
 
@@ -229,7 +469,10 @@ asks `Sheet::is_due` the same way, so each refuses a page past its
 deadline and changes nothing. To word its refusal a
 page's conceal asks whether the page still stands, and a chip's conceal
 whether any page still holds the chip (`SheetStore::chip_stands`, over
-the seam `companion_chip_stands`); neither reads either.
+the seam `companion_chip_stands`); neither reads either. The metadata
+and note sync routes ask `Sheet::is_due` too, so a page past its
+deadline gives and takes neither (Metadata, and The note's routes,
+above).
 
 The routes that draw a page do not go through it:
 `companion_sheet_document_json` (the ink and the objects' faces),

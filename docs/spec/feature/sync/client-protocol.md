@@ -11,7 +11,10 @@ no spec. Describes the client at `50044ad`, with the deadline gate that
 the frame epoch `9d74837` and the cap settle `09ee545` made (§4.6,
 §7.2, §7.6, 10.11), and the boundary withdrawal `b65dd08`, the batch
 epoch `e7ad509`, the owed frame `1c105a1` and the publish hold
-`7dd32f2` made (§2, §3, §4.4, §4.6, §7.2, §7.6, 10.13, 10.33, 10.34).
+`7dd32f2` made (§2, §3, §4.4, §4.6, §7.2, §7.6, 10.13, 10.33, 10.34),
+and the sealed object sync of issue #257 through `3463d33` made (§2,
+§3, §4.4, §6, §7.6, §7.8, 10.31, Appendix A), which builds proposed
+[ADR-0058](../../../adr/0058-a-sealed-object-never-stalls-a-pages-sync.md).
 [relay-protocol.md](relay-protocol.md) governs message shapes (ADR-0021:
 "The protocol specification is the authoritative message-shape
 record."). §7.10 is a proposal. Rules cite code; a named test pins its
@@ -40,14 +43,15 @@ Persisted (key-material): `sync-device-identity`, `sync-channel-secret`,
 | --- | --- |
 | GOP chain (epoch, key), rebuilt at epoch 0 (§8); standing and pending key package (§5); committed frame not yet accepted | `EngineState` |
 | `next_seq`; attach snapshot (epoch, `frame_present`, roster); outbox; in-flight batch (the epoch that sealed it, and its expiry, hold and terminal envelopes unsealed) and id; ballot scope (page, opened time) and entropy; a committed frame not yet taken, or the page whose frame a refused seal left owed (§7.6) | `SyncSession` |
-| Staged batch: each page's export cursor when the batch was sealed | `SyncState.staged_batch` |
-| Enrolled pages (enrolling defers compaction and starts the export frontier at the pristine version; a page past its deadline does not enrol, `a_page_past_its_deadline_does_not_enrol_and_gives_the_relay_nothing`), each with its export frontier, acknowledged cursor, last published deadline and hold, terminal sent | `SyncState.enrolled` |
+| Staged batch: each page's export cursor, and each of its notes', when the batch was sealed (`StagedBatch.notes`) | `SyncState.staged_batch` |
+| Enrolled pages (enrolling defers compaction and starts the export frontier at the pristine version; a page past its deadline does not enrol, `a_page_past_its_deadline_does_not_enrol_and_gives_the_relay_nothing`), each with its export frontier, acknowledged cursor, last published deadline and hold, terminal sent, the epoch of its last metadata restate (`metadata_restated_at`) and each note's export frontier and acknowledged cursor (`PageTracking.notes`; §4.4) | `SyncState.enrolled` |
 | Per page channel: epoch, current, hold live, terminal, ballot | `PageChannel` |
 
 **Dissolve** (detach, sign-out, refused refresh) drops the engine,
-staged batch and pairing, and rewinds each export frontier to its
-acknowledged cursor so the next sweep restates the rest
-(`a_sign_out_mid_session_keeps_the_unpublished_edits_for_the_next_attach`).
+staged batch and pairing, and rewinds each export frontier, a page's or
+a note's, to its acknowledged cursor so the next sweep restates the rest
+(`a_sign_out_mid_session_keeps_the_unpublished_edits_for_the_next_attach`;
+a note's, code reading).
 
 ## 3. The turn
 
@@ -57,7 +61,7 @@ only between round trips.
 | Step | Code | Rule |
 | --- | --- | --- |
 | 1 | `ensure_access` | refresh if no access token (§4.2); a failure ends the turn |
-| 2 | `sweep_outbound` | seal a frame a refused seal left owed (§7.6); queue ops past each export frontier, expiry when its deadline moved over 1 s, hold when changed, a dead page's marker (§6); rotate if owed (§7.1). A page past its deadline (Law 0001, expiry row) or gone queues no ops, and its unsealed ops are withdrawn (`a_page_past_its_deadline_gives_the_relay_no_ops_queued_or_new`, `a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`); its expiry, hold and marker still queue |
+| 2 | `sweep_outbound` | seal a frame a refused seal left owed (§7.6); for each live page queue `Ops` past its export frontier, then `Metadata` for its changed objects, or for all of them when a restate is owed (§4.4), then each note's `NoteOps` past that note's export frontier, in that order (code reading); expiry when its deadline moved over 1 s, hold when changed, a dead page's marker (§6); rotate if owed (§7.1). A page past its deadline (Law 0001, expiry row) or gone queues none of the three, and `withdraw_ops` drops all three where they wait unsealed (`a_page_past_its_deadline_gives_the_relay_no_ops_queued_or_new`, `a_closed_page_seals_no_queued_ops_and_its_rotation_anchors_before_a_deadline`, `a_page_past_its_deadline_queues_no_metadata_and_withdraws_what_was_queued`, `a_page_past_its_deadline_queues_no_note_ops_and_withdraws_what_was_queued`, `withdrawn_ops_leave_the_page_s_expiry_and_every_other_page_queued`); its expiry, hold and marker still queue |
 | 3 | `tick` | abandon a ballot open 60 s (`BALLOT_PATIENCE_MS`, relay-protocol §5; §7.7) |
 | 4 | `publish_round` | if `PUBLISH_INTERVAL_MS` (2 s, relay-protocol §8) has passed, anything is queued or in flight, and no frame of this device's for the chain's epoch waits (§4.4) |
 | 5 | `fetch_request` | long poll, `wait` at most 25 s (`LONG_POLL_WAIT_S`, relay-protocol §8; §4.5) |
@@ -129,17 +133,22 @@ but `unreachable` and `busy` are logged; shell handling is §3.
 ### 4.4 Publish deltas
 
 Envelopes are padded and sealed under the chain (one seal refusal keeps
-the queue); `stage_publish` records each page's export cursor. An
+the queue); `stage_publish` records each page's export cursor and each
+of its notes'. An
 in-flight batch is resent byte for byte, at the epoch that sealed it,
 before anything new is sealed; with no idempotency key, §6, §7.4 and
 §7.5 absorb duplicates. Once the chain has moved past that epoch the
 batch never goes out: `stage_publish` drops it through
 `gop::take_stale`, the check a frame shares (§4.6), rewinds every
-page's export cursor to its acknowledged one and withdraws the ops
-queued past it, so the next sweep exports them again under the deadline
+page's and every note's export cursor to its acknowledged one and, for
+each page where one moved, withdraws the ops, metadata and note ops
+queued for it and owes its metadata a restate,
+so the next sweep exports them again under the deadline
 gate, and queues the batch's expiry, hold and terminal envelopes again
 (`a_batch_sealed_behind_the_chain_s_epoch_never_goes_out_and_its_ops_export_again`,
-`a_batch_the_chain_moved_past_never_goes_out_and_queues_its_facts_again`).
+`a_batch_the_chain_moved_past_never_goes_out_and_queues_its_facts_again`,
+`a_stale_batch_rewinds_each_note_and_the_next_sweep_exports_it_again`,
+`metadata_a_stale_batch_drop_withdraws_is_restated_at_the_next_sweep`).
 Its control envelopes are not queued again, since the commit that
 moved the chain ended their ballot here (interpretation). Nothing is
 sealed or sent while this device's frame for the chain's epoch is
@@ -149,11 +158,46 @@ an epoch whose frame it lacks
 frame the relay never answers with a 2xx or `409` holds every publish
 (code reading).
 
+Each note has an export frontier and an acknowledged cursor of its own
+beside its page's (`PageTracking.notes`), both at the pristine version
+when the sweep first meets the note, so its first export sends its whole
+history; the sweep drops the cursors of a record that left the page
+(code reading). A note's cursors follow its page's: a 2xx moves the
+acknowledged one, and a stale batch drop, a sign out (§2) and an
+envelope that fails to encode rewind the export one; a `409` rewinds
+neither (table below). An envelope that fails to encode is left out and
+the rest of the batch goes: its page's or note's export frontier
+rewinds, a `Metadata` envelope's objects are marked changed again for
+the next sweep, and any other envelope but a ceremony message stays
+queued
+(`ops_that_fail_to_encode_export_again_on_the_next_sweep`,
+`a_metadata_envelope_the_encoder_refuses_leaves_the_ops_published_and_goes_next_sweep`,
+`a_note_ops_envelope_the_encoder_refuses_leaves_the_ops_published_and_goes_next_sweep`,
+`an_envelope_that_cannot_encode_hands_back_its_ops_and_keeps_its_facts_queued`);
+a ceremony message is dropped (code reading). Proposed ADR-0058 point 7: "A `Metadata` or `NoteOps` envelope that
+fails to encode, is refused or is skipped leaves the page's ops applied,
+and its loss is made good by the next change or restate."
+
+Metadata is restated, not rewound. The sweep queues the objects whose
+metadata changed since it last took them, or every record of the page,
+attached and detached, when the page's `metadata_restated_at` is not
+the chain's epoch, in envelopes of at most 128 entries
+(`metadata_goes_in_envelopes_of_at_most_the_cap`,
+`a_restate_lists_detached_records_too`). Enrolment, a successful attach
+(code reading) and every new epoch therefore owe a restate, and so do a
+settle (§7.6) and a stale batch drop, since each withdraws what was
+queued
+(`an_enrolment_restates_every_entry_once_and_an_epoch_move_restates_again`,
+`metadata_a_settle_withdraws_is_restated_at_the_next_sweep`,
+`metadata_a_stale_batch_drop_withdraws_is_restated_at_the_next_sweep`).
+Proposed ADR-0058 point 5: "A device restates every entry of an
+enrolled page at attach and at each new epoch."
+
 | Answer | Batch | Cursors and record | Event |
 | --- | --- | --- | --- |
-| 2xx | cleared | acknowledged cursors move to the recorded ones (`an_answer_to_a_resent_batch_acknowledges_only_what_that_batch_carried`) | |
+| 2xx | cleared | acknowledged cursors, each page's and each note's, move to the recorded ones (`an_answer_to_a_resent_batch_acknowledges_only_what_that_batch_carried`, `an_acknowledged_batch_moves_each_note_s_acked_cursor_to_what_it_sent`) | |
 | `401` | kept; clock reopened | refresh and resend once: a second `401` is only the event, a failed refresh ends the round silently, a failed resend reports `unreachable` without a fault | `unauthorized` |
-| `409`, `410` | dropped | record dropped; export frontier not rewound | `epoch_conflict`, `rejoin_required` |
+| `409`, `410` | dropped | record dropped; no export frontier rewound, a page's or a note's (`a_409_drops_the_batch_s_note_record_and_leaves_the_note_s_cursor_as_the_page_s`) | `epoch_conflict`, `rejoin_required` |
 | `413` | kept | `rotate_channel` on the first enrolled page by id held here before its deadline (`live_anchor`) | `ceremony_required` |
 | any other answer | kept; resent next tick | | `protocol` |
 | transport failure | kept | fault unreachable | `unreachable` |
@@ -244,10 +288,16 @@ sends the spent standing one, and §5.4 owes a replacement.
 
 Encoding: `envelope.rs`; unknown shapes are skipped; page ids are 32
 lowercase hex characters. Ops, Expiry and Hold are unsigned (§7.9).
+Metadata and NoteOps are unsigned too, and an object's identity and a
+name's writer are exactly 32 and 64 lowercase hex characters
+(`lower_hex`;
+`metadata_round_trips_through_its_wire_entry_and_refuses_other_spellings`).
 
 | Envelope | Handling |
 | --- | --- |
-| Ops | `admit_delta(batch epoch)`: a terminal page refuses; an equal epoch applies to a page held here; any other emits `rejoin_required`. `applied` only if the document version moved, so an echo is not an arrival; store refusals are dropped silently. A U+FFFC no chip mark carries, which an earlier build took as ink, applies as ink rather than stall the page (10.31), and a later local delete of it applies and reaches the peer (`a_peers_batch_holding_an_unmarked_object_character_lands_and_a_delete_takes_it_out`); the shell makes that delete at its next projection of the page, outside the undo stack (`taking_out_a_peers_object_character_reaches_the_peer_and_no_undo_puts_it_back`). |
+| Ops | `admit_delta(batch epoch)`: a terminal page refuses; an equal epoch applies to a page held here; any other emits `rejoin_required`. `applied` only if the document version moved, so an echo is not an arrival; store refusals, malformed bytes and missing history, are dropped silently (`malformed_bytes_and_missing_history_refuse_and_leave_body_and_roster_unchanged`). A batch that stands an identity the page lacks is no refusal: before the page settles, the identity takes the record another page here keeps detached, or else a record with no value, and a standing whose end this device's ledger records is taken out instead (proposed ADR-0058 points 1, 3 and 8; `a_remote_chip_the_page_does_not_own_admits_as_a_record_with_no_value`, `a_peers_move_between_pages_takes_the_value_to_the_destination_in_either_order`, `a_burned_identity_a_peer_stands_again_is_taken_out_and_the_peer_converges`); an identity a merge leaves standing twice keeps its first standing in body order (`a_doubled_identity_from_a_merge_converges_on_one_standing_on_both_devices`). A U+FFFC no chip mark carries, which an earlier build took as ink, applies as ink rather than stall the page (10.31), and a later local delete of it applies and reaches the peer (`a_peers_batch_holding_an_unmarked_object_character_lands_and_a_delete_takes_it_out`); the shell makes that delete at its next projection of the page, outside the undo stack (`taking_out_a_peers_object_character_reaches_the_peer_and_no_undo_puts_it_back`). |
+| Metadata | an envelope naming more than 128 entries (`METADATA_ENTRY_CAP`) is ignored whole, since a sender chunks at the cap, and the rest of its batch applies (`an_envelope_past_the_cap_is_ignored_and_the_ops_in_its_batch_still_apply`); then `admit_delta(batch epoch)` as for Ops (`metadata_at_another_epoch_applies_nothing`). `apply_object_metadata` takes each entry alone: one whose identity does not parse is skipped, and a kind, size class or name this build cannot read is left out of its entry while the rest applies (`a_malformed_entry_is_skipped_and_its_neighbours_apply`, `an_invalid_received_name_is_skipped_and_the_rest_of_its_entry_applies`). A kind or size class fills a record with no value once and never a record with its value (`kind_and_size_fill_a_record_with_no_value_once_and_never_flip`, `a_record_with_its_value_ignores_a_received_kind_and_size`); the name of the greater version wins (`concurrent_renames_converge_in_both_delivery_orders`). An entry for an identity with no record on the page waits in the core, at most 256 entries, the oldest going first, never persisted, until the record arrives (`a_name_sent_before_its_sentinel_waits_and_applies_when_the_ops_arrive`, `the_waiting_cache_evicts_its_oldest_past_256`); a page past its deadline, or not held here, takes none (`a_page_past_its_deadline_gives_and_takes_no_metadata`, `an_entry_for_a_page_with_no_sheet_here_is_not_held`). `applied` once per fetched batch for the page, only when an entry changed a record (`a_rename_reaches_the_peer_s_record_with_no_value_and_alone_is_an_arrival`) |
+| NoteOps | an object identity that does not parse skips the envelope; then `admit_delta(batch epoch)` as for Ops (`note_ops_at_another_epoch_apply_nothing`). `apply_remote_note_update` merges the ops into that object's note on the page, never its body, roster or ledger, a record with no note taking an empty one first. Malformed bytes, missing history and ops that would stand a sealed object in the note are refused, leaving the note as it was (`missing_history_and_bad_bytes_are_refused_and_leave_the_note_as_it_was`, `a_note_batch_standing_an_object_is_refused_and_moves_nothing`), and the refusal drops that envelope alone (`a_note_batch_standing_a_chip_is_refused_and_the_rest_of_its_batch_applies`). Ops for an identity with no record on the page wait in the core, at most 256 KiB, the oldest going first, never persisted (`a_note_sent_before_its_sentinel_waits_and_applies_when_the_ops_arrive`, `the_waiting_cache_evicts_its_oldest_past_256_kib`); a page past its deadline takes none (`a_page_past_its_deadline_gives_no_note_and_takes_none`). `applied` once per fetched batch for the page, only when the note changed (`a_note_reaches_the_peer_s_record_with_no_value_and_one_written_there_comes_back`); concurrent edits merge (`concurrent_note_edits_on_two_devices_converge_after_an_exchange_in_both_orders`) |
 | Expiry | the wall-clock pair read off the live countdown; `observe_peer_expiry` shortens, never extends (ADR-0021: "the earliest known expiry wins"); a held page ignores it |
 | Hold | the register's state, never the press, applied in stream order; a live hold suspends the countdown |
 | Terminal | `marker_trusted`: exactly `page_id(16) ‖ wall_ms(8) ‖ sig(64)`, the envelope's page id, signed over `signing_domain(TERMINAL_SIGN_CONTEXT, claim)` by this device or a peer record (`trusted_identities`); then the page is entombed (`deltas_round_trip_and_the_terminal_gate_needs_a_current_view`) |
@@ -309,14 +359,36 @@ held id and a named member, so devices commit at the same position
 ### 7.6 Commit
 
 On the completing accept, `perform_ceremony` compacts the target page
-only and returns its snapshot; `ceremony_commit` then advances the
-chain with the ballot's entropy and seals the snapshot, unpadded, under
+only, each standing object's note with it, and returns its key frame
+(`frame.rs`): `OTSFRM02`, the page's rebuild, then a count and each
+standing note's identity and rebuild, every length a u64 LE prefix
+(`a_frame_reads_back_as_written_at_its_exact_size`). A detached
+record's note keeps its history and is not in the frame
+(`a_detached_records_note_keeps_its_history_through_its_pages_compaction`).
+The frame has no metadata in it; a joiner learns kind, size class and
+name from the restate each device queues at the new epoch (§4.4;
+interpretation). `adopt_key_frame` still takes a bare page rebuild,
+with no notes, judges every note rebuild before the page moves, refuses
+a short, trailing or doubled frame whole, and gives each rebuild to its
+record, one with no record waiting as a peer's `NoteOps` does
+(`a_short_a_trailing_or_a_doubled_frame_is_refused`,
+`a_malformed_frame_is_refused_whole_and_a_bare_page_rebuild_still_adopts`,
+`a_peer_adopting_the_frame_gets_each_note_and_a_later_edit_merges_once`).
+`ceremony_commit` then advances the
+chain with the ballot's entropy and seals the frame, unpadded, under
 the new key, and `commit_advance` moves every page channel to the new
-epoch and stages the frame. `settle_frontier` moves both cursors to the
-rebuild, which travels only as the frame, and withdraws the page's
-unsealed ops, whose history from before the rebuild would otherwise
-open under the new key
-(`a_compacted_page_s_queued_ops_never_cross_the_boundary`). Entropy already consumed
+epoch and stages the frame. `settle_frontier` moves both of the page's
+cursors to its rebuild, and both of each standing note's to that
+note's, which travel only as the frame; withdraws the page's unsealed
+ops, metadata and note ops, whose history from before the rebuild would
+otherwise open under the new key, and owes the page's metadata a
+restate; and rewinds a detached record's note to its acknowledged
+cursor, since the withdrawal took its queued ops and no frame rebuilds
+it
+(`a_compacted_page_s_queued_ops_never_cross_the_boundary`,
+`after_a_ceremony_no_note_ops_from_before_the_rebuild_go_out_and_the_frame_gives_a_joiner_the_note`,
+`a_ceremony_rewinds_a_detached_record_s_note_rather_than_settling_it`,
+`metadata_a_settle_withdraws_is_restated_at_the_next_sweep`). Entropy already consumed
 commits nothing. Where the store cuts no rebuild (the page gone, not
 enrolled or past its deadline here), the device still advances and
 moves its channels, and stages a frame sealed over nothing, so it stays
@@ -344,8 +416,8 @@ frame to a peer
 `solo_ceremony` reports the commit, so `ceremony_committed` goes out
 and the page's cursors settle, and owes the frame, since no peer holds
 the epoch. The next sweep seals it first, at the same epoch with no
-second advance: the page's rebuild, or an empty frame where the store
-cuts none. A refused seal keeps it owed, and a later commit supersedes
+second advance: the page's key frame as above, or an empty frame where
+the store cuts none. A refused seal keeps it owed, and a later commit supersedes
 it
 (`a_solo_commit_whose_frame_seal_refuses_owes_the_frame_at_its_epoch`,
 `a_later_commit_supersedes_an_owed_frame`). Its PUT then moves the
@@ -368,8 +440,10 @@ Abandonment never goes on the stream (§10).
 
 Every committer PUTs its own frame (§4.6); the first at current+1 wins.
 A `409` loser keeps its advanced chain and rebuild; nothing adopts the
-winner. Rebuilds mint fresh peer ids, so later ops between two
-committers share no history and are refused (interpretation).
+winner. Rebuilds, the page's and each standing note's
+(`compaction_sheds_deleted_note_text_under_a_fresh_peer`), mint fresh
+peer ids, so later ops between two committers share no history and are
+refused (interpretation).
 
 ### 7.9 Who may propose
 
@@ -496,7 +570,7 @@ Owner questions first; the owner decides which side moves in each.
 | 10.28 | none | `settledTrouble` | while the gate still holds an earlier `unreachable`, a `keychain` refusal settles to `.unreachable`, so the sentence blames the server for a locked keychain, for up to the backoff (code reading; `testAQuietRefusalAfterAnUnreachableTurnStillBacksOff`) |
 | 10.29 | surface.md §4: "no peer awake reads `sync waiting`"; §5: "the relay cannot be reached", "waiting on your browser" | `currentPeers`, `sentence` | an asleep rostered peer reads `synced`; the built sentences differ (code reading) |
 | 10.30 | `companion_sync_pump` documents a `signed_out` event | `SyncEvent::SignedOut` | never constructed outside a test; sign-out arrives as the turn's reason (code reading) |
-| 10.31 | ADR-0021: "Sync must move a Page between a user's enrolled devices" | §6, `SheetStore::apply_remote_update` | no envelope carries a sealed object, and a batch that stands a sentinel the peer's page does not own is refused whole (`ChipRoster`) and dropped; every later batch of that page builds on it (`MissingHistory`) and no rejoin exists (§8), so a page holding an object, sealed there or carried onto it by a move or a cut's reattach, stops reaching every peer (`sync_carries_no_object_so_a_move_between_pages_stands_none_on_a_peer`, `sync_carries_no_object_so_a_cut_reattached_on_another_page_stands_none_on_a_peer`) |
+| 10.31 | ADR-0021: "Sync must move a Page between a user's enrolled devices" | §6, `SheetStore::apply_remote_update` | closed on this branch by proposed ADR-0058, not yet accepted ("A peer imports every valid batch, whatever objects it stands."). Before it, a batch that stood a sentinel the peer's page did not own was refused whole (`ChipRoster`), every later batch of that page met `MissingHistory`, and the page stopped reaching every peer. Built now, that batch gives the identity a record with no value (§6), so a page holding an object, sealed there or carried onto it by a move or a cut's reattach, keeps reaching every peer and the value stays on its device; `Metadata` and `NoteOps` send the object's kind, size class, name and note beside the ops (`a_remote_chip_the_page_does_not_own_admits_as_a_record_with_no_value`, `a_move_between_pages_reaches_a_peer_as_one_record_with_no_value_in_either_order`, `a_cut_reattached_on_another_page_reaches_a_peer_as_one_record_with_no_value_in_either_order`) |
 | 10.32 | relay-protocol §5: "compact, advance, reseal" | §7.6 | a member whose store cuts no rebuild of the page, past its deadline or gone there, advances without compacting and reseals an empty frame, which may win the epoch at the relay (`a_deadline_between_two_devices_drains_keeps_both_on_one_epoch`, `a_ballot_confirmed_past_the_deadline_everywhere_still_moves_the_relay`) |
 | 10.33 S | relay-protocol §4: "`409` unless `epoch` is exactly current+1" | §4.6, §7.1, §7.2 | nothing stops a second commit before the relay takes the first one's frame, as when pages come due solo while the relay cannot be reached; the first frame is then dropped unsent, the second meets a `409`, and every publish after it meets one too until a rejoin (§8). Waiting to rotate until the frame lands keeps the relay in step but defers each page's compaction, which relay-protocol §2 promises is "never less" than a solo page's (interpretation) |
 | 10.34 | none | §4.4, §7.6 | a ballot member whose frame seal refused holds no frame, so its next publish can reach the relay before a peer's frame does and meet a `409` (interpretation) |
@@ -516,6 +590,7 @@ length prefix; no context below prefixes another.
 | `GOP_KEY_INFO` | `ots-companion-gop-transport-key-v1` | HKDF info, every chain key | `persist.rs` |
 | `GOP_ROOT_SALT` | `ots-companion-gop-root-salt-v1` | HKDF salt, root key | `persist.rs` |
 | `GOP_MAGIC` | `OTSGOPD1` | sealed delta or frame header | `persist.rs` |
+| `frame::MAGIC` | `OTSFRM02` | key frame plaintext header, ahead of the page's and the notes' rebuilds (§7.6) | `crates/core/src/frame.rs` |
 
 ```text
 key[0]   = HKDF(salt: GOP_ROOT_SALT, ikm: channel_secret, info: GOP_KEY_INFO)

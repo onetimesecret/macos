@@ -1,6 +1,6 @@
 ---
 name: project-issue257-peer-records
-description: Issue #257 units 1 to 3 (2026-10-23): a sealed record with no value as a chip state, sync admission and value-follows rules, and the shell face, menu and seam
+description: Issue #257 units 1 to 8 (2026-10-23): a sealed record with no value as a chip state, sync admission and value-follows rules, the shell face, metadata and note envelopes, and the records (docs) that describe them
 metadata:
   type: project
 ---
@@ -33,5 +33,6 @@ Unit 2: `import_update` returns the identities a batch stands that the page lack
 
 - Unit 6 (note CRDT in core, 2026-10-23, uncommitted at write): store routes live in `note.rs`; `note_version` takes `&mut self` because a note with no log (v4, a clone) has no version until its document is minted. Loro's `decode_import_blob_meta` copies the oplog into non-wiping memory, so there is no arena-free way to read a log's version. The v5 note field is text then a required log (empty for none); hand built v5 fixtures use `note_field`. `perform_ceremony` returns an `OTSFRM02` frame (u64 LE prefixes); `adopt_key_frame` still takes a bare Loro blob. `Sheet::compact` compacts attached notes on every solo rung transition too. `note_pending` is its own deque, keyed by page uuid and object.
 - Unit 7 (NoteOps envelope, 2026-10-23, uncommitted at write): `PageTracking.notes` maps object to a `NoteCursor` (frontier, acked); `StagedBatch.notes` records them per page at seal. A 409 rewinds no export frontier, page or note (client protocol §4.4 table row: "export frontier not rewound"), though the unit brief said it rewinds. `withdraw_ops` is page wide, so `settle_frontier` settles only standing notes on their rebuild and rewinds detached ones to acked, or their withdrawn ops would leave a gap peers refuse as `MissingHistory`. The stale batch drop withdraws when the page or any note rewound. The sweep drops a cursor whose record left `notes_on`.
+- Unit 8 (records, 2026-10-23, uncommitted at write): client protocol, core interface, Law 0001 (three record with no value rows, a lifecycle row, the 2026-10-23 peer record amendment), FOUNDATIONS B1/B2 and plan row 61. The brief's banned word scan flags pre-existing words in any one-line table row you touch; scan inserted words with `git diff --word-diff=porcelain` instead. `chip_face` lives in `content_json.rs`, not `lib.rs`. A burn of a record with no value is refused, which ADR-0058's Consequences say ("It cannot copy, drag, link, conceal or burn the value.") and no Decision point names. `docs/plans/names-in-place.md` line 32 still cites the retired `sync_carries_no_object_*` tests.
 
 Related: [[project-issue241-243-core]], [[project-adr0018-gated-seams]]
