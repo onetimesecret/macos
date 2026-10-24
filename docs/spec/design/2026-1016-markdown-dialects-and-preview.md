@@ -822,7 +822,7 @@ and are not in the app.
 | Links | `enterLink` and `leaveLink` bracket a Markdown link's label. Inside it the innermost Markdown link's address applies, accepted or refused, and no HTML link does. A title object does not refuse the address. `safeURL` also refuses an http or https address with a user or password, which reads as one host and opens another. |
 | Object style | An object shows as its chip at the preview's base font, whatever block or trait surrounds it, so it does not grow in a heading or take a strikethrough; it keeps the paragraph's style, so it stays in its table cell or quote. |
 | Tables | One cell per header column, as cmark-gfm keeps them; no cell spans. All of a page's tables together may have 100,000 cells (`CompositionLimits.maximumTableCells`), header rows and padded cells included, since cmark-gfm pads a short row to the header's width and its own cap is per table. |
-| Failure | Parsing throws past the input, depth or table cell limit, with no placeholder window, or for an object emitted twice, and rendering fails when its output shows any object other than once. Either way the page renders as its plain source text with LF line endings, each object as its attachment in source order. The renderer logs the error's name under the `preview` category, at info level for a limit or a missing placeholder window and as a fault for anything else. |
+| Failure | Parsing throws past the input, depth or table cell limit, with no placeholder window, or for an object emitted twice, and rendering fails when its output shows any object other than once. Either way the page renders as its plain source text with LF line endings, each object as its attachment in source order. The renderer logs the error's name under the `preview` category, at info level for a limit, a missing placeholder window or Markdown inside a CommonMark raw-text element the page left open, and as a fault for anything else. |
 
 #### Ordinary text conformance
 
@@ -960,7 +960,9 @@ pass and VoiceOver.
   limits blocks the main thread for as long as it takes. The limits bound
   an adversarial page's work, not interactive latency. Parse and render time on large pages is not recorded here; R6 benchmarks
   it and decides on a latency budget and whether rendering moves off the
-  main thread.
+  main thread. Moving it off gains no parallel GFM parsing, since the GFM
+  shim's lock takes one parse at a time, and a page at the table cell
+  budget lays out 100,000 `NSTextTableBlock` cells in one pass.
 - An image with no alt text shows nothing and has no descriptor range,
   though it still takes an occurrence number, so occurrences count every
   image of the page in source order. R5's carrier for such images (R3's
@@ -992,6 +994,10 @@ judgment and idiomatic behavior:
   [Law 0001](../../law/0001-sealed-object.md): "A sealed item occupies one
   position in the document". An object no node shows takes the nearest
   block boundary to its source, once, and the copy follows rendered order.
+- `</br>` breaks a line as `<br>` does, as HTML5 parsers read it, where
+  R3's rule had shown it as an unmatched closing tag. Every other
+  unmatched closing tag, `</img>` included, still shows as literal text
+  under R3's scope rule.
 
 ## Acceptance criteria
 

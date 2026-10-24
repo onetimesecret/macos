@@ -18,16 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an address ends where a sealed object starts. A web link whose address
   has a user or password before the host, Markdown or HTML, opens nothing,
   since `https://docs.example.com@evil.example/` would open evil.example.
-  Where cmark-gfm and the
-  published GFM 0.29 page differ, the preview follows cmark-gfm. A sealed
-  object is never part of an address, and it shows in source order: one in
-  a link's address or title follows the link's text, as one in an image's
-  address follows its alt text; one in a reference definition shows where
-  the definition is; one in a table cell past the header's columns ends
-  its row. A page whose tables come to more than 100,000 cells, counting
-  the empty cells that pad short rows, shows its plain text. cmark 0.31.2
-  reads CommonMark, but the Settings dialect choice is not part of this
-  change, so every page reads as GFM.
+  `</br>` breaks a line as `<br>` does, as browsers read it. Where
+  cmark-gfm and the published GFM 0.29 page differ, the preview follows
+  cmark-gfm. A sealed object is never part of an address, and it shows in
+  source order: one in a link's address or title follows the link's text,
+  as one in an image's address follows its alt text; one in a reference
+  definition shows where the definition is; one in a table cell past the
+  header's columns ends its row. A page whose tables come to more than
+  100,000 cells, counting the empty cells that pad short rows, shows its
+  plain text. cmark 0.31.2 reads CommonMark, but the Settings dialect
+  choice is not part of this change, so every page reads as GFM.
 
 - **The rendered preview formats a restricted set of HTML** (app 0.42.0;
   ADR-0059; the 2026-10-16 Markdown dialects plan, R3). Raw HTML in a
