@@ -445,7 +445,8 @@ public enum StreamNavigator {
         /// How tall the drawing is: the column's height, or more when the rows outrun it,
         /// in which case the column scrolls (#277). `.empty` alone reads 0, having no column.
         public let contentHeight: CGFloat
-        /// The rows packed from the top with nothing between them: the least column that fits them.
+        /// The rows packed from the top with nothing between them, the gauge counted under the row
+        /// it makes tallest, so the least column that fits them reads the same whichever node is active.
         public let packedHeight: CGFloat
         /// The map, kept so a click on bare track can be inverted.
         public let anchors: [Anchor]
@@ -509,6 +510,24 @@ public enum StreamNavigator {
     public static func denseMapHeight(columnHeight: CGFloat, row: CGFloat) -> CGFloat {
         let height = min(max(40, columnHeight * 0.4), columnHeight - Metrics.mapGap - row)
         return height > Metrics.top + Metrics.bottom ? height : 0
+    }
+
+    /// The view that offers VoiceOver the adjustable reading position.
+    public enum ReadingPositionHost: Equatable, Sendable {
+        /// The lane beside the full drawing, or beside the dense rail's map.
+        case drawing, map
+        /// The dense list's leading edge, in a column with no room for the map.
+        case list
+    }
+
+    /// Where the rail offers the reading position: nowhere unless it drives a roll the reader can
+    /// scroll (a band), and on the list when a dense column omits its map (ADR-0060).
+    public static func readingPositionHost(
+        _ layout: Layout, columnHeight: CGFloat, mapHeight: CGFloat, drivesRoll: Bool
+    ) -> ReadingPositionHost? {
+        guard drivesRoll, layout.band != nil else { return nil }
+        guard isDense(layout, columnHeight: columnHeight) else { return .drawing }
+        return mapHeight > 0 ? .map : .list
     }
 
     /// The dense rail's checkpoint list (ADR-0060): every placed node's row stacked from the
@@ -698,7 +717,11 @@ public enum StreamNavigator {
         }
         let lastBottom = ys[ys.count - 1] + heights[ys.count - 1]
         let contentHeight = max(height, lastBottom + tail + Metrics.bottom)
-        let packedHeight = Metrics.top + heights.reduce(0, +) + liftGaps.reduce(0, +)
+        // Packed with no node active, plus the most any one node adds by being the active one.
+        let resting = nodes.indices.map { compact ? 0 : rowHeight(of: nodes[$0], active: false) + reserves[$0] }
+        let gauge = compact ? 0 : nodes.map { rowHeight(of: $0, active: true) - rowHeight(of: $0, active: false) }
+            .max() ?? 0
+        let packedHeight = Metrics.top + resting.reduce(0, +) + gauge + liftGaps.reduce(0, +)
             + tail + Metrics.bottom
         let limit = contentHeight - Metrics.bottom
         let nodeYs = ys.indices.map { ys[$0] + reserves[$0] }

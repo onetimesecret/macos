@@ -204,6 +204,47 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertEqual(Set(activeRows).count, 4, "the control: the active rows are not of four heights")
     }
 
+    /// Near the density threshold, moving the selection between live pages, a retained page and
+    /// none never moves the rail across it.
+    func testDensityIsTheSameWhicheverNodeIsActive() {
+        let tabs = [
+            slot(tab: 1, page: 11, day: 0), slot(tab: 2, page: 22, day: 0, createdMs: born + 60_000),
+            slot(tab: 3, page: 33, day: -9),
+        ]
+        let live = StreamNavigator.layout(
+            nodes: nodes(tabs, selecting: 1), geometry: .unmeasured, height: 400, width: 102)
+        let column = live.packedHeight - StreamNavigator.Metrics.gaugeReserve / 2
+        var answers: [String: Bool] = [:]
+        for selection: UInt64? in [1, 2, 3, nil] {
+            let layout = StreamNavigator.layout(
+                nodes: nodes(tabs, selecting: selection), geometry: .unmeasured, height: column, width: 102)
+            answers["\(selection.map(String.init) ?? "none")"] = StreamNavigator.isDense(layout, columnHeight: column)
+        }
+        XCTAssertEqual(Set(answers.values).count, 1, "the selection moved the rail across the threshold: \(answers)")
+    }
+
+    /// A dense column too short for its map offers the reading position on its list; a roomier one
+    /// offers it on the map, a column that fits on the drawing, and a rail with no roll to drive none.
+    func testAShortDenseColumnStillOffersTheReadingPosition() {
+        let checkpoints = threeDays(pagesPerDay: 12)
+        func host(
+            _ height: CGFloat, documentHeight: CGFloat = 10_000, drivesRoll: Bool = true
+        ) -> StreamNavigator.ReadingPositionHost? {
+            let geometry = RollGeometry(
+                extents: [], documentHeight: documentHeight, viewportTop: 0, viewportHeight: 300)
+            let layout = StreamNavigator.layout(nodes: checkpoints, geometry: geometry, height: height, width: 102)
+            let map = StreamNavigator.denseMapHeight(
+                columnHeight: height, row: StreamNavigator.activeRowRoom(checkpoints))
+            return StreamNavigator.readingPositionHost(
+                layout, columnHeight: height, mapHeight: map, drivesRoll: drivesRoll)
+        }
+        XCTAssertEqual(host(50), .list, "a short dense column dropped the reading position")
+        XCTAssertEqual(host(300), .map)
+        XCTAssertEqual(host(2_000), .drawing)
+        XCTAssertNil(host(50, drivesRoll: false), "a rail that drives no roll offered its position")
+        XCTAssertNil(host(50, documentHeight: 200), "a roll wholly on screen offered a position")
+    }
+
     /// The compact map's window tick stands on free track between the last live mark and the
     /// first retained one, in either order, and is not drawn where no free point lies between.
     func testTheCompactMapsWindowTickStandsBetweenTheMarks() throws {

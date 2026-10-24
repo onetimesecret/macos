@@ -361,19 +361,23 @@ struct StreamNavigatorView: View {
                     nodes: nodes, geometry: roll.geometry,
                     height: mapSize.height, width: mapSize.width, compact: true)
                 let listHeight = size.height - (mapSize.height > 0 ? mapSize.height + Metrics.mapGap : 0)
+                let host = StreamNavigator.readingPositionHost(
+                    layout, columnHeight: size.height, mapHeight: mapSize.height, drivesRoll: drivesRoll)
                 VStack(spacing: Metrics.mapGap) {
                     if mapSize.height > 0 {
-                        stream(map, size: mapSize, nodeIDs: nodeIDs, compact: true)
+                        stream(map, size: mapSize, nodeIDs: nodeIDs, offersReadingPosition: host == .map, compact: true)
                             .frame(width: mapSize.width, height: mapSize.height)
                     }
-                    checkpointList(list, height: max(0, listHeight))
+                    checkpointList(list, height: max(0, listHeight), offersReadingPosition: host == .list)
                 }
                 .onAppear { drawingClipWidth = nil }
             } else {
+                let host = StreamNavigator.readingPositionHost(
+                    layout, columnHeight: size.height, mapHeight: 0, drivesRoll: drivesRoll)
                 // Rows that outrun the column lengthen the drawing, and the column scrolls to
                 // reach them inside its clip, with the overlay scroller a sidebar shows (#277).
                 ScrollView(.vertical, showsIndicators: true) {
-                    stream(layout, size: size, nodeIDs: nodeIDs)
+                    stream(layout, size: size, nodeIDs: nodeIDs, offersReadingPosition: host == .drawing)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                         .background(GeometryReader { content in
                             Color.clear.preference(key: ClipWidthKey.self, value: content.size.width)
@@ -398,7 +402,9 @@ struct StreamNavigatorView: View {
 
     /// The dense rail's checkpoints as rows in a scroll view of their own, which a selection
     /// change scrolls by the least move that shows the active row (#277).
-    private func checkpointList(_ list: StreamNavigator.CheckpointList, height: CGFloat) -> some View {
+    private func checkpointList(
+        _ list: StreamNavigator.CheckpointList, height: CGFloat, offersReadingPosition: Bool
+    ) -> some View {
         let reveal = list.active.map {
             RailReveal.Request(id: $0.id, top: $0.top, bottom: $0.bottom)
         }
@@ -414,11 +420,40 @@ struct StreamNavigatorView: View {
             .background(RailReveal(request: reveal).accessibilityHidden(true))
         }
         .frame(height: height)
+        // With no map above it, the list's leading edge offers the reading position, drawing nothing.
+        .background(alignment: .leading) {
+            if offersReadingPosition {
+                readingPosition(
+                    Color.clear.frame(width: Metrics.scrollLaneWidth).allowsHitTesting(false), offered: true)
+            }
+        }
+    }
+
+    /// The adjustable reading position VoiceOver offers: the roll's place as a percent, stepped by
+    /// most of a viewport; hidden where `offered` is false.
+    private func readingPosition(_ content: some View, offered: Bool) -> some View {
+        content
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(CompanionL10n.string("pad.stream.position")))
+            .accessibilityValue(Text(CompanionL10n.format(
+                "pad.stream.percent",
+                Self.readingPercent(
+                    viewportTop: roll.geometry.viewportTop,
+                    documentHeight: roll.geometry.documentHeight,
+                    viewportHeight: roll.geometry.viewportHeight))))
+            .accessibilityAdjustableAction { direction in
+                let step = max(1, roll.geometry.viewportHeight * 0.8)
+                let delta: CGFloat = direction == .increment ? step : -step
+                let maximum = max(0, roll.geometry.documentHeight - roll.geometry.viewportHeight)
+                roll.scrub(toDocumentOffset: min(maximum, max(0, roll.geometry.viewportTop + delta)))
+            }
+            .accessibilityHidden(!offered)
     }
 
     /// The drawing itself, `layout.contentHeight` tall and clipped by the scroll view around it.
     private func stream(
-        _ layout: StreamNavigator.Layout, size: CGSize, nodeIDs: [UInt64], compact: Bool = false
+        _ layout: StreamNavigator.Layout, size: CGSize, nodeIDs: [UInt64], offersReadingPosition: Bool,
+        compact: Bool = false
     ) -> some View {
         // The one clamp: `.empty` reads 0 and the drawing still fills the column.
         let contentHeight = max(size.height, layout.contentHeight)
@@ -482,28 +517,15 @@ struct StreamNavigatorView: View {
             // where checkpoint rows span the column. It stops short of
             // the dots on the track, so the dots and the labels keep
             // their taps.
-            Color.clear
-                .frame(width: Metrics.scrollLaneWidth, height: contentHeight)
-                .contentShape(Rectangle())
-                .onTapGesture(coordinateSpace: .local) { point in
-                    jump(toTrackY: point.y, layout: layout)
-                }
-                .allowsHitTesting(drivesRoll && layout.band != nil)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(CompanionL10n.string("pad.stream.position")))
-                .accessibilityValue(Text(CompanionL10n.format(
-                    "pad.stream.percent",
-                    Self.readingPercent(
-                        viewportTop: roll.geometry.viewportTop,
-                        documentHeight: roll.geometry.documentHeight,
-                        viewportHeight: roll.geometry.viewportHeight))))
-                .accessibilityAdjustableAction { direction in
-                    let step = max(1, roll.geometry.viewportHeight * 0.8)
-                    let delta: CGFloat = direction == .increment ? step : -step
-                    let maximum = max(0, roll.geometry.documentHeight - roll.geometry.viewportHeight)
-                    roll.scrub(toDocumentOffset: min(maximum, max(0, roll.geometry.viewportTop + delta)))
-                }
-                .accessibilityHidden(!drivesRoll || layout.band == nil)
+            readingPosition(
+                Color.clear
+                    .frame(width: Metrics.scrollLaneWidth, height: contentHeight)
+                    .contentShape(Rectangle())
+                    .onTapGesture(coordinateSpace: .local) { point in
+                        jump(toTrackY: point.y, layout: layout)
+                    }
+                    .allowsHitTesting(drivesRoll && layout.band != nil),
+                offered: offersReadingPosition)
         }
         .frame(width: size.width, height: contentHeight, alignment: .topLeading)
         .highPriorityGesture(
