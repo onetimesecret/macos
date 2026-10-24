@@ -38,8 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ⌘-click as a Markdown link does; comments leave no text. Every other
   tag, and GFM's disallowed tags (`script`, `iframe`, `style` and the
   rest), stays visible as text, so nothing runs or embeds. An image,
-  Markdown or `img`, shows its alt text as plain text and loads nothing;
-  an image or link address with a sealed object in it is refused, and the
+  Markdown or `img`, shows its alt text as plain text and loads nothing,
+  so one with no alt text, such as `![](a.png)` or a bare `<img src>`,
+  shows nothing at all; an image or link address with a sealed object in it is refused, and the
   object keeps its place in rendered order and in copy. A page past the
   composition limits shows its plain text with its objects in place. The
   Settings dialect choice and the Load Image control are not part of this
