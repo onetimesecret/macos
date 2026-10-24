@@ -289,7 +289,8 @@ worktree_tree() { # <scratch index>
     printf '%s\n' "$output" | sed 's/^/    /' >&2
     return 1
   fi
-  GIT_INDEX_FILE="$scratch" git write-tree
+  # write-tree also rewrites the index, to save its cache tree.
+  (umask 077 && GIT_INDEX_FILE="$scratch" git write-tree)
 }
 
 # Reads, before the compile, HEAD (empty outside a checkout, on an unborn branch or with a
