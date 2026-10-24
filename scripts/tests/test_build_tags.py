@@ -649,7 +649,8 @@ class BuildRecordTests(unittest.TestCase):
     def test_scratch_index_is_owner_only(self):
         index = self.repo / ".git" / "index"
         index.chmod(0o644)
-        mode = 'echo "mode $(stat -f %Lp "$SOURCE_INDEX" 2>/dev/null || stat -c %a "$SOURCE_INDEX")"'
+        # ls, since BSD and GNU stat take different flags.
+        mode = 'echo "mode $(ls -l "$SOURCE_INDEX" | cut -c2-10)"'
         for dirty in (False, True):
             with self.subTest(dirty=dirty):
                 if dirty:
@@ -658,7 +659,7 @@ class BuildRecordTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(
                     [line for line in result.stdout.splitlines() if line.startswith("mode ")],
-                    ["mode 600", "mode 600"],
+                    ["mode rw-------", "mode rw-------"],
                 )
                 self.assertEqual(index.stat().st_mode & 0o777, 0o644)
 
