@@ -313,7 +313,8 @@ struct PreviewCompositionStream {
             try recoverObjects(tag.raw)
             return
         }
-        if tag.isClosing {
+        // HTML5 reads `</br>` as `<br>`; any other closing tag closes or stays literal.
+        if tag.isClosing, tag.name != "br" {
             guard let index = html.lastIndex(where: { $0.name == tag.name }) else {
                 diagnostics.append(.unmatchedClosingTag(tag.name))
                 try emitParts(tag.raw, decode: false)

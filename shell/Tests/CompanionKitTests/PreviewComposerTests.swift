@@ -165,6 +165,10 @@ final class PreviewComposerTests: XCTestCase {
         XCTAssertEqual(ink(try compose([html("<span>a  b\n c</span>")])), "a b c")
         XCTAssertEqual(ink(try compose([html("\n  lead <span> inner </span> tail\n")])), "lead inner tail ")
         XCTAssertEqual(ink(try compose([html("one<br>\n  two<p>\n three</p>")])), "one\u{2028}two\nthree\n")
+        // As HTML5 reads it, `</br>` breaks a line too; `</img>` closes nothing and stays literal.
+        let closing = try compose([html("a</br>b<br></br>c</img>")])
+        XCTAssertEqual(ink(closing), "a\u{2028}b\u{2028}\u{2028}c</img>")
+        XCTAssertEqual(closing.diagnostics, [.unmatchedClosingTag("img")])
         XCTAssertEqual(ink(try compose([html("a&nbsp; &#32; b")])), "a\u{00A0} b")
     }
 
