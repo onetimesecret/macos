@@ -154,21 +154,35 @@ them:
 - `apply_remote_note_update(page, object, bytes)`: merges a peer's batch
   into the note on the page with that cross-device identity, never its
   body, roster or ledger, a record with no note taking an empty one
-  first, and leaves the note's own undo steps as they were. It refuses
-  `Malformed`, `MissingHistory` and `NestedObject`, a batch that would
-  stand a sealed object in the note, each leaving the note as it was.
+  first, and leaves the note's own undo steps as they were. With no
+  record on that page, it merges into the object's records on this
+  device's other readable pages. It refuses `Malformed` (an empty batch
+  included), `MissingHistory`, `NestedObject`, a batch that would stand
+  a sealed object in the note, and `UnrelatedHistory`, a batch that
+  builds on none of a note's history while the note has text (a note
+  restored from its text alone takes one whose text equals its own),
+  each leaving the note as it was.
+
+A note's history is shared once any of it has been exported or a
+peer's batch or key frame has reached it. Only a shared note writes its
+log at rest; one no other device has seen restores from its text alone
+(`a_note_no_other_device_has_seen_persists_no_log_and_a_shared_one_persists_its_own`).
 
 Past its deadline a page gives and takes no note
 (`a_page_past_its_deadline_gives_no_note_and_takes_none`). A batch for
-an object with no record on its page waits in `note_pending`, the
-oldest going while the held bytes would pass 256 KiB
-(`PENDING_NOTE_BYTES`), one batch past the bound alone not kept, until
-the record arrives; a page's end drops what it held (code reading). A
-standing record's note compacts with its page under a fresh peer id, and a
-detached record's keeps its history. When a value moves into a
-standing record, the two notes merge if their histories share a base
-(`Note::merge_shared`), and otherwise the standing note stays. A clone's note starts a history
-of its own. Tests in `note.rs`:
+an identity with no record here waits in `note_pending` (`PendingNotes`),
+at most 256 batches (`PENDING_NOTE_BATCHES`) and 256 KiB
+(`PENDING_NOTE_BYTES`), the oldest going first, one batch past the byte
+bound alone not kept, until the identity's record arrives on any page;
+a page's end drops what was held for it (code reading). A page's
+compaction keeps a shared note's history whole and rests a note no
+other device has seen as its text alone, with no log
+(`a_pages_compaction_sheds_only_a_history_no_other_device_has_seen`);
+a ceremony rebuilds each standing record's note under a fresh peer id
+for the key frame. When a value moves into a standing record, the two
+notes merge if their histories share a base (`Note::merge_shared`), and
+otherwise the standing note stays. A clone's note starts a history of
+its own. Tests in `note.rs`:
 `two_devices_editing_one_note_converge_in_either_delivery_order`,
 `a_peers_note_edit_leaves_the_local_steps_as_they_were`,
 `missing_history_and_bad_bytes_are_refused_and_leave_the_note_as_it_was`,
@@ -179,7 +193,14 @@ of its own. Tests in `note.rs`:
 `a_detached_records_note_keeps_its_history_through_its_pages_compaction`,
 `a_value_moving_onto_a_record_whose_note_shares_its_base_merges_both_sides`,
 `a_value_moving_onto_a_record_with_no_shared_base_keeps_the_standing_note_once`,
-`a_clones_note_starts_a_history_of_its_own`.
+`a_clones_note_starts_a_history_of_its_own`,
+`a_note_edit_sent_for_the_page_an_object_left_reaches_it_where_it_moved`,
+`a_note_batch_held_for_one_page_drains_when_its_object_arrives_on_another`,
+`an_empty_note_batch_is_refused_and_nothing_waits`,
+`the_waiting_cache_keeps_at_most_256_batches_however_small`,
+`a_note_back_from_a_page_that_compacted_never_shows_its_text_twice`,
+`a_batch_building_on_none_of_a_notes_history_is_refused_and_leaves_the_note`,
+`a_note_restored_from_its_text_alone_takes_a_batch_spelling_it_and_refuses_another`.
 
 ## What the shell receives
 
@@ -282,7 +303,7 @@ calls these routes, and no C entry point reaches them.
 
 | Route | What it does |
 | --- | --- |
-| `set_writer`, `writer` | this device's fingerprint, the writer of its name versions |
+| `set_writer`, `writer` | this device's fingerprint, the writer of its name versions; setting it gives every version written with the zero writer before sync started this writer and marks its object changed (`names_written_before_a_writer_was_set_converge_once_each_device_sets_one`) |
 | `take_metadata_changes(page)` | drains the objects whose metadata changed on the page, as they stand now |
 | `all_metadata(page)` | every record on the page, attached and detached, for a restate |
 | `mark_metadata_dirty(page, objects)` | marks objects changed again, as a send that failed to encode leaves them |
@@ -305,11 +326,15 @@ the rest of its entry applies
 `an_invalid_received_name_is_skipped_and_the_rest_of_its_entry_applies`).
 Past its deadline a page gives and takes none
 (`a_page_past_its_deadline_gives_and_takes_no_metadata`). An entry for
-an object with no record on its page waits in `metadata_pending`,
+an object with no record on its page applies to the object's records on
+this device's other readable pages
+(`a_rename_sent_for_the_page_an_object_left_reaches_it_where_it_moved`).
+One for an identity with no record here waits in `metadata_pending`,
 folded into any entry held for the object, the oldest going past 256
-(`PENDING_CAP`), until the record arrives; an entry for a page not
-held here is not kept, and a page's end drops what it held and what
-changed
+(`PENDING_CAP`), until the identity's record arrives on any page
+(`an_entry_held_for_one_page_drains_when_its_object_arrives_on_another`);
+an entry for a page not held here is not kept, and a page's end drops
+what was held for it and what changed
 (`an_entry_before_its_sentinel_waits_and_applies_when_the_record_arrives`,
 `the_waiting_cache_evicts_its_oldest_past_256`,
 `an_entry_for_a_page_with_no_sheet_here_is_not_held`,
@@ -394,6 +419,22 @@ a debug build (`CompanionClient.sealedFragmentType`,
 `releaseSealedFragmentType`, `debugSealedFragmentType`). The core never
 sees it. `PageModel.boardHoldsOwnCopy` knows the type as every build
 names it.
+
+## A seal in place
+
+A seal that replaces ink already on the page (`seal_text_at` and its
+siblings with a length, through `place_chip`) compacts a solo page at
+once and owes an enrolled page its ceremony, since the ink's insert
+stays in the op log as deleted text until a rebuild (proposed ADR-0058
+point 10; `sealing_ink_in_place_on_a_solo_page_sheds_the_ink_from_its_history`,
+`sealing_ink_in_place_on_a_deferred_page_owes_the_ceremony_that_sheds_it`,
+`a_seal_at_a_point_compacts_nothing_and_owes_no_ceremony`). On a
+channel with no peer the solo ceremony withdraws the turn's queued ops
+before they publish
+(`a_seal_in_place_on_a_channel_with_no_peer_sends_none_of_its_ink_that_turn_or_the_next`);
+with peers, the ink can reach them as page history until the ballot
+commits, and each member's rebuild then sheds it
+(`after_a_ballot_commits_on_both_devices_neither_keeps_the_ink_a_seal_in_place_replaced`).
 
 ## At rest
 
