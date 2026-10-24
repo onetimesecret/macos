@@ -163,8 +163,13 @@ stack.
   the page it leaves, since a step there could stand its sentinel a
   second time. A peer's batch can clear the undo of a page the person
   is not editing.
-- An earlier build still refuses these batches on `ChipRoster` and
-  skips the two new envelopes; no capability negotiation exists. No
+- Two concurrent moves of one object to different pages leave it
+  standing on both. The device with the value moves it to the first of
+  them in its page order; the other shows `value on another device`
+  until its page ends.
+- A build released before this change still refuses these batches on
+  `ChipRoster` and skips the two new envelopes; no capability
+  negotiation exists. No
   user meets this before the relay ships.
 - An earlier app build cannot open content this build writes.
 - On acceptance: ADR-0043 point 4 is superseded in part (the note
