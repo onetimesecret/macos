@@ -56,3 +56,6 @@
 - [Issue #310 deadline writes](project_issue310_deadline_writes.md): chip_mut reads readable_sheets_mut; the note chord skips menu validation; mirror lib.rs docs in companion_ffi.h; page ink on a due page is still ungated
 - [Roll jump tests](project_roll_jump_tests.md): ordered offscreen window animates jumps; only a zero duration group cancels one, so only settlePendingPlace supersedes
 - [SwiftUI AX tree absent in xctest](project_swiftui_ax_tree_absent_in_xctest.md): a hosted SwiftUI view exposes no accessibility children or actions; test the pure builder the view reads
+- [Issue #332 spec corpus](project_issue332_spec_corpus.md): CommonMark 652/652, GFM 13 pinned; tagfilter mismatches are the harness's; README cites lab commit 41266668 since the lab never reaches main
+- [Issue #332 FFI entry](project_issue332_ffi_entry.md): parse_json takes objects and limits for the preview; only ADR-0012 Amendment 1 is accepted; finl_unicode ships V3 text; both CI jobs list companion-markdown
+- [Issue #332 list reach](project_issue332_list_reach.md): a definition ending a list places its object after the list (comrak's zero column fix); cmark-gfm parity was dropped on purpose
