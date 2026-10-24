@@ -151,9 +151,22 @@ pub(crate) enum UpdateRefusal {
     /// The update depends on operations this document lacks. Refused, never
     /// queued: recovery is rejoining at the key frame (ADR-0021).
     MissingHistory,
-    /// A chip sentinel names an identity not in the roster, or one twice;
-    /// roster and marks stay one-to-one, as on restore.
-    ChipRoster,
+    /// The update would leave a chip sentinel in a note: sealed objects do not
+    /// nest (ADR-0058 point 6).
+    NestedObject,
+    /// The update builds on none of a note's own operations, a second history
+    /// whose text would show twice (ADR-0058, eject triggers).
+    UnrelatedHistory,
+}
+
+/// Whose operations a note's batch must build on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Lineage {
+    /// Any: a merge already judged over a shared base.
+    Any,
+    /// The document's own, once it has any: a change the batch brings comes from one
+    /// of its peers or depends on one of its operations.
+    Own,
 }
 
 /// What the op log can still prove about a span, frozen into the block
@@ -626,7 +639,8 @@ impl SheetDocument {
         self.doc.commit_with(options);
     }
 
-    /// The body split into ink and chips. A sentinel with an unreadable mark is ink.
+    /// The body split into ink and chips. A sentinel with an unreadable mark is ink,
+    /// and so is any other character under a chip mark.
     pub(crate) fn runs(&self) -> Vec<DocRun> {
         runs_of(&self.body)
     }
@@ -668,6 +682,34 @@ impl SheetDocument {
                 }
             }
         }
+        self.take_out_at(taken)
+    }
+
+    /// Delete each standing after an identity's first, and every one in `ended`, outside
+    /// the undo stack (ADR-0058 points 2 and 8). Returns the positions taken, last first.
+    pub(crate) fn take_out_standings(&self, ended: &[ItemId]) -> Vec<usize> {
+        let mut seen: Vec<ItemId> = Vec::new();
+        let mut taken = Vec::new();
+        let mut pos = 0usize;
+        for run in self.runs() {
+            match run {
+                DocRun::Chip(id) => {
+                    if ended.contains(&id) || seen.contains(&id) {
+                        taken.push(pos);
+                    } else {
+                        seen.push(id);
+                    }
+                    pos += 1;
+                }
+                DocRun::Ink(text) => pos += text.encode_utf16().count(),
+            }
+        }
+        self.take_out_at(taken)
+    }
+
+    /// Delete one unit at each ascending offset in `taken`, last first, as one
+    /// change the undo stack keeps as a peer's.
+    fn take_out_at(&self, taken: Vec<usize>) -> Vec<usize> {
         if taken.is_empty() {
             return taken;
         }
@@ -733,12 +775,13 @@ impl SheetDocument {
     }
 
     /// Apply a remote update batch only if a trial on a fork is clean:
-    /// decodable, no missing history, chips one-to-one with `owned`.
+    /// decodable, with no missing history. Returns each identity the body
+    /// then stands that `owned` lacks, once, in body order (ADR-0058 point 1).
     pub(crate) fn import_update(
         &self,
         bytes: &[u8],
         owned: &[ItemId],
-    ) -> Result<(), UpdateRefusal> {
+    ) -> Result<Vec<ItemId>, UpdateRefusal> {
         // A bare fork, not a `SheetDocument`: no undo stack to bind.
         let trial = self.doc.fork();
         let body = trial.get_text("body");
@@ -746,12 +789,11 @@ impl SheetDocument {
         if status.pending.is_some() {
             return Err(UpdateRefusal::MissingHistory);
         }
-        let mut seen: Vec<ItemId> = Vec::new();
+        let mut arrived: Vec<ItemId> = Vec::new();
         for id in chips_of(&body) {
-            if !owned.contains(&id) || seen.contains(&id) {
-                return Err(UpdateRefusal::ChipRoster);
+            if !owned.contains(&id) && !arrived.contains(&id) {
+                arrived.push(id);
             }
-            seen.push(id);
         }
         let status = self
             .doc
@@ -761,7 +803,54 @@ impl SheetDocument {
             status.pending.is_none(),
             "a batch the fork applied whole cannot leave pending ops here"
         );
-        Ok(())
+        Ok(arrived)
+    }
+
+    /// Apply a peer's batch to chipless ink, a note's (ADR-0058 point 6), only if a
+    /// trial on a fork is clean, leaves no sentinel, marked or not, and builds on the
+    /// `lineage` asked. Returns whether the batch brought an operation this document lacked.
+    pub(crate) fn import_ink_update(
+        &self,
+        bytes: &[u8],
+        lineage: Lineage,
+    ) -> Result<bool, UpdateRefusal> {
+        let trial = self.doc.fork();
+        let body = trial.get_text("body");
+        let status = trial.import(bytes).map_err(|_| UpdateRefusal::Malformed)?;
+        if status.pending.is_some() {
+            return Err(UpdateRefusal::MissingHistory);
+        }
+        let nested = runs_of(&body).iter().any(|run| match run {
+            DocRun::Chip(_) => true,
+            DocRun::Ink(ink) => holds_sentinel(ink),
+        });
+        if nested {
+            return Err(UpdateRefusal::NestedObject);
+        }
+        let before = self.doc.oplog_vv();
+        if lineage == Lineage::Own && !self.is_pristine() && unrelated(&trial, &before) {
+            return Err(UpdateRefusal::UnrelatedHistory);
+        }
+        let status = self
+            .doc
+            .import(bytes)
+            .expect("the same bytes imported cleanly into a fork a moment ago");
+        debug_assert!(
+            status.pending.is_none(),
+            "a batch the fork applied whole cannot leave pending ops here"
+        );
+        Ok(self.doc.oplog_vv() != before)
+    }
+
+    /// Whether this document and `other` both have operations of one peer, the base
+    /// two histories must share before a merge folds their edits in once.
+    pub(crate) fn shares_base(&self, other: &Self) -> bool {
+        let ours = self.doc.oplog_vv();
+        other
+            .doc
+            .oplog_vv()
+            .iter()
+            .any(|(peer, counter)| *counter > 0 && ours.get(peer).is_some_and(|ours| *ours > 0))
     }
 
     /// The body's length in UTF-16 code units.
@@ -942,6 +1031,14 @@ impl SheetDocument {
         self.doc.peer_id()
     }
 
+    /// Every peer the log has operations from, ascending (test-only).
+    #[cfg(test)]
+    pub(crate) fn history_peers(&self) -> Vec<u64> {
+        let mut peers: Vec<u64> = self.doc.oplog_vv().keys().copied().collect();
+        peers.sort_unstable();
+        peers
+    }
+
     /// Commit timestamp of the body's first character (test-only).
     #[cfg(test)]
     pub(crate) fn first_change_timestamp(&self) -> Option<i64> {
@@ -986,21 +1083,21 @@ impl SheetDocument {
 
 /// A body split into ink and chips; free-standing so a fork can be read.
 fn runs_of(body: &LoroText) -> Vec<DocRun> {
-    let mut pieces: Vec<_> = body
-        .to_delta()
-        .into_iter()
-        .filter_map(|piece| {
-            let TextDelta::Insert { insert, attributes } = piece else {
-                return None;
-            };
-            let insert = Zeroizing::new(insert);
-            let chip = attributes
-                .as_ref()
-                .and_then(|attrs| attrs.get(CHIP_MARK))
-                .and_then(parse_mark_value);
-            Some((insert, chip))
-        })
-        .collect();
+    let mut pieces: Vec<(Zeroizing<String>, Option<ItemId>)> = Vec::new();
+    for piece in body.to_delta() {
+        let TextDelta::Insert { insert, attributes } = piece else {
+            continue;
+        };
+        let insert = Zeroizing::new(insert);
+        match attributes
+            .as_ref()
+            .and_then(|attrs| attrs.get(CHIP_MARK))
+            .and_then(parse_mark_value)
+        {
+            Some(id) => split_marked(&insert, id, &mut pieces),
+            None => pieces.push((insert, None)),
+        }
+    }
     let mut runs = Vec::new();
     for group in pieces.chunk_by_mut(|a, b| a.1.is_none() && b.1.is_none()) {
         if let Some(id) = group[0].1 {
@@ -1020,6 +1117,23 @@ fn runs_of(body: &LoroText) -> Vec<DocRun> {
     runs
 }
 
+/// A marked piece as one chip per sentinel; any other character under the mark is ink.
+fn split_marked(insert: &str, id: ItemId, pieces: &mut Vec<(Zeroizing<String>, Option<ItemId>)>) {
+    let mut rest = insert;
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix(CHIP_SENTINEL) {
+            pieces.push((Zeroizing::new(String::new()), Some(id)));
+            rest = after;
+            continue;
+        }
+        let end = rest.find(CHIP_SENTINEL).unwrap_or(rest.len());
+        let mut ink = Zeroizing::new(String::with_capacity(end));
+        ink.push_str(&rest[..end]);
+        pieces.push((ink, None));
+        rest = &rest[end..];
+    }
+}
+
 /// Every chip standing in a body, in document order.
 fn chips_of(body: &LoroText) -> Vec<ItemId> {
     runs_of(body)
@@ -1029,6 +1143,39 @@ fn chips_of(body: &LoroText) -> Vec<ItemId> {
             DocRun::Ink(_) => None,
         })
         .collect()
+}
+
+/// Whether `trial` has changes past `before` and none comes from a peer `before` has
+/// operations of or depends on one of those operations.
+fn unrelated(trial: &LoroDoc, before: &VersionVector) -> bool {
+    let mut brought = false;
+    for (peer, end) in trial.oplog_vv().iter() {
+        let start = before.get(peer).copied().unwrap_or(0);
+        if start >= *end {
+            continue;
+        }
+        if start > 0 {
+            return false;
+        }
+        brought = true;
+        let mut counter = 0;
+        while counter < *end {
+            let Some(change) = trial.get_change(ID::new(*peer, counter)) else {
+                break;
+            };
+            if change.deps.iter().any(|dep| before.includes_id(dep)) {
+                return false;
+            }
+            let next = i32::try_from(change.len)
+                .ok()
+                .and_then(|len| change.id.counter.checked_add(len));
+            match next {
+                Some(next) if next > counter => counter = next,
+                _ => break,
+            }
+        }
+    }
+    brought
 }
 
 /// The push hook reads the body in Loro's callback; relies on loro 1.13.9 `emit_events` unlocking first.
@@ -1519,27 +1666,108 @@ mod tests {
     }
 
     #[test]
-    fn a_delta_breaking_the_chip_roster_is_refused_whole() {
+    fn a_delta_standing_identities_the_page_lacks_applies_and_names_each_once() {
         let source = SheetDocument::new();
         let mirror = SheetDocument::new();
-        let foreign = ItemId::random();
-
-        mirror.insert(0, "local").unwrap();
-        mirror.commit(None);
-        let before_runs = mirror.runs();
-        let before_version = mirror.version();
+        let (owned, foreign) = (ItemId::random(), ItemId::random());
 
         source.insert(0, "ink").unwrap();
         source.insert_chip(0, foreign).unwrap();
+        source.insert_chip(1, owned).unwrap();
+        source.insert_chip(5, foreign).unwrap();
         source.commit(None);
         let delta = source.export_updates_since(&mirror.version()).unwrap();
 
+        assert_eq!(mirror.import_update(&delta, &[owned]), Ok(vec![foreign]));
+        assert_eq!(mirror.runs(), source.runs());
+        let echo = source.export_updates_since(&SheetDocument::pristine_version());
         assert_eq!(
-            mirror.import_update(&delta, &[]),
-            Err(UpdateRefusal::ChipRoster)
+            mirror.import_update(&echo.unwrap(), &[owned, foreign]),
+            Ok(vec![]),
+            "an echo names nothing the page now owns"
         );
-        assert_eq!(mirror.runs(), before_runs);
-        assert_eq!(mirror.version(), before_version);
+    }
+
+    #[test]
+    fn adjacent_standings_of_one_identity_read_as_two_and_the_later_is_taken_out() {
+        let doc = SheetDocument::new();
+        let id = ItemId::random();
+        doc.insert(0, "ab").unwrap();
+        doc.insert_chip(1, id).unwrap();
+        doc.insert_chip(2, id).unwrap();
+        doc.commit(None);
+        let ink = |text: &str| DocRun::Ink(text.to_string().into());
+        assert_eq!(
+            doc.runs(),
+            vec![ink("a"), DocRun::Chip(id), DocRun::Chip(id), ink("b")]
+        );
+
+        assert_eq!(doc.take_out_standings(&[]), vec![2]);
+        assert_eq!(doc.runs(), vec![ink("a"), DocRun::Chip(id), ink("b")]);
+        assert!(doc.take_out_standings(&[]).is_empty());
+        assert_eq!(doc.take_out_standings(&[id]), vec![1]);
+        assert_eq!(doc.runs(), vec![ink("ab")]);
+    }
+
+    /// A peer's batch whose body is `text` with `marked` under `id`'s chip mark,
+    /// written through Loro below this build's guards, imported by a fresh page.
+    fn crafted(text: &str, marked: std::ops::Range<usize>, id: ItemId) -> SheetDocument {
+        let source = SheetDocument::new();
+        source.body.insert_utf16(0, text).unwrap();
+        source
+            .body
+            .mark_utf16(marked, CHIP_MARK, id.to_string())
+            .unwrap();
+        source.commit(None);
+        let mirror = SheetDocument::new();
+        let delta = source.export_updates_since(&mirror.version()).unwrap();
+        mirror.import_update(&delta, &[]).unwrap();
+        mirror
+    }
+
+    #[test]
+    fn a_peers_chip_mark_over_ink_reads_as_ink_and_the_take_out_leaves_it() {
+        let id = ItemId::random();
+        let mirror = crafted("keep abc tail", 5..8, id);
+        let runs = mirror.runs();
+        assert_eq!(runs, vec![DocRun::Ink("keep abc tail".to_string().into())]);
+        if let [DocRun::Ink(text)] = &runs[..] {
+            assert_eq!(text.capacity(), text.len());
+        }
+        assert!(mirror.live_chips().is_empty(), "marked ink names no object");
+
+        assert!(mirror.take_out_standings(&[id]).is_empty());
+        assert!(mirror.take_out_standings(&[]).is_empty());
+        assert_eq!(mirror.runs(), runs);
+        assert_eq!(mirror.utf16_len(), 13);
+    }
+
+    #[test]
+    fn mixed_marked_ink_and_sentinels_take_out_only_the_doubled_sentinel() {
+        let id = ItemId::random();
+        let mirror = crafted("ax\u{FFFC}y\u{FFFC}b", 1..5, id);
+        let ink = |text: &str| DocRun::Ink(text.to_string().into());
+        let runs = mirror.runs();
+        assert_eq!(
+            runs,
+            vec![
+                ink("ax"),
+                DocRun::Chip(id),
+                ink("y"),
+                DocRun::Chip(id),
+                ink("b")
+            ]
+        );
+        for run in &runs {
+            if let DocRun::Ink(text) = run {
+                assert_eq!(text.capacity(), text.len());
+            }
+        }
+        assert_eq!(mirror.chip_position(id), Some(2));
+
+        assert_eq!(mirror.take_out_standings(&[]), vec![4]);
+        assert_eq!(mirror.runs(), vec![ink("ax"), DocRun::Chip(id), ink("yb")]);
+        assert_eq!(mirror.utf16_len(), 5);
     }
 
     #[test]
@@ -1821,7 +2049,7 @@ mod tests {
     }
 
     #[test]
-    fn a_delta_standing_one_chip_twice_is_refused_whole() {
+    fn a_delta_standing_one_chip_twice_applies_for_the_settle_to_take_out() {
         let source = SheetDocument::new();
         let mirror = SheetDocument::new();
         let id = ItemId::random();
@@ -1830,11 +2058,10 @@ mod tests {
         source.insert_chip(2, id).unwrap();
         source.commit(None);
         let delta = source.export_updates_since(&mirror.version()).unwrap();
-        assert_eq!(
-            mirror.import_update(&delta, &[id]),
-            Err(UpdateRefusal::ChipRoster)
-        );
-        assert_eq!(mirror.runs(), Vec::<DocRun>::new());
+        assert_eq!(mirror.import_update(&delta, &[id]), Ok(vec![]));
+        assert_eq!(mirror.live_chips(), vec![id, id]);
+        assert_eq!(mirror.take_out_standings(&[]), vec![2]);
+        assert_eq!(mirror.live_chips(), vec![id]);
     }
 
     #[test]

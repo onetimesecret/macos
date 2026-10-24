@@ -426,6 +426,80 @@ pub unsafe extern "C" fn companion_test_ink_below_the_guard(
         .ink_below_the_guard(SheetId::from_raw(sheet), pos_u16, text)
 }
 
+/// Stand a record with no value at `pos_u16` of page `sheet`, as a peer's
+/// batch stands one (ADR-0058 point 1), of `kind` (`"text"`, `"image"`, or
+/// null for unknown) and size class `size` (`"tiny"` to `"huge"`, or null),
+/// under the identity of the chip `of_chip` stands on any page, or a fresh
+/// one for 0 (ADR-0058 point 3). Returns its chip id, or 0 on refusal.
+/// `test-util` only (ADR-0018).
+///
+/// # Safety
+/// `handle` must be null or a valid handle. `kind` and `size` must each be
+/// null or a valid, NUL-terminated UTF-8 C string.
+#[cfg(feature = "test-util")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_test_stand_peer_record(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    pos_u16: u32,
+    kind: *const c_char,
+    size: *const c_char,
+    of_chip: u64,
+) -> u64 {
+    use companion_core::{PeerKind, SizeClass};
+    if is_file_id(sheet) {
+        return 0;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return 0;
+    };
+    let kind = if kind.is_null() {
+        None
+    } else {
+        match unsafe { cstr(kind) } {
+            Some("text") => Some(PeerKind::Text),
+            Some("image") => Some(PeerKind::Image),
+            _ => return 0,
+        }
+    };
+    let size = if size.is_null() {
+        None
+    } else {
+        let word = unsafe { cstr(size) };
+        let classes = [
+            SizeClass::Tiny,
+            SizeClass::Small,
+            SizeClass::Medium,
+            SizeClass::Large,
+            SizeClass::Huge,
+        ];
+        let Some(class) = classes.into_iter().find(|c| Some(c.as_str()) == word) else {
+            return 0;
+        };
+        Some(class)
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return 0;
+    };
+    let sheet = SheetId::from_raw(sheet);
+    let stood = if of_chip == 0 {
+        guard.store.stand_peer_record(sheet, pos_u16, kind, size)
+    } else {
+        let of_chip = ChipId::from_raw(of_chip);
+        let Some(uuid) = guard
+            .store
+            .sheets()
+            .find_map(|page| page.chip(of_chip).map(SealedChip::uuid))
+        else {
+            return 0;
+        };
+        guard
+            .store
+            .stand_peer_record_as(sheet, pos_u16, uuid, kind, size)
+    };
+    stood.map_or(0, ChipId::raw)
+}
+
 fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
     companion_core::harden_process();
     #[cfg(target_os = "macos")]
@@ -1209,7 +1283,8 @@ pub unsafe extern "C" fn companion_sheet_undo_selection_length_u16(
 /// `ConcealedType`, keeps the receipt for [`companion_clear_clipboard_if_ours`],
 /// and records one `sent` to `clipboard`. The chip survives. Returns whether
 /// it existed; false, writing and recording nothing, past its page's deadline
-/// (Law 0001, expiry row).
+/// (Law 0001, expiry row) or when its value is on another device (ADR-0058
+/// point 4).
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1232,7 +1307,8 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
 /// Copy `NAME=<plaintext>` by copy decrypted's route
 /// (Law 0001; ADR-0047 point 2): the store composes it and this
 /// writes it as [`companion_chip_copy_out`] does. False, writing and recording
-/// nothing, for an unknown, unnamed or image chip, or a page past its deadline
+/// nothing, for an unknown, unnamed or image chip, one whose value is on
+/// another device (ADR-0058 point 4), or a page past its deadline
 /// (Law 0001, expiry row).
 ///
 /// # Safety
@@ -1274,7 +1350,8 @@ pub unsafe extern "C" fn companion_chip_stands(handle: *mut CompanionHandle, chi
 }
 
 /// Burn a chip, attached or detached, wiping its bytes and its page's undo
-/// stack (ADR-0046 point 2). Returns whether it existed.
+/// stack (ADR-0046 point 2). Returns whether it existed; false, changing
+/// nothing, when its value is on another device (ADR-0058 point 8).
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1303,7 +1380,9 @@ pub unsafe extern "C" fn companion_chip_name_refusal(draft: *const c_char) -> u3
     match judge_name(draft) {
         Ok(_) => 0,
         Err(NameRefusal::TooLong) => 1,
-        Err(NameRefusal::OutsideCharset | NameRefusal::UnknownChip) => 2,
+        Err(
+            NameRefusal::OutsideCharset | NameRefusal::UnknownChip | NameRefusal::VersionsSpent,
+        ) => 2,
     }
 }
 
@@ -1848,8 +1927,8 @@ pub unsafe extern "C" fn companion_active_cut_json(handle: *mut CompanionHandle)
 
 /// Decrypted drag: write a chip's payload into the drag `item` on `pasteboard`
 /// under its type and record one `sent` to `drag`; false, doing neither, on
-/// refusal, which includes a removed chip and a page past its deadline
-/// (Law 0001, expiry row).
+/// refusal, which includes a removed chip, one whose value is on another
+/// device (ADR-0058 point 4) and a page past its deadline (Law 0001, expiry row).
 ///
 /// # Safety
 /// `handle` must be a valid handle. `pasteboard` and `item` must each be null
@@ -1953,11 +2032,12 @@ impl Companion {
         if item.on_general_pasteboard() {
             return false;
         }
+        // No meta when the value is on another device, so nothing is provided.
         let Some(meta) = self
             .store
             .readable_sheets()
             .find_map(|sheet| sheet.chip(chip))
-            .map(SealedChip::meta)
+            .and_then(SealedChip::meta)
         else {
             return false;
         };
@@ -2221,6 +2301,32 @@ pub unsafe extern "C" fn companion_expire_due(handle: *mut CompanionHandle) -> u
         return 0;
     };
     guard.store.expire_due().len() as u64
+}
+
+/// Drain the pages another page's edit, burn or end changed since the last
+/// call, as a JSON array of page ids, for the shell to read again as it reads
+/// a peer's batch (ADR-0058 points 3 and 8). Free with
+/// [`companion_string_free`]; null on error.
+///
+/// # Safety
+/// `handle` must be null or a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_take_restated_pages_json(
+    handle: *mut CompanionHandle,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let pages: Vec<u64> = guard
+        .store
+        .take_restated_pages()
+        .into_iter()
+        .map(SheetId::raw)
+        .collect();
+    to_c_json(&pages)
 }
 
 // ---- Persistence: the sealed state file ----
@@ -2793,7 +2899,8 @@ pub unsafe extern "C" fn companion_connection_test(handle: *mut CompanionHandle)
 /// without holding the core lock; call off the main thread. On success the
 /// link is on the clipboard. Returns `{"ok": true, "receipt_id"}` or
 /// `{"ok": false, "error"}`, sending nothing for a page past its deadline
-/// (Law 0001, expiry row); free with [`companion_string_free`].
+/// (Law 0001, expiry row) or a chip whose value is on another device
+/// (ADR-0058 point 4); free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle. `opts_json`, when non-null, must be
@@ -2831,13 +2938,14 @@ pub unsafe extern "C" fn companion_chip_conceal(
             }
             return conceal_error("that content is gone");
         };
-        if matches!(
-            sheet.chip(chip).map(SealedChip::meta),
-            Some(ChipMeta::Image { .. })
-        ) {
-            return conceal_error(
-                "this chip holds an image, which cannot travel as a text secret yet",
-            );
+        match sheet.chip(chip).map(SealedChip::meta) {
+            Some(None) => return conceal_error("this chip's value is on another device"),
+            Some(Some(ChipMeta::Image { .. })) => {
+                return conceal_error(
+                    "this chip holds an image, which cannot travel as a text secret yet",
+                );
+            }
+            Some(Some(ChipMeta::Text { .. })) | None => {}
         }
         let Some(bytes) = guard.store.chip_payload(chip) else {
             return conceal_error("that content is gone");
@@ -2862,7 +2970,8 @@ pub unsafe extern "C" fn companion_chip_conceal(
 }
 
 /// Conceal the whole page (ink plus inlined sealed bytes; refused with an
-/// image chip) into one link, recording one `sent` against the page.
+/// image chip, or an object in the body whose value is on another device)
+/// into one link, recording one `sent` against the page.
 /// Otherwise as [`companion_chip_conceal`].
 ///
 /// # Safety
@@ -2988,8 +3097,10 @@ fn sync_refusal(reason: &str) -> *mut c_char {
 /// `{"relay_url", "authorize_url", "token_url", "client_id"}`, all
 /// required, the three URLs refused unless `https://`. Not persisted
 /// core-side (the shell re-sends it at launch); configuring resumes the
-/// persisted sign-in from its own Keychain account. Returns whether the
-/// configuration was accepted.
+/// persisted sign-in from its own Keychain account, and names the device
+/// identity at rest, if any, as the writer of its name versions
+/// (ADR-0058 point 5), minting none. Returns whether the configuration
+/// was accepted.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `json` a valid, NUL-terminated
@@ -3009,6 +3120,12 @@ pub unsafe extern "C" fn companion_sync_configure(
         return false;
     };
     guard.sync.keeper = Some(sync_driver::keeper_for(&config, &*guard.credentials));
+    let writer = pairing::stored_device_fingerprint(&*guard.credentials)
+        .as_deref()
+        .and_then(sync_driver::writer_of);
+    if let Some(writer) = writer {
+        guard.store.set_writer(writer);
+    }
     guard.sync.config = Some(config);
     // A fresh configuration forgets the last one's faults.
     sync_driver::clear_fault(&mut guard);
@@ -3518,6 +3635,7 @@ fn placed_json(placed: Placed) -> *mut c_char {
         "expired": placed.expired,
         "burned": placed.burned,
         "unavailable": placed.unavailable,
+        "elsewhere": placed.elsewhere,
         "unreadable": placed.unreadable,
         "pages_expired": placed.pages_expired,
     });
@@ -3680,8 +3798,9 @@ mod tests {
     fn content_routes_preserve_escaped_text_and_sorted_json_shapes() {
         fn old_face(chip: &SealedChip) -> serde_json::Value {
             serde_json::json!({
+                "available": true,
                 "chip_id": chip.id().raw(),
-                "kind": match chip.meta() {
+                "kind": match chip.meta().unwrap() {
                     ChipMeta::Text { .. } => "text",
                     ChipMeta::Image { .. } => "image",
                 },
@@ -4331,6 +4450,225 @@ mod tests {
             assert!(!document.contains('\u{FFFC}'));
             assert!(document.contains("\"chip\""), "the object went with it");
             assert!(!companion_sheet_take_out_object_characters(handle, sheet));
+            companion_free(handle);
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn a_record_with_no_value_crosses_as_a_face_alone_and_every_value_route_refuses_it() {
+        const MARKER: &str = "ghp_payload-marker-5c1e";
+        let handle = handle();
+        unsafe {
+            assert!(companion_connection_configure(
+                handle,
+                cstring(r#"{"server_url": "https://eu.onetimesecret.com"}"#).as_ptr()
+            ));
+            let (sheet, local) = page_with_a_chip(handle, MARKER);
+            let image = cstring("image");
+            let peer =
+                companion_test_stand_peer_record(handle, sheet, 0, image.as_ptr(), ptr::null(), 0);
+            assert_ne!(peer, 0);
+            assert!(companion_chip_set_name(
+                handle,
+                peer,
+                cstring("PEER_KEY").as_ptr()
+            ));
+
+            let runs = json_of(companion_sheet_document_json(handle, sheet));
+            let faces: Vec<&serde_json::Value> = runs
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|run| run.get("chip"))
+                .collect();
+            let face = faces.iter().find(|face| face["chip_id"] == peer).unwrap();
+            assert_eq!(face["available"], false);
+            assert_eq!(face["kind"], "image");
+            assert_eq!(face["excerpt"], "");
+            assert_eq!(face["size_label"], "");
+            assert_eq!(face["concealed"], false);
+            assert_eq!(face["name"], "PEER_KEY");
+            let held = faces.iter().find(|face| face["chip_id"] == local).unwrap();
+            assert_eq!(held["available"], true);
+            assert!(
+                held.to_string().contains("ghp_"),
+                "the control: the local face shows its excerpt"
+            );
+            assert!(!face.to_string().contains("ghp_"), "{face}");
+
+            let copied = json_of(companion_sheet_copy_fragment(handle, sheet, 0, 1));
+            assert!(!copied.to_string().contains("ghp_"), "{copied}");
+            assert_eq!(copied["plain"], "[sealed content \u{b7} unavailable]");
+
+            assert!(!companion_chip_copy_out(handle, peer));
+            assert!(!companion_chip_copy_name_value(handle, peer));
+            assert!(!companion_chip_delete(handle, peer));
+            let refusal = json_of(companion_chip_conceal(handle, peer, ptr::null()));
+            assert_eq!(refusal["error"], "this chip's value is on another device");
+            let refusal = json_of(companion_sheet_conceal(handle, sheet, ptr::null()));
+            assert_eq!(
+                refusal["error"],
+                PayloadError::ValueElsewhere.to_string().as_str()
+            );
+            assert!(
+                companion_test_wire_last_json(handle).is_null(),
+                "nothing was sent"
+            );
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                assert!(guard.last_write.is_none(), "nothing reached the board");
+                assert!(
+                    guard
+                        .store
+                        .ledger()
+                        .all(|record| record.event() != companion_core::LedgerEvent::Sent),
+                    "nothing was recorded as sent"
+                );
+            }
+            companion_free(handle);
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn the_peer_record_seam_stands_a_face_with_no_value_and_refuses_off_a_point() {
+        let handle = handle();
+        let (text, small) = (cstring("text"), cstring("small"));
+        let (file, gibberish) = (cstring("file"), cstring("enormous"));
+        unsafe {
+            let (_tab, sheet) = new_page(handle);
+            let stand = |handle, sheet, at, kind: &CString, size: &CString| {
+                companion_test_stand_peer_record(handle, sheet, at, kind.as_ptr(), size.as_ptr(), 0)
+            };
+            assert_eq!(stand(ptr::null_mut(), sheet, 0, &text, &small), 0);
+            assert_eq!(
+                stand(
+                    handle,
+                    companion_core::FILE_ID_TAG | sheet,
+                    0,
+                    &text,
+                    &small
+                ),
+                0
+            );
+            assert_eq!(
+                stand(handle, sheet + 4_242, 0, &text, &small),
+                0,
+                "an unknown page"
+            );
+            assert_eq!(
+                stand(handle, sheet, 1, &text, &small),
+                0,
+                "past the body's end"
+            );
+            assert_eq!(
+                stand(handle, sheet, 0, &file, &small),
+                0,
+                "a kind no face has"
+            );
+            assert_eq!(
+                stand(handle, sheet, 0, &text, &gibberish),
+                0,
+                "not a size class"
+            );
+            let document = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(!document.contains("\"chip\""), "a refusal stood {document}");
+
+            let peer = stand(handle, sheet, 0, &text, &small);
+            assert_ne!(peer, 0);
+            let unknown =
+                companion_test_stand_peer_record(handle, sheet, 1, ptr::null(), ptr::null(), 0);
+            assert_ne!(unknown, 0);
+            let runs = json_of(companion_sheet_document_json(handle, sheet));
+            let faces: Vec<&serde_json::Value> = runs
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|run| run.get("chip"))
+                .collect();
+            assert_eq!(faces.len(), 2, "{runs}");
+            assert_eq!(faces[0]["chip_id"], peer);
+            assert_eq!(faces[0]["available"], false);
+            assert_eq!(faces[0]["kind"], "text");
+            assert_eq!(faces[0]["size_label"], "small");
+            assert_eq!(faces[1]["chip_id"], unknown);
+            assert_eq!(faces[1]["available"], false);
+            assert_eq!(faces[1]["kind"], "unknown");
+            assert_eq!(faces[1]["size_label"], "");
+            companion_free(handle);
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn a_page_another_page_s_edit_or_burn_restated_is_drained_once_over_the_seam() {
+        const MARKER: &str = "ghp_payload-marker-7a2d";
+        let restated = |handle| unsafe { json_of(companion_take_restated_pages_json(handle)) };
+        assert!(unsafe { companion_take_restated_pages_json(ptr::null_mut()) }.is_null());
+        let handle = handle();
+        unsafe {
+            for burn in [false, true] {
+                let (home, chip) = page_with_a_chip(handle, MARKER);
+                let (_, away) = new_page(handle);
+                assert_eq!(
+                    companion_test_stand_peer_record(
+                        handle,
+                        away,
+                        0,
+                        ptr::null(),
+                        ptr::null(),
+                        4_242
+                    ),
+                    0,
+                    "an identity that stands nowhere"
+                );
+                let peer = companion_test_stand_peer_record(
+                    handle,
+                    away,
+                    0,
+                    ptr::null(),
+                    ptr::null(),
+                    chip,
+                );
+                assert_ne!(peer, 0);
+                assert_eq!(
+                    companion_test_stand_peer_record(
+                        handle,
+                        away,
+                        0,
+                        ptr::null(),
+                        ptr::null(),
+                        chip
+                    ),
+                    0,
+                    "one record per identity on a page"
+                );
+                assert_eq!(restated(handle), serde_json::json!([]));
+
+                if burn {
+                    assert!(companion_chip_delete(handle, chip));
+                } else {
+                    let backspace = cstring(r#"[{"del": {"at": 2, "len": 1}}]"#);
+                    assert!(companion_sheet_apply_ops(handle, home, backspace.as_ptr()));
+                }
+                assert_eq!(restated(handle), serde_json::json!([away]), "{burn}");
+                assert_eq!(restated(handle), serde_json::json!([]));
+                let runs = json_of(companion_sheet_document_json(handle, away));
+                let faces: Vec<&serde_json::Value> = runs
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|run| run.get("chip"))
+                    .collect();
+                if burn {
+                    assert!(faces.is_empty(), "the burn took out its standing {runs}");
+                } else {
+                    assert_eq!(faces.len(), 1, "{runs}");
+                    assert_eq!(faces[0]["chip_id"], peer, "the id the page showed");
+                    assert_eq!(faces[0]["available"], true);
+                }
+            }
             companion_free(handle);
         }
     }
@@ -8108,6 +8446,26 @@ mod tests {
                 "client_id":"companion"}"#,
         );
         assert!(unsafe { companion_sync_configure(handle, config.as_ptr()) });
+    }
+
+    #[test]
+    fn configuring_sync_names_the_identity_at_rest_as_the_name_writer_and_mints_none() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let writer =
+            |handle: *mut CompanionHandle| unsafe { &*handle }.inner.lock().unwrap().store.writer();
+        let handle = handle_with(Arc::clone(&credentials));
+        sync_configured(handle);
+        assert_eq!(writer(handle), [0; 32], "no identity at rest, so no writer");
+        assert!(
+            pairing::stored_device_fingerprint(&*credentials).is_none(),
+            "configuring minted an identity"
+        );
+
+        let fingerprint = pairing::device_fingerprint(&*credentials).unwrap();
+        sync_configured(handle);
+        assert_eq!(persist::hex_encode(&writer(handle)), fingerprint);
+        unsafe { companion_free(handle) };
     }
 
     /// Wait until the finish call has actually taken the ceremony and

@@ -260,7 +260,7 @@ impl Sheet {
                     if (start..end).contains(&pos) {
                         let chip = self.chip(*id)?;
                         nodes.push(Node::Ref(Reference::of(chip)));
-                        sizes.push(&chip.size_label);
+                        sizes.push(size_word(chip));
                     }
                     pos += 1;
                 }
@@ -290,7 +290,7 @@ impl Sheet {
                 Segment::Chip(id) => {
                     let chip = self.chip(*id)?;
                     nodes.push(Node::Ref(Reference::of(chip)));
-                    sizes.push(&chip.size_label);
+                    sizes.push(size_word(chip));
                 }
             }
         }
@@ -299,6 +299,15 @@ impl Sheet {
         }
         let plain = public_text(&nodes, &sizes);
         Some((Fragment { cut: None, nodes }, plain))
+    }
+}
+
+/// A reference's placeholder word: its size class, or `unavailable` for a
+/// record with no value whose size class is not known.
+fn size_word(chip: &SealedChip) -> &str {
+    match chip.size_label() {
+        "" => "unavailable",
+        label => label,
     }
 }
 

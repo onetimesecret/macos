@@ -93,6 +93,8 @@ enum SealedBlockLayout {
         let metrics: Metrics
         /// Whether `=` is a zone; false on an object that copies no `NAME=value`.
         let copiesNameValue: Bool
+        /// Whether the value is a zone; false where the value is on another device (ADR-0058 point 4).
+        let copiesValue: Bool
 
         /// The name and value zones are their runs; the `=` zone is its
         /// glyph and `equalsSlop` either side, taken from those runs.
@@ -103,7 +105,7 @@ enum SealedBlockLayout {
                 return .equals
             }
             if point.x >= name.minX, point.x < name.maxX { return .name }
-            if point.x >= value.minX, point.x < value.maxX { return .value }
+            if copiesValue, point.x >= value.minX, point.x < value.maxX { return .value }
             return nil
         }
 

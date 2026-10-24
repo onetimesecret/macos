@@ -9,10 +9,14 @@
 use std::collections::HashMap;
 
 use companion_core::{
-    Clock, DeltaAdmission, ExpiryPolicy, HoldRegister, ItemId, PageChannel, SheetId, SheetStore,
+    Clock, DeltaAdmission, ExpiryPolicy, HoldRegister, ItemId, NameVersion, ObjectMetadata,
+    PageChannel, PeerKind, SheetId, SheetStore, SizeClass,
 };
 use companion_sync::relay::{FrameAnswer, PeerAttachment, RelayApi, RelayRefusal};
-use companion_sync::{ByteBlob, ControlPayload, DeltaEnvelope, TokenKeeper, pad};
+use companion_sync::{
+    ByteBlob, ControlPayload, DeltaEnvelope, METADATA_ENTRY_CAP, MetadataEntry, NameField,
+    TokenKeeper, pad,
+};
 use ots_client::{BearerAuth, HttpRequest, HttpResponse};
 use ring::hkdf::{HKDF_SHA256, Salt};
 use ring::rand::{SecureRandom as _, SystemRandom};
@@ -259,6 +263,88 @@ fn page_from_wire(wire: &str) -> Option<ItemId> {
     Some(ItemId::from_bytes(bytes))
 }
 
+/// `N` bytes from exactly `2 * N` lowercase hex characters, the one spelling
+/// a metadata entry's identity and writer take.
+fn lower_hex<const N: usize>(text: &str) -> Option<[u8; N]> {
+    let digits = text.as_bytes();
+    if digits.len() != 2 * N {
+        return None;
+    }
+    let nibble = |digit: u8| match digit {
+        b'0'..=b'9' => Some(digit - b'0'),
+        b'a'..=b'f' => Some(digit - b'a' + 10),
+        _ => None,
+    };
+    let mut bytes = [0u8; N];
+    for (byte, pair) in bytes.iter_mut().zip(digits.chunks_exact(2)) {
+        *byte = (nibble(pair[0])? << 4) | nibble(pair[1])?;
+    }
+    Some(bytes)
+}
+
+const SIZE_CLASSES: [SizeClass; 5] = [
+    SizeClass::Tiny,
+    SizeClass::Small,
+    SizeClass::Medium,
+    SizeClass::Large,
+    SizeClass::Huge,
+];
+
+/// One object's metadata as it travels; the name's bytes get a wiping owner
+/// of their own (ADR-0058 point 5).
+fn metadata_entry(metadata: &ObjectMetadata) -> MetadataEntry {
+    MetadataEntry {
+        object: page_wire_id(metadata.object),
+        kind: metadata.kind.map(|kind| {
+            match kind {
+                PeerKind::Text => "text",
+                PeerKind::Image => "image",
+            }
+            .to_owned()
+        }),
+        size: metadata.size.map(|size| size.as_str().to_owned()),
+        name: metadata.name.as_ref().map(|(version, name)| NameField {
+            counter: version.counter,
+            writer: persist::hex_encode(&version.writer),
+            value: name.as_ref().map(|name| ByteBlob::from(name.as_bytes())),
+        }),
+    }
+}
+
+/// A peer's entry as the core reads it, `None` for an identity that is not
+/// one; a kind, size class or name this build cannot read is left out alone.
+fn object_metadata(entry: &MetadataEntry) -> Option<ObjectMetadata> {
+    let object = ItemId::from_bytes(lower_hex(&entry.object)?);
+    let kind = match entry.kind.as_deref() {
+        Some("text") => Some(PeerKind::Text),
+        Some("image") => Some(PeerKind::Image),
+        _ => None,
+    };
+    let size = entry
+        .size
+        .as_deref()
+        .and_then(|word| SIZE_CLASSES.into_iter().find(|size| size.as_str() == word));
+    let name = entry.name.as_ref().and_then(|field| {
+        let version = NameVersion {
+            counter: field.counter,
+            writer: lower_hex(&field.writer)?,
+        };
+        let value = match &field.value {
+            Some(bytes) => Some(Zeroizing::new(
+                std::str::from_utf8(bytes.as_slice()).ok()?.to_owned(),
+            )),
+            None => None,
+        };
+        Some((version, value))
+    });
+    Some(ObjectMetadata {
+        object,
+        kind,
+        size,
+        name,
+    })
+}
+
 /// The envelopes queued again rather than exported again: a page's state, not its history.
 fn restated(envelope: &DeltaEnvelope) -> bool {
     matches!(
@@ -314,6 +400,9 @@ pub struct SyncSession {
     channels: HashMap<ItemId, PageChannel>,
     /// Envelopes queued since the last publish tick.
     outbox: Vec<DeltaEnvelope>,
+    /// The terminal envelopes of a stale batch, in order, until the sweep queues
+    /// them behind the ops it exports again ([`SyncSession::release_held_terminals`]).
+    held_terminals: Vec<DeltaEnvelope>,
     /// A publish batch built and not yet acknowledged, kept so a `401`
     /// can retry the one request after a refresh.
     in_flight: Option<InFlightBatch>,
@@ -323,6 +412,13 @@ pub struct SyncSession {
     /// Pages whose ops failed to encode at a seal, until the driver takes
     /// them to export again ([`SyncSession::take_unencoded_ops`]).
     unencoded_ops: Vec<ItemId>,
+    /// Each page and object whose note ops failed to encode at a seal, until
+    /// the driver takes them to export again ([`SyncSession::take_unencoded_notes`]).
+    unencoded_notes: Vec<(ItemId, ItemId)>,
+    /// Each page and the objects whose metadata failed to encode at a seal,
+    /// until the driver marks them changed again
+    /// ([`SyncSession::take_unencoded_metadata`]).
+    unencoded_metadata: Vec<(ItemId, Vec<ItemId>)>,
     last_publish_ms: Option<u64>,
     /// The proposer's minted entropy while its ballot is in flight.
     proposed_entropy: Option<(String, Zeroizing<Vec<u8>>)>,
@@ -348,7 +444,8 @@ struct InFlightBatch {
     epoch: u64,
     blobs: Vec<Vec<u8>>,
     /// Its expiry, hold and terminal envelopes, unsealed, to queue again
-    /// if the chain moves before the relay takes it; its ops export again.
+    /// if the chain moves before the relay takes it, the terminals behind the
+    /// ops that export again.
     restate: Vec<DeltaEnvelope>,
 }
 
@@ -378,9 +475,12 @@ impl SyncSession {
             next_seq: 0,
             channels: HashMap::new(),
             outbox: Vec::new(),
+            held_terminals: Vec::new(),
             in_flight: None,
             in_flight_id: 0,
             unencoded_ops: Vec::new(),
+            unencoded_notes: Vec::new(),
+            unencoded_metadata: Vec::new(),
             last_publish_ms: None,
             proposed_entropy: None,
             received_entropy: None,
@@ -568,14 +668,41 @@ impl SyncSession {
         });
     }
 
-    /// Drop a page's ops still waiting for a seal, as for a page past its
-    /// deadline or gone (Law 0001, expiry row). Its expiry, hold and marker
-    /// stay queued.
+    /// Queue a page's object metadata for the next publish tick, in envelopes
+    /// of at most [`METADATA_ENTRY_CAP`] entries (ADR-0058 point 5).
+    pub fn queue_metadata(&mut self, page: ItemId, entries: &[ObjectMetadata]) {
+        for chunk in entries.chunks(METADATA_ENTRY_CAP) {
+            self.outbox.push(DeltaEnvelope::Metadata {
+                page: page_wire_id(page),
+                entries: chunk.iter().map(metadata_entry).collect(),
+            });
+        }
+    }
+
+    /// Queue one note's fresh operations for the next publish tick
+    /// (ADR-0058 point 6).
+    pub fn queue_note_ops(&mut self, page: ItemId, object: ItemId, ops: &[u8]) {
+        self.outbox.push(DeltaEnvelope::NoteOps {
+            page: page_wire_id(page),
+            object: page_wire_id(object),
+            ops: ByteBlob::from(ops),
+        });
+    }
+
+    /// Drop a page's ops, metadata and note ops still waiting for a seal, as
+    /// for a page past its deadline or gone (Law 0001, expiry row). Its
+    /// expiry, hold and marker stay queued.
     pub fn withdraw_ops(&mut self, page: ItemId) {
         let wire = page_wire_id(page);
-        self.outbox.retain(
-            |envelope| !matches!(envelope, DeltaEnvelope::Ops { page, .. } if *page == wire),
-        );
+        self.outbox.retain(|envelope| {
+            !matches!(
+                envelope,
+                DeltaEnvelope::Ops { page, .. }
+                    | DeltaEnvelope::Metadata { page, .. }
+                    | DeltaEnvelope::NoteOps { page, .. }
+                    if *page == wire
+            )
+        });
     }
 
     /// What the next publish would seal.
@@ -640,8 +767,10 @@ impl SyncSession {
     /// epoch that sealed it. `None` when the clock says wait, nothing is
     /// queued, a seal refuses, or no access token is held. An envelope that
     /// fails to encode raises a fault and goes unsent: its page's ops wait
-    /// in [`SyncSession::take_unencoded_ops`] to export again, and an
-    /// expiry, hold or terminal envelope stays queued.
+    /// in [`SyncSession::take_unencoded_ops`] to export again, its notes in
+    /// [`SyncSession::take_unencoded_notes`], its objects in
+    /// [`SyncSession::take_unencoded_metadata`], and an expiry, hold or
+    /// terminal envelope stays queued.
     #[must_use]
     pub fn publish_request(
         &mut self,
@@ -695,19 +824,40 @@ impl SyncSession {
                 .map(|(envelope, _)| envelope.clone())
                 .collect();
             // Every seal succeeded; only now does the queue let go. A fact that
-            // failed to encode stays queued, and failed ops go back to the driver.
+            // failed to encode stays queued; failed ops, notes and metadata go back to the driver.
             let unencoded = encoded.iter().filter(|encoded| !**encoded).count();
             if unencoded > 0 {
                 crate::diagnostics::diag_fault!(
-                    "companion-ffi: {unencoded} queued sync envelope(s) failed to encode; ops export again, expiry, hold and terminal envelopes stay queued, ceremony messages are dropped."
+                    "companion-ffi: {unencoded} queued sync envelope(s) failed to encode; ops and note ops export again, metadata is marked to send again, expiry, hold and terminal envelopes stay queued, ceremony messages are dropped."
                 );
             }
             let failed = self.outbox.iter().zip(&encoded).filter(|(_, ok)| !**ok);
             for (envelope, _) in failed {
-                if let DeltaEnvelope::Ops { page, .. } = envelope
-                    && let Some(page) = page_from_wire(page)
-                {
-                    self.unencoded_ops.push(page);
+                match envelope {
+                    DeltaEnvelope::Ops { page, .. } => {
+                        if let Some(page) = page_from_wire(page) {
+                            self.unencoded_ops.push(page);
+                        }
+                    }
+                    DeltaEnvelope::Metadata { page, entries } => {
+                        if let Some(page) = page_from_wire(page) {
+                            let objects = entries
+                                .iter()
+                                .filter_map(|entry| lower_hex(&entry.object))
+                                .map(ItemId::from_bytes)
+                                .collect();
+                            self.unencoded_metadata.push((page, objects));
+                        }
+                    }
+                    DeltaEnvelope::NoteOps { page, object, .. } => {
+                        if let Some(page) = page_from_wire(page)
+                            && let Some(object) = lower_hex(object)
+                        {
+                            self.unencoded_notes
+                                .push((page, ItemId::from_bytes(object)));
+                        }
+                    }
+                    _ => {}
                 }
             }
             let mut flags = encoded.into_iter();
@@ -738,15 +888,42 @@ impl SyncSession {
         std::mem::take(&mut self.unencoded_ops)
     }
 
-    /// Drop a batch in flight the chain has moved past, unsent, and queue
-    /// its expiry, hold and terminal envelopes again (client protocol
-    /// §4.4). Whether one dropped.
+    /// Each page and object whose note ops a seal could not encode, once, so
+    /// the driver rewinds that note's export cursor.
+    #[must_use]
+    pub(crate) fn take_unencoded_notes(&mut self) -> Vec<(ItemId, ItemId)> {
+        std::mem::take(&mut self.unencoded_notes)
+    }
+
+    /// Each page and the objects whose metadata a seal could not encode,
+    /// once, so the driver marks them changed in the core again.
+    #[must_use]
+    pub(crate) fn take_unencoded_metadata(&mut self) -> Vec<(ItemId, Vec<ItemId>)> {
+        std::mem::take(&mut self.unencoded_metadata)
+    }
+
+    /// Drop a batch in flight the chain has moved past, unsent: queue its
+    /// expiry and hold envelopes again and keep its terminal envelopes aside
+    /// for [`SyncSession::release_held_terminals`] (client protocol §4.4).
+    /// Whether one dropped.
     pub fn drop_stale_batch(&mut self, chain: &crate::gop::GopKeyChain) -> bool {
         let Some(stale) = crate::gop::take_stale(&mut self.in_flight, chain) else {
             return false;
         };
-        self.outbox.splice(0..0, stale.restate);
+        let (ends, facts): (Vec<_>, Vec<_>) = stale
+            .restate
+            .into_iter()
+            .partition(|envelope| matches!(envelope, DeltaEnvelope::Terminal { .. }));
+        self.outbox.splice(0..0, facts);
+        self.held_terminals.extend(ends);
         true
+    }
+
+    /// Queue the terminal envelopes a stale batch kept aside behind everything
+    /// queued, so a peer meets the ops exported again before a page's end
+    /// (ADR-0058 point 3).
+    pub fn release_held_terminals(&mut self) {
+        self.outbox.append(&mut self.held_terminals);
     }
 
     /// Absorb the publish answer: a 2xx clears the batch, a `401` keeps
@@ -887,6 +1064,59 @@ impl SyncSession {
                             && store.document_version(sheet_id) != before
                         {
                             events.push(SyncEvent::Applied(page));
+                        }
+                    }
+                    DeltaAdmission::RejoinRequired => events.push(SyncEvent::RejoinRequired),
+                    DeltaAdmission::Refused => {}
+                }
+            }
+            DeltaEnvelope::Metadata { page, entries } => {
+                // A sender chunks at the cap, so a longer envelope is no peer's.
+                if entries.len() > METADATA_ENTRY_CAP {
+                    return;
+                }
+                let Some(page) = page_from_wire(&page) else {
+                    return;
+                };
+                match self
+                    .channels
+                    .entry(page)
+                    .or_default()
+                    .admit_delta(wire_epoch)
+                {
+                    DeltaAdmission::Apply => {
+                        let entries = entries.iter().filter_map(object_metadata).collect();
+                        let applied = SyncEvent::Applied(page);
+                        if store.apply_object_metadata(page, entries) > 0
+                            && !events.contains(&applied)
+                        {
+                            events.push(applied);
+                        }
+                    }
+                    DeltaAdmission::RejoinRequired => events.push(SyncEvent::RejoinRequired),
+                    DeltaAdmission::Refused => {}
+                }
+            }
+            DeltaEnvelope::NoteOps { page, object, ops } => {
+                let (Some(page), Some(object)) = (page_from_wire(&page), lower_hex(&object)) else {
+                    return;
+                };
+                match self
+                    .channels
+                    .entry(page)
+                    .or_default()
+                    .admit_delta(wire_epoch)
+                {
+                    DeltaAdmission::Apply => {
+                        // A refused batch is dropped alone (ADR-0058 point 7).
+                        let changed = store.apply_remote_note_update(
+                            page,
+                            ItemId::from_bytes(object),
+                            ops.as_slice(),
+                        );
+                        let applied = SyncEvent::Applied(page);
+                        if changed == Ok(true) && !events.contains(&applied) {
+                            events.push(applied);
                         }
                     }
                     DeltaAdmission::RejoinRequired => events.push(SyncEvent::RejoinRequired),
@@ -1323,7 +1553,7 @@ fn marker_trusted(marker: &[u8], page: ItemId, trusted: &[Vec<u8>]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use companion_core::{EditOp, ManualClock};
+    use companion_core::{Availability, ChipId, EditIntent, EditOp, ManualClock, SealedChip};
     use serde_json::Value;
 
     use super::*;
@@ -1766,12 +1996,30 @@ mod tests {
                 [
                     DeltaEnvelope::Expiry { page: a, .. },
                     DeltaEnvelope::Hold { page: b, hold: None },
-                    DeltaEnvelope::Terminal { page: c, .. },
-                ] if *a == wire && *b == wire && *c == dead_wire
+                ] if *a == wire && *b == wire
             ),
-            "its ops export again and its ballot is over: {:?}",
+            "its ops export again, its ballot is over and its end waits: {:?}",
             session.queued()
         );
+
+        // The end goes behind the ops the driver exports again.
+        session.queue_ops(page, b"ops");
+        session.release_held_terminals();
+        assert!(
+            matches!(
+                session.queued(),
+                [
+                    DeltaEnvelope::Expiry { .. },
+                    DeltaEnvelope::Hold { .. },
+                    DeltaEnvelope::Ops { page: a, .. },
+                    DeltaEnvelope::Terminal { page: b, .. },
+                ] if *a == wire && *b == dead_wire
+            ),
+            "{:?}",
+            session.queued()
+        );
+        session.release_held_terminals();
+        assert_eq!(session.queued().len(), 4, "once");
 
         // They seal at the epoch the chain stands at.
         let request = session.publish_request(4_000, &chain).unwrap();
@@ -2630,8 +2878,13 @@ mod tests {
     fn withdrawn_ops_leave_the_page_s_expiry_and_every_other_page_queued() {
         let mut session = session("fp-a");
         let (gone, kept) = (ItemId::random(), ItemId::random());
+        let object = unnamed(ItemId::random());
         session.queue_ops(gone, b"ops past the deadline");
+        session.queue_metadata(gone, std::slice::from_ref(&object));
+        session.queue_note_ops(gone, object.object, b"note ops past the deadline");
         session.queue_ops(kept, b"ops still readable");
+        session.queue_metadata(kept, std::slice::from_ref(&object));
+        session.queue_note_ops(kept, object.object, b"note ops still readable");
         session.queue_expiry(
             gone,
             ExpiryPolicy {
@@ -2650,6 +2903,15 @@ mod tests {
                     page: page_wire_id(kept),
                     ops: ByteBlob::from(b"ops still readable".as_slice()),
                 },
+                DeltaEnvelope::Metadata {
+                    page: page_wire_id(kept),
+                    entries: vec![metadata_entry(&object)],
+                },
+                DeltaEnvelope::NoteOps {
+                    page: page_wire_id(kept),
+                    object: page_wire_id(object.object),
+                    ops: ByteBlob::from(b"note ops still readable".as_slice()),
+                },
                 DeltaEnvelope::Expiry {
                     page: page_wire_id(gone),
                     anchor_wall_ms: 1,
@@ -2657,6 +2919,565 @@ mod tests {
                 },
             ]
         );
+    }
+
+    /// Metadata naming `object` and nothing else.
+    fn unnamed(object: ItemId) -> ObjectMetadata {
+        ObjectMetadata {
+            object,
+            kind: None,
+            size: None,
+            name: None,
+        }
+    }
+
+    /// A wire entry naming `object` `name` at `counter`, written by `[1; 32]`.
+    fn named_entry(object: &str, counter: u64, name: &[u8]) -> MetadataEntry {
+        MetadataEntry {
+            object: object.into(),
+            kind: None,
+            size: None,
+            name: Some(NameField {
+                counter,
+                writer: persist::hex_encode(&[1; 32]),
+                value: Some(ByteBlob::from(name)),
+            }),
+        }
+    }
+
+    #[test]
+    fn metadata_round_trips_through_its_wire_entry_and_refuses_other_spellings() {
+        let object = ItemId::from_bytes([0xab; 16]);
+        let version = |counter| NameVersion {
+            counter,
+            writer: [0xcd; 32],
+        };
+        let full = ObjectMetadata {
+            object,
+            kind: Some(PeerKind::Image),
+            size: Some(SizeClass::Medium),
+            name: Some((version(7), Some(Zeroizing::new("DEPLOY_KEY".to_owned())))),
+        };
+        let cleared = ObjectMetadata {
+            name: Some((version(8), None)),
+            ..unnamed(object)
+        };
+        for metadata in [full, cleared, unnamed(object)] {
+            assert_eq!(object_metadata(&metadata_entry(&metadata)), Some(metadata));
+        }
+
+        // An identity in any other spelling skips the entry.
+        let wire = page_wire_id(object);
+        for object in [
+            wire.to_uppercase(),
+            wire[..30].to_owned(),
+            format!("+{}", &wire[1..]),
+        ] {
+            assert_eq!(object_metadata(&named_entry(&object, 1, b"NAME")), None);
+        }
+        // A field this build cannot read leaves the rest of its entry.
+        let read = |entry: MetadataEntry| object_metadata(&entry).unwrap();
+        let named = Some((
+            NameVersion {
+                counter: 1,
+                writer: [1; 32],
+            },
+            Some(Zeroizing::new("NAME".to_owned())),
+        ));
+        let odd_kind = MetadataEntry {
+            kind: Some("video".into()),
+            size: Some("enormous".into()),
+            ..named_entry(&wire, 1, b"NAME")
+        };
+        assert_eq!(
+            read(odd_kind),
+            ObjectMetadata {
+                name: named,
+                ..unnamed(object)
+            }
+        );
+        let mut odd_writer = named_entry(&wire, 1, b"NAME");
+        if let Some(name) = &mut odd_writer.name {
+            name.writer = name.writer.to_uppercase().replace('0', "A");
+        }
+        assert_eq!(read(odd_writer), unnamed(object));
+        assert_eq!(read(named_entry(&wire, 1, &[0xff, 0xfe])), unnamed(object));
+    }
+
+    #[test]
+    fn metadata_goes_in_envelopes_of_at_most_the_cap() {
+        let mut session = session("fp-a");
+        let page = ItemId::random();
+        session.queue_metadata(page, &[]);
+        assert!(session.outbox.is_empty(), "nothing changed, nothing goes");
+        let entries: Vec<ObjectMetadata> = (0..300).map(|_| unnamed(ItemId::random())).collect();
+        session.queue_metadata(page, &entries);
+        let mut sizes = Vec::new();
+        let mut sent = Vec::new();
+        for envelope in &session.outbox {
+            let DeltaEnvelope::Metadata { page: at, entries } = envelope else {
+                panic!("only metadata was queued");
+            };
+            assert_eq!(*at, page_wire_id(page));
+            sizes.push(entries.len());
+            sent.extend(entries.iter().cloned());
+        }
+        assert_eq!(sizes, [128, 128, 44]);
+        assert_eq!(sent, entries.iter().map(metadata_entry).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_metadata_envelope_that_cannot_encode_is_dropped_and_its_objects_go_back() {
+        let chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut session = session("fp-a");
+        let page = ItemId::random();
+        let objects = [ItemId::random(), ItemId::random()];
+        session.queue_ops(page, b"ops");
+        session.queue_metadata(page, &objects.map(unnamed));
+        let refuse_metadata = |envelope: &DeltaEnvelope| match envelope {
+            DeltaEnvelope::Metadata { .. } => None,
+            _ => envelope.encode().ok(),
+        };
+        let request = session
+            .publish_request_with(0, chain.epoch(), refuse_metadata, |plaintext| {
+                chain.seal(plaintext)
+            })
+            .expect("the ops still go");
+        assert!(
+            session.outbox.is_empty(),
+            "the session restates no metadata"
+        );
+        assert!(session.in_flight.as_ref().unwrap().restate.is_empty());
+        assert_eq!(
+            session.take_unencoded_metadata(),
+            [(page, objects.to_vec())]
+        );
+        assert!(session.take_unencoded_metadata().is_empty());
+        assert!(session.take_unencoded_ops().is_empty());
+        let mut relay = FakeRelay::default();
+        relay.accept_publish(&request);
+        let batch = RelayApi::parse_deltas(&relay.serve_fetch(0)).unwrap();
+        assert_eq!(batch.blobs.len(), 1);
+        let opened = chain.open(&batch.blobs[0]).unwrap();
+        assert_eq!(
+            DeltaEnvelope::decode(pad::unpad(&opened).unwrap()),
+            Some(DeltaEnvelope::Ops {
+                page: page_wire_id(page),
+                ops: ByteBlob::from(b"ops".as_slice()),
+            })
+        );
+    }
+
+    /// Sealed values no envelope or relay body may contain.
+    const PAYLOADS: [&str; 2] = ["ghp_payload_marker_one_7c1d", "ghp_payload_marker_two_44ae"];
+
+    /// A's page `one two`, adopted whole by B before anything was sealed on
+    /// it, on one chain with a relay between them.
+    struct SealedPair {
+        stores: [SheetStore<ManualClock>; 2],
+        pages: [SheetId; 2],
+        uuid: ItemId,
+        chains: [GopKeyChain; 2],
+        sessions: [SyncSession; 2],
+        packages: [KeyPackageKeeper; 2],
+        relay: FakeRelay,
+        bodies: Vec<Zeroizing<Vec<u8>>>,
+        now_ms: u64,
+    }
+
+    impl SealedPair {
+        fn new() -> Self {
+            let clock = ManualClock::new();
+            let mut stores = [SheetStore::new(clock.clone()), SheetStore::new(clock)];
+            for (store, writer) in stores.iter_mut().zip([[1; 32], [2; 32]]) {
+                store.set_writer(writer);
+            }
+            let page_a = stores[0].new_tab().1;
+            assert!(stores[0].apply_ops(
+                page_a,
+                &[EditOp::Insert {
+                    pos_u16: 0,
+                    text: "one two".into()
+                }]
+            ));
+            let uuid = stores[0].sheet(page_a).unwrap().uuid();
+            let page_b = stores[1].new_tab().1;
+            let pristine = stores[1].document_version(page_b).unwrap();
+            let full = stores[0]
+                .export_document_updates(page_a, &pristine)
+                .unwrap();
+            stores[1].adopt_key_frame(page_b, uuid, &full).unwrap();
+            Self {
+                stores,
+                pages: [page_a, page_b],
+                uuid,
+                chains: [(); 2].map(|()| GopKeyChain::root(CHANNEL_SECRET).unwrap()),
+                sessions: [session("fp-a"), session("fp-b")],
+                packages: [(); 2].map(|()| KeyPackageKeeper::mint(&identity().0).unwrap()),
+                relay: FakeRelay::default(),
+                bodies: Vec::new(),
+                now_ms: 0,
+            }
+        }
+
+        /// Seal each of [`PAYLOADS`] over a word on A: the chips and their objects.
+        fn seal_on_a(&mut self) -> ([ChipId; 2], [ItemId; 2]) {
+            let page = self.pages[0];
+            let second = self.stores[0]
+                .seal_text_at(page, PAYLOADS[1], 4, 3)
+                .unwrap();
+            let first = self.stores[0]
+                .seal_text_at(page, PAYLOADS[0], 0, 3)
+                .unwrap();
+            let sheet = self.stores[0].sheet(page).unwrap();
+            let chips = [first, second];
+            (chips, chips.map(|chip| sheet.chip(chip).unwrap().uuid()))
+        }
+
+        /// Queue A's ops past B's document version.
+        fn queue_ops_of_a(&mut self) {
+            let held = self.stores[1].document_version(self.pages[1]).unwrap();
+            let update = self.stores[0]
+                .export_document_updates(self.pages[0], &held)
+                .unwrap();
+            self.sessions[0].queue_ops(self.uuid, &update);
+        }
+
+        /// Queue the metadata that changed on A.
+        fn queue_metadata_of_a(&mut self) {
+            let entries = self.stores[0].take_metadata_changes(self.pages[0]);
+            self.sessions[0].queue_metadata(self.uuid, &entries);
+        }
+
+        /// Write `text` at the start of `chip`'s note on A.
+        fn write_note_on_a(&mut self, chip: ChipId, text: &str) {
+            let ops = [EditOp::Insert {
+                pos_u16: 0,
+                text: text.into(),
+            }];
+            assert!(
+                self.stores[0].apply_note_ops(chip, &ops, EditIntent::Paste, None),
+                "a note on A takes {text}"
+            );
+        }
+
+        /// Queue `object`'s note ops on A past B's note version.
+        fn queue_note_of_a(&mut self, object: ItemId) {
+            let held = self.stores[1]
+                .note_version(self.pages[1], object)
+                .unwrap_or_else(SheetStore::<ManualClock>::pristine_document_version);
+            let update = self.stores[0]
+                .export_note_updates(self.pages[0], object, &held)
+                .unwrap();
+            self.sessions[0].queue_note_ops(self.uuid, object, &update);
+        }
+
+        /// B's note for `object`, `None` while its record there has none.
+        fn note_on_b(&self, object: ItemId) -> Option<String> {
+            if !self.stores[1].notes_on(self.pages[1]).contains(&object) {
+                return None;
+            }
+            let chip = self.on_b(object)?.id();
+            Some(self.stores[1].note_text(chip)?.to_string())
+        }
+
+        /// A publishes its queue to the relay, at the relay's epoch.
+        fn publish_from_a(&mut self) -> u64 {
+            let since = u64::try_from(self.relay.blobs.len()).unwrap();
+            let request = self.sessions[0]
+                .publish_request(self.now_ms, &self.chains[0])
+                .unwrap();
+            self.now_ms += PUBLISH_INTERVAL_MS;
+            let answer = self.relay.accept_publish(&request);
+            self.sessions[0].absorb_publish(&answer).unwrap();
+            self.bodies.push(request.body.unwrap());
+            since
+        }
+
+        /// B drains the stream from `since`: its events.
+        fn drain_b(&mut self, since: u64) -> Vec<SyncEvent> {
+            self.sessions[1]
+                .absorb_deltas(
+                    &self.relay.serve_fetch(since),
+                    &mut self.stores[1],
+                    &mut self.chains[1],
+                    &mut self.packages[1],
+                    &mut None,
+                    &[],
+                    0,
+                )
+                .unwrap()
+        }
+
+        /// A publishes its queue and B drains it: B's events.
+        fn deliver(&mut self) -> Vec<SyncEvent> {
+            let since = self.publish_from_a();
+            self.drain_b(since)
+        }
+
+        /// B's record for `object`.
+        fn on_b(&self, object: ItemId) -> Option<&SealedChip> {
+            self.stores[1]
+                .sheet(self.pages[1])
+                .unwrap()
+                .chips()
+                .find(|chip| chip.uuid() == object)
+        }
+
+        /// No sealed value in a relay body or in any envelope the relay keeps, opened.
+        fn assert_no_payload(&self) {
+            let batch = RelayApi::parse_deltas(&self.relay.serve_fetch(0)).unwrap();
+            let opened: Vec<Vec<u8>> = batch
+                .blobs
+                .iter()
+                .map(|blob| {
+                    pad::unpad(&self.chains[1].open(blob).unwrap())
+                        .unwrap()
+                        .to_vec()
+                })
+                .collect();
+            assert!(!opened.is_empty());
+            let bodies = self.bodies.iter().map(|body| body.as_slice());
+            for bytes in bodies.chain(opened.iter().map(Vec::as_slice)) {
+                for payload in PAYLOADS {
+                    assert!(
+                        !bytes
+                            .windows(payload.len())
+                            .any(|window| window == payload.as_bytes())
+                    );
+                }
+            }
+        }
+    }
+
+    /// What B's record shows of a text object's face: its kind and size class.
+    fn tiny_text(record: &SealedChip) -> bool {
+        matches!(
+            record.availability(),
+            Availability::Peer {
+                kind: Some(PeerKind::Text),
+                size: Some(SizeClass::Tiny)
+            }
+        )
+    }
+
+    #[test]
+    fn a_name_sent_before_its_sentinel_waits_and_applies_when_the_ops_arrive() {
+        let mut pair = SealedPair::new();
+        let (chips, objects) = pair.seal_on_a();
+        pair.stores[0]
+            .set_chip_name(chips[0], "DEPLOY_KEY")
+            .unwrap();
+        pair.queue_metadata_of_a();
+        let events = pair.deliver();
+        assert!(events.is_empty(), "no record changed yet: {events:?}");
+        assert!(objects.iter().all(|object| pair.on_b(*object).is_none()));
+
+        pair.queue_ops_of_a();
+        assert_eq!(pair.deliver(), [SyncEvent::Applied(pair.uuid)]);
+        let named = pair.on_b(objects[0]).unwrap();
+        assert!(!named.is_local());
+        assert_eq!(named.name(), Some("DEPLOY_KEY"));
+        assert!(tiny_text(named));
+        let other = pair.on_b(objects[1]).unwrap();
+        assert_eq!(other.name(), None);
+        assert!(tiny_text(other));
+        pair.assert_no_payload();
+    }
+
+    #[test]
+    fn an_envelope_past_the_cap_is_ignored_and_the_ops_in_its_batch_still_apply() {
+        let mut pair = SealedPair::new();
+        let (_, objects) = pair.seal_on_a();
+        let (page, object) = (page_wire_id(pair.uuid), page_wire_id(objects[0]));
+        let naming = |name: &[u8], fillers: usize| {
+            let mut entries: Vec<MetadataEntry> = (0..fillers)
+                .map(|_| named_entry(&page_wire_id(ItemId::random()), 1, b"FILLER"))
+                .collect();
+            entries.push(named_entry(&object, 9, name));
+            DeltaEnvelope::Metadata {
+                page: page.clone(),
+                entries,
+            }
+        };
+        pair.queue_ops_of_a();
+        pair.sessions[0]
+            .outbox
+            .push(naming(b"OVER_CAP", METADATA_ENTRY_CAP));
+        assert_eq!(pair.deliver(), [SyncEvent::Applied(pair.uuid)], "the ops");
+        assert_eq!(pair.on_b(objects[0]).unwrap().name(), None);
+
+        pair.sessions[0]
+            .outbox
+            .push(naming(b"AT_CAP", METADATA_ENTRY_CAP - 1));
+        assert_eq!(pair.deliver(), [SyncEvent::Applied(pair.uuid)]);
+        assert_eq!(pair.on_b(objects[0]).unwrap().name(), Some("AT_CAP"));
+    }
+
+    #[test]
+    fn a_malformed_entry_is_skipped_and_its_neighbours_apply() {
+        let mut pair = SealedPair::new();
+        let (_, objects) = pair.seal_on_a();
+        pair.queue_ops_of_a();
+        assert_eq!(pair.deliver(), [SyncEvent::Applied(pair.uuid)]);
+        let [first, second] = objects.map(page_wire_id);
+        let entries = vec![
+            named_entry(&"zz".repeat(16), 9, b"BAD_ID"),
+            named_entry(&format!("+{}", &first[1..]), 9, b"SIGNED_ID"),
+            MetadataEntry {
+                kind: Some("video".into()),
+                size: Some("small".into()),
+                ..named_entry(&first, 1, b"FIRST")
+            },
+            MetadataEntry {
+                object: second.clone(),
+                kind: Some("image".into()),
+                size: Some("enormous".into()),
+                name: Some(NameField {
+                    counter: 5,
+                    writer: "AB".repeat(32),
+                    value: Some(ByteBlob::from(b"BAD_WRITER".as_slice())),
+                }),
+            },
+            named_entry(&second, 6, &[0xff, 0xfe]),
+        ];
+        pair.sessions[0].outbox.push(DeltaEnvelope::Metadata {
+            page: page_wire_id(pair.uuid),
+            entries,
+        });
+        assert_eq!(pair.deliver(), [SyncEvent::Applied(pair.uuid)]);
+        let first = pair.on_b(objects[0]).unwrap();
+        assert_eq!(first.name(), Some("FIRST"));
+        assert!(matches!(
+            first.availability(),
+            Availability::Peer {
+                kind: None,
+                size: Some(SizeClass::Small)
+            }
+        ));
+        let second = pair.on_b(objects[1]).unwrap();
+        assert_eq!(second.name(), None);
+        assert!(matches!(
+            second.availability(),
+            Availability::Peer {
+                kind: Some(PeerKind::Image),
+                size: None
+            }
+        ));
+    }
+
+    #[test]
+    fn metadata_at_another_epoch_applies_nothing() {
+        let mut pair = SealedPair::new();
+        let (chips, objects) = pair.seal_on_a();
+        pair.queue_ops_of_a();
+        assert_eq!(pair.deliver(), [SyncEvent::Applied(pair.uuid)]);
+        pair.stores[0].set_chip_name(chips[0], "LATE_NAME").unwrap();
+        pair.queue_metadata_of_a();
+        let since = pair.publish_from_a();
+        pair.relay.epoch = 1;
+        let events = pair.drain_b(since);
+        assert!(events.contains(&SyncEvent::RejoinRequired));
+        assert!(!events.contains(&SyncEvent::Applied(pair.uuid)));
+        assert_eq!(pair.on_b(objects[0]).unwrap().name(), None);
+    }
+
+    #[test]
+    fn a_note_ops_envelope_that_cannot_encode_hands_back_its_note_and_the_ops_still_go() {
+        let chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut session = session("fp-a");
+        let (page, object) = (ItemId::random(), ItemId::random());
+        session.queue_ops(page, b"ops");
+        session.queue_note_ops(page, object, b"note ops");
+        let refuse_notes = |envelope: &DeltaEnvelope| match envelope {
+            DeltaEnvelope::NoteOps { .. } => None,
+            _ => envelope.encode().ok(),
+        };
+        let request = session
+            .publish_request_with(0, chain.epoch(), refuse_notes, |plaintext| {
+                chain.seal(plaintext)
+            })
+            .expect("the ops still go");
+        assert!(session.outbox.is_empty(), "note ops export again, unqueued");
+        assert!(session.in_flight.as_ref().unwrap().restate.is_empty());
+        assert_eq!(session.take_unencoded_notes(), [(page, object)]);
+        assert!(session.take_unencoded_notes().is_empty());
+        assert!(session.take_unencoded_ops().is_empty());
+        let mut relay = FakeRelay::default();
+        relay.accept_publish(&request);
+        let batch = RelayApi::parse_deltas(&relay.serve_fetch(0)).unwrap();
+        assert_eq!(batch.blobs.len(), 1);
+        let opened = chain.open(&batch.blobs[0]).unwrap();
+        assert_eq!(
+            DeltaEnvelope::decode(pad::unpad(&opened).unwrap()),
+            Some(DeltaEnvelope::Ops {
+                page: page_wire_id(page),
+                ops: ByteBlob::from(b"ops".as_slice()),
+            })
+        );
+    }
+
+    #[test]
+    fn a_note_sent_before_its_sentinel_waits_and_applies_when_the_ops_arrive() {
+        let mut pair = SealedPair::new();
+        let (chips, objects) = pair.seal_on_a();
+        pair.write_note_on_a(chips[0], "rotate quarterly");
+        pair.queue_note_of_a(objects[0]);
+        let events = pair.deliver();
+        assert!(events.is_empty(), "no record changed yet: {events:?}");
+        assert!(pair.on_b(objects[0]).is_none());
+
+        pair.queue_ops_of_a();
+        assert_eq!(pair.deliver(), [SyncEvent::Applied(pair.uuid)]);
+        assert!(!pair.on_b(objects[0]).unwrap().is_local());
+        assert_eq!(
+            pair.note_on_b(objects[0]).as_deref(),
+            Some("rotate quarterly")
+        );
+        assert_eq!(pair.note_on_b(objects[1]), None);
+        pair.assert_no_payload();
+    }
+
+    #[test]
+    fn a_note_batch_standing_a_chip_is_refused_and_the_rest_of_its_batch_applies() {
+        let mut pair = SealedPair::new();
+        let (chips, objects) = pair.seal_on_a();
+        // A page's own export stands a chip; as a note's batch it nests one.
+        let mut rogue = SheetStore::new(ManualClock::new());
+        let rogue_page = rogue.new_tab().1;
+        rogue.seal_text_at(rogue_page, "rogue", 0, 0).unwrap();
+        let nesting = rogue
+            .export_document_updates(
+                rogue_page,
+                &SheetStore::<ManualClock>::pristine_document_version(),
+            )
+            .unwrap();
+        pair.queue_ops_of_a();
+        pair.sessions[0].queue_note_ops(pair.uuid, objects[0], &nesting);
+        pair.write_note_on_a(chips[1], "the neighbour");
+        pair.queue_note_of_a(objects[1]);
+
+        assert_eq!(pair.deliver(), [SyncEvent::Applied(pair.uuid)]);
+        assert!(objects.iter().all(|object| pair.on_b(*object).is_some()));
+        assert_eq!(pair.note_on_b(objects[0]), None, "the refusal made no note");
+        assert_eq!(pair.note_on_b(objects[1]).as_deref(), Some("the neighbour"));
+        pair.assert_no_payload();
+    }
+
+    #[test]
+    fn note_ops_at_another_epoch_apply_nothing() {
+        let mut pair = SealedPair::new();
+        let (chips, objects) = pair.seal_on_a();
+        pair.queue_ops_of_a();
+        assert_eq!(pair.deliver(), [SyncEvent::Applied(pair.uuid)]);
+        pair.write_note_on_a(chips[0], "late note");
+        pair.queue_note_of_a(objects[0]);
+        let since = pair.publish_from_a();
+        pair.relay.epoch = 1;
+        let events = pair.drain_b(since);
+        assert!(events.contains(&SyncEvent::RejoinRequired));
+        assert!(!events.contains(&SyncEvent::Applied(pair.uuid)));
+        assert_eq!(pair.note_on_b(objects[0]), None);
     }
 
     #[test]

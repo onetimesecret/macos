@@ -470,9 +470,12 @@ public struct ChipInfo: Codable, Hashable, Sendable {
     /// Whether the note holds anything but whitespace: the block's
     /// doorway. The note's text is read with `noteRuns(chip:)`.
     public let hasNote: Bool
+    /// False for a record whose value is on another device (ADR-0058 point 4);
+    /// a face without the field is one whose value is on this device.
+    public let available: Bool
 
     enum CodingKeys: String, CodingKey {
-        case kind, excerpt, concealed, name
+        case kind, excerpt, concealed, name, available
         case chipId = "chip_id"
         case sizeLabel = "size_label"
         case hasNote = "has_note"
@@ -480,7 +483,7 @@ public struct ChipInfo: Codable, Hashable, Sendable {
 
     init(
         chipId: UInt64, kind: String, excerpt: String, sizeLabel: String, concealed: Bool,
-        name: String? = nil, hasNote: Bool = false
+        name: String? = nil, hasNote: Bool = false, available: Bool = true
     ) {
         self.chipId = chipId
         self.kind = kind
@@ -489,6 +492,19 @@ public struct ChipInfo: Codable, Hashable, Sendable {
         self.concealed = concealed
         self.name = name
         self.hasNote = hasNote
+        self.available = available
+    }
+
+    public init(from decoder: Decoder) throws {
+        let face = try decoder.container(keyedBy: CodingKeys.self)
+        chipId = try face.decode(UInt64.self, forKey: .chipId)
+        kind = try face.decode(String.self, forKey: .kind)
+        excerpt = try face.decode(String.self, forKey: .excerpt)
+        sizeLabel = try face.decode(String.self, forKey: .sizeLabel)
+        concealed = try face.decode(Bool.self, forKey: .concealed)
+        name = try face.decodeIfPresent(String.self, forKey: .name)
+        hasNote = try face.decode(Bool.self, forKey: .hasNote)
+        available = try face.decodeIfPresent(Bool.self, forKey: .available) ?? true
     }
 }
 
@@ -543,7 +559,10 @@ public struct PlacedFragment: Codable, Hashable, Sendable {
     public let cloned: Int
     public let expired: Int
     public let burned: Int
+    /// Placed as unavailable with no record here; never one `elsewhere` counts.
     public let unavailable: Int
+    /// Placed as unavailable because the value is on another device (ADR-0058 point 4).
+    public let elsewhere: Int
     /// The envelope could not be read, so its public text was placed.
     public let unreadable: Bool
     /// Due pages the core swept first; the caller settles as its timer does (Law 0001, expiry row).
@@ -553,7 +572,7 @@ public struct PlacedFragment: Codable, Hashable, Sendable {
     public var range: NSRange { NSRange(location: locationUTF16, length: lengthUTF16) }
 
     enum CodingKeys: String, CodingKey {
-        case reattached, cloned, expired, burned, unavailable, unreadable
+        case reattached, cloned, expired, burned, unavailable, elsewhere, unreadable
         case locationUTF16 = "location_utf16"
         case lengthUTF16 = "length_utf16"
         case pagesExpired = "pages_expired"
@@ -1512,6 +1531,12 @@ public class CompanionClient: @unchecked Sendable {
         companion_expire_due(handle)
     }
 
+    /// The pages another page's edit, burn or end changed in the core since the last ask, each
+    /// to be read again as a peer's batch is (ADR-0058 points 3 and 8); empty on a refusal.
+    public func takeRestatedPages() -> [UInt64] {
+        decodeOwnedJSON([UInt64].self, from: companion_take_restated_pages_json(handle)) ?? []
+    }
+
     /// Click the countdown label: one rung shorter, clock reset. Tab
     /// addressed, and a slot holding no page keeps the shorter rung for
     /// the page it is opened with next.
@@ -1639,12 +1664,16 @@ public class CompanionClient: @unchecked Sendable {
         return ConcealOutcome(ok: false, receiptId: nil, error: nil)
     }
 
-    /// The core's conceal refusals the sheet may show (crates/ffi `conceal_error`),
-    /// translated where the core's words say conceal; nil for any other string.
+    /// The core's conceal refusals the sheet may show (crates/ffi `conceal_error`), translated
+    /// where they say conceal or name a value elsewhere (ADR-0058 point 4); else nil.
     static func readerReason(forCoreRefusal error: String) -> String? {
         switch error {
         case "nothing to conceal":
             return "there is nothing to send"
+        case "this chip's value is on another device":
+            return "this sealed content has its value on another device"
+        case "an object on this page has its value on another device":
+            return "sealed content on this page has its value on another device"
         case "no connection configured", "no such page", "this page has expired",
             "that content is gone", "this chip is not text",
             "this chip holds an image, which cannot travel as a text secret yet",

@@ -699,6 +699,31 @@ final class DayScrollTests: XCTestCase {
         XCTAssertTrue(editor.textStorage === storage)
     }
 
+    /// A face the core changed under the mounted page, as a peer's batch moving a value here
+    /// changes one (ADR-0058 point 3), is stood in on the attachment the block already has.
+    func testAPeersSettleRestatesAChangedFaceOnTheMountedPage() throws {
+        let model = try makeModel()
+        let mounted = try page(in: model, saying: "before secret after")
+        let sealed = try XCTUnwrap(
+            model.coreClient.sealText(sheet: mounted, "secret", at: 7, length: 6))
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: mounted), selectedPage: mounted, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let storage = try XCTUnwrap(editor.textStorage)
+        let chip = try XCTUnwrap(storage.attribute(.attachment, at: 7, effectiveRange: nil) as? ChipAttachment)
+        XCTAssertNil(chip.info.name)
+        XCTAssertTrue(model.coreClient.setChipName("PEER_KEY", chip: sealed.chipId))
+
+        model.settleRemoteEdits(on: [mounted])
+
+        XCTAssertTrue(
+            storage.attribute(.attachment, at: 7, effectiveRange: nil) as? ChipAttachment === chip,
+            "the object's attachment was rebuilt under the editor")
+        XCTAssertEqual(chip.info.name, "PEER_KEY", "the block still draws the face it was built with")
+        XCTAssertEqual(editor.string, "before \u{FFFC} after")
+    }
+
     /// A peer's edit arriving mid composition drops the composition, provisional text and all,
     /// since the input method's text is not the core's and its commit would be read against a
     /// storage the merge moves; the merge then runs, and the next keystroke is ordinary (#276).
