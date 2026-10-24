@@ -184,10 +184,24 @@ final class PreviewComposerTests: XCTestCase {
         XCTAssertEqual(try stream.consume(html("<em>")), [])
         XCTAssertEqual(try stream.consume(html("<p>")), [])
         XCTAssertEqual(try stream.consume(.object("one")), [.object("one", PreviewStyle(traits: [.emphasis]))])
+        XCTAssertNoThrow(try stream.finish())
         XCTAssertThrowsError(try stream.consume(.object("one"))) {
             XCTAssertEqual($0 as? CompositionError, .duplicateObject("one"))
         }
-        XCTAssertNoThrow(try stream.finish())
+    }
+
+    /// An event that throws has spent its budgets and objects, so the stream refuses what follows.
+    func testAStreamRefusesEveryEventAfterOneThrows() throws {
+        var stream = PreviewComposer(dialect: .gfm).start()
+        XCTAssertThrowsError(try stream.consume(.leaveLink)) {
+            XCTAssertEqual($0 as? CompositionError, .unbalancedMarkdown)
+        }
+        XCTAssertThrowsError(try stream.consume(.text("after"))) {
+            XCTAssertEqual($0 as? CompositionError, .streamFailed)
+        }
+        XCTAssertThrowsError(try stream.finish()) {
+            XCTAssertEqual($0 as? CompositionError, .streamFailed)
+        }
     }
 
     func testGFMFilterPrecedesElementPolicyForAllNineNames() throws {

@@ -88,6 +88,8 @@ enum CompositionError: Error, Equatable {
     case unbalancedMarkdown
     case structuredEventInRawText
     case objectOrderMismatch
+    /// An earlier event of the stream threw; its budgets and object set no longer match its runs.
+    case streamFailed
 }
 
 /// Composes Markdown structure and raw HTML into styled runs, sealed objects and image
@@ -128,6 +130,8 @@ struct PreviewCompositionStream {
     private var tokenCount = 0
     private var runCount = 0
     private var rawTextElement: String?
+    /// Set when an event throws: every later event, and `finish()`, refuses.
+    private var failed = false
     private var atBoundary = true
     private var atLineStart = true
     private var endsInSpace = false
@@ -163,15 +167,20 @@ struct PreviewCompositionStream {
 
     /// The runs `event` composes to, its objects in the order the event gives them.
     mutating func consume(_ event: PreviewEvent) throws -> [PreviewRun] {
-        eventCount += 1
-        guard eventCount <= limits.maximumEvents else { throw CompositionError.eventLimit }
-        let expected = try charge(event)
-        pending = []
-        try apply(event)
-        let runs = pending
-        pending = []
-        guard runs.objectIdentities == expected else { throw CompositionError.objectOrderMismatch }
-        return runs
+        guard !failed else { throw CompositionError.streamFailed }
+        do {
+            eventCount += 1
+            guard eventCount <= limits.maximumEvents else { throw CompositionError.eventLimit }
+            let expected = try charge(event)
+            try apply(event)
+            let runs = pending
+            pending = []
+            guard runs.objectIdentities == expected else { throw CompositionError.objectOrderMismatch }
+            return runs
+        } catch {
+            failed = true
+            throw error
+        }
     }
 
     /// The caller has started a native paragraph: block elements add no newline before it.
@@ -183,6 +192,7 @@ struct PreviewCompositionStream {
 
     /// Unclosed HTML ends here; unbalanced Markdown is an error.
     func finish() throws {
+        guard !failed else { throw CompositionError.streamFailed }
         guard markdown.isEmpty, markdownLinks.isEmpty else { throw CompositionError.unbalancedMarkdown }
     }
 
