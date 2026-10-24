@@ -275,9 +275,9 @@ private final class MarkdownPreviewRenderer {
     }
 
     /// A composed identity naming no object of this rendering, or one it already showed, a table
-    /// row with more cells than the table has columns, or a rendering that left an object out.
+    /// with no columns or a row wider than its columns, or a rendering that left an object out.
     private enum RenderFailure: Error {
-        case unknownObject, objectShownTwice, rowWiderThanTable, objectMissing
+        case unknownObject, objectShownTwice, tableWithoutColumns, rowWiderThanTable, objectMissing
     }
 
     private let output = NSMutableAttributedString(string: "")
@@ -507,7 +507,7 @@ private final class MarkdownPreviewRenderer {
     ) throws {
         let columnCount = alignments.count
         guard rows.allSatisfy({ $0.count <= columnCount }) else { throw RenderFailure.rowWiderThanTable }
-        guard columnCount > 0 else { return }
+        guard columnCount > 0 else { throw RenderFailure.tableWithoutColumns }
         let table = NSTextTable()
         table.numberOfColumns = columnCount
         table.layoutAlgorithm = .fixedLayoutAlgorithm

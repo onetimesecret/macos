@@ -555,7 +555,9 @@ private final class TreeWalker {
             }
             row = library.next(current)
         }
-        return .table(alignments: alignments, header: header ?? [], body: body, rows: rows)
+        // cmark-gfm opens every table with its header row.
+        guard let header else { throw MarkdownParseError.parserFailure }
+        return .table(alignments: alignments, header: header, body: body, rows: rows)
     }
 
     // MARK: Inlines
