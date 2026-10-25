@@ -573,6 +573,19 @@ final class SealedBlockTests: XCTestCase {
 
     // MARK: A record whose value is on another device (ADR-0058 point 4)
 
+    func testChipAvailabilityMustBeExplicitInTheWireFace() throws {
+        let face = #"{"chip_id":7,"kind":"text","excerpt":"","size_label":"small","concealed":false,"has_note":false}"#
+        for suffix in ["", #", "available":null"#, #", "available":"true""#] {
+            let json = String(face.dropLast()) + suffix + "}"
+            XCTAssertThrowsError(try JSONDecoder().decode(ChipInfo.self, from: Data(json.utf8)))
+        }
+        for available in [false, true] {
+            let json = String(face.dropLast()) + ",\"available\":\(available)}"
+            let decoded = try JSONDecoder().decode(ChipInfo.self, from: Data(json.utf8))
+            XCTAssertEqual(decoded.available, available)
+        }
+    }
+
     /// The core's faces for page `sheet`, in body order.
     private func faces(_ client: CompanionClient, sheet: UInt64) -> [ChipInfo] {
         client.documentRuns(sheet: sheet).compactMap { run -> ChipInfo? in

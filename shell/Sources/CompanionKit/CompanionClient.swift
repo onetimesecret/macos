@@ -470,8 +470,7 @@ public struct ChipInfo: Codable, Hashable, Sendable {
     /// Whether the note holds anything but whitespace: the block's
     /// doorway. The note's text is read with `noteRuns(chip:)`.
     public let hasNote: Bool
-    /// False for a record whose value is on another device (ADR-0058 point 4);
-    /// a face without the field is one whose value is on this device.
+    /// False for a record whose value is on another device (ADR-0058 point 4).
     public let available: Bool
 
     enum CodingKeys: String, CodingKey {
@@ -504,7 +503,7 @@ public struct ChipInfo: Codable, Hashable, Sendable {
         concealed = try face.decode(Bool.self, forKey: .concealed)
         name = try face.decodeIfPresent(String.self, forKey: .name)
         hasNote = try face.decode(Bool.self, forKey: .hasNote)
-        available = try face.decodeIfPresent(Bool.self, forKey: .available) ?? true
+        available = try face.decode(Bool.self, forKey: .available)
     }
 }
 
