@@ -1510,6 +1510,9 @@ impl SyncSession {
         page: ItemId,
         chain: &crate::gop::GopKeyChain,
     ) -> bool {
+        if store.is_due(sheet_id) {
+            return false;
+        }
         let Ok(FrameAnswer::Present { epoch, frame }) = RelayApi::parse_frame(response) else {
             return false;
         };
@@ -1746,6 +1749,37 @@ mod tests {
             pending.is_none(),
             "spent on nothing, so no attach may send it again"
         );
+    }
+
+    #[test]
+    fn a_due_page_does_not_report_a_frame_rejoin() {
+        let clock = ManualClock::new();
+        let mut store = SheetStore::new(clock.clone());
+        let source = store.new_tab().1;
+        let page = store.sheet(source).unwrap().uuid();
+        let since = store.document_version(source).unwrap();
+        let frame = store.export_document_updates(source, &since).unwrap();
+        let target = store.new_tab().1;
+        let original = store.sheet(target).unwrap().uuid();
+        let chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut joined = session("fp-live");
+        let mut session = session("fp-a");
+        let sealed = chain.seal(&frame).unwrap();
+        let body = session
+            .api
+            .publish_frame_request(0, &sealed, &session.auth().unwrap())
+            .body;
+        let response = HttpResponse {
+            status: 200,
+            body: body.unwrap().to_vec(),
+        };
+        let live = store.new_tab().1;
+        assert!(joined.absorb_frame(&response, &mut store, live, page, &chain));
+        clock.advance(std::time::Duration::from_secs(9 * 24 * 60 * 60));
+
+        assert!(!session.absorb_frame(&response, &mut store, target, page, &chain));
+        assert_eq!(store.sheet(target).unwrap().uuid(), original);
+        assert!(!session.channels.contains_key(&page));
     }
 
     #[test]
