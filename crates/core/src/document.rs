@@ -3,6 +3,7 @@
 //! every offset in this API is UTF-16: only Loro's `_utf16` methods are used.
 
 use std::cell::Cell;
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 use loro::cursor::{Cursor, PosType, Side};
@@ -688,16 +689,15 @@ impl SheetDocument {
     /// Delete each standing after an identity's first, and every one in `ended`, outside
     /// the undo stack (ADR-0058 points 2 and 8). Returns the positions taken, last first.
     pub(crate) fn take_out_standings(&self, ended: &[ItemId]) -> Vec<usize> {
-        let mut seen: Vec<ItemId> = Vec::new();
+        let mut seen = BTreeSet::new();
+        let ended: BTreeSet<_> = ended.iter().copied().collect();
         let mut taken = Vec::new();
         let mut pos = 0usize;
         for run in self.runs() {
             match run {
                 DocRun::Chip(id) => {
-                    if ended.contains(&id) || seen.contains(&id) {
+                    if ended.contains(&id) || !seen.insert(id) {
                         taken.push(pos);
-                    } else {
-                        seen.push(id);
                     }
                     pos += 1;
                 }
@@ -1707,6 +1707,29 @@ mod tests {
         assert!(doc.take_out_standings(&[]).is_empty());
         assert_eq!(doc.take_out_standings(&[id]), vec![1]);
         assert_eq!(doc.runs(), vec![ink("ab")]);
+    }
+
+    #[test]
+    fn removed_standings_report_original_offsets_from_last_to_first() {
+        let doc = SheetDocument::new();
+        let duplicate = ItemId::random();
+        let ended = ItemId::random();
+        doc.insert(0, "ab").unwrap();
+        doc.insert_chip(1, duplicate).unwrap();
+        doc.insert_chip(2, duplicate).unwrap();
+        doc.insert_chip(3, ended).unwrap();
+        doc.insert_chip(4, duplicate).unwrap();
+        doc.commit(None);
+
+        assert_eq!(doc.take_out_standings(&[ended]), vec![4, 3, 2]);
+        assert_eq!(
+            doc.runs(),
+            vec![
+                DocRun::Ink("a".to_string().into()),
+                DocRun::Chip(duplicate),
+                DocRun::Ink("b".to_string().into()),
+            ]
+        );
     }
 
     /// A peer's batch whose body is `text` with `marked` under `id`'s chip mark,

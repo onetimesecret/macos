@@ -3,7 +3,7 @@
 //! out of `lib.rs` so its extern fns stay thin. Failures are machine
 //! tokens; the engine is client protocol §2 to §9.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -900,7 +900,7 @@ fn queue_page_notes(
     sheet: SheetId,
     tracking: &mut PageTracking,
 ) {
-    let objects = store.notes_on(sheet);
+    let objects: BTreeSet<_> = store.notes_on(sheet).into_iter().collect();
     tracking.notes.retain(|object, _| objects.contains(object));
     for object in objects {
         let Some(version) = store.note_version(sheet, object) else {
