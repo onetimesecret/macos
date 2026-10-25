@@ -170,6 +170,70 @@ final class SealedNoteTests: XCTestCase {
 
     // MARK: The doorway (sealed row spec, Doorway)
 
+    func testRemoteNoteEditsRefreshTheOpenSurfaceAndRebaseItsNextEdit() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        type("alpha beta", into: editor)
+        editor.textView.setSelectedRange(NSRange(location: 6, length: 4))
+        let remote = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "peer ")]))
+        XCTAssertTrue(page.client.applyNoteOps(chip: page.chip, json: remote))
+
+        page.model.settleRemoteEdits(on: [page.sheet])
+
+        XCTAssertTrue(editor.isOpen)
+        XCTAssertEqual(editor.textView.string, "peer alpha beta")
+        XCTAssertEqual(editor.textView.selectedRange(), NSRange(location: 11, length: 4))
+        type("local", into: editor)
+        XCTAssertEqual(editor.textView.string, "peer alpha local")
+        XCTAssertEqual(page.model.noteText(chip: page.chip), editor.textView.string)
+    }
+
+    func testRemoteNoteRefreshClampsASelectionAfterARemoval() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        type("alpha beta", into: editor)
+        editor.textView.setSelectedRange(NSRange(location: 6, length: 4))
+        let remote = try XCTUnwrap(DocumentEditOp.wireJSON([.del(at: 5, len: 5)]))
+        XCTAssertTrue(page.client.applyNoteOps(chip: page.chip, json: remote))
+
+        page.model.settleRemoteEdits(on: [page.sheet])
+
+        XCTAssertEqual(editor.textView.string, "alpha")
+        XCTAssertEqual(editor.textView.selectedRange(), NSRange(location: 5, length: 0))
+        type("!", into: editor)
+        XCTAssertEqual(page.model.noteText(chip: page.chip), "alpha!")
+    }
+
+    func testRemoteNoteRefreshPreservesAnEchoCompositionAndAbandonsItForANewEdit() throws {
+        let page = try makePage()
+        page.coordinator.beginNote(at: 3)
+        let editor = try note(page)
+        type("alpha beta", into: editor)
+        editor.textView.setSelectedRange(NSRange(location: 6, length: 4))
+        editor.textView.setMarkedText(
+            "ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(editor.textView.hasMarkedText())
+        XCTAssertEqual(editor.textView.string, "alpha ka")
+
+        page.model.settleRemoteEdits(on: [page.sheet])
+
+        XCTAssertTrue(editor.textView.hasMarkedText())
+        XCTAssertEqual(editor.textView.string, "alpha ka")
+        let remote = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 10, text: " gamma")]))
+        XCTAssertTrue(page.client.applyNoteOps(chip: page.chip, json: remote))
+        page.model.settleRemoteEdits(on: [page.sheet])
+
+        XCTAssertFalse(editor.textView.hasMarkedText())
+        XCTAssertEqual(editor.textView.string, "alpha beta gamma")
+        XCTAssertEqual(editor.textView.selectedRange(), NSRange(location: 6, length: 4))
+        type("\u{304B}", into: editor)
+        XCTAssertEqual(editor.textView.string, "alpha \u{304B} gamma")
+        XCTAssertEqual(page.model.noteText(chip: page.chip), editor.textView.string)
+    }
+
     /// Once a note exists the seat reads `small · note`, size class first;
     /// a hovered zone or a copy takes the seat whole.
     func testTheSeatOpensADoorwayOnceANoteExists() {

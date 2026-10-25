@@ -3468,6 +3468,16 @@ public struct InkEditorView: NSViewRepresentable {
             showNote(text)
         }
 
+        func refreshNoteFromCore() {
+            guard let noteChip, let textView else { return }
+            guard let text = model.noteText(chip: noteChip) else {
+                restateNote()
+                return
+            }
+            model.mergeProjection(noteRendering(text), into: textView)
+            restyle()
+        }
+
         /// Closes the note's popover, or unloads a note with none, when the core refuses it.
         private func closeNoteHost() {
             if let host = noteHost { host.close(returningKeys: host.holdsKeys) } else { unloadNote() }
@@ -3477,11 +3487,15 @@ public struct InkEditorView: NSViewRepresentable {
         private func showNote(_ text: String) {
             guard let storage = textView?.textStorage else { return }
             model.applyingProjection {
-                storage.setAttributedString(NSAttributedString(
-                    string: text,
-                    attributes: [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]))
+                storage.setAttributedString(noteRendering(text))
             }
             restyle()
+        }
+
+        private func noteRendering(_ text: String) -> NSAttributedString {
+            NSAttributedString(
+                string: text,
+                attributes: [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor])
         }
 
         /// A refused batch: the core's text again, once the storage has

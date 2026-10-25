@@ -7156,13 +7156,19 @@ public final class PageModel: ObservableObject {
     /// its own storage edit on purpose: a begin and end editing pair would fold them into one
     /// edited range, and the selection fixups AppKit makes per edit with them.
     private func mergeIntoShownStorage(sheet: UInt64, shown: InkTextView) {
-        guard let storage = storages[sheet] else { return }
-        // A composition in flight is the input method's provisional text, not the core's: the
-        // comparison reads the storage as it stood before it, and only an edit that changed
-        // something drops it, since its commit would be read against a storage the merge moved.
+        guard mergeProjection(rebuiltRuns(of: sheet), into: shown) else { return }
+        #if DEBUG
+            assertProjectionParity(sheet: sheet)
+        #endif
+    }
+
+    @discardableResult
+    func mergeProjection(_ rebuilt: NSAttributedString, into shown: InkTextView) -> Bool {
+        guard let storage = shown.textStorage else { return false }
+        // Compare against the composition's baseline and discard provisional text only
+        // when the core's text changed (#276).
         let coordinator = shown.coordinator
         let composed = coordinator?.compositionFreeCopy(of: storage)
-        let rebuilt = rebuiltRuns(of: sheet)
         let old = Self.units(of: composed ?? storage)
         let new = Self.units(of: rebuilt)
         let head = zip(old, new).lazy.prefix { $0 == $1 }.count
@@ -7170,7 +7176,7 @@ public final class PageModel: ObservableObject {
         let tail = zip(old.reversed(), new.reversed()).lazy.prefix { $0 == $1 }.prefix(room).count
         let oldMiddle = Array(old[head..<(old.count - tail)])
         let newMiddle = Array(new[head..<(new.count - tail)])
-        guard !oldMiddle.isEmpty || !newMiddle.isEmpty else { return }
+        guard !oldMiddle.isEmpty || !newMiddle.isEmpty else { return false }
         if shown.hasMarkedText() { coordinator?.abandonComposition() }
         // Offsets in UTF-16 units: the head's, and each middle unit's start within its middle.
         let headOffset = Self.width(of: old.prefix(head))
@@ -7204,9 +7210,7 @@ public final class PageModel: ObservableObject {
                 storage.insert(rebuilt.attributedSubstring(from: NSRange(location: at, length: length)), at: at)
             }
         }
-        #if DEBUG
-            assertProjectionParity(sheet: sheet)
-        #endif
+        return true
     }
 
     /// The diff costs the middle's length times its edit distance, quadratic when the two share
@@ -7304,6 +7308,7 @@ public final class PageModel: ObservableObject {
         if let shown = surface(showing: page) {
             mergeIntoShownStorage(sheet: page, shown: shown)
             restateChipFaces(onSheet: page)
+            shown.coordinator?.noteEditor?.coordinator.refreshNoteFromCore()
         } else {
             restateStorage(sheet: page)
         }
