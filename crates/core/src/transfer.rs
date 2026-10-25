@@ -255,7 +255,7 @@ impl<C: Clock> SheetStore<C> {
             return None;
         }
         let (fragment, _) = self.selected(source, from_u16, len_u16).ok()?;
-        let plan = reattaching(&fragment, source);
+        let mut plan = reattaching(&fragment, source);
         let placed = Placed {
             location_u16: at_u16,
             reattached: reattached(&plan),
@@ -271,10 +271,21 @@ impl<C: Clock> SheetStore<C> {
                 .note_delete(from_u16 as usize, len_u16 as usize);
             Ok(())
         });
-        // Detached here, the range's objects are where the stand takes them from.
-        self.settle_document(source);
         if !stood {
+            self.settle_document(source);
             return None;
+        }
+        // Defer following other pages' sentinels until both edits succeed.
+        self.sheet_mut(source)?.settle_roster();
+        plan.retain(|item| match item {
+            Planned::Reattach { uuid, .. } => self
+                .sheet(dest)
+                .is_none_or(|sheet| sheet.document.chip_position(*uuid).is_none()),
+            _ => true,
+        });
+        if plan.iter().all(|item| item.width() == 0) {
+            self.settle_document(source);
+            return Some(placed);
         }
         let moved = self.stand_plan(dest, at_u16, 0, EditIntent::Replacement, plan, placed);
         if moved.is_none() {
@@ -282,8 +293,8 @@ impl<C: Clock> SheetStore<C> {
             if let Some(sheet) = self.sheet_mut(source) {
                 sheet.document.rollback(&checkpoint);
             }
-            self.settle_document(source);
         }
+        self.settle_document(source);
         moved
     }
 
@@ -518,9 +529,10 @@ impl<C: Clock> SheetStore<C> {
 
     /// A live object by identity, attached or detached, on any page.
     fn live_object(&self, uuid: ItemId) -> Option<&SealedChip> {
-        self.sheets()
+        self.readable_sheets()
             .flat_map(|sheet| sheet.chips.iter().chain(&sheet.detached))
-            .find(|chip| chip.uuid == uuid)
+            .filter(|chip| chip.uuid == uuid)
+            .max_by_key(|chip| chip.is_local())
     }
 
     /// The newest `expired` or `discarded` record for an identity, the only
@@ -2171,6 +2183,41 @@ mod tests {
         assert!(!store.sheet(away).unwrap().chip(peer).unwrap().is_local());
         assert_eq!(copies(&store, uuid), 1);
         assert_eq!(store.ledger().count(), records, "a move records nothing");
+    }
+
+    #[test]
+    fn a_live_reference_ignores_a_value_on_a_page_past_its_deadline() {
+        let (mut store, clock) = store();
+        let value_page = store.new_tab().1;
+        let chip = store.seal_text_at(value_page, A, 0, 0).unwrap();
+        let uuid = uuid_of(&store, chip);
+        clock.advance(HOUR / 2);
+        let peer_page = store.new_tab().1;
+        store
+            .stand_peer_record_as(peer_page, 0, uuid, None, None)
+            .unwrap();
+        clock.advance(HOUR / 2);
+        assert!(!store.live_object(uuid).unwrap().is_local());
+        assert!(store.sheet(value_page).is_some());
+    }
+
+    #[test]
+    fn a_paste_prefers_the_value_over_an_earlier_peer_record() {
+        let (mut store, _) = store();
+        let peer_page = store.new_tab().1;
+        let value_page = store.new_tab().1;
+        let chip = store.seal_text_at(value_page, A, 0, 0).unwrap();
+        let uuid = uuid_of(&store, chip);
+        store
+            .stand_peer_record_as(peer_page, 0, uuid, None, None)
+            .unwrap();
+        let copied = store.copy_fragment(peer_page, 0, 1).unwrap();
+        let dest = store.new_tab().1;
+        let placed = store
+            .paste_fragment(dest, 0, 0, &copied.envelope.unwrap(), None)
+            .unwrap();
+        assert_eq!((placed.cloned, placed.elsewhere), (1, 0));
+        assert_eq!(payload_at(&store, dest, 0), A.as_bytes());
     }
 
     #[test]

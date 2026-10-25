@@ -1223,11 +1223,21 @@ impl<C: Clock> SheetStore<C> {
             else {
                 continue;
             };
-            let record = sheet.detached.remove(index);
+            let mut record = sheet.detached.remove(index);
             // A step here could stand the moved sentinel a second time.
             sheet.document.forget_undo();
             if local_there {
-                if self.keep_newer_metadata(there, &record) {
+                let learned = self.keep_newer_metadata(there, &record);
+                let note = record.note.take();
+                if let Some(note) = note
+                    && let Some(slot) = self
+                        .sheet_mut(there)
+                        .and_then(|sheet| sheet.chips.iter_mut().find(|chip| chip.uuid == uuid))
+                {
+                    Note::fold(&mut slot.note, note);
+                    self.restated.insert(there);
+                }
+                if learned {
                     self.restated.insert(there);
                 }
             } else {
@@ -1276,7 +1286,12 @@ impl<C: Clock> SheetStore<C> {
         };
         let uuid = record.uuid;
         let mut moved = None;
-        match dest.chips.iter_mut().find(|chip| chip.uuid == uuid) {
+        let slot = dest
+            .chips
+            .iter_mut()
+            .chain(&mut dest.detached)
+            .find(|chip| chip.uuid == uuid);
+        match slot {
             Some(slot) => {
                 crate::metadata::absorb(&mut record, slot, writer);
                 // The standing note keeps its place, and takes the arriving one's edits
@@ -1662,10 +1677,15 @@ impl<C: Clock> SheetStore<C> {
     pub fn set_chip_name(&mut self, id: ChipId, draft: &str) -> Result<(), NameRefusal> {
         let (page, chip) = self.chip_home(id).ok_or(NameRefusal::UnknownChip)?;
         let name = judge_name(draft)?;
-        if chip.name() == name {
+        let uuid = chip.uuid;
+        if self
+            .readable_sheets()
+            .flat_map(|sheet| sheet.chips.iter().chain(&sheet.detached))
+            .filter(|record| record.uuid == uuid)
+            .all(|record| record.name() == name)
+        {
             return Ok(());
         }
-        let uuid = chip.uuid;
         let highest = self
             .readable_sheets()
             .flat_map(|sheet| sheet.chips.iter().chain(&sheet.detached))
@@ -1883,6 +1903,8 @@ impl<C: Clock> SheetStore<C> {
             DestinationClass::None,
         );
         self.drop_records_with_no_value(uuid);
+        self.forget_object_metadata(uuid);
+        self.forget_object_notes(uuid);
         true
     }
 
@@ -5910,6 +5932,125 @@ mod tests {
         );
         assert!(store.take_restated_pages().is_empty());
         (store, home, away, chip, peer)
+    }
+
+    #[test]
+    fn a_detached_peer_note_folds_into_the_value_standing_elsewhere() {
+        let (mut store, home, away, chip, peer) = standing_elsewhere_here();
+        assert!(store.apply_note_ops(peer, &typed(0, "peer note"), EditIntent::Typing, None));
+        remove_at(&mut store, away, 0);
+        assert_eq!(
+            store.note_text(chip).as_deref().map(String::as_str),
+            Some("peer note")
+        );
+        assert_eq!(store.take_restated_pages(), [home]);
+        let uuid = uuid_of(&store, chip);
+        assert_eq!(records_of(&store, uuid).len(), 1);
+    }
+
+    #[test]
+    fn a_name_matching_one_record_updates_other_records_with_different_names() {
+        let (mut store, home, away, chip, peer) = standing_elsewhere_here();
+        store.set_chip_name(chip, "CURRENT").unwrap();
+        store
+            .sheet_mut(away)
+            .unwrap()
+            .chips
+            .iter_mut()
+            .find(|record| record.id == peer)
+            .unwrap()
+            .name = Some(Zeroizing::new("STALE".into()));
+        store.take_restated_pages();
+        store.set_chip_name(chip, "CURRENT").unwrap();
+        let uuid = uuid_of(&store, chip);
+        let records = records_of(&store, uuid);
+        assert!(
+            records
+                .iter()
+                .all(|(_, record)| record.name() == Some("CURRENT"))
+        );
+        assert_eq!(records[0].1.name_version, records[1].1.name_version);
+        assert_eq!(store.take_restated_pages(), [away]);
+        assert!(store.sheet(home).unwrap().chip(chip).is_some());
+    }
+
+    #[test]
+    fn standing_in_for_a_detached_record_merges_under_its_id() {
+        let (mut store, _, away, _, peer) = standing_elsewhere_here();
+        let uuid = uuid_of(&store, peer);
+        let dest = store.sheet_mut(away).unwrap();
+        dest.document.delete(0, 1).unwrap();
+        dest.document.commit(None);
+        dest.settle_roster();
+        let mut incoming = SealedChip::text_with_uuid(ChipId(8_000), uuid, "arriving value");
+        incoming.note = Some(Note::holding("arriving note"));
+        store.stand_in(away, incoming);
+        let dest = store.sheet(away).unwrap();
+        let records: Vec<_> = dest
+            .detached()
+            .filter(|record| record.uuid == uuid)
+            .collect();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].id, peer);
+        assert!(records[0].is_local());
+        assert_eq!(
+            records[0].note.as_ref().unwrap().text().as_str(),
+            "arriving note"
+        );
+    }
+
+    #[test]
+    fn a_refused_move_to_an_existing_standing_keeps_the_value_at_its_source() {
+        let (mut store, home, away, chip, peer) = standing_elsewhere_here();
+        let bodies = (
+            store.sheet(home).unwrap().document.runs(),
+            store.sheet(away).unwrap().document.runs(),
+        );
+        store.sheet_mut(away).unwrap().document.fail_writes_after(0);
+        assert!(store.move_range_to(home, 0, 5, away, 0).is_none());
+        assert_eq!(
+            (
+                store.sheet(home).unwrap().document.runs(),
+                store.sheet(away).unwrap().document.runs()
+            ),
+            bodies
+        );
+        assert!(store.sheet(home).unwrap().chip(chip).unwrap().is_local());
+        assert!(!store.sheet(away).unwrap().chip(peer).unwrap().is_local());
+        assert_eq!(
+            store.copy_out_chip(chip).unwrap().0.as_slice(),
+            b"the secret"
+        );
+        assert!(store.take_restated_pages().is_empty());
+        let snapshot = store.snapshot(1_000_000);
+        let mut revived = SheetStore::new(ManualClock::new());
+        assert_eq!(revived.restore(&snapshot, 1_000_000).unwrap(), 2);
+    }
+
+    #[test]
+    fn moving_to_a_page_already_standing_the_identity_restores_from_snapshot() {
+        for include_ink in [false, true] {
+            let (mut store, home, away, _, peer) = standing_elsewhere_here();
+            let start = if include_ink { 0 } else { 4 };
+            let length = if include_ink { 5 } else { 1 };
+            let moved = store.move_range_to(home, start, length, away, 0).unwrap();
+            assert_eq!(moved.reattached, 1);
+            let dest = store.sheet(away).unwrap();
+            assert_eq!(dest.document.live_chips().len(), 1);
+            assert_eq!(dest.chips().count(), 1);
+            assert!(dest.chip(peer).unwrap().is_local());
+            assert_eq!(
+                dest.document
+                    .runs()
+                    .iter()
+                    .filter(|run| matches!(run, crate::document::DocRun::Chip(_)))
+                    .count(),
+                1
+            );
+            let snapshot = store.snapshot(1_000_000);
+            let mut revived = SheetStore::new(ManualClock::new());
+            assert_eq!(revived.restore(&snapshot, 1_000_000).unwrap(), 2);
+        }
     }
 
     #[test]

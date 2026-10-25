@@ -85,16 +85,16 @@ impl PendingNotes {
     }
 
     /// Take every batch held for `object`, whichever page it was sent for, oldest first.
-    fn take(&mut self, object: ItemId) -> Vec<Zeroizing<Vec<u8>>> {
+    fn take(&mut self, object: ItemId) -> Vec<(ItemId, Zeroizing<Vec<u8>>)> {
         let (taken, kept): (VecDeque<_>, VecDeque<_>) = std::mem::take(&mut self.batches)
             .into_iter()
             .partition(|(_, held, _)| *held == object);
         self.batches = kept;
         taken
             .into_iter()
-            .map(|(_, _, batch)| {
+            .map(|(page, _, batch)| {
                 self.bytes = self.bytes.saturating_sub(batch.len());
-                batch
+                (page, batch)
             })
             .collect()
     }
@@ -526,19 +526,11 @@ impl<C: Clock> SheetStore<C> {
         self.readable_note(page, object)?.export_since(since)
     }
 
-    /// Merge a peer's batch into `object`'s note on the page whose cross-device identity
-    /// is `page` (ADR-0058 point 6), or, with no record there, into each of its records
-    /// on this device's other readable pages, never touching a page, its roster or the
-    /// ledger. A record with no note takes an empty one first. A batch for an object
-    /// with no record here waits until one arrives; a page past its deadline takes none.
-    /// Returns whether a note changed.
+    /// Merge a peer's batch into every readable record of `object`.
+    /// The named page must be readable; batches without a record wait for one.
     ///
     /// # Errors
-    /// [`RemoteRefusal::Malformed`] for an empty batch, before anything else;
-    /// [`RemoteRefusal::UnknownSheet`] for a page that is not here; or
-    /// [`RemoteRefusal::Malformed`], [`RemoteRefusal::MissingHistory`],
-    /// [`RemoteRefusal::NestedObject`] or [`RemoteRefusal::UnrelatedHistory`] when every
-    /// record refused it. A refusal leaves its note as it was.
+    /// Refuses empty bytes, unknown pages, or a batch every record rejects.
     pub fn apply_remote_note_update(
         &mut self,
         page: ItemId,
@@ -556,12 +548,12 @@ impl<C: Clock> SheetStore<C> {
         if sheet.is_due(now) {
             return Ok(false);
         }
-        if let Some(record) = record_on_mut(sheet, object) {
-            return merge_into(record, bytes);
-        }
         let named = sheet.id;
+        if self.terminal_cause(object).is_some() {
+            return Ok(false);
+        }
         let mut merged = Vec::new();
-        for sheet in self.readable_sheets_mut().filter(|sheet| sheet.id != named) {
+        for sheet in self.readable_sheets_mut() {
             let id = sheet.id;
             if let Some(record) = record_on_mut(sheet, object) {
                 merged.push((id, merge_into(record, bytes)));
@@ -573,11 +565,11 @@ impl<C: Clock> SheetStore<C> {
         };
         let changed: Vec<SheetId> = merged
             .iter()
-            .filter(|(_, outcome)| *outcome == Ok(true))
+            .filter(|(id, outcome)| *id != named && *outcome == Ok(true))
             .map(|(id, _)| *id)
             .collect();
         let outcome = if merged.iter().any(|(_, outcome)| outcome.is_ok()) {
-            Ok(!changed.is_empty())
+            Ok(merged.iter().any(|(_, outcome)| *outcome == Ok(true)))
         } else {
             first
         };
@@ -603,26 +595,33 @@ impl<C: Clock> SheetStore<C> {
         }
     }
 
-    /// Merge each batch held for `object`, whichever page it was sent for, into its
-    /// record on readable page `id`, oldest first; one refused now is dropped.
+    /// Apply waiting batches to every readable record once `id` has the object.
+    /// Changed pages other than each batch's sender page are restated.
     pub(crate) fn drain_pending_notes(&mut self, id: SheetId, object: ItemId) {
-        let has_record = self
+        if self
             .readable_sheet(id)
-            .is_some_and(|sheet| record_on(sheet, object).is_some());
-        if !has_record {
+            .is_none_or(|sheet| record_on(sheet, object).is_none())
+        {
             return;
         }
         let waiting = self.note_pending.take(object);
-        let Some(record) = self
-            .sheet_mut(id)
-            .and_then(|sheet| record_on_mut(sheet, object))
-        else {
-            return;
-        };
-        for batch in waiting {
-            // A refusal leaves the note as it was; the batch goes with it.
-            let _ = merge_into(record, &batch);
+        let mut restated = Vec::new();
+        for (sent_for, batch) in waiting {
+            for sheet in self.readable_sheets_mut() {
+                if let Some(record) = record_on_mut(sheet, object)
+                    && merge_into(record, &batch) == Ok(true)
+                    && sheet.uuid != sent_for
+                {
+                    restated.push(sheet.id);
+                }
+            }
         }
+        self.restated.extend(restated);
+    }
+
+    /// Drop batches waiting for an object that ended here.
+    pub(crate) fn forget_object_notes(&mut self, object: ItemId) {
+        self.note_pending.retain(|(_, at, _)| *at != object);
     }
 
     /// Drop every batch held for the page whose identity is `page`, as it ends.
@@ -1229,6 +1228,76 @@ mod tests {
     }
 
     #[test]
+    fn a_note_update_reaches_named_and_other_records_even_if_one_refuses() {
+        for unrelated in [false, true] {
+            let mut pair = Pair::new("base");
+            let other = pair.beta.new_tab().1;
+            pair.beta
+                .stand_peer_record_as(other, 0, pair.object, None, None)
+                .unwrap();
+            if unrelated {
+                let record =
+                    record_on_mut(pair.beta.sheet_mut(pair.b).unwrap(), pair.object).unwrap();
+                record.note = Some(Note::holding("unrelated"));
+                write(&mut pair.beta, pair.peer, 9, " history");
+            }
+            pair.beta.take_restated_pages();
+            write(&mut pair.alpha, pair.chip, 4, " update");
+            let batch = pair
+                .alpha
+                .export_note_updates(pair.a, pair.object, &SheetDocument::pristine_version())
+                .unwrap();
+            let page = page_of(&pair.beta, pair.b);
+            assert_eq!(
+                pair.beta
+                    .apply_remote_note_update(page, pair.object, &batch),
+                Ok(true)
+            );
+            assert_eq!(text_of(&pair.beta, other, pair.object), "base update");
+            assert_eq!(
+                text_of(&pair.beta, pair.b, pair.object),
+                if unrelated {
+                    "unrelated history"
+                } else {
+                    "base update"
+                }
+            );
+            assert_eq!(pair.beta.take_restated_pages(), [other]);
+            assert_eq!(
+                pair.beta
+                    .apply_remote_note_update(page, pair.object, &batch),
+                Ok(false)
+            );
+            assert!(pair.beta.take_restated_pages().is_empty());
+        }
+    }
+
+    #[test]
+    fn draining_a_waiting_note_updates_every_readable_record_and_restates_other_pages() {
+        let mut pair = Pair::new("base");
+        let other = pair.beta.new_tab().1;
+        pair.beta
+            .stand_peer_record_as(other, 0, pair.object, None, None)
+            .unwrap();
+        write(&mut pair.alpha, pair.chip, 4, " waiting");
+        let batch = pair
+            .alpha
+            .export_note_updates(pair.a, pair.object, &SheetDocument::pristine_version())
+            .unwrap();
+        let page = page_of(&pair.beta, pair.b);
+        pair.beta.note_pending.hold(page, pair.object, &batch);
+        pair.beta.take_restated_pages();
+
+        pair.beta.drain_pending_notes(pair.b, pair.object);
+        assert!(pair.beta.note_pending.is_empty());
+        assert_eq!(pair.beta.note_pending.bytes, 0);
+        for id in [pair.b, other] {
+            assert_eq!(text_of(&pair.beta, id, pair.object), "base waiting");
+        }
+        assert_eq!(pair.beta.take_restated_pages(), [other]);
+    }
+
+    #[test]
     fn a_note_batch_held_for_one_page_drains_when_its_object_arrives_on_another() {
         let (mut alpha, mut beta) = (device(), device());
         let a = alpha.new_tab().1;
@@ -1243,6 +1312,49 @@ mod tests {
         assert!(beta.note_pending.is_empty());
         assert_eq!(beta.note_pending.bytes, 0);
         assert_eq!(text_of(&beta, arrived_on, object), "early");
+    }
+
+    #[test]
+    fn a_burn_purges_pending_content_and_late_batches_do_not_refill_it() {
+        let mut store = device();
+        let page = store.new_tab().1;
+        let chip = store.seal_text_at(page, SECRET, 0, 0).unwrap();
+        write(&mut store, chip, 0, "waiting");
+        let object = store.sheet(page).unwrap().chip(chip).unwrap().uuid();
+        let identity = page_of(&store, page);
+        let batch = store
+            .export_note_updates(page, object, &SheetDocument::pristine_version())
+            .unwrap();
+        let entry = crate::metadata::ObjectMetadata {
+            object,
+            kind: None,
+            size: None,
+            name: Some((
+                crate::metadata::NameVersion::first([1; 32]),
+                Some(Zeroizing::new("WAITING".to_owned())),
+            )),
+        };
+        store.note_pending.hold(identity, object, &batch);
+        store.metadata_pending.push_back((identity, entry.clone()));
+        assert!(!store.note_pending.is_empty());
+        assert!(store.delete_chip(chip));
+        assert!(store.note_pending.is_empty());
+        assert_eq!(store.note_pending.bytes, 0);
+        assert!(store.metadata_pending.is_empty());
+        assert!(
+            store
+                .metadata_dirty
+                .values()
+                .all(|dirty| !dirty.contains(&object))
+        );
+
+        assert_eq!(
+            store.apply_remote_note_update(identity, object, &batch),
+            Ok(false)
+        );
+        assert_eq!(store.apply_object_metadata(identity, vec![entry]), 0);
+        assert!(store.note_pending.is_empty());
+        assert!(store.metadata_pending.is_empty());
     }
 
     #[test]

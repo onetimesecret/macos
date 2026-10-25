@@ -275,6 +275,9 @@ impl<C: Clock> SheetStore<C> {
         };
         let mut changed = 0;
         for entry in entries {
+            if self.terminal_cause(entry.object).is_some() {
+                continue;
+            }
             match self.apply_entry(named, entry.judged()) {
                 Ok(applied) => changed += usize::from(applied),
                 Err(entry) => self.hold_metadata(page, entry),
@@ -339,34 +342,37 @@ impl<C: Clock> SheetStore<C> {
         self.metadata_pending.push_back((page, entry));
     }
 
-    /// Apply every entry held for `object`, whichever page it was sent for, oldest
-    /// first, now that readable page `id` has its record. The record is marked
-    /// changed when an entry sent for another page changed it.
+    /// Apply waiting entries to every readable record once `id` has the object.
+    /// Each entry uses its original page when marking other pages changed.
     pub(crate) fn drain_pending_metadata(&mut self, id: SheetId, object: ItemId) {
-        let Some(here) = self
+        if self
             .readable_sheet(id)
-            .filter(|sheet| record_on(sheet, object).is_some())
-            .map(Sheet::uuid)
-        else {
+            .is_none_or(|sheet| record_on(sheet, object).is_none())
+        {
             return;
-        };
+        }
         let (waiting, kept): (VecDeque<_>, VecDeque<_>) =
             std::mem::take(&mut self.metadata_pending)
                 .into_iter()
                 .partition(|(_, held)| held.object == object);
         self.metadata_pending = kept;
-        let writer = self.writer;
-        let mut elsewhere = false;
-        if let Some(record) = self
-            .sheet_mut(id)
-            .and_then(|sheet| record_on_mut(sheet, object))
-        {
-            for (sent_for, entry) in waiting {
-                elsewhere |= adopt(record, entry, writer) && sent_for != here;
+        for (sent_for, entry) in waiting {
+            let named = self
+                .sheets()
+                .find(|sheet| sheet.uuid == sent_for)
+                .map(Sheet::id);
+            if let Some(named) = named {
+                let _ = self.apply_entry(named, entry);
             }
         }
-        if elsewhere {
-            self.note_metadata(id, object);
+    }
+
+    /// Drop pending entries and unsent changes for an object that ended here.
+    pub(crate) fn forget_object_metadata(&mut self, object: ItemId) {
+        self.metadata_pending
+            .retain(|(_, entry)| entry.object != object);
+        for changed in self.metadata_dirty.values_mut() {
+            changed.remove(&object);
         }
     }
 
@@ -1061,6 +1067,33 @@ mod tests {
     }
 
     #[test]
+    fn a_waiting_metadata_entry_reaches_all_records_and_restates_other_pages() {
+        let (mut store, _) = store(BETA);
+        let named_page = store.new_tab().1;
+        let other_page = store.new_tab().1;
+        let chip = store.seal_text_at(named_page, SECRET, 0, 0).unwrap();
+        let object = store.sheet(named_page).unwrap().chip(chip).unwrap().uuid();
+        store
+            .stand_peer_record_as(other_page, 0, object, None, None)
+            .unwrap();
+        for page in [named_page, other_page] {
+            store.take_metadata_changes(page);
+        }
+        store.take_restated_pages();
+        let page = page_of(&store, named_page);
+        store.hold_metadata(page, named(object, version(1, ALPHA), Some("WAITING")));
+
+        store.drain_pending_metadata(named_page, object);
+        assert!(store.metadata_pending.is_empty());
+        for page in [named_page, other_page] {
+            assert_eq!(record(&store, page, object).name(), Some("WAITING"));
+        }
+        assert!(store.take_metadata_changes(named_page).is_empty());
+        assert_eq!(store.take_metadata_changes(other_page).len(), 1);
+        assert_eq!(store.take_restated_pages(), [other_page]);
+    }
+
+    #[test]
     fn the_waiting_cache_evicts_its_oldest_past_256() {
         for (others, kept) in [(PENDING_CAP - 1, true), (PENDING_CAP, false)] {
             let (mut alpha, _) = store(ALPHA);
@@ -1330,6 +1363,26 @@ mod tests {
         let chip = store.seal_text_at(id, SECRET, 0, 0).unwrap();
         let object = store.sheet(id).unwrap().chip(chip).unwrap().uuid();
         clock.advance(RUNG + Duration::from_secs(1));
+        assert!(store.is_due(id));
+
+        let tab = store
+            .tabs()
+            .find(|tab| tab.page().map(Sheet::id) == Some(id))
+            .unwrap()
+            .id();
+        assert!(!store.pause_press(tab));
+        assert_eq!(
+            store.set_rung(tab, Ttl::from_secs(RUNG.as_secs()).unwrap()),
+            None
+        );
+        assert!(!store.observe_peer_hold(
+            page_of(&store, id),
+            crate::sync::HoldRegister::Held {
+                until_wall_ms: clock.wall_ms() + 24 * 60 * 60 * 1_000,
+                frozen_ms: RUNG.as_millis() as u64,
+                topped_up: true,
+            },
+        ));
         assert!(store.is_due(id));
 
         assert!(store.take_metadata_changes(id).is_empty());
