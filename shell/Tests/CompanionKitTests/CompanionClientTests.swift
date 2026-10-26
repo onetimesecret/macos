@@ -171,7 +171,8 @@ final class CompanionClientTests: XCTestCase {
             "size_label": "40 ch",
             "concealed": false,
             "name": "GH_TOKEN",
-            "has_note": true
+            "has_note": true,
+            "available": true
         }
         """
         let chip = try JSONDecoder().decode(ChipInfo.self, from: Data(json.utf8))
@@ -181,9 +182,17 @@ final class CompanionClientTests: XCTestCase {
         XCTAssertEqual(chip.sizeLabel, "40 ch")
         XCTAssertEqual(chip.name, "GH_TOKEN")
         XCTAssertTrue(chip.hasNote)
+        XCTAssertTrue(chip.available)
 
         let unnamed = json.replacingOccurrences(of: "\"GH_TOKEN\"", with: "null")
         XCTAssertNil(try JSONDecoder().decode(ChipInfo.self, from: Data(unnamed.utf8)).name)
+
+        let peer = #"{"chip_id":43,"kind":"text","excerpt":"","size_label":"small","concealed":false,"name":null,"has_note":false,"available":false}"#
+        let unavailable = try JSONDecoder().decode(ChipInfo.self, from: Data(peer.utf8))
+        XCTAssertEqual(unavailable.chipId, 43)
+        XCTAssertFalse(unavailable.available)
+        XCTAssertTrue(unavailable.excerpt.isEmpty)
+        XCTAssertFalse(unavailable.hasNote)
     }
 
     func testLedgerDecoding() throws {

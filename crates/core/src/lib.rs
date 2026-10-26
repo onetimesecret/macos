@@ -7,6 +7,8 @@ pub mod clock;
 mod document;
 pub mod file_persist;
 pub mod files;
+// The key frame: a page's rebuild and its notes' (ADR-0058 point 6).
+mod frame;
 // The sealed fragment's envelope; the shell carries its bytes unread
 // (ADR-0045 point 1).
 mod fragment;
@@ -14,6 +16,8 @@ pub mod harden;
 mod ink;
 mod language_detection;
 pub mod ledger;
+// What a peer learns of a sealed object beside the page's ops (ADR-0058 point 5).
+mod metadata;
 mod note;
 pub mod persist;
 pub mod secret;
@@ -40,11 +44,12 @@ pub use harden::harden_process;
 pub use ink::StepOutcome;
 pub use language_detection::detect_source_language;
 pub use ledger::{DestinationClass, LEDGER_RETENTION_MS, LedgerEvent, LedgerRecord, SizeClass};
+pub use metadata::{NameVersion, ObjectMetadata};
 pub use persist::RestoreError;
 pub use secret::SecretBuffer;
 pub use sheet::{
-    ChipId, ChipMeta, Conceal, ItemId, LabelSource, NAME_CAP, NameRefusal, SealedChip, Segment,
-    Sheet, SheetId, Tab, TabId, judge_name, local_day,
+    Availability, ChipId, ChipMeta, Conceal, ItemId, LabelSource, LocalValue, NAME_CAP,
+    NameRefusal, PeerKind, SealedChip, Segment, Sheet, SheetId, Tab, TabId, judge_name, local_day,
 };
 pub use store::{EditOp, PayloadError, Refusal, RemoteRefusal, SheetStore};
 pub use sync::{

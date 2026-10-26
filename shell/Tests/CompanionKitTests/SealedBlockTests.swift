@@ -570,4 +570,80 @@ final class SealedBlockTests: XCTestCase {
             "sealed content, MY_API_KEY, small")
         XCTAssertEqual(SealedBlockCell(info: chip()).accessibilityLabel(), "sealed content, small")
     }
+
+    // MARK: A record whose value is on another device (ADR-0058 point 4)
+
+    func testChipAvailabilityMustBeExplicitInTheWireFace() throws {
+        let face = #"{"chip_id":7,"kind":"text","excerpt":"","size_label":"small","concealed":false,"has_note":false}"#
+        for suffix in ["", #", "available":null"#, #", "available":"true""#] {
+            let json = String(face.dropLast()) + suffix + "}"
+            XCTAssertThrowsError(try JSONDecoder().decode(ChipInfo.self, from: Data(json.utf8)))
+        }
+        for available in [false, true] {
+            let json = String(face.dropLast()) + ",\"available\":\(available)}"
+            let decoded = try JSONDecoder().decode(ChipInfo.self, from: Data(json.utf8))
+            XCTAssertEqual(decoded.available, available)
+        }
+    }
+
+    /// The core's faces for page `sheet`, in body order.
+    private func faces(_ client: CompanionClient, sheet: UInt64) -> [ChipInfo] {
+        client.documentRuns(sheet: sheet).compactMap { run -> ChipInfo? in
+            if case .chip(let face) = run { return face }
+            return nil
+        }
+    }
+
+    /// Where the excerpt goes, a record with no value says so, with its kind when known, in
+    /// the quiet ink; its size class keeps the seat and VoiceOver hears the line.
+    func testARecordWithNoValueSaysSoWhereTheExcerptGoes() throws {
+        let client = CompanionClient.ephemeral(tag: #function)
+        client.newTab()
+        let sheet = try XCTUnwrap(client.tabs().first?.pageID)
+        let local = try XCTUnwrap(client.sealText(sheet: sheet, "ghp_4kQ9e0H5jK", at: 0, length: 0))
+        let text = try XCTUnwrap(
+            client.standPeerRecordForTests(sheet: sheet, at: 0, kind: "text", size: "small"))
+        let unknown = try XCTUnwrap(client.standPeerRecordForTests(sheet: sheet, at: 0))
+        let faces = faces(client, sheet: sheet)
+        let held = try XCTUnwrap(faces.first { $0.chipId == local.chipId })
+        let peer = try XCTUnwrap(faces.first { $0.chipId == text })
+        let bare = try XCTUnwrap(faces.first { $0.chipId == unknown })
+
+        XCTAssertTrue(held.available)
+        XCTAssertEqual(SealedBlockCell.valueText(of: held), held.excerpt, "the control")
+        XCTAssertFalse(held.excerpt.isEmpty)
+        XCTAssertFalse(peer.available)
+        XCTAssertEqual(SealedBlockCell.valueText(of: peer), "text · value on another device")
+        XCTAssertEqual(SealedBlockCell.valueText(of: bare), "value on another device")
+        XCTAssertEqual(SealedBlockCell.restingSeat(sizeLabel: peer.sizeLabel, hasNote: false), "small")
+        XCTAssertEqual(
+            SealedBlockCell.restingSeat(sizeLabel: bare.sizeLabel, hasNote: false), "size unknown")
+        XCTAssertEqual(
+            SealedBlockCell.valueAttributes(available: false, selected: false)[.foregroundColor]
+                as? NSColor, SealedBlockCell.quietInk(selected: false))
+        XCTAssertEqual(
+            SealedBlockCell(info: peer).accessibilityLabel(),
+            "sealed content, small, text · value on another device")
+    }
+
+    /// A named record with no value keeps its name's zone and no other: no `=` stands
+    /// between the name and a value that is on another device.
+    func testANamedRecordWithNoValueKeepsOnlyItsNamesZone() throws {
+        let peer = ChipInfo(
+            chipId: 7, kind: "text", excerpt: "", sizeLabel: "small", concealed: false,
+            name: "PEER_KEY", available: false)
+        let frame = NSRect(x: 10, y: 100, width: 900, height: SealedBlockCell.blockHeight)
+        let row = try XCTUnwrap(SealedBlockCell(info: peer).namedRow(in: frame))
+        XCTAssertEqual(row.value.string, "text · value on another device")
+        XCTAssertEqual(row.equals.string, " · ")
+        let y = row.geometry.name.midY
+        XCTAssertEqual(row.geometry.zone(at: NSPoint(x: row.geometry.name.midX, y: y)), .name)
+        XCTAssertNil(row.geometry.zone(at: NSPoint(x: row.geometry.equals.midX, y: y)))
+        XCTAssertNil(row.geometry.zone(at: NSPoint(x: row.geometry.value.midX, y: y)))
+
+        let held = try XCTUnwrap(SealedBlockCell(info: named("PEER_KEY")).namedRow(in: frame))
+        XCTAssertEqual(held.equals.string, "=", "the control")
+        XCTAssertEqual(
+            held.geometry.zone(at: NSPoint(x: held.geometry.value.midX, y: y)), .value)
+    }
 }

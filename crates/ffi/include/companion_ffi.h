@@ -207,6 +207,22 @@ bool companion_test_ink_below_the_guard(CompanionHandle *handle,
                                         uint64_t sheet, uint32_t pos_u16,
                                         const char *text);
 
+/* Stand a sealed object record with no value at UTF-16 offset
+ * `pos_u16` of page `sheet`, as a peer's batch stands one (ADR-0058
+ * point 1): of `kind` ("text", "image", or null for unknown) and size
+ * class `size` ("tiny" to "huge", or null for unknown), under the
+ * identity of the chip `of_chip` that stands on any page, or a fresh
+ * one for 0 (ADR-0058 point 3). Returns its chip id; a file, an unknown
+ * page, a point off the body, a kind or size this build does not name,
+ * an `of_chip` that stands nowhere or whose identity the page already
+ * has, or a null handle answers 0. The symbol exists only in test-util
+ * builds of the core (ADR-0018), on the same terms as
+ * companion_new_ephemeral() above. */
+uint64_t companion_test_stand_peer_record(CompanionHandle *handle,
+                                          uint64_t sheet, uint32_t pos_u16,
+                                          const char *kind, const char *size,
+                                          uint64_t of_chip);
+
 void companion_free(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */
@@ -392,7 +408,10 @@ bool companion_store_emptiness(CompanionHandle *handle,
  *   the only rendering the content ever gets), size_label (a size
  *   class, "tiny" through "huge", never a count), concealed (bool),
  *   name (the typed name, or null; ADR-0043 point 1),
- *   has_note (bool, true while the note holds anything but whitespace).
+ *   has_note (bool, true while the note holds anything but whitespace),
+ *   available (bool, false when the value is on another device; then
+ *   kind may be "unknown", excerpt and size_label may be empty, and
+ *   concealed is false; ADR-0058 point 4).
  * Null when the board is empty, the page unknown, content empty, or
  * the range not on the page.
  * at_utf16/len_utf16 name the selection the gesture replaces, in
@@ -585,7 +604,7 @@ bool companion_sheet_take_out_object_characters(CompanionHandle *handle,
  * order — {"ink": "text"} for visible ink, {"chip": {…}} where a chip
  * sits, the chip object carrying the same non-secret face the seal
  * routes return (chip_id, kind, excerpt, size_label, concealed, name,
- * has_note). The note's own text is never here. Ink
+ * has_note, available). The note's own text is never here. Ink
  * renders anyway; a chip crosses as its face, never its bytes. Free
  * with companion_string_free(). Null for an unknown page.
  */
@@ -629,7 +648,8 @@ char *companion_sheet_blocks_json(CompanionHandle *handle, uint64_t sheet);
  * transient AND ConcealedType (a chip is sealed by definition). Does
  * not consume the chip — multi-paste is a core moment. Returns whether
  * the chip existed; false, writing and recording nothing, for a page
- * past its deadline (Law 0001, expiry row).
+ * past its deadline (Law 0001, expiry row) or a chip whose value is on
+ * another device (ADR-0058 point 4).
  *
  * A successful copy-out is an auditable egress: it leaves one "sent"
  * ledger record with destination "clipboard". The pasteboard is the
@@ -647,7 +667,8 @@ bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
  * class, titled with the tab's label as every record is, never the
  * name. The shell never holds the bytes.
  * Returns false, writing and recording nothing, for an unknown chip, an
- * unnamed one, an image or a page past its deadline
+ * unnamed one, an image, one whose value is on another device
+ * (ADR-0058 point 4) or a page past its deadline
  * (Law 0001, expiry row).
  */
 bool companion_chip_copy_name_value(CompanionHandle *handle, uint64_t chip);
@@ -665,7 +686,9 @@ bool companion_chip_stands(CompanionHandle *handle, uint64_t chip);
  * Burn a chip, attached or detached: its bytes are wiped, its page's
  * undo stack goes with it, and one `discarded` is recorded. A removal
  * by backspace is not a burn; it detaches
- * (ADR-0046 points 1 and 2). Returns whether it existed.
+ * (ADR-0046 points 1 and 2). Returns whether it existed; false,
+ * changing and recording nothing, for a chip whose value is on another
+ * device, which only that device burns (ADR-0058 point 8).
  */
 bool companion_chip_delete(CompanionHandle *handle, uint64_t chip);
 
@@ -821,7 +844,10 @@ char *companion_sheet_compose_fragment(CompanionHandle *handle, uint64_t sheet,
  * Paste envelope bytes over a range as one undo step. Each reference
  * resolves in order: the active cut's objects, from its own envelope,
  * reattach; any other live object is cloned with the envelope's name
- * and note; else the ledger's newest terminal record places
+ * and note, but one whose value is on another device places
+ * "[sealed content · unavailable]", counted as "elsewhere" and never
+ * also as "unavailable", which counts only the last case; else the
+ * ledger's newest terminal record places
  * "[sealed content · expired]" or "[sealed content · burned]"; else
  * "[sealed content · unavailable]". An envelope the core cannot read
  * places `plain` (nullable) instead. The envelope's ink and notes and
@@ -831,7 +857,7 @@ char *companion_sheet_compose_fragment(CompanionHandle *handle, uint64_t sheet,
  * companion_expire_due() does (Law 0001, expiry row). Returns
  *   {"location_utf16": u32, "length_utf16": u32, "reattached": n,
  *    "cloned": n, "expired": n, "burned": n, "unavailable": n,
- *    "unreadable": bool, "pages_expired": n}
+ *    "elsewhere": n, "unreadable": bool, "pages_expired": n}
  * naming the placed run and the pages swept, or null, changing nothing,
  * for an unknown page, a page past its deadline, a bad range or nothing
  * to place. Restate the page from companion_sheet_document_json() after
@@ -897,7 +923,8 @@ char *companion_active_cut_json(CompanionHandle *handle);
  * (its NSPasteboard) under `type`, and record one "sent" to "drag". The
  * core writes the bytes, as copy decrypted does; the shell never holds
  * them. Returns false, writing and recording nothing, for an unknown
- * or removed chip, a page past its deadline (Law 0001, expiry row), a
+ * or removed chip, one whose value is on another device (ADR-0058
+ * point 4), a page past its deadline (Law 0001, expiry row), a
  * null or foreign pointer, the general pasteboard, or a type other than
  * the chip's own: "public.utf8-plain-text" for text, "public.png" for
  * an image. Always false off macOS.
@@ -938,6 +965,16 @@ int64_t companion_next_event_ms(CompanionHandle *handle);
  * expired. Call on timer fire, then re-arm.
  */
 uint64_t companion_expire_due(CompanionHandle *handle);
+
+/*
+ * Drain the pages another page's edit, burn or end changed since the
+ * last call (a value that followed its sentinel there, a record with no
+ * value a burn dropped, a page whose steps were taken), as a JSON array
+ * of page ids: [u64]. Read each again as a peer's batch is read
+ * (ADR-0058 points 3 and 8). Pages that ended are left out. Free with
+ * companion_string_free(); null on error.
+ */
+char *companion_take_restated_pages_json(CompanionHandle *handle);
 
 /* Cycle a TAB's countdown one rung SHORTER (clock reset to the full
  * rung, each click resets the clock). The ladder tapers, 7d -> 3d ->
@@ -1238,7 +1275,9 @@ char *companion_connection_test(CompanionHandle *handle);
  * the network call. Returns {"ok": true, "receipt_id"} or
  * {"ok": false, "error"}; free with companion_string_free(). A chip on
  * a page past its deadline sends nothing and answers the error "this
- * page has expired" (Law 0001, expiry row).
+ * page has expired" (Law 0001, expiry row); a chip whose value is on
+ * another device sends nothing and answers "this chip's value is on
+ * another device" (ADR-0058 point 4).
  */
 char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
                              const char *opts_json);
@@ -1246,7 +1285,10 @@ char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
 /*
  * Conceal the whole page (the footer's ↗ page): ink verbatim, sealed
  * bytes inlined in document order. Refuses a page holding an image
- * chip, and a page past its deadline as companion_chip_conceal does.
+ * chip, a page whose body stands an object with its value on another
+ * device ("an object on this page has its value on another device";
+ * ADR-0058 point 4), and a page past its deadline as
+ * companion_chip_conceal does.
  * Options, blocking, and result shape as companion_chip_conceal.
  * No per-chip mark is set, the link stands for the page, but the
  * egress is recorded: one "sent" record against the page's own
@@ -1267,8 +1309,9 @@ char *companion_sheet_conceal(CompanionHandle *handle, uint64_t sheet,
  *     "client_id": "…" }             // required, non-empty
  * Not persisted core-side (the shell re-sends it at launch);
  * configuring resumes the persisted sign-in from its own Keychain
- * account. Returns false on malformed JSON, a missing field, or a
- * non-https URL.
+ * account, and names the device identity at rest, if any, as the
+ * writer of its name versions (ADR-0058 point 5), minting none.
+ * Returns false on malformed JSON, a missing field, or a non-https URL.
  */
 bool companion_sync_configure(CompanionHandle *handle, const char *json);
 
