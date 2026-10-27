@@ -44,6 +44,9 @@ allow = [
   # Required by unicode-ident (transitive via serde); permissive,
   # data-file attribution only.
   "Unicode-3.0",
+  # Required by finl_unicode (transitive via comrak, companion-markdown):
+  # the earlier Unicode data license, permissive, attribution only.
+  "Unicode-DFS-2016",
   # Required by webpki-roots (transitive via ureq/rustls, companion-transport):
   # Mozilla's CA bundle, redistributed under a permissive data license.
   "CDLA-Permissive-2.0",
@@ -61,6 +64,8 @@ allow = [
 [bans]
 multiple-versions = "warn"
 skip = [
+  # Existing betlang 0.1.1 uses 0.4; the new comrak/memchr-n path uses 1.x.
+  { name = "fearless_simd", version = "=0.4.0" },
   # Loro 1.13.9's stack requires thiserror 1; postcard's cobs 0.3.0 requires 2.
   { name = "thiserror", version = "=1.0.69" },
   # thiserror 1.0.69 and 2.0.19 each pin their matching impl version exactly.

@@ -1,0 +1,269 @@
+{
+  "blocks": [
+    {
+      "paragraph": {
+        "_0": [
+          {
+            "text": {
+              "_0": "t"
+            }
+          },
+          {
+            "object": {
+              "_0": "0"
+            }
+          },
+          {
+            "enterMarkdown": {
+              "_0": {
+                "emphasis": {}
+              }
+            }
+          },
+          {
+            "leaveMarkdown": {
+              "_0": {
+                "emphasis": {}
+              }
+            }
+          },
+          {
+            "enterMarkdown": {
+              "_0": {
+                "strong": {}
+              }
+            }
+          },
+          {
+            "leaveMarkdown": {
+              "_0": {
+                "strong": {}
+              }
+            }
+          },
+          {
+            "enterMarkdown": {
+              "_0": {
+                "deletion": {}
+              }
+            }
+          },
+          {
+            "leaveMarkdown": {
+              "_0": {
+                "deletion": {}
+              }
+            }
+          },
+          {
+            "enterMarkdown": {
+              "_0": {
+                "code": {}
+              }
+            }
+          },
+          {
+            "leaveMarkdown": {
+              "_0": {
+                "code": {}
+              }
+            }
+          },
+          {
+            "softBreak": {}
+          },
+          {
+            "hardBreak": {}
+          },
+          {
+            "rawHTML": {
+              "_0": [
+                {
+                  "text": {
+                    "_0": "<b>"
+                  }
+                },
+                {
+                  "object": {
+                    "_0": "1"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "markdownImage": {
+              "alt": [
+                {
+                  "text": {
+                    "_0": "alt"
+                  }
+                }
+              ],
+              "destination": [
+                {
+                  "text": {
+                    "_0": "/i"
+                  }
+                }
+              ],
+              "title": [
+                {
+                  "text": {
+                    "_0": "title"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "enterLink": {
+              "destination": [
+                {
+                  "text": {
+                    "_0": "/u￼"
+                  }
+                }
+              ],
+              "title": []
+            }
+          },
+          {
+            "leaveLink": {}
+          }
+        ]
+      }
+    },
+    {
+      "heading": {
+        "level": 2,
+        "_1": [
+          {
+            "text": {
+              "_0": "h"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "codeBlock": {
+        "info": [
+          {
+            "text": {
+              "_0": "rust"
+            }
+          }
+        ],
+        "literal": [
+          {
+            "text": {
+              "_0": "let a;\n"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "html": {
+        "_0": [
+          {
+            "text": {
+              "_0": "<div>\n"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "thematicBreak": {}
+    },
+    {
+      "quote": {
+        "_0": [
+          {
+            "objects": {
+              "_0": [
+                "2"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "list": {
+        "ordered": true,
+        "start": 3,
+        "tight": false,
+        "items": [
+          {
+            "task": null,
+            "blocks": []
+          },
+          {
+            "task": true,
+            "blocks": []
+          },
+          {
+            "task": false,
+            "blocks": []
+          }
+        ]
+      }
+    },
+    {
+      "table": {
+        "alignments": [
+          {
+            "left": {}
+          },
+          {
+            "center": {}
+          },
+          {
+            "right": {}
+          },
+          null
+        ],
+        "header": [
+          [
+            {
+              "text": {
+                "_0": "a"
+              }
+            }
+          ],
+          [],
+          [],
+          []
+        ],
+        "body": [
+          [
+            [
+              {
+                "text": {
+                  "_0": "b"
+                }
+              }
+            ]
+          ]
+        ]
+      }
+    }
+  ],
+  "atoms": [
+    {
+      "identity": "0",
+      "offset": 0
+    },
+    {
+      "identity": "1",
+      "offset": 7
+    },
+    {
+      "identity": "2",
+      "offset": 12
+    }
+  ]
+}

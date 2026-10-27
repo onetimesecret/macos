@@ -1,5 +1,6 @@
 //! Borrowed content projections and exact-sized NUL-terminated JSON output.
-//! Upstream Loro allocations and serde's internal scratch are outside this owner.
+//! Upstream Loro and comrak allocations, a parsed Markdown document's own strings and serde's
+//! internal scratch are outside this owner.
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -13,6 +14,7 @@ use companion_core::{
     Availability, ChipMeta, Copied, LedgerEvent, LedgerRecord, PeerKind, SealedChip, Segment,
     Sheet, Tab, local_day,
 };
+use companion_markdown::{Document, ParseError};
 use serde::ser::SerializeSeq;
 use serde::{Serialize, Serializer};
 use zeroize::{Zeroize, Zeroizing};
@@ -242,6 +244,18 @@ impl Serialize for DocumentRuns<'_> {
             }
         }
         seq.end()
+    }
+}
+
+/// A page's Markdown reading: the document itself, or `{"error": refusal}`.
+pub(super) fn markdown_json(reading: Result<Document, ParseError>) -> *mut c_char {
+    #[derive(Serialize)]
+    struct Refusal<'a> {
+        error: &'a ParseError,
+    }
+    match reading {
+        Ok(document) => to_c_json(&document),
+        Err(error) => to_c_json(&Refusal { error: &error }),
     }
 }
 
@@ -581,6 +595,51 @@ mod tests {
         assert!(!is_live(raw));
         assert!(unsafe { CStringBuffer::from_raw(raw) }.is_none());
         drop(owner);
+    }
+
+    #[test]
+    fn a_markdown_reading_is_an_exact_live_buffer_the_free_path_wipes() {
+        let text = "# café \u{FFFC}\n\n| a |\n| - |\n";
+        let objects = [7_usize];
+        let parse = || unsafe {
+            super::super::companion_markdown_parse_json(
+                text.as_ptr().cast(),
+                text.len(),
+                objects.as_ptr(),
+                objects.len(),
+                1,
+                1_000,
+                8,
+                100,
+            )
+        };
+        let expected = serde_json::to_vec(
+            &companion_markdown::parse_with_objects(
+                text,
+                &objects,
+                companion_markdown::Dialect::Gfm,
+                companion_markdown::Limits::default(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        // The free path is `free`, then this owner's drop, which zeroizes.
+        let raw = parse();
+        assert!(is_live(raw));
+        let mut owner = unsafe { CStringBuffer::from_raw(raw) }.unwrap();
+        assert!(!is_live(raw));
+        assert_eq!(owner.0.as_ptr(), raw.cast::<u8>().cast_const());
+        assert_eq!(owner.0.len(), expected.len() + 1);
+        assert_eq!(owner.body(), expected);
+        assert_eq!(owner.0.last(), Some(&0));
+        owner.zeroize();
+        assert!(owner.0.iter().all(|byte| *byte == 0));
+        drop(owner);
+
+        let refused = super::super::markdown_parse_owned(|| Err(ParseError::InputLimit));
+        assert!(is_live(refused));
+        unsafe { super::super::companion_string_free(refused) };
     }
 
     #[test]
