@@ -67,12 +67,48 @@ final class MarkdownBridgeTests: XCTestCase {
         XCTAssertEqual(released, 1)
     }
 
+    func testDecodedAtomTableMustMatchInputOffsetsAndDecimalIndices() throws {
+        let expected = [MarkdownAtom(identity: "0", offset: 3), MarkdownAtom(identity: "1", offset: 8)]
+        let malformed: [[MarkdownAtom]] = [
+            [], [expected[0]], expected + [MarkdownAtom(identity: "2", offset: 13)],
+            Array(expected.reversed()),
+            [MarkdownAtom(identity: "1", offset: 3), MarkdownAtom(identity: "0", offset: 8)],
+            [MarkdownAtom(identity: "0", offset: 4), expected[1]],
+            [expected[0], MarkdownAtom(identity: "0", offset: 8)],
+            [MarkdownAtom(identity: "00", offset: 3), expected[1]],
+            [MarkdownAtom(identity: "+0", offset: 3), expected[1]],
+            [MarkdownAtom(identity: "object", offset: 3), expected[1]],
+        ]
+        for atoms in malformed {
+            let data = try JSONEncoder().encode(MarkdownDocument(blocks: [], atoms: atoms))
+            let pointer = try XCTUnwrap(strdup(String(decoding: data, as: UTF8.self)))
+            var released = 0
+            XCTAssertThrowsError(try MarkdownParser.decode(pointer, objects: [3, 8], release: {
+                released += 1
+                free($0)
+            })) { XCTAssertEqual($0 as? MarkdownBridgeError, .invalidResponse) }
+            XCTAssertEqual(released, 1, "\(atoms)")
+        }
+        let data = try JSONEncoder().encode(MarkdownDocument(blocks: [], atoms: expected))
+        let pointer = try XCTUnwrap(strdup(String(decoding: data, as: UTF8.self)))
+        var released = 0
+        let document = try MarkdownParser.decode(pointer, objects: [3, 8], release: {
+            released += 1
+            free($0)
+        })
+        XCTAssertEqual(document.atoms, expected)
+        XCTAssertEqual(released, 1)
+    }
+
     func testRealFFIReadsEmptyInputEmbeddedNULAndUTF16ObjectOffsets() throws {
         for dialect in PreviewDialect.allCases {
             XCTAssertEqual(try MarkdownParser.parse("", dialect: dialect), MarkdownDocument(blocks: [], atoms: []))
             let parsed = try MarkdownParser.parse("🦀\0\u{FFFC}tail", objects: [3], dialect: dialect)
             XCTAssertEqual(parsed.atoms, [MarkdownAtom(identity: "0", offset: 3)])
             XCTAssertEqual(parsed.blocks, [.paragraph([.text("🦀�"), .object("0"), .text("tail")])])
+            let multiple = try MarkdownParser.parse("🦀\u{FFFC} é\u{FFFC}", objects: [2, 5], dialect: dialect)
+            XCTAssertEqual(multiple.atoms, [MarkdownAtom(identity: "0", offset: 2), MarkdownAtom(identity: "1", offset: 5)])
+            XCTAssertEqual(multiple.blocks, [.paragraph([.text("🦀"), .object("0"), .text(" é"), .object("1")])])
             XCTAssertThrowsError(try MarkdownParser.parse("\u{FFFC}", objects: [-1], dialect: dialect)) {
                 XCTAssertEqual($0 as? MarkdownParseError, .objectOffset)
             }

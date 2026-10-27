@@ -267,6 +267,7 @@ private final class PreviewLinks: NSObject, NSTextViewDelegate {
 private final class MarkdownPreviewRenderer {
     private struct Context {
         var indent: CGFloat = 0
+        var markerWidth: CGFloat = 28
         var blocks: [NSTextBlock] = []
         var spacing: CGFloat = 8
     }
@@ -369,7 +370,7 @@ private final class MarkdownPreviewRenderer {
     private func paragraphStyle(_ context: Context, marker: String? = nil) -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.headIndent = context.indent
-        style.firstLineHeadIndent = marker == nil ? context.indent : max(0, context.indent - 28)
+        style.firstLineHeadIndent = marker == nil ? context.indent : max(0, context.indent - context.markerWidth)
         style.paragraphSpacing = context.spacing
         style.lineSpacing = 2
         style.lineBreakMode = .byWordWrapping
@@ -478,17 +479,18 @@ private final class MarkdownPreviewRenderer {
     }
 
     private func renderList(_ items: [MarkdownListItem], startingAt start: Int?, context: Context) throws {
+        let markers = items.enumerated().map { offset, item in
+            let task = item.task.map { $0 ? "☑" : "☐" }
+            if let start { return "\(start + offset)." + (task.map { " " + $0 } ?? "") }
+            return task ?? "•"
+        }
+        let widest = markers.map { ($0 as NSString).size(withAttributes: baseAttributes).width }.max() ?? 0
+        let markerWidth = max(28, ceil((widest + 8) / 28) * 28)
         var nested = context
-        nested.indent += 28
+        nested.indent += markerWidth
+        nested.markerWidth = markerWidth
         nested.spacing = 3
-        for (offset, item) in items.enumerated() {
-            let marker: String
-            switch item.task {
-            case true?: marker = "☑"
-            case false?: marker = "☐"
-            case nil:
-                marker = start.map { "\($0 + offset)." } ?? "•"
-            }
+        for (item, marker) in zip(items, markers) {
             switch item.blocks.first {
             case .paragraph?, .heading?:
                 try renderBlock(item.blocks[0], context: nested, marker: marker)
@@ -649,7 +651,9 @@ private final class MarkdownPreviewRenderer {
               ["http", "https", "mailto"].contains(scheme)
         else { return nil }
         if scheme == "mailto" {
-            guard !components.path.isEmpty else { return nil }
+            guard !components.path.isEmpty,
+                  !components.path.unicodeScalars.contains(where: { forbidden.contains($0) })
+            else { return nil }
             // A mailto query names headers and attachments for the mail client; the address alone opens.
             components.query = nil
             components.fragment = nil
@@ -664,7 +668,7 @@ private final class MarkdownPreviewRenderer {
 
     /// The object a composed identity names, as its attachment character.
     private func object(_ identity: String) throws -> NSAttributedString {
-        guard let index = Int(identity), attachments.indices.contains(index) else {
+        guard let index = Int(identity), String(index) == identity, attachments.indices.contains(index) else {
             throw RenderFailure.unknownObject
         }
         guard shown.insert(index).inserted else { throw RenderFailure.objectShownTwice }

@@ -27,11 +27,12 @@ enum MarkdownParser {
                 )
             }
         }
-        return try decode(pointer)
+        return try decode(pointer, objects: objects)
     }
 
     static func decode(
         _ pointer: UnsafeMutablePointer<CChar>?,
+        objects: [Int] = [],
         release: ((UnsafeMutablePointer<CChar>) -> Void)? = nil
     ) throws -> MarkdownDocument {
         guard let pointer else { throw MarkdownBridgeError.unavailable }
@@ -45,7 +46,13 @@ enum MarkdownParser {
             throw MarkdownBridgeError.invalidResponse
         }
         switch response {
-        case .document(let document): return document
+        case .document(let document):
+            guard document.atoms.count == objects.count,
+                  document.atoms.enumerated().allSatisfy({ index, atom in
+                      atom.identity == String(index) && atom.offset == objects[index]
+                  })
+            else { throw MarkdownBridgeError.invalidResponse }
+            return document
         case .refused(let error): throw error
         }
     }

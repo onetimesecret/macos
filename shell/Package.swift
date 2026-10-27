@@ -8,7 +8,6 @@ let package = Package(
     name: "OnetimePad",
     defaultLocalization: "en",
     platforms: [.macOS(.v13)], // MenuBarExtra needs macOS 13+
-    dependencies: [],
     targets: [
         // Produced by scripts/build-core.sh. Exposes the C ABI in
         // crates/ffi/include/companion_ffi.h as the CompanionCore module.

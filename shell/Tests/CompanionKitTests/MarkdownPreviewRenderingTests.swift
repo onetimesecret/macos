@@ -127,6 +127,32 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(try link("web", in: rendered)?.absoluteString, "https://example.com/a?x=1#top")
     }
 
+    func testMailtoAddressesWithEncodedWhitespaceOrControlsAreNotInteractive() throws {
+        let encodedScalars = ["%00", "%09", "%0D%0A", "%1F", "%7F", "%C2%85", "%20", "%E2%80%A8"]
+        for dialect in PreviewDialect.allCases {
+            for encoded in encodedScalars {
+                let address = "mailto:reader\(encoded)@example.com?subject=hi#top"
+                for source in ["[address](\(address))", "<a href=\"\(address)\">address</a>"] {
+                    let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect)
+                    XCTAssertEqual(rendered.string, "address\n", source)
+                    XCTAssertNil(try link("address", in: rendered), source)
+                }
+            }
+        }
+    }
+
+    func testMailtoAddressesKeepEncodedNonASCIIAndRemoveEncodedQueryControls() throws {
+        let address = "mailto:jos%C3%A9@example.com?subject=hi%0D%0Abcc:other@example.com#top"
+        for dialect in PreviewDialect.allCases {
+            for source in ["[address](\(address))", "<a href=\"\(address)\">address</a>"] {
+                let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect)
+                let url = try XCTUnwrap(try link("address", in: rendered), source)
+                XCTAssertEqual(url.absoluteString, "mailto:jos%C3%A9@example.com", source)
+                XCTAssertEqual(URLComponents(url: url, resolvingAgainstBaseURL: false)?.path, "josé@example.com")
+            }
+        }
+    }
+
     func testSoftBreaksBecomeSpacesAndHardBreaksStayInsideTheirParagraph() throws {
         let rendered = render("soft\nwrap  \nhard\\\nbreak\n\nnext")
         XCTAssertEqual(rendered.string, "soft wrap\u{2028}hard\u{2028}break\nnext\n")
@@ -174,6 +200,35 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertGreaterThan(done.headIndent, inner.headIndent)
         XCTAssertEqual(try style("continuation", in: rendered).headIndent, outer.headIndent)
         XCTAssertEqual(try style("continuation", in: rendered).firstLineHeadIndent, outer.headIndent)
+    }
+
+    func testOrderedTasksKeepTheirOrdinalsHangingIndentsAndShownSelectionText() throws {
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        view.isSelectedPage = true
+        view.reseed(with: PageModel.QuietRendering(text: NSAttributedString(string: """
+        8. ordinary
+        9. [x] done
+        10. [ ] pending
+
+            continuation
+        11. next
+        """), fenceRegions: []))
+        let expected = "8.\tordinary\n9. ☑\tdone\n10. ☐\tpending\ncontinuation\n11.\tnext\n"
+        XCTAssertEqual(view.string, expected)
+        let rendered = try XCTUnwrap(view.textStorage)
+        let ordinary = try style("ordinary", in: rendered)
+        let markerWidth = ("10. ☐" as NSString).size(withAttributes: [.font: InkStyle.baseFont]).width
+        XCTAssertGreaterThan(ordinary.headIndent - ordinary.firstLineHeadIndent, markerWidth)
+        for label in ["done", "pending", "next"] {
+            let paragraph = try style(label, in: rendered)
+            XCTAssertEqual(paragraph.headIndent, ordinary.headIndent, label)
+            XCTAssertEqual(paragraph.firstLineHeadIndent, ordinary.firstLineHeadIndent, label)
+            XCTAssertEqual(paragraph.tabStops.first?.location, paragraph.headIndent, label)
+        }
+        XCTAssertEqual(try style("continuation", in: rendered).headIndent, ordinary.headIndent)
+        XCTAssertEqual(try style("continuation", in: rendered).firstLineHeadIndent, ordinary.headIndent)
+        view.selectAll(nil)
+        XCTAssertEqual(view.shownSelection(), [[.ink(expected)]])
     }
 
     func testBlockquotesAndThematicBreaksUseNativeParagraphBlocks() throws {
