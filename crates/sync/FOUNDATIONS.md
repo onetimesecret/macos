@@ -86,6 +86,9 @@ still uses unwiped library scratch before `ByteBlob` receives it. Malformed
 strings can also exit through this path. There is no public scratch-wiping
 hook. A wipe-aware parser or upstream/library change is needed; rejecting
 escaped strings would change accepted input and is not done here.
+Since #257 a `Metadata` entry's name (base64 in a `ByteBlob`) and a
+`NoteOps` envelope's ops decode through the same `DeltaEnvelope::decode`,
+so an escaped value in either passes through this scratch too.
 
 **SYNC-256-B2 — Serde tagged-enum intermediates (code-inspected, unresolved).**
 `serde` 1.0.228's `private::de::ContentVisitor::visit_str` creates an ordinary
@@ -94,7 +97,11 @@ payload can buffer escaped values there. An owned base64 string reaching
 `ByteBlob::visit_string` is wrapped and zeroized, but copies on rejection,
 unknown fields or borrowed replay are not all under this crate's control.
 This is distinct from B1; zeroizing only the JSON reader's scratch would not
-remove it. A replacement decode path needs compatibility tests for field order,
+remove it. `Metadata` and `NoteOps` are variants of the same internally
+tagged `DeltaEnvelope`, so an escaped name nested in a `Metadata` entry
+and an escaped `NoteOps` ops value can be buffered there too before a
+`ByteBlob` owns them.
+A replacement decode path needs compatibility tests for field order,
 escapes, ignored fields and malformed input before integration.
 
 **SYNC-256-L1 — ownership boundaries (inspected limitation).** Taking an ordinary

@@ -11,7 +11,8 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
 
 use companion_core::{
-    ChipMeta, Copied, LedgerEvent, LedgerRecord, SealedChip, Segment, Sheet, Tab, local_day,
+    Availability, ChipMeta, Copied, LedgerEvent, LedgerRecord, PeerKind, SealedChip, Segment,
+    Sheet, Tab, local_day,
 };
 use companion_markdown::{Document, ParseError};
 use serde::ser::SerializeSeq;
@@ -172,6 +173,8 @@ pub(super) unsafe fn free(raw: *mut c_char) {
 // Field order matches serde_json::Value's sorted object keys at the old seam.
 #[derive(Serialize)]
 pub(super) struct ChipFace<'a> {
+    /// False when the value is on another device (ADR-0058 point 4).
+    available: bool,
     chip_id: u64,
     concealed: bool,
     excerpt: &'a str,
@@ -183,13 +186,21 @@ pub(super) struct ChipFace<'a> {
 
 pub(super) fn chip_face(chip: &SealedChip) -> ChipFace<'_> {
     ChipFace {
+        available: chip.is_local(),
         chip_id: chip.id().raw(),
         concealed: chip.conceal().is_some(),
         excerpt: chip.excerpt(),
         has_note: chip.has_note(),
-        kind: match chip.meta() {
-            ChipMeta::Text { .. } => "text",
-            ChipMeta::Image { .. } => "image",
+        kind: match chip.availability() {
+            Availability::Local(local) => match local.meta() {
+                ChipMeta::Text { .. } => "text",
+                ChipMeta::Image { .. } => "image",
+            },
+            Availability::Peer { kind, .. } => match kind {
+                Some(PeerKind::Text) => "text",
+                Some(PeerKind::Image) => "image",
+                None => "unknown",
+            },
         },
         name: chip.name(),
         size_label: chip.size_label(),
@@ -453,6 +464,7 @@ mod tests {
     #[test]
     fn chip_and_cut_fields_match_the_previous_sorted_json_bytes() {
         let face = ChipFace {
+            available: true,
             chip_id: u64::MAX,
             concealed: true,
             excerpt: "excerpt 🦀\0\n\"\\",
@@ -462,6 +474,7 @@ mod tests {
             size_label: "small",
         };
         let expected = serde_json::json!({
+            "available": true,
             "chip_id": u64::MAX,
             "kind": "text",
             "excerpt": face.excerpt,
@@ -487,8 +500,8 @@ mod tests {
             br#"{"objects":[],"page_id":null}"#,
         );
         assert_encoding(
-            &ChipFace { chip_id: 0, concealed: false, excerpt: "", has_note: false, kind: "image", name: None, size_label: "tiny" },
-            br#"{"chip_id":0,"concealed":false,"excerpt":"","has_note":false,"kind":"image","name":null,"size_label":"tiny"}"#,
+            &ChipFace { available: false, chip_id: 0, concealed: false, excerpt: "", has_note: false, kind: "image", name: None, size_label: "tiny" },
+            br#"{"available":false,"chip_id":0,"concealed":false,"excerpt":"","has_note":false,"kind":"image","name":null,"size_label":"tiny"}"#,
         );
     }
 

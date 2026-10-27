@@ -667,7 +667,7 @@ if [[ "$CONFIG" == "release" ]]; then
   # One pattern per gated seam: the check is worth nothing if a seam
   # added later is not named here, so add the symbol when you add the
   # export.
-  SEAM="$(grep -o -E '_companion_(new_ephemeral|test_age_ms|test_wire_stub|test_wire_last_json|test_memory_pasteboard|test_ink_below_the_guard)$' <<<"$EXPORTS" | head -n 1 || true)"
+  SEAM="$(grep -o -E '_companion_(new_ephemeral|test_age_ms|test_wire_stub|test_wire_last_json|test_memory_pasteboard|test_ink_below_the_guard|test_stand_peer_record)$' <<<"$EXPORTS" | head -n 1 || true)"
   if [[ -n "$SEAM" ]]; then
     echo "release binary exports ${SEAM#_}, a test-only seam" >&2
     echo "(ADR-0018): bindings/ holds the dev xcframework. Rebuild the release" >&2

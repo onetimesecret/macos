@@ -10,6 +10,7 @@ use crate::clock::Clock;
 use crate::document::{EditIntent, EditSelection, InvalidRange, TextSelection};
 use crate::fragment::{Copied, CopyRefusal, Fragment, Node, ink_of, placeholder};
 use crate::ledger::{DestinationClass, LedgerEvent, SizeClass};
+use crate::metadata::NameVersion;
 use crate::note::Note;
 use crate::sheet::{ChipId, ItemId, SealedChip, Segment, Sheet, SheetId, judge_name};
 use crate::store::{SheetStore, range_in_body};
@@ -58,8 +59,12 @@ pub struct Placed {
     pub expired: u32,
     /// References placed as `[sealed content · burned]`.
     pub burned: u32,
-    /// References placed as `[sealed content · unavailable]`.
+    /// References placed as `[sealed content · unavailable]` with no record
+    /// and no terminal record here; never one counted in `elsewhere`.
     pub unavailable: u32,
+    /// References placed as `[sealed content · unavailable]` because the
+    /// value is on another device (ADR-0058 point 4), beside `unavailable`.
+    pub elsewhere: u32,
     /// The envelope could not be read, so its public text was placed.
     pub unreadable: bool,
     /// Pages past their deadline the route swept before resolving
@@ -152,6 +157,8 @@ impl<C: Clock> SheetStore<C> {
                 members,
                 envelope: envelope.clone(),
             });
+            // The settle may have moved a value to a page standing its sentinel.
+            self.end_a_broken_cut();
         }
         Ok(Copied { envelope, plain })
     }
@@ -248,7 +255,7 @@ impl<C: Clock> SheetStore<C> {
             return None;
         }
         let (fragment, _) = self.selected(source, from_u16, len_u16).ok()?;
-        let plan = reattaching(&fragment, source);
+        let mut plan = reattaching(&fragment, source);
         let placed = Placed {
             location_u16: at_u16,
             reattached: reattached(&plan),
@@ -264,10 +271,21 @@ impl<C: Clock> SheetStore<C> {
                 .note_delete(from_u16 as usize, len_u16 as usize);
             Ok(())
         });
-        // Detached here, the range's objects are where the stand takes them from.
-        self.settle_document(source);
         if !stood {
+            self.settle_document(source);
             return None;
+        }
+        // Defer following other pages' sentinels until both edits succeed.
+        self.sheet_mut(source)?.settle_roster();
+        plan.retain(|item| match item {
+            Planned::Reattach { uuid, .. } => self
+                .sheet(dest)
+                .is_none_or(|sheet| sheet.document.chip_position(*uuid).is_none()),
+            _ => true,
+        });
+        if plan.iter().all(|item| item.width() == 0) {
+            self.settle_document(source);
+            return Some(placed);
         }
         let moved = self.stand_plan(dest, at_u16, 0, EditIntent::Replacement, plan, placed);
         if moved.is_none() {
@@ -275,8 +293,8 @@ impl<C: Clock> SheetStore<C> {
             if let Some(sheet) = self.sheet_mut(source) {
                 sheet.document.rollback(&checkpoint);
             }
-            self.settle_document(source);
         }
+        self.settle_document(source);
         moved
     }
 
@@ -392,15 +410,20 @@ impl<C: Clock> SheetStore<C> {
                     if let (Some(chip), Some(sheet)) = (moved, self.sheet_mut(id)) {
                         sheet.detached.push(chip);
                     }
+                    self.drain_pending_metadata(id, uuid);
+                    self.drain_pending_notes(id, uuid);
+                    self.note_metadata(id, uuid);
                     if !sources.contains(&from) {
                         sources.push(from);
                     }
                 }
                 Planned::Clone(chip) => {
-                    clones.push((chip.uuid, chip.bytes.len()));
+                    clones.extend(chip.local_len().map(|len| (chip.uuid, len)));
+                    let uuid = chip.uuid;
                     if let Some(sheet) = self.sheet_mut(id) {
                         sheet.detached.push(*chip);
                     }
+                    self.note_metadata(id, uuid);
                 }
                 Planned::Ink(_) | Planned::Placeholder(_) | Planned::Reattach { .. } => {}
             }
@@ -409,6 +432,7 @@ impl<C: Clock> SheetStore<C> {
         for source in sources {
             if let Some(sheet) = self.sheet_mut(source) {
                 sheet.document.forget_undo();
+                self.restated.insert(source);
             }
         }
         // The settle stands every chip the edit placed, which ends a reattached cut.
@@ -446,18 +470,30 @@ impl<C: Clock> SheetStore<C> {
                 continue;
             }
             let id = ChipId(self.next_chip_id);
-            if let Some(mut clone) = self.live_object(uuid).map(|source| source.duplicate(id)) {
-                self.next_chip_id += 1;
-                // The envelope's name and note, the name judged as a typed one is.
-                clone.name = reference
-                    .name
-                    .as_ref()
-                    .and_then(|name| judge_name(name.as_str()).ok().flatten())
-                    .map(|name| Zeroizing::new(name.to_owned()));
-                clone.note = reference.note.as_deref().map(|text| Note::holding(text));
-                placed.cloned += 1;
-                plan.push(Planned::Clone(Box::new(clone)));
-                continue;
+            match self.live_object(uuid).map(|source| source.duplicate(id)) {
+                Some(Some(mut clone)) => {
+                    self.next_chip_id += 1;
+                    // The envelope's name and note, the name judged as a typed one is.
+                    clone.name = reference
+                        .name
+                        .as_ref()
+                        .and_then(|name| judge_name(name.as_str()).ok().flatten())
+                        .map(|name| Zeroizing::new(name.to_owned()));
+                    // A new identity, so its name starts a version of its own.
+                    let writer = self.writer;
+                    clone.name_version = clone.name.as_ref().map(|_| NameVersion::first(writer));
+                    clone.note = reference.note.as_deref().map(|text| Note::holding(text));
+                    placed.cloned += 1;
+                    plan.push(Planned::Clone(Box::new(clone)));
+                    continue;
+                }
+                // Live here with its value elsewhere, so there is nothing to clone.
+                Some(None) => {
+                    placed.elsewhere += 1;
+                    plan.push(Planned::Placeholder(placeholder("unavailable")));
+                    continue;
+                }
+                None => {}
             }
             let word = match self.terminal_cause(uuid) {
                 Some(LedgerEvent::Expired) => {
@@ -493,14 +529,15 @@ impl<C: Clock> SheetStore<C> {
 
     /// A live object by identity, attached or detached, on any page.
     fn live_object(&self, uuid: ItemId) -> Option<&SealedChip> {
-        self.sheets()
+        self.readable_sheets()
             .flat_map(|sheet| sheet.chips.iter().chain(&sheet.detached))
-            .find(|chip| chip.uuid == uuid)
+            .filter(|chip| chip.uuid == uuid)
+            .max_by_key(|chip| chip.is_local())
     }
 
     /// The newest `expired` or `discarded` record for an identity, the only
     /// evidence of how an object ended (Law 0001, lifecycle states).
-    fn terminal_cause(&self, uuid: ItemId) -> Option<LedgerEvent> {
+    pub(crate) fn terminal_cause(&self, uuid: ItemId) -> Option<LedgerEvent> {
         self.ledger
             .iter()
             .find(|record| {
@@ -644,7 +681,7 @@ mod tests {
     use crate::clock::ManualClock;
     use crate::fragment::{EnvelopeCap, REFERENCE_CAP};
     use crate::ledger::LEDGER_RETENTION_MS;
-    use crate::sheet::{NameRefusal, Segment};
+    use crate::sheet::{NameRefusal, PeerKind, Segment};
     use crate::store::EditOp;
     use crate::ttl::Ttl;
 
@@ -2092,5 +2129,149 @@ mod tests {
         revived.restore(&snapshot, 0).unwrap();
         assert!(revived.active_cut().is_none());
         assert_eq!(revived.sheets().next().unwrap().detached().count(), 1);
+    }
+
+    /// `ab`, a record whose value is on another device, then `cd`: five units.
+    fn with_a_peer_record(store: &mut SheetStore<ManualClock>) -> (SheetId, ChipId) {
+        let id = store.new_tab().1;
+        type_at(store, id, 0, "abcd");
+        let peer = store
+            .stand_peer_record(id, 2, Some(PeerKind::Text), Some(SizeClass::Tiny))
+            .unwrap();
+        (id, peer)
+    }
+
+    const UNAVAILABLE: &str = "[sealed content \u{b7} unavailable]";
+
+    #[test]
+    fn a_cut_and_its_first_paste_keep_a_record_with_no_value_by_identity() {
+        let (mut store, _) = store();
+        let (id, peer) = with_a_peer_record(&mut store);
+        let uuid = uuid_of(&store, peer);
+        let envelope = store.cut_fragment(id, 1, 3).unwrap().envelope.unwrap();
+        assert_eq!(detached(&store, id), vec![uuid]);
+
+        let placed = store.paste_fragment(id, 0, 0, &envelope, None).unwrap();
+        assert_eq!(
+            (placed.reattached, placed.cloned, placed.elsewhere),
+            (1, 0, 0)
+        );
+        assert_eq!(standing(&store, id), vec![uuid]);
+        let record = store.sheet(id).unwrap().chip(peer).expect("the same chip");
+        assert!(!record.is_local());
+    }
+
+    #[test]
+    fn a_drag_moves_a_record_with_no_value_keeping_its_identity_inside_a_page_and_between_pages() {
+        let (mut store, _) = store();
+        let (home, peer) = with_a_peer_record(&mut store);
+        let uuid = uuid_of(&store, peer);
+        let away = store.new_tab().1;
+        type_at(&mut store, away, 0, "xy");
+        let records = store.ledger().count();
+
+        let inside = store.move_range(home, 1, 3, 5).unwrap();
+        assert_eq!((inside.reattached, inside.elsewhere), (1, 0));
+        assert_eq!(body(&store, home), "adb\u{FFFC}c");
+        assert_eq!(standing(&store, home), vec![uuid]);
+
+        let between = store.move_range_to(home, 2, 3, away, 1).unwrap();
+        assert_eq!((between.reattached, between.elsewhere), (1, 0));
+        assert_eq!(body(&store, away), "xb\u{FFFC}cy");
+        assert_eq!(standing(&store, away), vec![uuid]);
+        assert!(standing(&store, home).is_empty() && detached(&store, home).is_empty());
+        assert!(!store.sheet(away).unwrap().chip(peer).unwrap().is_local());
+        assert_eq!(copies(&store, uuid), 1);
+        assert_eq!(store.ledger().count(), records, "a move records nothing");
+    }
+
+    #[test]
+    fn a_live_reference_ignores_a_value_on_a_page_past_its_deadline() {
+        let (mut store, clock) = store();
+        let value_page = store.new_tab().1;
+        let chip = store.seal_text_at(value_page, A, 0, 0).unwrap();
+        let uuid = uuid_of(&store, chip);
+        clock.advance(HOUR / 2);
+        let peer_page = store.new_tab().1;
+        store
+            .stand_peer_record_as(peer_page, 0, uuid, None, None)
+            .unwrap();
+        clock.advance(HOUR / 2);
+        assert!(!store.live_object(uuid).unwrap().is_local());
+        assert!(store.sheet(value_page).is_some());
+    }
+
+    #[test]
+    fn a_paste_prefers_the_value_over_an_earlier_peer_record() {
+        let (mut store, _) = store();
+        let peer_page = store.new_tab().1;
+        let value_page = store.new_tab().1;
+        let chip = store.seal_text_at(value_page, A, 0, 0).unwrap();
+        let uuid = uuid_of(&store, chip);
+        store
+            .stand_peer_record_as(peer_page, 0, uuid, None, None)
+            .unwrap();
+        let copied = store.copy_fragment(peer_page, 0, 1).unwrap();
+        let dest = store.new_tab().1;
+        let placed = store
+            .paste_fragment(dest, 0, 0, &copied.envelope.unwrap(), None)
+            .unwrap();
+        assert_eq!((placed.cloned, placed.elsewhere), (1, 0));
+        assert_eq!(payload_at(&store, dest, 0), A.as_bytes());
+    }
+
+    #[test]
+    fn a_paste_after_copy_places_unavailable_for_a_record_with_no_value_and_counts_elsewhere() {
+        let (mut store, _) = store();
+        let (id, peer) = with_a_peer_record(&mut store);
+        let unknown = store.stand_peer_record(id, 5, None, None).unwrap();
+        let uuids = vec![uuid_of(&store, peer), uuid_of(&store, unknown)];
+        let copied = store.copy_fragment(id, 1, 5).unwrap();
+        assert_eq!(
+            copied.plain.as_str(),
+            format!("b[sealed content \u{b7} tiny]cd{UNAVAILABLE}")
+        );
+        let records = store.ledger().count();
+
+        let envelope = copied.envelope.unwrap();
+        let placed = store.paste_fragment(id, 6, 0, &envelope, None).unwrap();
+        assert_eq!(
+            (placed.cloned, placed.elsewhere, placed.unavailable),
+            (0, 2, 0)
+        );
+        assert_eq!(
+            body(&store, id),
+            format!("ab\u{FFFC}cd\u{FFFC}b{UNAVAILABLE}cd{UNAVAILABLE}")
+        );
+        assert_eq!(standing(&store, id), uuids, "nothing cloned");
+        assert_eq!(store.ledger().count(), records, "no clone was sealed");
+    }
+
+    #[test]
+    fn a_later_paste_of_a_cut_places_unavailable_for_a_record_with_no_value() {
+        let (mut store, _) = store();
+        let (id, peer) = with_a_peer_record(&mut store);
+        let uuid = uuid_of(&store, peer);
+        let envelope = store.cut_fragment(id, 1, 3).unwrap().envelope.unwrap();
+        let first = store.paste_fragment(id, 0, 0, &envelope, None).unwrap();
+        assert_eq!(first.reattached, 1);
+
+        let later = store.paste_fragment(id, 0, 0, &envelope, None).unwrap();
+        assert_eq!((later.reattached, later.cloned, later.elsewhere), (0, 0, 1));
+        assert_eq!(body(&store, id), format!("b{UNAVAILABLE}cb\u{FFFC}cad"));
+        assert_eq!(copies(&store, uuid), 1);
+    }
+
+    #[test]
+    fn an_option_drag_places_unavailable_for_a_record_with_no_value() {
+        let (mut store, _) = store();
+        let (id, peer) = with_a_peer_record(&mut store);
+        let uuid = uuid_of(&store, peer);
+        let records = store.ledger().count();
+        let placed = store.clone_range(id, 1, 3, 5).unwrap();
+        assert_eq!((placed.cloned, placed.elsewhere), (0, 1));
+        assert_eq!(body(&store, id), format!("ab\u{FFFC}cdb{UNAVAILABLE}c"));
+        assert_eq!(copies(&store, uuid), 1);
+        assert_eq!(store.ledger().count(), records);
     }
 }

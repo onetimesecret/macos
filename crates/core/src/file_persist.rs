@@ -1,6 +1,6 @@
 //! The drafts snapshot, `OTSDRFT1`: the open-file roster and each dirty
 //! file's unsaved edits, in a third sealed file (ADR-0028). Records are
-//! framed like `OTSSNAP4`'s: trailing fields tolerated, a trailing tail not.
+//! framed like `OTSSNAP5`'s: trailing fields tolerated, a trailing tail not.
 //!
 //! [`restore`] only decodes. Each file stays pending until
 //! [`crate::files::FileStore::hydrate_one`] has read it.
@@ -343,6 +343,7 @@ mod tests {
     fn magic_is_its_own() {
         assert_eq!(MAGIC, b"OTSDRFT1");
         assert_ne!(MAGIC.as_slice(), b"OTSSNAP4".as_slice());
+        assert_ne!(MAGIC.as_slice(), b"OTSSNAP5".as_slice());
         assert_ne!(MAGIC.as_slice(), b"OTSLEDR2".as_slice());
     }
 
