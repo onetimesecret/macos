@@ -68,6 +68,17 @@ final class HTMLTokenizerTests: XCTestCase {
         ])
     }
 
+    func testNonASCIINamesStayLiteralWithoutNarrowingToASCII() throws {
+        for scalar in ["é", "\u{141}", "\u{10041}", "\u{10FFFF}"] {
+            for raw in ["<\(scalar)>", "<A\(scalar)>", "</A\(scalar)>", "<a \(scalar)=x>"] {
+                let input: [HTMLPart] = [.text(raw)]
+                let tokens = try HTMLTokenizer().tokenize(input)
+                XCTAssertEqual(tokens, [.literal(input)])
+                assertSource(tokens, equals: input)
+            }
+        }
+    }
+
     func testHTMLWhitespaceAndClosingTags() throws {
         let opening = "<A\tX\r=\n'v'\u{0C}disabled >"
         let closing = "</A\t\r\n\u{0C} >"
@@ -317,6 +328,44 @@ final class HTMLTokenizerTests: XCTestCase {
         assertError(HTMLTokenizer(maximumInputScalars: 1), input + [.object("")], .inputLimit)
     }
 
+    func testSparseObjectsAndHighUnicodeScalarsReconstructInEveryContext() throws {
+        let high = "\u{0}\u{D7FF}\u{E000}\u{FFFC}\u{FFFF}\u{100000}\u{10FFFF}"
+        let value: [HTMLPart] = [.text(high), .object(""), .text(high), .object(high)]
+        let opening: [HTMLPart] = [.text("<A TITLE=\"")] + value + [.text("\">")]
+        let body: [HTMLPart] = [.text(high), .object("repeat"), .text(high)]
+        let comment: [HTMLPart] = [.text("<!--" + high), .object("repeat"), .text(high + "-->")]
+        let closing: [HTMLPart] = [.text("</A>")]
+        let input = opening + body + comment + closing
+        let tokens = try HTMLTokenizer().tokenize(input)
+        XCTAssertEqual(tokens, [
+            tag("a", raw: coalesced(opening), attributes: [attribute("title", value)]),
+            .text(body), .comment(comment), tag("a", raw: closing, closing: true),
+        ])
+        assertSource(tokens, equals: input)
+        assertObjectOrder(tokens, equals: ["", high, "repeat", "repeat"])
+    }
+
+    func testLargeLeafAcceptsTheDefaultInputBoundaryWithSparseObjects() throws {
+        let left = String(repeating: "x", count: 500_000)
+        let right = String(repeating: "💠", count: 499_992)
+        let high = "\u{0}\u{D7FF}\u{E000}\u{FFFC}\u{10FFFF}"
+        let input: [HTMLPart] = [
+            .text(left), .object(""), .text(high), .text(""), .object("<b>"), .text(right),
+        ]
+        let tokenizer = HTMLTokenizer()
+        let tokens = try tokenizer.tokenize(input)
+        XCTAssertTrue(tokens == [.text([
+            .text(left), .object(""), .text(high), .object("<b>"), .text(right),
+        ])])
+        for extra in [HTMLPart.text("x"), .object("next"), .text("")] {
+            assertError(tokenizer, input + [extra], .inputLimit)
+        }
+    }
+
+    func testTokenizerAndComposerDefaultTokenBudgetsMatch() {
+        XCTAssertEqual(HTMLTokenizer().maximumTokens, CompositionLimits().maximumTokens)
+    }
+
     func testZeroAndNegativeLimitsHaveDeterministicEmptyBehavior() throws {
         for limit in [0, -1] {
             let tokenizer = HTMLTokenizer(maximumInputScalars: limit, maximumTokens: limit)
@@ -429,6 +478,29 @@ final class HTMLTokenizerTests: XCTestCase {
         XCTAssertEqual(result.tokens, [
             .rawText([.text(body)], decodeEntities: false),
             tag("script", raw: [.text(closing)], closing: true), .text([.text("tail")]),
+        ])
+        XCTAssertNil(result.rawTextElement)
+        assertSource(result.tokens, equals: input)
+    }
+
+    func testNonASCIIRawTextStateDoesNotSelectASCIIMode() throws {
+        let input: [HTMLPart] = [.text("<B>x</B>")]
+        let expected = try HTMLTokenizer().tokenize(input)
+        for state in ["ſcript", "SCRIPT\u{10FFFF}", "\u{100053}CRIPT", "SCRIPT\u{0}"] {
+            let result = try HTMLTokenizer().tokenize(input, rawTextElement: state, recognizingRawText: true)
+            XCTAssertEqual(result.tokens, expected, state)
+            XCTAssertNil(result.rawTextElement, state)
+        }
+    }
+
+    func testNonASCIIRawTextClosingCandidatesRemainBody() throws {
+        let body = "</ſcript></SCRIPT\u{10FFFF}></\u{100053}CRIPT>"
+        let closing = "</SCRIPT>"
+        let input: [HTMLPart] = [.text(body + closing)]
+        let result = try HTMLTokenizer().tokenize(input, rawTextElement: "ScRiPt", recognizingRawText: true)
+        XCTAssertEqual(result.tokens, [
+            .rawText([.text(body)], decodeEntities: false),
+            tag("script", raw: [.text(closing)], closing: true),
         ])
         XCTAssertNil(result.rawTextElement)
         assertSource(result.tokens, equals: input)

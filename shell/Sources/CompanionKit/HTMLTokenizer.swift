@@ -42,7 +42,7 @@ struct HTMLTokenizer {
     let maximumInputScalars: Int
     let maximumTokens: Int
 
-    init(maximumInputScalars: Int = 1_000_000, maximumTokens: Int = 100_000) {
+    init(maximumInputScalars: Int = 1_000_000, maximumTokens: Int = 1_000_000) {
         self.maximumInputScalars = max(0, maximumInputScalars)
         self.maximumTokens = max(0, maximumTokens)
     }
@@ -54,20 +54,8 @@ struct HTMLTokenizer {
     func tokenize(
         _ parts: [HTMLPart], rawTextElement: String?, recognizingRawText: Bool
     ) throws -> HTMLTokenization {
-        let count = try inputCount(parts)
+        let atoms = try AtomStorage(parts, maximumInputScalars: maximumInputScalars)
         var mode = rawTextMode(rawTextElement)
-        var atoms: [Atom] = []
-        atoms.reserveCapacity(count)
-        for part in parts {
-            switch part {
-            case .text(let text):
-                for scalar in text.unicodeScalars {
-                    atoms.append(.scalar(scalar))
-                }
-            case .object(let identity):
-                atoms.append(.object(identity))
-            }
-        }
 
         var tokens: [HTMLToken] = []
         var index = 0
@@ -176,13 +164,12 @@ struct HTMLTokenizer {
         var folded = String.UnicodeScalarView()
         for scalar in name.unicodeScalars {
             guard folded.count < 9, scalar.value < 0x80 else { return nil }
-            let value = scalar.value
-            folded.append(Unicode.Scalar(UInt8((0x41...0x5A).contains(value) ? value + 0x20 : value)))
+            folded.append(foldedScalar(scalar))
         }
         return RawTextMode(rawValue: String(folded))
     }
 
-    private func rawTextClosingEnd(_ atoms: [Atom], at start: Int, name: [UInt32]) -> Int? {
+    private func rawTextClosingEnd(_ atoms: AtomStorage, at start: Int, name: [UInt32]) -> Int? {
         guard atoms.count - start >= name.count + 3,
               isScalar(atoms, start, 0x3C), isScalar(atoms, start + 1, 0x2F) else { return nil }
         var index = start + 2
@@ -203,7 +190,48 @@ struct HTMLTokenizer {
         case object(String)
     }
 
-    private func isCommentContent(_ atoms: [Atom], _ range: Range<Int>) -> Bool {
+    private struct AtomStorage {
+        private static let objectBase: UInt32 = 0x11_0000
+        private var units: [UInt32] = []
+        private var objects: [String] = []
+
+        init(_ parts: [HTMLPart], maximumInputScalars: Int) throws {
+            var remaining = maximumInputScalars
+            for part in parts {
+                switch part {
+                case .text(let text):
+                    if text.isEmpty { try Self.spend(&remaining) }
+                    for scalar in text.unicodeScalars {
+                        try Self.spend(&remaining)
+                        units.append(scalar.value)
+                    }
+                case .object(let identity):
+                    try Self.spend(&remaining)
+                    guard let index = UInt32(exactly: objects.count),
+                          index <= UInt32.max - Self.objectBase else {
+                        throw HTMLTokenizationError.inputLimit
+                    }
+                    units.append(Self.objectBase + index)
+                    objects.append(identity)
+                }
+            }
+        }
+
+        var count: Int { units.count }
+
+        subscript(index: Int) -> Atom {
+            let unit = units[index]
+            if let scalar = Unicode.Scalar(unit) { return .scalar(scalar) }
+            return .object(objects[Int(unit - Self.objectBase)])
+        }
+
+        private static func spend(_ remaining: inout Int) throws {
+            guard remaining > 0 else { throw HTMLTokenizationError.inputLimit }
+            remaining -= 1
+        }
+    }
+
+    private func isCommentContent(_ atoms: AtomStorage, _ range: Range<Int>) -> Bool {
         let start = range.lowerBound
         let end = range.upperBound
         if start < end && isScalar(atoms, start, 0x3E) { return false }
@@ -235,28 +263,7 @@ struct HTMLTokenizer {
         return true
     }
 
-    private func inputCount(_ parts: [HTMLPart]) throws -> Int {
-        var count = 0
-        for part in parts {
-            switch part {
-            case .text(let text) where !text.isEmpty:
-                for _ in text.unicodeScalars {
-                    guard count < maximumInputScalars else {
-                        throw HTMLTokenizationError.inputLimit
-                    }
-                    count += 1
-                }
-            case .text, .object:
-                guard count < maximumInputScalars else {
-                    throw HTMLTokenizationError.inputLimit
-                }
-                count += 1
-            }
-        }
-        return count
-    }
-
-    private func parseTag(_ atoms: [Atom], _ range: Range<Int>, raw: [HTMLPart]) -> HTMLTag? {
+    private func parseTag(_ atoms: AtomStorage, _ range: Range<Int>, raw: [HTMLPart]) -> HTMLTag? {
         let end = range.upperBound - 1
         var index = range.lowerBound + 1
         let closing = index < end && isScalar(atoms, index, 0x2F)
@@ -325,7 +332,7 @@ struct HTMLTokenizer {
         return HTMLTag(name: name, isClosing: false, isSelfClosing: selfClosing, attributes: attributes, raw: raw)
     }
 
-    private func sourceParts(_ atoms: [Atom], _ range: Range<Int>) -> [HTMLPart] {
+    private func sourceParts(_ atoms: AtomStorage, _ range: Range<Int>) -> [HTMLPart] {
         var result: [HTMLPart] = []
         var text = String.UnicodeScalarView()
         for index in range {
@@ -344,18 +351,22 @@ struct HTMLTokenizer {
         return result
     }
 
-    private func foldedName(_ atoms: [Atom], _ range: Range<Int>) -> String {
+    private func foldedName(_ atoms: AtomStorage, _ range: Range<Int>) -> String {
         var name = String.UnicodeScalarView()
         for index in range {
             if case .scalar(let scalar) = atoms[index] {
-                let value = scalar.value
-                name.append(Unicode.Scalar(UInt8((0x41...0x5A).contains(value) ? value + 0x20 : value)))
+                name.append(foldedScalar(scalar))
             }
         }
         return String(name)
     }
 
-    private func isScalar(_ atoms: [Atom], _ index: Int, _ value: UInt32) -> Bool {
+    private func foldedScalar(_ scalar: Unicode.Scalar) -> Unicode.Scalar {
+        guard (0x41...0x5A).contains(scalar.value) else { return scalar }
+        return Unicode.Scalar(scalar.value + 0x20) ?? scalar
+    }
+
+    private func isScalar(_ atoms: AtomStorage, _ index: Int, _ value: UInt32) -> Bool {
         if case .scalar(let scalar) = atoms[index] { return scalar.value == value }
         return false
     }
@@ -389,7 +400,7 @@ struct HTMLTokenizer {
         }
     }
 
-    private func skipWhitespace(_ atoms: [Atom], _ index: inout Int, end: Int) {
+    private func skipWhitespace(_ atoms: AtomStorage, _ index: inout Int, end: Int) {
         while index < end && isWhitespace(atoms[index]) { index += 1 }
     }
 }
