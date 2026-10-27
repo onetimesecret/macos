@@ -305,6 +305,46 @@ final class MarkdownPreviewCompositionTests: XCTestCase {
         XCTAssertEqual(try traits("x", in: commonMark), [])
     }
 
+    func testInlineCommonMarkRawTextWithDecodedTextOrBreaksShowsTheOriginalPage() throws {
+        let cases: [(String, PreviewEvent)] = [
+            ("prefix <script>&amp;</script> **after**", .text("&")),
+            ("prefix <script>\n&amp;</script> **after**", .softBreak),
+            ("prefix <script>  \n&amp;</script> **after**", .hardBreak),
+            ("prefix <script>\\\n&amp;</script> **after**", .hardBreak),
+        ]
+        for (markdown, refusedEvent) in cases {
+            let document = try MarkdownParser.parse(markdown, dialect: .commonMark)
+            guard case .paragraph(let events)? = document.blocks.first else {
+                XCTFail("Expected an inline raw-text element: \(markdown)")
+                continue
+            }
+            XCTAssertTrue(events.contains(.rawHTML([.text("<script>")])), markdown)
+            XCTAssertTrue(events.contains(refusedEvent), markdown)
+            let rendered = render(markdown, dialect: .commonMark)
+            XCTAssertEqual(rendered.string, markdown + "\n")
+            XCTAssertEqual(try traits("after", in: rendered), [])
+        }
+    }
+
+    func testNativeBlockAfterAnOpenInlineRawTextElementShowsTheOriginalPage() throws {
+        let markdown = "prefix <script>\n\n---"
+        let document = try MarkdownParser.parse(markdown, dialect: .commonMark)
+        XCTAssertEqual(document.blocks, [
+            .paragraph([.text("prefix "), .rawHTML([.text("<script>")])]), .thematicBreak,
+        ])
+        XCTAssertEqual(render(markdown, dialect: .commonMark).string, markdown + "\n")
+    }
+
+    func testCommonMarkRawHTMLBodiesStillComposeWithoutDecodedParserText() throws {
+        let block = render("<script>\n&amp;  text\n</script>\n\n# after", dialect: .commonMark)
+        XCTAssertEqual(block.string, "<script>\n&amp;  text\n</script>\nafter\n")
+        XCTAssertEqual(try traits("after", in: block), .boldFontMask)
+
+        let inline = render("prefix <script><em></em></script> **after**", dialect: .commonMark)
+        XCTAssertEqual(inline.string, "prefix <script><em></em></script> after\n")
+        XCTAssertEqual(try traits("after", in: inline), .boldFontMask)
+    }
+
     /// A page past a composition limit shows its own text with every object in source order,
     /// unformatted, rather than a partial rendering.
     func testAPageOverACompositionLimitShowsItsPlainTextAndObjects() throws {

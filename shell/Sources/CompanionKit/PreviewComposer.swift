@@ -38,6 +38,11 @@ enum PreviewEvent: Equatable, Codable, Sendable {
 struct PreviewStyle: Equatable {
     var traits: Set<PreviewTrait> = []
     var link: PreviewAddress?
+    var linkOccurrence: Int?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.traits == rhs.traits && lhs.link == rhs.link
+    }
 }
 
 /// An image as composition leaves it: an address and the alt text and objects shown in its place.
@@ -122,8 +127,9 @@ struct PreviewCompositionStream {
     let reservedPlaceholders: [String]
     private(set) var diagnostics: [CompositionDiagnostic] = []
     private var markdown: [PreviewTrait] = []
-    private var markdownLinks: [PreviewAddress] = []
+    private var markdownLinks: [LinkScope] = []
     private var html: [Frame] = []
+    private var nextLinkOccurrence = 0
     /// Inside a Markdown link, accepted or refused, no HTML link applies.
     private(set) var style = PreviewStyle()
     private var eventCount = 0
@@ -153,16 +159,29 @@ struct PreviewCompositionStream {
         remainingInput = max(0, limits.maximumInputScalars)
     }
 
+    private struct LinkScope {
+        let address: PreviewAddress
+        let occurrence: Int
+    }
+
     private struct Frame {
         let name: String
         let trait: PreviewTrait?
-        let link: PreviewAddress?
+        let link: LinkScope?
+    }
+
+    private mutating func linkScope(_ address: PreviewAddress) -> LinkScope {
+        let link = LinkScope(address: address, occurrence: nextLinkOccurrence)
+        nextLinkOccurrence += 1
+        return link
     }
 
     private mutating func updateStyle() {
+        let link = markdownLinks.last ?? html.last(where: { $0.link != nil })?.link
         style = PreviewStyle(
             traits: Set(markdown).union(html.compactMap(\.trait)),
-            link: markdownLinks.last ?? html.last(where: { $0.link != nil })?.link
+            link: link?.address,
+            linkOccurrence: link?.occurrence
         )
     }
 
@@ -185,7 +204,12 @@ struct PreviewCompositionStream {
     }
 
     /// The caller has started a native paragraph: block elements add no newline before it.
-    mutating func beginBlock() {
+    mutating func beginBlock() throws {
+        guard !failed else { throw CompositionError.streamFailed }
+        guard rawTextElement == nil else {
+            failed = true
+            throw CompositionError.structuredEventInRawText
+        }
         atBoundary = true
         atLineStart = true
         endsInSpace = false
@@ -246,15 +270,18 @@ struct PreviewCompositionStream {
 
     private mutating func apply(_ event: PreviewEvent) throws {
         switch event {
+        case .object, .rawHTML: break
+        default:
+            guard rawTextElement == nil else { throw CompositionError.structuredEventInRawText }
+        }
+        switch event {
         case .text(let text): try emit(.text(text, style))
         case .object(let identity): try emit(.object(identity, style))
         case .enterMarkdown(let trait):
-            guard rawTextElement == nil else { throw CompositionError.structuredEventInRawText }
             try checkDepth()
             markdown.append(trait)
             updateStyle()
         case .leaveMarkdown(let trait):
-            guard rawTextElement == nil else { throw CompositionError.structuredEventInRawText }
             guard markdown.last == trait else { throw CompositionError.unbalancedMarkdown }
             markdown.removeLast()
             updateStyle()
@@ -262,18 +289,16 @@ struct PreviewCompositionStream {
         case .softBreak: try emit(.text(" ", style))
         case .hardBreak: try emit(.text("\u{2028}", style))
         case .markdownImage(let alt, let destination, let title):
-            guard rawTextElement == nil else { throw CompositionError.structuredEventInRawText }
             let fallback = alt + ((destination ?? []) + title).objectIdentities.map(HTMLPart.object)
             try emit(.image(PreviewImage(destination: address(destination, decode: false), fallback: fallback), style))
         case .enterLink(let destination, let title):
-            guard rawTextElement == nil else { throw CompositionError.structuredEventInRawText }
             try checkDepth()
             // Emitted before the link applies: an object never takes a link.
             try recoverObjects((destination ?? []) + title)
-            markdownLinks.append(address(destination, decode: false))
+            let link = linkScope(address(destination, decode: false))
+            markdownLinks.append(link)
             updateStyle()
         case .leaveLink:
-            guard rawTextElement == nil else { throw CompositionError.structuredEventInRawText }
             guard !markdownLinks.isEmpty else { throw CompositionError.unbalancedMarkdown }
             markdownLinks.removeLast()
             updateStyle()
@@ -365,10 +390,11 @@ struct PreviewCompositionStream {
             default: trait = nil
             }
             let hrefs = tag.attributes.filter { $0.name == "href" }
-            let link: PreviewAddress? = tag.name == "a"
+            let destination: PreviewAddress? = tag.name == "a"
                 ? (hrefs.contains(where: { address($0.value, decode: true) == .refused(.sealedObject) })
                     ? .refused(.sealedObject) : address(hrefs.first?.value, decode: true))
                 : nil
+            let link = destination.map { linkScope($0) }
             html.append(Frame(name: tag.name, trait: trait, link: link))
             updateStyle()
         }
@@ -448,14 +474,26 @@ struct PreviewCompositionStream {
         guard runCount < limits.maximumOutputRuns else { throw CompositionError.outputLimit }
         runCount += 1
         pending.append(run)
-        if case .text(let text, _) = run {
+        let last: HTMLPart?
+        switch run {
+        case .text(let text, _): last = .text(text)
+        case .object(let identity, _): last = .object(identity)
+        case .image(let image, _):
+            last = image.fallback.last { part in
+                if case .text(let text) = part { return !text.isEmpty }
+                return true
+            }
+        }
+        switch last {
+        case .text(let text)?:
             atBoundary = text.hasSuffix("\n")
             atLineStart = atBoundary || text.hasSuffix("\u{2028}")
             endsInSpace = text.hasSuffix(" ")
-        } else {
+        case .object?:
             atBoundary = false
             atLineStart = false
             endsInSpace = false
+        case nil: break
         }
     }
 }

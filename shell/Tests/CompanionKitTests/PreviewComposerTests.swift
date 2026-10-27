@@ -220,7 +220,7 @@ final class PreviewComposerTests: XCTestCase {
         var stream = PreviewComposer(dialect: .gfm).start()
         XCTAssertEqual(try stream.consume(.text("before")), [.text("before", PreviewStyle())])
         XCTAssertEqual(try stream.consume(html("<p>")), [.text("\n", PreviewStyle())])
-        stream.beginBlock()
+        try stream.beginBlock()
         XCTAssertEqual(try stream.consume(html("<em>")), [])
         XCTAssertEqual(try stream.consume(html("<p>")), [])
         XCTAssertEqual(try stream.consume(.object("one")), [.object("one", PreviewStyle(traits: [.emphasis]))])
@@ -267,7 +267,7 @@ final class PreviewComposerTests: XCTestCase {
     func testCommonMarkRawTextDoesNotProduceImagesOrLinkScopes() throws {
         for tag in ["script", "style", "xmp", "iframe", "noembed", "noframes", "title", "textarea", "plaintext"] {
             let source = "<\(tag)>const x = \"<img src='https://example.invalid/x'><a href='https://example.invalid/y'>\";</\(tag)>"
-            let result = try compose([html(source), .text("outside")], dialect: .commonMark)
+            let result = try compose([html(source), html("outside")], dialect: .commonMark)
             XCTAssertEqual(ink(result), source + "outside", tag)
             XCTAssertTrue(images(result).isEmpty, tag)
             XCTAssertEqual(result.runs.last, .text("outside", PreviewStyle()), tag)
@@ -308,22 +308,22 @@ final class PreviewComposerTests: XCTestCase {
         XCTAssertEqual(traits(result, text: "body"), [.emphasis])
     }
 
-    func testTextObjectsAndBreakEventsRemainPermittedInsideCommonMarkRawText() throws {
+    func testObjectsAndRawHTMLRemainAcceptedInsideCommonMarkRawText() throws {
         var stream = PreviewComposer(dialect: .commonMark).start()
         let style = PreviewStyle()
         XCTAssertEqual(try stream.consume(html("<script>")), [.text("<script>", style)])
-        XCTAssertEqual(try stream.consume(.text("&amp;  text")), [.text("&amp;  text", style)])
         XCTAssertEqual(try stream.consume(.object("body")), [.object("body", style)])
-        XCTAssertEqual(try stream.consume(.blockBoundary), [.text("\n", style)])
-        XCTAssertEqual(try stream.consume(.softBreak), [.text(" ", style)])
-        XCTAssertEqual(try stream.consume(.hardBreak), [.text("\u{2028}", style)])
+        XCTAssertEqual(try stream.consume(.rawHTML([.text("&amp;  text\n"), .object("raw")])), [
+            .text("&amp;  text\n", style), .object("raw", style),
+        ])
         XCTAssertEqual(try stream.consume(html("</script>")), [.text("</script>", style)])
         XCTAssertEqual(stream.diagnostics, [.escapedElement("script"), .escapedElement("script")])
         XCTAssertNoThrow(try stream.finish())
     }
 
-    func testStructuredParserEventsInsideRawTextAreRejected() {
+    func testDecodedTextAndStructuredParserEventsInsideRawTextAreRejected() {
         for event: PreviewEvent in [
+            .text("&"), .text(""), .blockBoundary, .softBreak, .hardBreak,
             .enterMarkdown(.strong), .leaveMarkdown(.strong),
             .enterLink(destination: [.text("/link")], title: []), .leaveLink,
             .markdownImage(alt: [], destination: [.text("/image")]),
@@ -331,6 +331,20 @@ final class PreviewComposerTests: XCTestCase {
             XCTAssertThrowsError(try compose([html("<script>"), event], dialect: .commonMark)) {
                 XCTAssertEqual($0 as? CompositionError, .structuredEventInRawText)
             }
+        }
+    }
+
+    func testNativeBlockStartInsideRawTextFailsTheStream() throws {
+        var stream = PreviewComposer(dialect: .commonMark).start()
+        _ = try stream.consume(html("<script>"))
+        XCTAssertThrowsError(try stream.beginBlock()) {
+            XCTAssertEqual($0 as? CompositionError, .structuredEventInRawText)
+        }
+        XCTAssertThrowsError(try stream.consume(html("</script>"))) {
+            XCTAssertEqual($0 as? CompositionError, .streamFailed)
+        }
+        XCTAssertThrowsError(try stream.finish()) {
+            XCTAssertEqual($0 as? CompositionError, .streamFailed)
         }
     }
 
@@ -404,6 +418,35 @@ final class PreviewComposerTests: XCTestCase {
         let result = try compose([.markdownImage(alt: [.text("&amp; <em>literal</em>")], destination: [.text("/relative")])])
         XCTAssertEqual(ink(result), "&amp; <em>literal</em>")
         XCTAssertEqual(images(result).first?.destination, .unreviewed("/relative"))
+    }
+
+    func testImageFallbackEndControlsFollowingHTMLWhitespaceAndBlockBoundaries() throws {
+        let cases: [(String, [HTMLPart], Bool, String)] = [
+            ("", [], false, "tail"),
+            ("prefix ", [], false, "prefix tail"),
+            ("prefix\n", [.text("")], true, "prefix\ntail"),
+            ("", [.text("alt "), .text("")], false, "alt tail"),
+            ("", [.text("alt\n"), .text("")], true, "alt\ntail"),
+            ("", [.text("alt\u{2028}"), .text("")], false, "alt\u{2028}tail"),
+            ("", [.text("alt "), .object("image"), .text("")], false, "alt [image] tail"),
+            ("", [.text("alt\n"), .object("image"), .text("")], true, "alt\n[image]\ntail"),
+        ]
+        for dialect in PreviewDialect.allCases {
+            for (prefix, fallback, boundary, expected) in cases {
+                let images: [PreviewEvent] = [
+                    .markdownImage(alt: fallback, destination: [.text("/image")]),
+                    .rawHTML([.text("<img src='/image' alt='")] + fallback + [.text("'>")]),
+                ]
+                for image in images {
+                    var events: [PreviewEvent] = [.text(prefix), image]
+                    if boundary { events.append(.blockBoundary) }
+                    events.append(html(" tail"))
+                    let result = try compose(events, dialect: dialect)
+                    XCTAssertEqual(ink(result), expected, "\(image)")
+                    XCTAssertEqual(result.objectOrder, fallback.objectIdentities)
+                }
+            }
+        }
     }
 
     func testImageDescriptorDoesNotSelectRequestSchemesOrCredentialsPolicy() throws {

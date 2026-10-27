@@ -153,6 +153,69 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         }
     }
 
+    func testEachLongLinkOccurrenceEvaluatesPolicyOnceAcrossStyledRuns() throws {
+        let path = String(repeating: "a", count: 24_000)
+        let labels = (0..<128).map { "em\($0)strong\($0)" }.joined()
+        let body = (0..<128).map { "<em>em\($0)</em><strong>strong\($0)</strong>" }.joined()
+        for dialect in PreviewDialect.allCases {
+            for (address, allowed) in [("https://example.com/" + path, true), ("javascript:" + path, false)] {
+                for source in ["[\(body)](\(address))", "<a href=\"\(address)\">\(body)</a>"] {
+                    var evaluated: [Int] = []
+                    let rendered = MarkdownPreviewView.render(
+                        NSAttributedString(string: source), dialect: dialect,
+                        onLinkPolicyEvaluation: { evaluated.append($0) }
+                    )
+                    XCTAssertEqual(rendered.string, labels + "\n")
+                    XCTAssertEqual(evaluated, [0])
+                    var styledRuns = 0
+                    rendered.enumerateAttribute(.font, in: NSRange(location: 0, length: rendered.length)) { _, _, _ in
+                        styledRuns += 1
+                    }
+                    XCTAssertGreaterThanOrEqual(styledRuns, 256)
+                    let first = rendered.attribute(.link, at: try range("em0", in: rendered).location,
+                                                   effectiveRange: nil) as? NSURL
+                    let last = rendered.attribute(.link, at: try range("strong127", in: rendered).location,
+                                                  effectiveRange: nil) as? NSURL
+                    if allowed {
+                        XCTAssertNotNil(first)
+                        XCTAssertTrue(first === last)
+                    } else {
+                        XCTAssertNil(first)
+                        XCTAssertNil(last)
+                    }
+                }
+            }
+        }
+    }
+
+    func testLinkPolicyOccurrencesAreReusedOnRestorationAndRenewedForRepeatedDestinations() throws {
+        let path = String(repeating: "b", count: 8_000)
+        let accepted = "https://example.com/" + path
+        let refused = "javascript:" + path
+        for dialect in PreviewDialect.allCases {
+            for (outer, inner, outerAllowed) in [(accepted, refused, true), (refused, accepted, false)] {
+                let source = """
+                <a href="\(outer)">outer-start <em>emphasis</em> \
+                [markdown <strong>bold</strong>](\(inner)) outer-restored \
+                <a href="\(inner)">html-inner</a> outer-end</a> <a href="\(outer)">repeat</a>
+                """
+                var evaluated: [Int] = []
+                let rendered = MarkdownPreviewView.render(
+                    NSAttributedString(string: source), dialect: dialect,
+                    onLinkPolicyEvaluation: { evaluated.append($0) }
+                )
+                XCTAssertEqual(rendered.string, "outer-start emphasis markdown bold outer-restored html-inner outer-end repeat\n")
+                XCTAssertEqual(evaluated, [0, 1, 2, 3])
+                for label in ["outer-start", "emphasis", "outer-restored", "outer-end", "repeat"] {
+                    XCTAssertEqual(try link(label, in: rendered)?.absoluteString, outerAllowed ? outer : nil, label)
+                }
+                for label in ["markdown", "bold", "html-inner"] {
+                    XCTAssertEqual(try link(label, in: rendered)?.absoluteString, outerAllowed ? nil : inner, label)
+                }
+            }
+        }
+    }
+
     func testSoftBreaksBecomeSpacesAndHardBreaksStayInsideTheirParagraph() throws {
         let rendered = render("soft\nwrap  \nhard\\\nbreak\n\nnext")
         XCTAssertEqual(rendered.string, "soft wrap\u{2028}hard\u{2028}break\nnext\n")

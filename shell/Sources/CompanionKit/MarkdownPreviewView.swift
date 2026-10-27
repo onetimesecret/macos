@@ -224,9 +224,13 @@ final class MarkdownPreviewView: AskingTextView {
     /// its raw HTML composes (plan R3).
     static func render(
         _ source: NSAttributedString, dialect: PreviewDialect = .gfm,
-        limits: CompositionLimits = CompositionLimits()
+        limits: CompositionLimits = CompositionLimits(),
+        onLinkPolicyEvaluation: ((Int) -> Void)? = nil
     ) -> NSAttributedString {
-        MarkdownPreviewRenderer(source: source, dialect: dialect, limits: limits).render()
+        MarkdownPreviewRenderer(
+            source: source, dialect: dialect, limits: limits,
+            onLinkPolicyEvaluation: onLinkPolicyEvaluation
+        ).render()
     }
 }
 
@@ -278,10 +282,17 @@ private final class MarkdownPreviewRenderer {
         case unknownObject, objectShownTwice, tableWithoutColumns, rowWiderThanTable, objectMissing
     }
 
+    private enum LinkPolicyResult {
+        case accepted(NSURL)
+        case refused
+    }
+
     private let output = NSMutableAttributedString(string: "")
     private let text: String
     private let dialect: PreviewDialect
     private let limits: CompositionLimits
+    private let onLinkPolicyEvaluation: ((Int) -> Void)?
+    private var reviewedLinks: [Int: LinkPolicyResult] = [:]
     /// The page's objects in source order, and the UTF-16 offset of each.
     private let attachments: [NSTextAttachment]
     private let offsets: [Int]
@@ -291,7 +302,10 @@ private final class MarkdownPreviewRenderer {
     /// The objects shown, by index, checked here apart from the parser's and the composer's checks.
     private var shown: Set<Int> = []
 
-    init(source: NSAttributedString, dialect: PreviewDialect, limits: CompositionLimits) {
+    init(
+        source: NSAttributedString, dialect: PreviewDialect, limits: CompositionLimits,
+        onLinkPolicyEvaluation: ((Int) -> Void)?
+    ) {
         let raw = source.string as NSString
         var attachments: [NSTextAttachment] = []
         var offsets: [Int] = []
@@ -306,6 +320,7 @@ private final class MarkdownPreviewRenderer {
         text = source.string
         self.dialect = dialect
         self.limits = limits
+        self.onLinkPolicyEvaluation = onLinkPolicyEvaluation
         self.attachments = attachments
         self.offsets = offsets
         composer = PreviewComposer(dialect: dialect, limits: limits).start()
@@ -400,7 +415,7 @@ private final class MarkdownPreviewRenderer {
     }
 
     private func renderBlock(_ block: MarkdownBlock, context: Context, marker: String? = nil) throws {
-        composer.beginBlock()
+        try composer.beginBlock()
         switch block {
         case .heading(let level, let events):
             var attributes = baseAttributes
@@ -459,7 +474,7 @@ private final class MarkdownPreviewRenderer {
         case .objects(let identities):
             // Each object with no element of its own is a paragraph of its own.
             for identity in identities {
-                composer.beginBlock()
+                try composer.beginBlock()
                 paragraph(try compose(.object(identity), attributes: baseAttributes), context: context)
             }
         }
@@ -543,7 +558,7 @@ private final class MarkdownPreviewRenderer {
                 if rowIndex == 0 {
                     attributes[.font] = NSFontManager.shared.convert(InkStyle.baseFont, toHaveTrait: .boldFontMask)
                 }
-                composer.beginBlock()
+                try composer.beginBlock()
                 let content = column < cells.count
                     ? try inlines(cells[column], attributes: attributes) : NSAttributedString(string: "")
                 paragraph(content, context: nested, style: style)
@@ -613,12 +628,30 @@ private final class MarkdownPreviewRenderer {
         if style.traits.contains(.deletion) {
             result[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
         }
-        if case .unreviewed(let address)? = style.link, let url = safeURL(address) {
+        if let url = reviewedLink(style) {
             result[.link] = url
             result[.foregroundColor] = NSColor.linkColor
             result[.underlineStyle] = NSUnderlineStyle.single.rawValue
         }
         return result
+    }
+
+    private func reviewedLink(_ style: PreviewStyle) -> NSURL? {
+        guard let occurrence = style.linkOccurrence else { return nil }
+        let result: LinkPolicyResult
+        if let reviewed = reviewedLinks[occurrence] {
+            result = reviewed
+        } else {
+            onLinkPolicyEvaluation?(occurrence)
+            if case .unreviewed(let address)? = style.link, let url = safeURL(address) {
+                result = .accepted(url as NSURL)
+            } else {
+                result = .refused
+            }
+            reviewedLinks[occurrence] = result
+        }
+        if case .accepted(let url) = result { return url }
+        return nil
     }
 
     /// An image as its alt text and objects in secondary ink, marked with its descriptor and

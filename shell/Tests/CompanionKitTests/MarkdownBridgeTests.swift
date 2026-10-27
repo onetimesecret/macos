@@ -192,4 +192,20 @@ final class MarkdownBridgeTests: XCTestCase {
         XCTAssertEqual(preview.reseed(with: next), "first\n")
         XCTAssertEqual(preview.string, "next\n")
     }
+
+    func testAnHTMLReferenceToAnUndeclaredObjectCharacterRemainsInk() {
+        for dialect in PreviewDialect.allCases {
+            let rendered = MarkdownPreviewView.render(
+                NSAttributedString(string: "<div>&#xFFFC;</div>"), dialect: dialect
+            )
+            XCTAssertEqual(rendered.string, "\u{FFFC}\n")
+            XCTAssertNil(rendered.attribute(.attachment, at: 0, effectiveRange: nil))
+        }
+        let preview = MarkdownPreviewView(page: 1, coordinator: nil)
+        preview.reseed(with: PageModel.QuietRendering(
+            text: NSAttributedString(string: "<div>&#xFFFC;</div>"), fenceRegions: []
+        ))
+        preview.setSelectedRange(NSRange(location: 0, length: preview.string.utf16.count))
+        XCTAssertEqual(preview.shownSelection(), [[.ink("\u{FFFC}\n")]])
+    }
 }
