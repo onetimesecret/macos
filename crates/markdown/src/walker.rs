@@ -237,9 +237,10 @@ impl Walker<'_> {
         title: &str,
         mark: usize,
     ) -> Result<(Vec<HtmlPart>, Vec<HtmlPart>), ParseError> {
-        let shown: HashSet<usize> = self.log[mark..].iter().copied().collect();
+        let mut shown: HashSet<usize> = self.log[mark..].iter().copied().collect();
+        let destination_mark = self.log.len();
         let destination = self.address(url, &shown)?;
-        let shown: HashSet<usize> = self.log[mark..].iter().copied().collect();
+        shown.extend(self.log[destination_mark..].iter().copied());
         Ok((destination, self.address(title, &shown)?))
     }
 
@@ -553,10 +554,11 @@ fn place(unplaced: Vec<Unplaced>, blocks: &mut Vec<Placed>) {
                 let mut by_item: BTreeMap<usize, Vec<Unplaced>> = BTreeMap::new();
                 for object in objects {
                     let after = items.partition_point(|item| item.start <= object.position);
-                    by_item
-                        .entry(after.saturating_sub(1))
-                        .or_default()
-                        .push(object);
+                    let Some(item) = after.checked_sub(1) else {
+                        insertions.push((index, object));
+                        continue;
+                    };
+                    by_item.entry(item).or_default().push(object);
                 }
                 for (item, objects) in by_item {
                     place(objects, &mut items[item].blocks);

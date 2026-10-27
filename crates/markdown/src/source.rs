@@ -53,7 +53,10 @@ impl Source {
         let reference_count = numeric_reference_values(text)
             .filter(|value| is_plane_16(*value))
             .count();
-        let mut taken = Zeroizing::new(Vec::with_capacity(literal_count + reference_count));
+        let taken_capacity = literal_count
+            .checked_add(reference_count)
+            .ok_or(ParseError::InputLimit)?;
+        let mut taken = Zeroizing::new(Vec::with_capacity(taken_capacity));
         taken.extend(
             text.chars()
                 .map(u32::from)

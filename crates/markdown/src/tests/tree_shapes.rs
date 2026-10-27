@@ -178,3 +178,91 @@ fn a_second_table_header_refuses_the_valid_prefix() {
         Err(ParseError::ParserFailure)
     );
 }
+
+#[test]
+fn unplaced_objects_before_a_lists_first_item_precede_the_list() {
+    let template =
+        "prefix {obj}\n\n[r]: /u{obj}\n[s]: /v{obj}\n\n- first {obj}\n- last {obj}\n\nsuffix {obj}";
+    let limits = Limits::default();
+    let (page_text, offsets) = page(template);
+    let source = Source::new(&page_text, &offsets, &limits).unwrap();
+    let expected = vec![
+        paragraph(vec![text("prefix "), object(0)]),
+        objects(&[1, 2]),
+        bullets(
+            true,
+            vec![
+                item(None, vec![paragraph(vec![text("first "), object(3)])]),
+                item(None, vec![paragraph(vec![text("last "), object(4)])]),
+            ],
+        ),
+        paragraph(vec![text("suffix "), object(5)]),
+    ];
+    for dialect in BOTH {
+        let arena = Arena::new();
+        let root = parse_document(&arena, &source.text, &options(dialect));
+        assert_eq!(
+            walker::walk(root, &source, limits.maximum_depth),
+            Ok(expected.clone()),
+            "{dialect:?} before mutation"
+        );
+        let list = root
+            .children()
+            .find(|node| matches!(node.data().value, NodeValue::List(_)))
+            .unwrap();
+        list.data_mut().sourcepos.start = (3, 1).into();
+        let actual = walker::walk(root, &source, limits.maximum_depth).unwrap();
+        assert_eq!(actual, expected, "{dialect:?} after mutation");
+        assert_eq!(
+            identities(&actual),
+            ["0", "1", "2", "3", "4", "5"],
+            "{dialect:?} object order"
+        );
+    }
+}
+
+#[test]
+fn an_image_title_reusing_alt_and_destination_objects_emits_each_once() {
+    let template = "![alt {obj}](/i{obj} \"title {obj}\")";
+    let limits = Limits::default();
+    let (page_text, offsets) = page(template);
+    let source = Source::new(&page_text, &offsets, &limits).unwrap();
+    for dialect in BOTH {
+        let arena = Arena::new();
+        let root = parse_document(&arena, &source.text, &options(dialect));
+        assert_eq!(
+            walker::walk(root, &source, limits.maximum_depth),
+            Ok(vec![paragraph(vec![image(
+                vec![part("alt "), part_object(0)],
+                vec![part("/i"), part_object(1)],
+                vec![part("title "), part_object(2)],
+            )])]),
+            "{dialect:?} before mutation"
+        );
+        let image_node = root
+            .descendants()
+            .find(|node| matches!(node.data().value, NodeValue::Image(_)))
+            .unwrap();
+        let NodeValue::Text(alt) = image_node.first_child().unwrap().data().value.clone() else {
+            panic!("image alt text");
+        };
+        {
+            let mut data = image_node.data_mut();
+            let NodeValue::Image(image) = &mut data.value else {
+                panic!("image");
+            };
+            image.title = format!("{alt} {} {}", image.url, image.title);
+        }
+        let actual = walker::walk(root, &source, limits.maximum_depth).unwrap();
+        assert_eq!(
+            actual,
+            vec![paragraph(vec![image(
+                vec![part("alt "), part_object(0)],
+                vec![part("/i"), part_object(1)],
+                vec![part("alt \u{FFFC} /i\u{FFFC} title "), part_object(2)],
+            )])],
+            "{dialect:?} after mutation"
+        );
+        assert_eq!(identities(&actual), ["0", "1", "2"], "{dialect:?}");
+    }
+}
