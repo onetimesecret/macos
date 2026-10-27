@@ -33,7 +33,7 @@ pub(crate) fn walk<'a>(
             position: source.positions[atom],
         })
         .collect();
-    place(&unplaced, &mut blocks);
+    place(unplaced, &mut blocks);
     Ok(blocks.into_iter().map(Placed::into_block).collect())
 }
 
@@ -506,11 +506,11 @@ struct Unplaced {
 
 /// Puts each object no node emitted in the deepest container covering it, before the first child
 /// after it, or at the end of its table row's last kept cell. `unplaced` is in source order.
-fn place(unplaced: &[Unplaced], blocks: &mut Vec<Placed>) {
+fn place(unplaced: Vec<Unplaced>, blocks: &mut Vec<Placed>) {
     if unplaced.is_empty() {
         return;
     }
-    let mut insertions: Vec<(usize, &Unplaced)> = Vec::new();
+    let mut insertions: Vec<(usize, Unplaced)> = Vec::new();
     let mut nested: BTreeMap<usize, Vec<Unplaced>> = BTreeMap::new();
     for object in unplaced {
         let after = blocks.partition_point(|block| block.start <= object.position);
@@ -528,17 +528,14 @@ fn place(unplaced: &[Unplaced], blocks: &mut Vec<Placed>) {
             Shape::Leaf(_) => false,
         };
         if inside {
-            nested.entry(index).or_default().push(Unplaced {
-                identity: object.identity.clone(),
-                position: object.position,
-            });
+            nested.entry(index).or_default().push(object);
         } else {
             insertions.push((after, object));
         }
     }
     for (index, objects) in nested {
         match &mut blocks[index].shape {
-            Shape::Quote(children) => place(&objects, children),
+            Shape::Quote(children) => place(objects, children),
             Shape::List { items, .. } => {
                 // Between two items, the earlier one takes it.
                 let mut by_item: BTreeMap<usize, Vec<Unplaced>> = BTreeMap::new();
@@ -550,7 +547,7 @@ fn place(unplaced: &[Unplaced], blocks: &mut Vec<Placed>) {
                         .push(object);
                 }
                 for (item, objects) in by_item {
-                    place(&objects, &mut items[item].blocks);
+                    place(objects, &mut items[item].blocks);
                 }
             }
             Shape::Table { body, rows, .. } => {
@@ -569,7 +566,7 @@ fn place(unplaced: &[Unplaced], blocks: &mut Vec<Placed>) {
         return;
     }
     // Stable, so objects at one index keep source order.
-    insertions.sort_by_key(|&(index, _)| index);
+    insertions.sort_by_key(|(index, _)| *index);
     let mut queue = insertions.into_iter().peekable();
     let mut result = Vec::with_capacity(blocks.len() + queue.len());
     for (index, block) in std::mem::take(blocks)
@@ -578,20 +575,18 @@ fn place(unplaced: &[Unplaced], blocks: &mut Vec<Placed>) {
         .chain(std::iter::once(None))
         .enumerate()
     {
-        let mut objects: Vec<&Unplaced> = Vec::new();
-        while let Some((_, object)) = queue.next_if(|&(at, _)| at == index) {
+        let mut objects: Vec<Unplaced> = Vec::new();
+        while let Some((_, object)) = queue.next_if(|(at, _)| *at == index) {
             objects.push(object);
         }
         if let Some(first) = objects.first() {
+            let position = first.position;
             result.push(Placed {
                 shape: Shape::Leaf(Block::Objects(
-                    objects
-                        .iter()
-                        .map(|object| object.identity.clone())
-                        .collect(),
+                    objects.into_iter().map(|object| object.identity).collect(),
                 )),
-                start: first.position,
-                end: first.position,
+                start: position,
+                end: position,
             });
         }
         result.extend(block);
