@@ -111,6 +111,33 @@ fn comrak_0_57_keeps_definition_lines_in_a_paragraph_at_top_level() {
 }
 
 #[test]
+fn comrak_0_57_refuses_reuse_of_a_misplaced_definition_object() {
+    let prefix = "[r]: /u{obj}\n| a {obj} |\n| - |\n\n";
+    let mut first = refused("x");
+    first.push(object(0));
+    assert_eq!(
+        blocks(&format!("{prefix}[x][r]"), Dialect::CommonMark),
+        [
+            paragraph(vec![
+                text("| a "),
+                object(1),
+                text(" |"),
+                Event::SoftBreak,
+                text("| - |"),
+            ]),
+            paragraph(first),
+        ]
+    );
+    for references in ["[x][r] [y][r]", "[x][r] [y][r] [z][r]"] {
+        assert_eq!(
+            document(&format!("{prefix}{references}"), Dialect::CommonMark),
+            Err(ParseError::DuplicateObject("0".into())),
+            "{references}"
+        );
+    }
+}
+
+#[test]
 #[ignore = "needs comrak sourcepos fix after reference definitions, issue 332"]
 fn a_setext_heading_after_leading_definitions_leaves_them_their_objects() {
     for dialect in BOTH {

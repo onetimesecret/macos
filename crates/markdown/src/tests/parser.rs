@@ -350,6 +350,62 @@ fn a_tab_before_a_definitions_object_keeps_it_in_its_container() {
     }
 }
 
+#[test]
+fn tab_prefixed_containers_keep_objects_and_their_original_utf16_offsets() {
+    let reference = || paragraph(vec![link("/é\u{FFFC}", ""), text("z"), Event::LeaveLink]);
+    let cases = [
+        (
+            ">\t{obj}",
+            vec![Block::Quote(vec![paragraph(vec![object(0)])])],
+        ),
+        (
+            "-\t{obj}\n  text",
+            vec![bullets(
+                true,
+                vec![item(
+                    None,
+                    vec![paragraph(vec![object(0), Event::SoftBreak, text("text")])],
+                )],
+            )],
+        ),
+        (
+            ">\t[r]: /é{obj}\n>\n>\t😀{obj}\n\n[z][r]",
+            vec![
+                Block::Quote(vec![objects(&[0]), paragraph(vec![text("😀"), object(1)])]),
+                reference(),
+            ],
+        ),
+        (
+            "-\t[r]: /é{obj}\n\n\t😀{obj}\n- b\n\n[z][r]",
+            vec![
+                bullets(
+                    true,
+                    vec![
+                        item(
+                            None,
+                            vec![objects(&[0]), paragraph(vec![text("😀"), object(1)])],
+                        ),
+                        item(None, vec![paragraph(vec![text("b")])]),
+                    ],
+                ),
+                reference(),
+            ],
+        ),
+    ];
+    for dialect in BOTH {
+        for line_ending in ["\n", "\r\n"] {
+            for (template, expected) in &cases {
+                let template = template.replace('\n', line_ending);
+                let (_, offsets) = page(&template);
+                let document = document(&template, dialect).unwrap();
+                assert_eq!(document.blocks, *expected, "{dialect:?}: {template:?}");
+                let actual: Vec<_> = document.atoms.iter().map(|atom| atom.offset).collect();
+                assert_eq!(actual, offsets, "{dialect:?}: {template:?}");
+            }
+        }
+    }
+}
+
 /// comrak moves a list's end back to its last child when an empty line closes it, so the object of
 /// a definition ending the list follows the list. cmark-gfm kept it in the item.
 #[test]

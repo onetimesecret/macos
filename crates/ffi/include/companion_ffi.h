@@ -143,6 +143,8 @@ typedef enum {
  * companion_string_free().
  */
 /* HTML blocks and inline HTML contain the input markup without tag filtering. */
+/* An image's destination/title may contain {"object":{"_0":id}} parts.
+ * An inline link's own address objects follow leaveLink; its address has U+FFFC text. */
 char *companion_markdown_parse_json(const char *text, size_t len,
                                     const size_t *objects, size_t objects_len,
                                     int dialect,

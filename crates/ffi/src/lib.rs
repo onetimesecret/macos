@@ -267,11 +267,8 @@ fn markdown_dialect(code: c_int) -> Option<Dialect> {
     }
 }
 
-/// Read `len` bytes of UTF-8 page text as Markdown for the preview, without a
-/// handle (issue 332). `objects` are the UTF-16 offsets of the U+FFFC that are
-/// sealed objects, ascending; `(NULL, 0)` is none. Returns the document JSON or
-/// `{"error": refusal}`, freed with [`companion_string_free`]; null for null
-/// text, text that is not UTF-8, a bad `objects` or an unknown dialect.
+/// Parse UTF-8 text with UTF-16 object offsets; free JSON with [`companion_string_free`].
+/// Invalid offset values return `objectOffset` JSON; rejected pointer/alignment arguments return null.
 ///
 /// # Safety
 /// `text` must be non-null and readable for `len` bytes until return, and a
@@ -4270,6 +4267,35 @@ mod tests {
                 document["blocks"][1]["paragraph"]["_0"][1]["rawHTML"]["_0"][0]["text"]["_0"],
                 "<iframe>"
             );
+        }
+    }
+
+    #[test]
+    fn markdown_image_addresses_keep_object_parts_while_links_use_stand_ins() {
+        let input =
+            "![alt \u{FFFC}](/i\u{FFFC} \"t \u{FFFC}\") [label](/l\u{FFFC} \"title \u{FFFC}\")";
+        let text = |value: &str| serde_json::json!({"text": {"_0": value}});
+        let object = |identity: &str| serde_json::json!({"object": {"_0": identity}});
+        let expected = serde_json::json!([
+            {"markdownImage": {
+                "alt": [text("alt "), object("0")],
+                "destination": [text("/i"), object("1")],
+                "title": [text("t "), object("2")],
+            }},
+            text(" "),
+            {"enterLink": {
+                "destination": [text("/l\u{FFFC}")],
+                "title": [text("title \u{FFFC}")],
+            }},
+            text("label"),
+            {"leaveLink": {}},
+            object("3"),
+            object("4"),
+        ]);
+        for dialect in [COMMONMARK, GFM] {
+            let json = unsafe { take_json(parse_markdown(input, dialect, Limits::default())) };
+            let document: serde_json::Value = serde_json::from_str(&json).unwrap();
+            assert_eq!(document["blocks"][0]["paragraph"]["_0"], expected);
         }
     }
 
