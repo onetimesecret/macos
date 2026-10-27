@@ -267,8 +267,10 @@ fn markdown_dialect(code: c_int) -> Option<Dialect> {
     }
 }
 
-/// Parse UTF-8 with UTF-16 object offsets and depth capped at 64; free JSON with [`companion_string_free`].
+/// Parse Markdown with UTF-16 object offsets and depth capped at 64; free JSON with [`companion_string_free`].
 /// Invalid offset values return `objectOffset` JSON; rejected pointer/alignment arguments return null.
+///
+/// Non-null `inputLimit` JSON may precede UTF-8 validation; decode every non-null result and check `error`.
 ///
 /// # Safety
 /// `text` must be non-null and readable for `len` bytes until return, and a
@@ -4392,6 +4394,45 @@ mod tests {
         let over =
             unsafe { companion_markdown_parse_json(unread, 21, ptr::null(), 0, GFM, 5, 1, 1) };
         assert_eq!(unsafe { take_json(over) }, r#"{"error":{"inputLimit":{}}}"#);
+    }
+
+    #[test]
+    fn markdown_parse_distinguishes_unvalidated_limit_refusals_from_invalid_utf8() {
+        let parse = |bytes: &[u8]| unsafe {
+            companion_markdown_parse_json(
+                bytes.as_ptr().cast(),
+                bytes.len(),
+                ptr::null(),
+                0,
+                GFM,
+                2,
+                8,
+                100,
+            )
+        };
+        let invalid = [0xff; 9];
+        for len in [7, 8] {
+            assert!(
+                parse(&invalid[..len]).is_null(),
+                "invalid UTF-8 at {len} bytes"
+            );
+        }
+        let over = parse(&invalid);
+        let refusal: serde_json::Value = serde_json::from_str(&unsafe { take_json(over) }).unwrap();
+        assert_eq!(refusal, serde_json::json!({"error": {"inputLimit": {}}}));
+
+        let boundary = "🦀🦀";
+        assert_eq!(boundary.len(), 8);
+        let parsed = parse(boundary.as_bytes());
+        let document: serde_json::Value =
+            serde_json::from_str(&unsafe { take_json(parsed) }).unwrap();
+        assert_eq!(
+            document["blocks"][0]["paragraph"]["_0"],
+            serde_json::json!([
+                {"text": {"_0": boundary}},
+            ])
+        );
+        assert!(document.get("error").is_none());
     }
 
     #[test]

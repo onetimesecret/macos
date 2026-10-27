@@ -139,11 +139,13 @@ typedef enum {
  * objectOffset and parserFailure, or {"error": {"duplicateObject":
  * {"_0": identity}}}. A text longer than four bytes for each allowed
  * scalar is refused as inputLimit before it is read. NULL for NULL text,
- * text that is not UTF-8, a NULL or misaligned objects with a nonzero
+ * invalid UTF-8 when read, a NULL or misaligned objects with a nonzero
  * objects_len, a length no allocation can have, an unknown dialect, or a
  * contained parser panic. Free a non-NULL result with
  * companion_string_free().
  */
+/* A non-NULL refusal need not have validated UTF-8 input.
+ * Decode each non-NULL result and check error before using it as a document. */
 /* HTML blocks and inline HTML contain the input markup without tag filtering. */
 /* An image's destination/title may contain {"object":{"_0":id}} parts.
  * An inline link's own address objects follow leaveLink; its address has U+FFFC text. */
