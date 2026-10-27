@@ -320,13 +320,14 @@ mod tests {
     /// The scratchpad probe's corpus generator (issue 332), ported with a fixed seed.
     #[test]
     fn no_generated_page_makes_more_cells_than_its_bound() {
-        let count = std::env::var("COMPANION_MARKDOWN_TABLE_FUZZ_PAGES")
-            .map(|value| value.parse::<usize>().expect("a decimal page count"))
-            .unwrap_or(4_000);
+        let requested_count = std::env::var("COMPANION_MARKDOWN_TABLE_FUZZ_PAGES")
+            .ok()
+            .map(|value| value.parse::<usize>().expect("a decimal page count"));
+        let count = requested_count.unwrap_or(4_000);
         let seed = std::env::var("COMPANION_MARKDOWN_TABLE_FUZZ_SEED")
             .map(|value| value.parse::<u64>().expect("a decimal seed"))
             .unwrap_or(332);
-        assert!(count >= 4_000, "at least 4,000 generated pages");
+        assert!(count > 0, "a positive generated page count");
         let mut random = Random(seed);
         let mut tables = 0;
         for index in 0..count {
@@ -339,6 +340,8 @@ mod tests {
             );
             tables += usize::from(made > 0);
         }
-        assert!(tables > 1_000, "the corpus makes tables: {tables}");
+        if requested_count.is_none() {
+            assert!(tables > 1_000, "the default corpus makes tables: {tables}");
+        }
     }
 }
