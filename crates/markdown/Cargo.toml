@@ -16,6 +16,7 @@ workspace = true
 # cmark and cmark-gfm. Default features pull in the CLI and syntect.
 comrak = { version = "0.57.0", default-features = false }
 serde = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 # comrak's own entity table, built from this crate; already in the tree.

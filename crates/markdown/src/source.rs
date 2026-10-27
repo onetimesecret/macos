@@ -1,6 +1,7 @@
 //! The page as comrak reads it: LF line endings, and object k the plane 16 scalar `base + k`.
 
 use crate::{Atom, Limits, ParseError};
+use zeroize::Zeroizing;
 
 const PLANE_16_FIRST: u32 = 0x10_0000;
 const PLANE_16_LAST: u32 = 0x10_FFFD;
@@ -23,7 +24,7 @@ pub(crate) struct Source {
     base: u32,
     object_count: usize,
     /// Exactly the text handed to comrak.
-    pub(crate) text: String,
+    pub(crate) text: Zeroizing<String>,
     pub(crate) atoms: Vec<Atom>,
     /// Where each object's placeholder starts in `text`.
     pub(crate) positions: Vec<Position>,
@@ -34,6 +35,7 @@ impl Source {
     /// objects, ascending.
     pub(crate) fn new(text: &str, objects: &[usize], limits: &Limits) -> Result<Self, ParseError> {
         let mut taken = Vec::new();
+        let mut nul_count = 0usize;
         for (index, scalar) in text.chars().enumerate() {
             if index >= limits.maximum_input_scalars {
                 return Err(ParseError::InputLimit);
@@ -41,16 +43,25 @@ impl Source {
             if is_plane_16(u32::from(scalar)) {
                 taken.push(u32::from(scalar));
             }
+            if scalar == '\0' {
+                nul_count += 1;
+            }
         }
         if objects.windows(2).any(|pair| pair[0] >= pair[1]) {
             return Err(ParseError::ObjectOffset);
         }
         taken.extend(numeric_reference_values(text).filter(|value| is_plane_16(*value)));
         let base = window(objects.len(), &mut taken)?;
+        let capacity = text
+            .len()
+            .checked_add(nul_count.saturating_mul(2))
+            .and_then(|capacity| capacity.checked_add(objects.len()))
+            .and_then(|capacity| capacity.checked_add(1))
+            .ok_or(ParseError::InputLimit)?;
         let mut source = Self {
             base,
             object_count: objects.len(),
-            text: String::with_capacity(text.len() + 4 * objects.len()),
+            text: Zeroizing::new(String::with_capacity(capacity)),
             atoms: Vec::with_capacity(objects.len()),
             positions: Vec::with_capacity(objects.len()),
         };
@@ -187,7 +198,7 @@ fn numeric_reference_values(text: &str) -> impl Iterator<Item = u32> {
             continue;
         }
         let mut cursor = index + 2;
-        let hex = bytes[cursor] | 0x20 == b'x';
+        let hex = (bytes[cursor] | 0x20) == b'x';
         if hex {
             cursor += 1;
         }
@@ -255,7 +266,7 @@ mod tests {
     #[test]
     fn line_endings_nul_and_a_leading_byte_order_mark_read_as_comrak_reads_them() {
         let page = source("\u{FEFF}a\r\nb\rc\0\u{FEFF}\n\u{FFFC}", &[10]).unwrap();
-        assert_eq!(page.text, "a\nb\nc\u{FFFD}\u{FEFF}\n\u{100000}\n");
+        assert_eq!(page.text.as_str(), "a\nb\nc\u{FFFD}\u{FEFF}\n\u{100000}\n");
         assert_eq!(page.positions, [Position { line: 4, column: 1 }]);
         assert_eq!(
             page.atoms,
@@ -264,8 +275,28 @@ mod tests {
                 offset: 10
             }]
         );
-        assert_eq!(source("a\r", &[]).unwrap().text, "a\n");
-        assert_eq!(source("", &[]).unwrap().text, "");
+        assert_eq!(source("a\r", &[]).unwrap().text.as_str(), "a\n");
+        assert_eq!(source("", &[]).unwrap().text.as_str(), "");
+    }
+
+    #[test]
+    fn normalized_text_uses_a_wiping_owner_sized_for_nul_and_object_expansion() {
+        use zeroize::{Zeroize, ZeroizeOnDrop};
+
+        fn wiping_owner<T: ZeroizeOnDrop>(_: &T) {}
+
+        let text = format!("{}\u{FFFC}", "\0".repeat(8192));
+        let mut page = source(&text, &[8192]).unwrap();
+        wiping_owner(&page.text);
+        assert_eq!(
+            page.text.as_str(),
+            format!("{}\u{100000}\n", "\u{FFFD}".repeat(8192))
+        );
+        assert_eq!(page.text.capacity(), page.text.len());
+        let pointer = page.text.as_ptr();
+        page.text.as_mut_str().zeroize();
+        assert!(page.text.as_bytes().iter().all(|byte| *byte == 0));
+        assert_eq!(page.text.as_ptr(), pointer);
     }
 
     #[test]
@@ -286,7 +317,7 @@ mod tests {
     #[test]
     fn pieces_split_at_this_pages_placeholders_only() {
         let page = source("\u{100000} \u{FFFC}", &[3]).unwrap();
-        assert_eq!(page.text, "\u{100000} \u{100001}\n");
+        assert_eq!(page.text.as_str(), "\u{100000} \u{100001}\n");
         assert_eq!(
             page.pieces(&page.text),
             [
