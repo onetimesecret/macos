@@ -18,8 +18,8 @@ const GFM_EXAMPLES_SHA256: &str =
 /// Examples whose specification HTML the `CommonMark` reading does not produce.
 const COMMONMARK_MISMATCHES: &[(usize, &str)] = &[];
 
-/// Examples whose specification HTML the GFM reading does not produce, and what it does instead.
-const GFM_MISMATCHES: &[(usize, &str)] = &[
+/// Examples whose HTML differs because the test writer applies GFM tag filtering.
+const GFM_WRITER_TAGFILTER_MISMATCHES: &[(usize, &str)] = &[
     (
         140,
         "the tagfilter writes `<script` and `</script` as `&lt;script` and `&lt;/script`; the example shows the block unfiltered",
@@ -40,6 +40,10 @@ const GFM_MISMATCHES: &[(usize, &str)] = &[
         147,
         "the tagfilter writes `<script>` and `</script>` as `&lt;script>` and `&lt;/script>`; the example shows the block unfiltered",
     ),
+];
+
+/// Other examples whose combined parser and test-writer HTML differs from the specification.
+const GFM_OTHER_OUTPUT_MISMATCHES: &[(usize, &str)] = &[
     (
         611,
         "the extended autolink links `http://foo.bar/baz` inside `<http://foo.bar/baz bim>`",
@@ -164,9 +168,35 @@ fn the_copied_specifications_are_the_recorded_files() {
 
 #[test]
 fn the_mismatch_tables_are_in_ascending_order_with_no_repeats() {
-    for table in [COMMONMARK_MISMATCHES, GFM_MISMATCHES] {
+    for table in [
+        COMMONMARK_MISMATCHES,
+        GFM_WRITER_TAGFILTER_MISMATCHES,
+        GFM_OTHER_OUTPUT_MISMATCHES,
+    ] {
         assert!(table.windows(2).all(|pair| pair[0].0 < pair[1].0));
     }
+}
+
+#[test]
+fn the_gfm_mismatch_categories_are_disjoint_and_cover_the_thirteen_output_differences() {
+    let writer_tagfilter: BTreeSet<_> = GFM_WRITER_TAGFILTER_MISMATCHES
+        .iter()
+        .map(|(number, _)| *number)
+        .collect();
+    let other_output: BTreeSet<_> = GFM_OTHER_OUTPUT_MISMATCHES
+        .iter()
+        .map(|(number, _)| *number)
+        .collect();
+    assert_eq!(writer_tagfilter, BTreeSet::from([140, 141, 142, 145, 147]));
+    assert!(writer_tagfilter.is_disjoint(&other_output));
+    let all: BTreeSet<_> = writer_tagfilter.union(&other_output).copied().collect();
+    assert_eq!(
+        all,
+        BTreeSet::from([
+            140, 141, 142, 145, 147, 611, 617, 620, 621, 634, 635, 649, 650,
+        ])
+    );
+    assert_eq!(all.len(), 13);
 }
 
 #[test]
@@ -221,7 +251,12 @@ fn every_commonmark_example_renders_as_the_specification_shows() {
 #[test]
 fn every_gfm_example_renders_as_the_specification_shows_beyond_the_known_mismatches() {
     let examples = examples(GFM_EXAMPLES);
-    assert_mismatches(&outcomes(&examples, Dialect::Gfm), GFM_MISMATCHES, "GFM");
+    let known: Vec<_> = GFM_WRITER_TAGFILTER_MISMATCHES
+        .iter()
+        .chain(GFM_OTHER_OUTPUT_MISMATCHES)
+        .copied()
+        .collect();
+    assert_mismatches(&outcomes(&examples, Dialect::Gfm), &known, "GFM");
 }
 
 #[test]
@@ -248,5 +283,10 @@ fn the_exact_match_counts_are_reported() {
         commonmark.len() - COMMONMARK_MISMATCHES.len(),
         "{report}"
     );
-    assert_eq!(gfm_exact, gfm.len() - GFM_MISMATCHES.len(), "{report}");
+    assert_eq!(gfm_exact, 664, "{report}");
+    assert_eq!(
+        gfm_exact,
+        gfm.len() - GFM_WRITER_TAGFILTER_MISMATCHES.len() - GFM_OTHER_OUTPUT_MISMATCHES.len(),
+        "{report}"
+    );
 }
