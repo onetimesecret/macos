@@ -18,6 +18,20 @@ pub(crate) fn bound(text: &str) -> u64 {
     total
 }
 
+/// Whether the parsed tree contains more table cells than the requested limit.
+pub(crate) fn exceeds_limit<'a>(root: &'a comrak::nodes::AstNode<'a>, limit: u64) -> bool {
+    root.descendants()
+        .filter(|node| matches!(node.data().value, comrak::nodes::NodeValue::TableCell))
+        .try_fold(0u64, |count, _| {
+            if count == limit {
+                Err(())
+            } else {
+                Ok(count + 1)
+            }
+        })
+        .is_err()
+}
+
 /// Lines as comrak splits them: LF, CR or CRLF ends one.
 fn lines(text: &[u8]) -> impl Iterator<Item = &[u8]> {
     let mut start = 0;
@@ -98,6 +112,22 @@ mod tests {
         assert_eq!(bound(two), 8);
         assert_eq!(cells(two), 8);
         assert_eq!(bound("| a | b |\r\n| - | - |\r\n| c |\r \t\r| d |"), 4);
+    }
+
+    #[test]
+    fn the_parsed_cell_check_counts_headers_and_padding_across_tables() {
+        let arena = Arena::new();
+        let root = parse_document(
+            &arena,
+            "| a | b |\n| - | - |\n| c |\n\n| x |\n| - |",
+            &options(Dialect::Gfm),
+        );
+        assert!(exceeds_limit(root, 4));
+        assert!(!exceeds_limit(root, 5));
+        assert!(!exceeds_limit(root, u64::MAX));
+        let plain = parse_document(&arena, "text", &options(Dialect::Gfm));
+        assert!(!exceeds_limit(plain, 0));
+        assert!(exceeds_limit(root, 0));
     }
 
     #[test]

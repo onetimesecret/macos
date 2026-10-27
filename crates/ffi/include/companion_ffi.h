@@ -120,6 +120,8 @@ typedef enum {
  *                       the UTF-16 offsets in the page of the U+FFFC
  *                       characters that are sealed objects, ascending;
  *                       (NULL, 0) is none. Object i is identity "i".
+ *                       At most 65,534 placeholders, fewer when plane-16
+ *                       text or character-reference values split the free window.
  *   dialect             a CompanionMarkdownDialect code.
  *   maximum_input_scalars, maximum_depth, maximum_table_cells
  *                       the preview's limits: Unicode scalars in the page,
@@ -145,6 +147,8 @@ typedef enum {
 /* HTML blocks and inline HTML contain the input markup without tag filtering. */
 /* An image's destination/title may contain {"object":{"_0":id}} parts.
  * An inline link's own address objects follow leaveLink; its address has U+FFFC text. */
+/* Stock comrak can return duplicateObject for reference-definition source ranges.
+ * The caller may fall back to the original page as plain text for refusal JSON. */
 char *companion_markdown_parse_json(const char *text, size_t len,
                                     const size_t *objects, size_t objects_len,
                                     int dialect,

@@ -73,7 +73,8 @@ pub enum ParseError {
     /// The tree had a shape comrak never builds.
     #[serde(serialize_with = "empty")]
     ParserFailure,
-    /// The walk emitted this object twice.
+    /// The walk refused a second emission, including reference-definition cases where stock
+    /// comrak leaves definition lines inside a surviving paragraph's source range.
     #[serde(serialize_with = "unlabelled")]
     DuplicateObject(String),
 }
@@ -115,6 +116,9 @@ pub fn parse_with_objects(
     }
     let arena = Arena::new();
     let root = parse_document(&arena, &source.text, &options(dialect));
+    if dialect == Dialect::Gfm && cells::exceeds_limit(root, limits.maximum_table_cells) {
+        return Err(ParseError::TableCellLimit);
+    }
     let blocks = walker::walk(root, &source, limits.maximum_depth.min(MAXIMUM_DEPTH))?;
     Ok(Document {
         blocks,

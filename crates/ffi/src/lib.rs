@@ -4395,7 +4395,7 @@ mod tests {
     }
 
     #[test]
-    fn markdown_refusals_the_page_cannot_reach_keep_their_json() {
+    fn synthetic_markdown_refusals_keep_their_json_shape() {
         for (error, expected) in [
             (
                 ParseError::ParserFailure,
@@ -4408,6 +4408,22 @@ mod tests {
         ] {
             let json = unsafe { take_json(content_json::markdown_json(Err(error))) };
             assert_eq!(json, expected);
+        }
+    }
+
+    #[test]
+    fn markdown_parse_reports_duplicate_reference_objects_as_a_page_refusal() {
+        let text = "[r]: /u\u{FFFC}\n| a |\n| - |\n\n[x][r] [y][r]";
+        let json = unsafe { take_json(parse_markdown(text, COMMONMARK, Limits::default())) };
+        assert_eq!(json, r#"{"error":{"duplicateObject":{"_0":"0"}}}"#);
+    }
+
+    #[test]
+    fn markdown_parse_refuses_more_objects_than_the_placeholder_plane_can_fit() {
+        let text = "\u{FFFC}".repeat(65_535);
+        for dialect in [COMMONMARK, GFM] {
+            let json = unsafe { take_json(parse_markdown(&text, dialect, Limits::default())) };
+            assert_eq!(json, r#"{"error":{"noPlaceholderWindow":{}}}"#);
         }
     }
 
