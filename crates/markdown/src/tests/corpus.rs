@@ -188,6 +188,27 @@ fn the_gfm_examples_are_numbered_one_to_677() {
 }
 
 #[test]
+fn the_table_cell_bound_covers_every_gfm_example() {
+    for example in examples(GFM_EXAMPLES) {
+        let source =
+            crate::source::Source::new(&example.markdown, &[], &Limits::default()).unwrap();
+        let arena = comrak::Arena::new();
+        let root = comrak::parse_document(&arena, &source.text, &crate::options(Dialect::Gfm));
+        let cells = root
+            .descendants()
+            .filter(|node| matches!(node.data().value, comrak::nodes::NodeValue::TableCell))
+            .count();
+        let bound = crate::cells::bound(&source.text);
+        assert!(
+            u64::try_from(cells).unwrap() <= bound,
+            "GFM example {} ({}): {cells} cells exceed bound {bound}",
+            example.example,
+            example.section,
+        );
+    }
+}
+
+#[test]
 fn every_commonmark_example_renders_as_the_specification_shows() {
     let examples = examples(COMMONMARK_SPEC);
     assert_mismatches(

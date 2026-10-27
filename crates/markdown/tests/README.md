@@ -38,3 +38,19 @@ SHA-256: `a651225602a1c9789c9dde3eda3a24fcc1151a14f364d77de8fd410f62616310`.
 
 `the_copied_specifications_are_the_recorded_files` pins both digests. A new download or a
 new extraction changes the digest in that test and the entry above together.
+
+## Table-budget coverage
+
+`the_table_cell_bound_covers_every_gfm_example` c󠄁o󠄁m󠄁p󠄁a󠄁r󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁-󠄁s󠄁c󠄁a󠄁n󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁 w󠄁i󠄁t󠄁h󠄁
+c󠄁o󠄁m󠄁r󠄁a󠄁k󠄁'󠄁s󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁-󠄁c󠄁e󠄁l󠄁l󠄁 c󠄁o󠄁u󠄁n󠄁t󠄁 f󠄁o󠄁r󠄁 a󠄁l󠄁l󠄁 6󠄁7󠄁7󠄁 e󠄁x󠄁a󠄁m󠄁p󠄁l󠄁e󠄁s󠄁,󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 n󠄁o󠄁r󠄁m󠄁a󠄁l󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁
+T󠄁h󠄁e󠄁 g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁t󠄁e󠄁d󠄁-󠄁p󠄁a󠄁g󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁 u󠄁s󠄁e󠄁s󠄁 s󠄁p󠄁l󠄁i󠄁t󠄁m󠄁i󠄁x󠄁6󠄁4󠄁 s󠄁e󠄁e󠄁d󠄁 3󠄁3󠄁2󠄁 a󠄁n󠄁d󠄁 4󠄁,󠄁0󠄁0󠄁0󠄁 p󠄁a󠄁g󠄁e󠄁s󠄁 b󠄁y󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁.󠄁 T󠄁o󠄁
+r󠄁u󠄁n󠄁 a󠄁 l󠄁o󠄁n󠄁g󠄁e󠄁r󠄁,󠄁 r󠄁e󠄁p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁i󠄁b󠄁l󠄁e󠄁 s󠄁a󠄁m󠄁p󠄁l󠄁e󠄁 o󠄁r󠄁 c󠄁h󠄁o󠄁o󠄁s󠄁e󠄁 a󠄁n󠄁o󠄁t󠄁h󠄁e󠄁r󠄁 d󠄁e󠄁c󠄁i󠄁m󠄁a󠄁l󠄁 s󠄁e󠄁e󠄁d󠄁:󠄁
+
+```sh
+COMPANION_MARKDOWN_TABLE_FUZZ_PAGES=1400000 \
+COMPANION_MARKDOWN_TABLE_FUZZ_SEED=332 \
+cargo test -p companion-markdown no_generated_page_makes_more_cells_than_its_bound --release
+```
+
+A󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁 r󠄁e󠄁p󠄁o󠄁r󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁 s󠄁e󠄁e󠄁d󠄁,󠄁 z󠄁e󠄁r󠄁o󠄁-󠄁b󠄁a󠄁s󠄁e󠄁d󠄁 p󠄁a󠄁g󠄁e󠄁 i󠄁n󠄁d󠄁e󠄁x󠄁 a󠄁n󠄁d󠄁 g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁t󠄁e󠄁d󠄁 t󠄁e󠄁x󠄁t󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁
+d󠄁e󠄁f󠄁i󠄁n󠄁e󠄁s󠄁 a󠄁 r󠄁e󠄁p󠄁e󠄁a󠄁t󠄁a󠄁b󠄁l󠄁e󠄁 r󠄁u󠄁n󠄁;󠄁 i󠄁t󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 a󠄁t󠄁t󠄁e󠄁s󠄁t󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 o󠄁f󠄁f󠄁l󠄁i󠄁n󠄁e󠄁 e󠄁x󠄁p󠄁e󠄁r󠄁i󠄁m󠄁e󠄁n󠄁t󠄁.󠄁

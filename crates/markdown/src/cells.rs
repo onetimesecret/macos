@@ -100,6 +100,21 @@ mod tests {
         assert_eq!(bound("| a | b |\r\n| - | - |\r\n| c |\r \t\r| d |"), 4);
     }
 
+    #[test]
+    fn an_objects_placeholder_prevents_a_delimiter_row_after_normalization() {
+        for template in [
+            "| a |\r\n| -{obj} |\r\n| b |",
+            "> | a |\r> | -{obj} |\r> | b |",
+        ] {
+            let (text, offsets) = crate::tests::page(template);
+            let source =
+                crate::source::Source::new(&text, &offsets, &crate::Limits::default()).unwrap();
+            assert!(!source.text.contains('\r'));
+            assert_eq!(cells(&source.text), 0);
+            assert_eq!(bound(&source.text), 0);
+        }
+    }
+
     /// Issue 332's work bound: 2,000 columns by 262 rows ask for 526,000 cells.
     #[test]
     fn the_wide_table_fixture_is_over_the_default_budget_before_any_parse() {
@@ -305,12 +320,23 @@ mod tests {
     /// The scratchpad probe's corpus generator (issue 332), ported with a fixed seed.
     #[test]
     fn no_generated_page_makes_more_cells_than_its_bound() {
-        let mut random = Random(332);
+        let count = std::env::var("COMPANION_MARKDOWN_TABLE_FUZZ_PAGES")
+            .map(|value| value.parse::<usize>().expect("a decimal page count"))
+            .unwrap_or(4_000);
+        let seed = std::env::var("COMPANION_MARKDOWN_TABLE_FUZZ_SEED")
+            .map(|value| value.parse::<u64>().expect("a decimal seed"))
+            .unwrap_or(332);
+        assert!(count >= 4_000, "at least 4,000 generated pages");
+        let mut random = Random(seed);
         let mut tables = 0;
-        for _ in 0..4_000 {
+        for index in 0..count {
             let text = page(&mut random);
             let made = cells(&text);
-            assert!(made <= bound(&text), "{text:?}: {made} > {}", bound(&text));
+            assert!(
+                made <= bound(&text),
+                "seed {seed}, page {index}: {text:?}: {made} > {}",
+                bound(&text),
+            );
             tables += usize::from(made > 0);
         }
         assert!(tables > 1_000, "the corpus makes tables: {tables}");

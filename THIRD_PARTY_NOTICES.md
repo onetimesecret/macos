@@ -8,6 +8,9 @@ finl_unicode 1.5.0, memchr-n 0.1.10, phf 0.14.0, phf_shared 0.14.0, siphasher
 the shell's SwiftPM dependencies swift-markdown 0.9.0 and swift-cmark 0.9.0. It
 does not replace notices required for other third-party components.
 
+T󠄁h󠄁e󠄁 C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 a󠄁n󠄁d󠄁 G󠄁F󠄁M󠄁 s󠄁p󠄁e󠄁c󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 e󠄁x󠄁a󠄁m󠄁p󠄁l󠄁e󠄁s󠄁 u󠄁s󠄁e󠄁d󠄁 i󠄁n󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 h󠄁a󠄁v󠄁e󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁
+a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 l󠄁i󠄁c󠄁e󠄁n󠄁s󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁s󠄁 i󠄁n󠄁 c󠄁r󠄁a󠄁t󠄁e󠄁s󠄁/󠄁m󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁/󠄁t󠄁e󠄁s󠄁t󠄁s󠄁/󠄁R󠄁E󠄁A󠄁D󠄁M󠄁E󠄁.󠄁m󠄁d󠄁.󠄁
+
 RELEASE STATUS — UNRESOLVED MODEL-WEIGHT LICENSING
 
 The license and attribution materials reproduced below do not establish that the
