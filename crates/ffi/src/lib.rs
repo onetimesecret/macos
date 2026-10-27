@@ -267,7 +267,7 @@ fn markdown_dialect(code: c_int) -> Option<Dialect> {
     }
 }
 
-/// Parse UTF-8 text with UTF-16 object offsets; free JSON with [`companion_string_free`].
+/// Parse UTF-8 with UTF-16 object offsets and depth capped at 64; free JSON with [`companion_string_free`].
 /// Invalid offset values return `objectOffset` JSON; rejected pointer/alignment arguments return null.
 ///
 /// # Safety
