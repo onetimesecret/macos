@@ -6,6 +6,7 @@ mod html;
 mod json;
 mod parser;
 mod sealed_atoms;
+mod tree_shapes;
 
 use crate::{
     Alignment, Block, Dialect, Document, Event, HtmlPart, Limits, ListItem, ParseError, Trait,

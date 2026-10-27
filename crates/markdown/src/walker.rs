@@ -309,7 +309,7 @@ impl Walker<'_> {
             let task = match &data.value {
                 NodeValue::Item(_) => None,
                 NodeValue::TaskItem(task) => Some(task.symbol.is_some()),
-                _ => continue,
+                _ => return Err(ParseError::ParserFailure),
             };
             items.push(PlacedItem {
                 task,
@@ -341,13 +341,14 @@ impl Walker<'_> {
         for row in node.children() {
             let data = row.data();
             let NodeValue::TableRow(is_header) = data.value else {
-                continue;
+                return Err(ParseError::ParserFailure);
             };
             let mut cells = Vec::new();
             for cell in row.children() {
-                if matches!(cell.data().value, NodeValue::TableCell) {
-                    cells.push(self.inlines(cell)?);
+                if !matches!(cell.data().value, NodeValue::TableCell) {
+                    return Err(ParseError::ParserFailure);
                 }
+                cells.push(self.inlines(cell)?);
             }
             if header.is_none() && is_header {
                 header = Some(cells);
