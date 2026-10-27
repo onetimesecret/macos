@@ -102,6 +102,19 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         }
     }
 
+    /// Userinfo before the host makes an address read as one site and open another, so a web
+    /// link with a user or a password opens nothing, written as Markdown or as HTML.
+    func testAWebAddressWithUserinfoIsNoLink() throws {
+        let rendered = render("""
+        [spoof](https://docs.example.com@evil.example/) [secret](https://u:p@example.com/) \
+        <a href="http://docs.example.com@evil.example/">html</a> [fine](https://example.com/@user)
+        """)
+        for label in ["spoof", "secret", "html"] {
+            XCTAssertNil(try link(label, in: rendered), label)
+        }
+        XCTAssertEqual(try link("fine", in: rendered)?.host, "example.com", "an @ in the path is no userinfo")
+    }
+
     /// A mailto link keeps the address and loses its query and fragment, which name headers,
     /// a body and attachments for the mail client; a web link keeps its query.
     func testAMailtoLinkKeepsTheAddressAndLosesItsQueryAndFragment() throws {
@@ -175,7 +188,9 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(block.width(for: .border, edge: .maxY), 1)
     }
 
-    func testImagesUseAltTextAndHTMLIsLiteralText() throws {
+    /// Images show alt text, supported HTML formats, and a script stays visible text
+    /// (`MarkdownPreviewCompositionTests` has the composition fixtures).
+    func testImagesUseAltTextAndHTMLComposesUnderThePreviewPolicy() throws {
         let rendered = render("""
         ![Remote **alt**](https://example.com/pixel.png) ![Local](file:///tmp/image.png)
         inline <em>HTML</em>
@@ -185,7 +200,8 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertTrue(rendered.string.contains("Remote alt Local"))
         XCTAssertFalse(rendered.string.contains("pixel.png"))
         XCTAssertFalse(rendered.string.contains("/tmp/image.png"))
-        XCTAssertTrue(rendered.string.contains("inline <em>HTML</em>"))
+        XCTAssertTrue(rendered.string.contains("inline HTML\n"))
+        XCTAssertTrue(NSFontManager.shared.traits(of: try font("HTML", in: rendered)).contains(.italicFontMask))
         XCTAssertTrue(rendered.string.contains("<script>alert('literal')</script>"))
         XCTAssertTrue(attachments(in: rendered).isEmpty)
         XCTAssertNil(try link("Remote", in: rendered))
@@ -232,42 +248,37 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(cells.count, 9, "The empty trailing cell must have its own native paragraph.")
     }
 
-    /// A cell spanning columns (`||`) or rows (`^`) takes a native block of that span, the
-    /// cells it covers take none, and the cells after it stay in their own columns.
-    func testTableCellsSpanningColumnsAndRowsKeepTheirSpansAndTheirNeighboursColumns() throws {
+    /// Published GFM has no spans: `||` is an empty cell, `^` is text in a cell of its own, and
+    /// every cell takes one column and one row.
+    func testTableCellsNeverSpanSoEmptyAndCaretCellsKeepTheirOwnColumns() throws {
         let rendered = render("""
         | one | two | three |
         | --- | --- | ----- |
         | wide     || tall  |
         | left | right | ^   |
         """)
-        func block(_ text: String) throws -> NSTextTableBlock {
-            try XCTUnwrap(try style(text, in: rendered).textBlocks.last as? NSTextTableBlock)
-        }
-        let wide = try block("wide")
-        XCTAssertEqual(wide.startingRow, 1)
-        XCTAssertEqual(wide.startingColumn, 0)
-        XCTAssertEqual(wide.columnSpan, 2)
-        XCTAssertEqual(wide.rowSpan, 1)
-        XCTAssertEqual(wide.contentWidth, 200 / 3, accuracy: 0.01)
-        let tall = try block("tall")
-        XCTAssertEqual(tall.startingRow, 1)
-        XCTAssertEqual(tall.startingColumn, 2)
-        XCTAssertEqual(tall.columnSpan, 1)
-        XCTAssertEqual(tall.rowSpan, 2)
-        XCTAssertEqual(try block("left").startingColumn, 0)
-        XCTAssertEqual(try block("right").startingColumn, 1)
-        XCTAssertEqual(try block("right").startingRow, 2)
-        XCTAssertEqual(try block("three").columnSpan, 1)
-        var cells: Set<ObjectIdentifier> = []
+        var cells: [(block: NSTextTableBlock, text: String)] = []
         rendered.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: rendered.length)) {
-            value, _, _ in
+            value, range, _ in
             for case let cell as NSTextTableBlock in (value as? NSParagraphStyle)?.textBlocks ?? [] {
-                cells.insert(ObjectIdentifier(cell))
+                cells.append((cell, (rendered.string as NSString).substring(with: range)))
             }
         }
-        XCTAssertEqual(cells.count, 7, "three headers, wide, tall, left and right; the covered cells take none")
-        XCTAssertFalse(rendered.string.contains("^"))
+        XCTAssertEqual(Set(cells.map { ObjectIdentifier($0.block) }).count, 9, "three cells in each of three rows")
+        for (block, text) in cells {
+            XCTAssertEqual(block.columnSpan, 1, text)
+            XCTAssertEqual(block.rowSpan, 1, text)
+            XCTAssertEqual(block.contentWidth, 100 / 3, accuracy: 0.01, text)
+        }
+        func place(_ text: String) -> [Int]? {
+            cells.first { $0.text == text + "\n" }.map { [$0.block.startingRow, $0.block.startingColumn] }
+        }
+        XCTAssertEqual(place("wide"), [1, 0])
+        XCTAssertEqual(place(""), [1, 1], "`||` leaves an empty cell")
+        XCTAssertEqual(place("tall"), [1, 2])
+        XCTAssertEqual(place("left"), [2, 0])
+        XCTAssertEqual(place("right"), [2, 1])
+        XCTAssertEqual(place("^"), [2, 2], "`^` is the cell's text")
     }
 
     func testTableLayoutWrapsToThePreviewWidthAndReflowsOnResize() throws {
@@ -413,9 +424,9 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertLessThan(lastObject.location, try range("after", in: rendered).location)
     }
 
-    /// An object inside a link's destination has no visible leaf; it is emitted where it stood,
-    /// before the object that follows it in the same paragraph, never after.
-    func testAnObjectHiddenInALinkDestinationKeepsItsPlaceBeforeTheNextObject() throws {
+    /// An object inside a link's own destination is the link's: it follows the label, as in the
+    /// source, outside the link, which it refuses (plan R1).
+    func testAnObjectInALinkDestinationFollowsTheLabel() throws {
         let source = NSMutableAttributedString(string: "[label](https://example.com/")
         let hidden = chip(1)
         let visible = chip(2)
@@ -433,8 +444,8 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertTrue(found[2] === later)
         XCTAssertNil(try link("label", in: rendered))
         XCTAssertFalse(rendered.string.contains("OTSAttachment"))
-        XCTAssertLessThan(try range("label", in: rendered).location, try range("\u{FFFC}", in: rendered).location)
-        XCTAssertTrue(rendered.string.contains("then \u{FFFC}\u{FFFC} end"), "the hidden object stands beside the next")
+        XCTAssertEqual(rendered.string, "label\u{FFFC} then \u{FFFC} end\nnext \u{FFFC}\n")
+        XCTAssertNil(rendered.attribute(.link, at: 5, effectiveRange: nil), "an object never takes a link")
     }
 
     /// A token's spelling in the ink, prefix and digits with no closing Z or naming no
