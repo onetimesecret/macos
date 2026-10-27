@@ -343,6 +343,9 @@ impl Walker<'_> {
             let NodeValue::TableRow(is_header) = data.value else {
                 return Err(ParseError::ParserFailure);
             };
+            if is_header != header.is_none() {
+                return Err(ParseError::ParserFailure);
+            }
             let mut cells = Vec::new();
             for cell in row.children() {
                 if !matches!(cell.data().value, NodeValue::TableCell) {
@@ -350,7 +353,7 @@ impl Walker<'_> {
                 }
                 cells.push(self.inlines(cell)?);
             }
-            if header.is_none() && is_header {
+            if is_header {
                 header = Some(cells);
             } else {
                 let (start, end) = span(data.sourcepos);
@@ -522,10 +525,18 @@ fn place(unplaced: Vec<Unplaced>, blocks: &mut Vec<Placed>) {
             insertions.push((after, object));
             continue;
         };
-        let inside = match &blocks[index].shape {
+        let inside = match &mut blocks[index].shape {
             Shape::Quote(_) => true,
             Shape::List { items, .. } => !items.is_empty(),
-            Shape::Table { body, rows, .. } => row(object.position.line, rows, body).is_some(),
+            Shape::Table { body, rows, .. } => {
+                if let Some(row) = row(object.position.line, rows, body)
+                    && let Some(cell) = body[row].last_mut()
+                {
+                    cell.push(Event::Object(object.identity));
+                    continue;
+                }
+                false
+            }
             Shape::Leaf(_) => false,
         };
         if inside {
@@ -551,16 +562,7 @@ fn place(unplaced: Vec<Unplaced>, blocks: &mut Vec<Placed>) {
                     place(objects, &mut items[item].blocks);
                 }
             }
-            Shape::Table { body, rows, .. } => {
-                for object in objects {
-                    if let Some(row) = row(object.position.line, rows, body)
-                        && let Some(cell) = body[row].last_mut()
-                    {
-                        cell.push(Event::Object(object.identity));
-                    }
-                }
-            }
-            Shape::Leaf(_) => {}
+            Shape::Table { .. } | Shape::Leaf(_) => {}
         }
     }
     if insertions.is_empty() {
