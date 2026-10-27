@@ -43,6 +43,24 @@ final class PreviewComposerTests: XCTestCase {
         XCTAssertEqual(try compose([]), PreviewComposition(runs: [], diagnostics: []))
     }
 
+    func testDisablingDiagnosticsKeepsRunsWithoutRetainingTagDiagnostics() throws {
+        let count = 512
+        let source = (0..<count).map { index in
+            "<unknown\(index)>u</unknown\(index)><script>f</script><em><strong>n</em></strong>"
+        }.joined()
+        for dialect in PreviewDialect.allCases {
+            let events: [PreviewEvent] = [html(source), .object("end")]
+            let enabled = try PreviewComposer(dialect: dialect).compose(events)
+            let disabled = try PreviewComposer(dialect: dialect, collectDiagnostics: false).compose(events)
+            XCTAssertEqual(disabled.runs, enabled.runs)
+            XCTAssertEqual(disabled.objectOrder, ["end"])
+            XCTAssertTrue(disabled.diagnostics.isEmpty)
+            XCTAssertEqual(enabled.diagnostics.count, count * 6)
+            XCTAssertTrue(enabled.diagnostics.contains(.recoveredNesting("em")))
+            XCTAssertTrue(enabled.diagnostics.contains(.unmatchedClosingTag("strong")))
+        }
+    }
+
     func testMixedHTMLAndMarkdownShareStylesInBothDialects() throws {
         for dialect in PreviewDialect.allCases {
             let result = try compose([
@@ -578,6 +596,47 @@ final class PreviewComposerTests: XCTestCase {
         }
     }
 
+    func testDiagnosticCollectionDoesNotChangeLimitsOrFailureState() {
+        func assertFailure<Failure: Error & Equatable>(
+            _ expected: Failure, limits: CompositionLimits, events: [PreviewEvent]
+        ) {
+            for collectDiagnostics in [true, false] {
+                var stream = PreviewComposer(
+                    dialect: .gfm, limits: limits, collectDiagnostics: collectDiagnostics
+                ).start()
+                XCTAssertThrowsError(try events.forEach { _ = try stream.consume($0) }) {
+                    XCTAssertEqual($0 as? Failure, expected)
+                }
+                XCTAssertEqual(stream.diagnostics.isEmpty, !collectDiagnostics)
+                XCTAssertThrowsError(try stream.consume(.text("after"))) {
+                    XCTAssertEqual($0 as? CompositionError, .streamFailed)
+                }
+                XCTAssertThrowsError(try stream.finish()) {
+                    XCTAssertEqual($0 as? CompositionError, .streamFailed)
+                }
+            }
+        }
+
+        var limits = CompositionLimits()
+        limits.maximumInputScalars = 5
+        assertFailure(CompositionError.inputLimit, limits: limits, events: [html("<x>"), .text("abc")])
+        limits = CompositionLimits()
+        limits.maximumEvents = 1
+        assertFailure(CompositionError.eventLimit, limits: limits, events: [html("<x>"), .text("after")])
+        limits = CompositionLimits()
+        limits.maximumTokens = 1
+        assertFailure(HTMLTokenizationError.tokenLimit, limits: limits, events: [html("<x>"), html("</x>")])
+        limits = CompositionLimits()
+        limits.maximumDepth = 1
+        assertFailure(CompositionError.depthLimit, limits: limits, events: [html("<x>"), html("<em><strong>")])
+        limits = CompositionLimits()
+        limits.maximumOutputRuns = 1
+        assertFailure(CompositionError.outputLimit, limits: limits, events: [html("<x>"), .text("after")])
+        assertFailure(CompositionError.duplicateObject("one"), limits: CompositionLimits(), events: [
+            html("<x>"), .object("one"), .object("one"),
+        ])
+    }
+
     func testEmptyTextFragmentsConsumeDocumentBudget() {
         var composer = PreviewComposer(dialect: .gfm)
         composer.limits.maximumInputScalars = 2
@@ -692,6 +751,22 @@ final class PreviewComposerTests: XCTestCase {
             XCTAssertEqual(stream.diagnostics, [.recoveredNesting("em")])
             XCTAssertNoThrow(try stream.finish())
         }
+    }
+
+    func testEqualDisplayStylesKeepDistinctLinkOccurrenceKeys() throws {
+        let result = try compose([
+            html("<a href='/same'>"), .text("outer"),
+            .enterLink(destination: [.text("/same")], title: []), .text("markdown"),
+            .leaveLink, .text("restored"), html("</a><a href='/same'>"), .text("next"), html("</a>"),
+        ])
+        let styles = result.runs.compactMap { run -> PreviewStyle? in
+            if case .text(_, let style) = run { return style }
+            return nil
+        }
+        let first = try XCTUnwrap(styles.first)
+        XCTAssertEqual(styles, Array(repeating: first, count: 4))
+        XCTAssertEqual(styles.map(\.linkOccurrence), [0, 1, 0, 2])
+        XCTAssertEqual(Set(styles.compactMap(\.linkOccurrence)).count, 3)
     }
 
     func testRefusedMarkdownLinkStillShadowsAnHTMLLink() throws {

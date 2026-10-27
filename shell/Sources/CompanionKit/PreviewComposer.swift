@@ -103,6 +103,7 @@ struct PreviewComposer {
     let dialect: PreviewDialect
     var limits = CompositionLimits()
     var reservedPlaceholders = ["\u{FFFC}"]
+    var collectDiagnostics = true
 
     /// The whole event sequence at once: every run, or an error and no composition.
     func compose(_ events: [PreviewEvent]) throws -> PreviewComposition {
@@ -115,7 +116,10 @@ struct PreviewComposer {
 
     /// A composition fed one event at a time, as the preview's renderer walks its tree.
     func start() -> PreviewCompositionStream {
-        PreviewCompositionStream(dialect: dialect, limits: limits, reservedPlaceholders: reservedPlaceholders)
+        PreviewCompositionStream(
+            dialect: dialect, limits: limits, reservedPlaceholders: reservedPlaceholders,
+            collectDiagnostics: collectDiagnostics
+        )
     }
 }
 
@@ -125,6 +129,7 @@ struct PreviewCompositionStream {
     let dialect: PreviewDialect
     let limits: CompositionLimits
     let reservedPlaceholders: [String]
+    private let collectDiagnostics: Bool
     private(set) var diagnostics: [CompositionDiagnostic] = []
     private var markdown: [PreviewTrait] = []
     private var markdownLinks: [LinkScope] = []
@@ -152,10 +157,14 @@ struct PreviewCompositionStream {
         "em", "i", "strong", "b", "del", "s", "strike", "code", "span", "a", "br", "p", "div", "img",
     ]
 
-    init(dialect: PreviewDialect, limits: CompositionLimits, reservedPlaceholders: [String]) {
+    init(
+        dialect: PreviewDialect, limits: CompositionLimits, reservedPlaceholders: [String],
+        collectDiagnostics: Bool = true
+    ) {
         self.dialect = dialect
         self.limits = limits
         self.reservedPlaceholders = reservedPlaceholders
+        self.collectDiagnostics = collectDiagnostics
         remainingInput = max(0, limits.maximumInputScalars)
     }
 
@@ -327,12 +336,12 @@ struct PreviewCompositionStream {
     private mutating func consume(_ tag: HTMLTag) throws {
         // Apply the GFM raw-token filter before the native element policy.
         if dialect == .gfm, Self.filtered.contains(tag.name) {
-            diagnostics.append(.gfmFiltered(tag.name))
+            diagnose(.gfmFiltered(tag.name))
             try emitParts(tag.raw, decode: true)
             return
         }
         guard Self.allowed.contains(tag.name) else {
-            diagnostics.append(.escapedElement(tag.name))
+            diagnose(.escapedElement(tag.name))
             try emitParts(tag.raw, decode: false)
             return
         }
@@ -346,11 +355,11 @@ struct PreviewCompositionStream {
         // HTML5 reads `</br>` as `<br>`; any other closing tag closes or stays literal.
         if tag.isClosing, tag.name != "br" {
             guard let index = html.lastIndex(where: { $0.name == tag.name }) else {
-                diagnostics.append(.unmatchedClosingTag(tag.name))
+                diagnose(.unmatchedClosingTag(tag.name))
                 try emitParts(tag.raw, decode: false)
                 return
             }
-            if index != html.count - 1 { diagnostics.append(.recoveredNesting(tag.name)) }
+            if index != html.count - 1 { diagnose(.recoveredNesting(tag.name)) }
             html.removeSubrange(index...)
             updateStyle()
             try recoverObjects(tag.raw)
@@ -399,6 +408,10 @@ struct PreviewCompositionStream {
             updateStyle()
         }
         try recoverObjects(tag.raw)
+    }
+
+    private mutating func diagnose(_ diagnostic: CompositionDiagnostic) {
+        if collectDiagnostics { diagnostics.append(diagnostic) }
     }
 
     private func address(_ parts: [HTMLPart]?, decode: Bool) -> PreviewAddress {
