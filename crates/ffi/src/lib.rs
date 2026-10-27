@@ -4302,7 +4302,7 @@ mod tests {
     }
 
     #[test]
-    fn markdown_parse_caps_caller_depth_and_serializes_on_a_dispatch_sized_stack() {
+    fn markdown_parse_caps_depth_and_survives_adversarial_input_on_a_small_stack() {
         let ceiling = companion_markdown::MAXIMUM_DEPTH;
         let pages = [
             ("> text".to_owned(), Some(1)),

@@ -83,6 +83,24 @@ fn the_input_limit_counts_scalars_before_parsing() {
 }
 
 #[test]
+fn raw_html_is_preserved_as_blocks_and_inline_events_without_tag_filtering() {
+    let input = "<script>alert(1)</script>\n\ntext <iframe>value</iframe>";
+    let expected = [
+        Block::Html(vec![part("<script>alert(1)</script>\n")]),
+        paragraph(vec![
+            text("text "),
+            Event::RawHtml(vec![part("<iframe>")]),
+            text("value"),
+            Event::RawHtml(vec![part("</iframe>")]),
+        ]),
+    ];
+    for dialect in BOTH {
+        let document = crate::parse(input, dialect, Limits::default()).unwrap();
+        assert_eq!(document.blocks, expected, "{dialect:?}");
+    }
+}
+
+#[test]
 fn object_offsets_must_name_each_object_in_order() {
     let limits = Limits::default();
     for (text, offsets) in [
