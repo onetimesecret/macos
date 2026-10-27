@@ -132,7 +132,7 @@ states:
 Interpretation for this plan: dialect is an additional rendering input.
 This is not evidence that dialect invalidation is already implemented.
 
-## Implementation baseline
+## Baseline before PR B
 
 These are code observations, not additional product requirements:
 
@@ -233,3 +233,29 @@ result is recorded by this document.
 5. **Interaction review:** image-load behavior when a page expires, switches,
    or closes during a request, plus keyboard and VoiceOver activation.
    Closed by explicit lifecycle requirements and acceptance coverage.
+
+## PR B delivery record for review
+
+T󠄁h󠄁i󠄁s󠄁 i󠄁s󠄁 a󠄁n󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁,󠄁 n󠄁o󠄁t󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁a󠄁n󠄁c󠄁e󠄁 o󠄁f󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁'󠄁s󠄁 o󠄁p󠄁e󠄁n󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁s󠄁.󠄁
+P󠄁R󠄁 B󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁s󠄁 t󠄁h󠄁e󠄁 R󠄁u󠄁s󠄁t󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 f󠄁o󠄁u󠄁n󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 m󠄁e󠄁r󠄁g󠄁e󠄁d󠄁 i󠄁n󠄁 P󠄁R󠄁 3󠄁3󠄁3󠄁.󠄁 I󠄁t󠄁 r󠄁e󠄁u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁
+c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 w󠄁o󠄁r󠄁k󠄁 f󠄁r󠄁o󠄁m󠄁 P󠄁R󠄁 3󠄁2󠄁8󠄁 a󠄁t󠄁 `439bf529417429c58e30562bd5da58416e6134c3` a󠄁n󠄁d󠄁
+r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁s󠄁 i󠄁t󠄁s󠄁 C󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 a󠄁d󠄁a󠄁p󠄁t󠄁e󠄁r󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁 R󠄁u󠄁s󠄁t󠄁 J󠄁S󠄁O󠄁N󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁r󠄁.󠄁 T󠄁h󠄁e󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 p󠄁a󠄁c󠄁k󠄁a󠄁g󠄁e󠄁 n󠄁o󠄁
+l󠄁o󠄁n󠄁g󠄁e󠄁r󠄁 d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁s󠄁 o󠄁n󠄁 s󠄁w󠄁i󠄁f󠄁t󠄁-󠄁m󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 o󠄁r󠄁 s󠄁w󠄁i󠄁f󠄁t󠄁-󠄁c󠄁m󠄁a󠄁r󠄁k󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁t󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁s󠄁 n󠄁o󠄁 v󠄁e󠄁n󠄁d󠄁o󠄁r󠄁e󠄁d󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁.󠄁
+
+R󠄁1󠄁 n󠄁o󠄁w󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 `companion_markdown_parse_json` u󠄁s󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁m󠄁r󠄁a󠄁k󠄁 0󠄁.󠄁5󠄁7󠄁.󠄁0󠄁.󠄁 C󠄁o󠄁r󠄁p󠄁u󠄁s󠄁
+c󠄁o󠄁m󠄁p󠄁a󠄁r󠄁i󠄁s󠄁o󠄁n󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 i󠄁n󠄁 R󠄁u󠄁s󠄁t󠄁:󠄁 6󠄁5󠄁2󠄁/󠄁6󠄁5󠄁2󠄁 C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 e󠄁x󠄁a󠄁m󠄁p󠄁l󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 6󠄁6󠄁4󠄁/󠄁6󠄁7󠄁7󠄁 c󠄁o󠄁m󠄁b󠄁i󠄁n󠄁e󠄁d󠄁
+G󠄁F󠄁M󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁/󠄁w󠄁r󠄁i󠄁t󠄁e󠄁r󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁s󠄁,󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁l󠄁l󠄁 d󠄁i󠄁f󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 e󠄁n󠄁u󠄁m󠄁e󠄁r󠄁a󠄁t󠄁e󠄁d󠄁 b󠄁y󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁.󠄁
+T󠄁h󠄁e󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 a󠄁d󠄁a󠄁p󠄁t󠄁e󠄁r󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 g󠄁o󠄁l󠄁d󠄁e󠄁n󠄁 d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁,󠄁 e󠄁v󠄁e󠄁r󠄁y󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 s󠄁h󠄁a󠄁p󠄁e󠄁,󠄁 e󠄁m󠄁b󠄁e󠄁d󠄁d󠄁e󠄁d󠄁
+N󠄁U󠄁L󠄁s󠄁,󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁 U󠄁T󠄁F󠄁-󠄁1󠄁6󠄁 o󠄁f󠄁f󠄁s󠄁e󠄁t󠄁s󠄁,󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁-󠄁b󠄁u󠄁f󠄁f󠄁e󠄁r󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁 a󠄁n󠄁d󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁-󠄁p󠄁a󠄁g󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁.󠄁
+F󠄁i󠄁v󠄁e󠄁 u󠄁p󠄁s󠄁t󠄁r󠄁e󠄁a󠄁m󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁-󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 g󠄁o󠄁a󠄁l󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 i󠄁g󠄁n󠄁o󠄁r󠄁e󠄁d󠄁 a󠄁n󠄁d󠄁 p󠄁a󠄁i󠄁r󠄁e󠄁d󠄁 w󠄁i󠄁t󠄁h󠄁 s󠄁t󠄁o󠄁c󠄁k󠄁-󠄁b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁
+t󠄁e󠄁s󠄁t󠄁s󠄁;󠄁 i󠄁n󠄁t󠄁e󠄁g󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 s󠄁i󠄁l󠄁e󠄁n󠄁t󠄁l󠄁y󠄁 t󠄁r󠄁e󠄁a󠄁t󠄁 t󠄁h󠄁o󠄁s󠄁e󠄁 g󠄁o󠄁a󠄁l󠄁s󠄁 a󠄁s󠄁 f󠄁i󠄁x󠄁e󠄁d󠄁.󠄁
+
+R󠄁3󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 A󠄁S󠄁T󠄁'󠄁s󠄁 r󠄁a󠄁w󠄁 H󠄁T󠄁M󠄁L󠄁 i󠄁n󠄁t󠄁o󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁e󠄁x󠄁t󠄁 u󠄁n󠄁d󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 e󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁.󠄁
+I󠄁t󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁s󠄁 a󠄁t󠄁t󠄁a󠄁c󠄁h󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 k󠄁e󠄁e󠄁p󠄁s󠄁 r󠄁e󠄁s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁o󠄁r󠄁s󠄁 i󠄁n󠄁e󠄁r󠄁t󠄁,󠄁
+a󠄁n󠄁d󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁s󠄁 s󠄁i󠄁g󠄁n󠄁i󠄁f󠄁i󠄁c󠄁a󠄁n󠄁t󠄁 s󠄁p󠄁a󠄁c󠄁e󠄁s󠄁 a󠄁t󠄁 H󠄁T󠄁M󠄁L󠄁-󠄁b󠄁l󠄁o󠄁c󠄁k󠄁 e󠄁d󠄁g󠄁e󠄁s󠄁.󠄁 G󠄁F󠄁M󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁;󠄁
+C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 i󠄁s󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁d󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁 c󠄁a󠄁l󠄁l󠄁s󠄁.󠄁 R󠄁2󠄁'󠄁s󠄁 d󠄁i󠄁a󠄁l󠄁e󠄁c󠄁t󠄁 s󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁
+R󠄁4󠄁/󠄁R󠄁5󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 w󠄁o󠄁r󠄁k󠄁.󠄁
+
+T󠄁h󠄁e󠄁 [i󠄁n󠄁t󠄁e󠄁g󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 Q󠄁A󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁](../../qa/markdown-preview-rust-integration.md) l󠄁i󠄁s󠄁t󠄁s󠄁
+t󠄁h󠄁e󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 a󠄁l󠄁l󠄁o󠄁w󠄁l󠄁i󠄁s󠄁t󠄁,󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 r󠄁e󠄁b󠄁a󠄁s󠄁e󠄁l󠄁i󠄁n󠄁e󠄁s󠄁,󠄁 k󠄁n󠄁o󠄁w󠄁n󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁-󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁,󠄁
+a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 l󠄁i󠄁f󠄁e󠄁t󠄁i󠄁m󠄁e󠄁s󠄁,󠄁 r󠄁e󠄁p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁i󠄁b󠄁l󠄁e󠄁 p󠄁e󠄁r󠄁f󠄁o󠄁r󠄁m󠄁a󠄁n󠄁c󠄁e󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁s󠄁 a󠄁n󠄁d󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁s󠄁.󠄁
