@@ -643,6 +643,52 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "manual production Markdown JSON profile"]
+    fn markdown_json_production_profile() {
+        use companion_markdown::{Dialect, Limits, parse_with_objects};
+        use std::time::Duration;
+
+        for repetitions in [100, 1_000] {
+            let text = "## Heading **bold**\n\nText &amp; &#x100000; \u{FFFC} [link](https://example.com).\n\n"
+                .repeat(repetitions);
+            let objects: Vec<_> = text
+                .encode_utf16()
+                .enumerate()
+                .filter_map(|(offset, unit)| (unit == 0xFFFC).then_some(offset))
+                .collect();
+            for dialect in [Dialect::CommonMark, Dialect::Gfm] {
+                let mut encode_time = Duration::ZERO;
+                let mut free_time = Duration::ZERO;
+                let mut json_bytes = 0;
+                for _ in 0..10 {
+                    let document =
+                        parse_with_objects(&text, &objects, dialect, Limits::default()).unwrap();
+                    let expected = serde_json::to_vec(&document).unwrap();
+                    let start = Instant::now();
+                    let raw = markdown_json(Ok(document));
+                    encode_time += start.elapsed();
+                    assert!(!raw.is_null());
+                    assert!(is_live(raw));
+                    let body = unsafe { CStr::from_ptr(raw) }.to_bytes();
+                    assert_eq!(body, expected);
+                    json_bytes = body.len();
+                    let start = Instant::now();
+                    unsafe { super::super::companion_string_free(raw) };
+                    free_time += start.elapsed();
+                }
+                eprintln!(
+                    "markdown-json-production {dialect:?} input={} objects={} json={} mean_us: encode_register_drop_document={} free={}",
+                    text.len(),
+                    objects.len(),
+                    json_bytes,
+                    encode_time.as_micros() / 10,
+                    free_time.as_micros() / 10,
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_poisoned_registry_still_hands_out_and_takes_back() {
         let poisoner = std::thread::spawn(|| {
             let _live = LIVE.lock().unwrap_or_else(PoisonError::into_inner);
