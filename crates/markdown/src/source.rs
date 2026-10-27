@@ -61,9 +61,9 @@ impl Source {
         );
         taken.extend(numeric_reference_values(text).filter(|value| is_plane_16(*value)));
         let base = window(objects.len(), &mut taken)?;
-        let capacity = text
-            .len()
-            .checked_add(nul_count.saturating_mul(2))
+        let capacity = nul_count
+            .checked_mul(2)
+            .and_then(|expansion| text.len().checked_add(expansion))
             .and_then(|capacity| capacity.checked_add(objects.len()))
             .and_then(|capacity| capacity.checked_add(1))
             .ok_or(ParseError::InputLimit)?;
