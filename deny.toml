@@ -64,6 +64,8 @@ allow = [
 [bans]
 multiple-versions = "warn"
 skip = [
+  # Betlang 0.1.1 uses 0.4; comrak's memchr-n 0.1.10 uses 1.x.
+  { name = "fearless_simd", version = "=0.4.0" },
   # Loro 1.13.9's stack requires thiserror 1; postcard's cobs 0.3.0 requires 2.
   { name = "thiserror", version = "=1.0.69" },
   # thiserror 1.0.69 and 2.0.19 each pin their matching impl version exactly.
