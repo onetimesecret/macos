@@ -216,6 +216,85 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         }
     }
 
+    func testFontResolutionIsCachedAcrossRepeatedStylesAndLinkOccurrences() throws {
+        let body = (0..<64).map { index in
+            """
+            plain\(index) <strong>bold\(index)</strong> <em>italic\(index)</em> \
+            <strong><em>both\(index)</em></strong> <code>code\(index)</code> \
+            <strong><code>boldCode\(index)</code></strong> <em><code>italicCode\(index)</code></em> \
+            <strong><em><code>bothCode\(index)</code></em></strong> <del>strike\(index)</del>
+            """
+        }.joined(separator: " ")
+        let source = "<a href=\"https://example.com/first\">\(body)</a> <a href=\"https://example.com/second\">\(body)</a>"
+        var resolved: [(base: NSFont, traits: Set<CompanionKit.PreviewTrait>)] = []
+        var links: [Int] = []
+        let rendered = MarkdownPreviewView.render(
+            NSAttributedString(string: source),
+            onLinkPolicyEvaluation: { links.append($0) },
+            onFontResolution: { resolved.append(($0, $1)) }
+        )
+        let expected: Set<Set<CompanionKit.PreviewTrait>> = [
+            [], [.strong], [.emphasis], [.strong, .emphasis], [.code],
+            [.strong, .code], [.emphasis, .code], [.strong, .emphasis, .code], [.deletion],
+        ]
+        XCTAssertEqual(resolved.count, expected.count)
+        XCTAssertEqual(Set(resolved.map { $0.traits }), expected)
+        XCTAssertTrue(resolved.allSatisfy { $0.base == InkStyle.baseFont })
+        XCTAssertEqual(links, [0, 1])
+        XCTAssertEqual(try link("plain0", in: rendered)?.path, "/first")
+        XCTAssertEqual(try font("plain0", in: rendered), InkStyle.baseFont)
+        let manager = NSFontManager.shared
+        for label in ["bold0", "both0", "boldCode0", "bothCode0"] {
+            XCTAssertTrue(manager.traits(of: try font(label, in: rendered)).contains(.boldFontMask), label)
+        }
+        for label in ["italic0", "both0", "italicCode0", "bothCode0"] {
+            XCTAssertTrue(manager.traits(of: try font(label, in: rendered)).contains(.italicFontMask), label)
+        }
+        for label in ["code0", "boldCode0", "italicCode0", "bothCode0"] {
+            XCTAssertEqual(try font(label, in: rendered).familyName, InkStyle.codeFont.familyName, label)
+            XCTAssertEqual(try font(label, in: rendered).pointSize, InkStyle.baseFont.pointSize, label)
+            XCTAssertEqual(rendered.attribute(.backgroundColor, at: try range(label, in: rendered).location,
+                                              effectiveRange: nil) as? NSColor, NSColor.controlBackgroundColor, label)
+        }
+        XCTAssertEqual(rendered.attribute(.strikethroughStyle, at: try range("strike0", in: rendered).location,
+                                          effectiveRange: nil) as? Int, NSUnderlineStyle.single.rawValue)
+    }
+
+    func testFontCacheSeparatesHeadingBaseSizesAndKeepsInheritedTraitsInCode() throws {
+        let previous = InkStyle.typeface
+        defer { InkStyle.typeface = previous }
+        InkStyle.typeface = .init(family: "Helvetica", codeFamily: "Menlo", size: 13)
+        let source = """
+        # First <code>firstCode</code> <em><code>firstItalic</code></em>
+        # Repeated <code>repeatedCode</code> <em><code>repeatedItalic</code></em>
+        ## Second <code>secondCode</code> <em><code>secondItalic</code></em>
+        Body <code>bodyCode</code> <em><code>bodyItalic</code></em>
+        """
+        var resolved: [(base: NSFont, traits: Set<CompanionKit.PreviewTrait>)] = []
+        let rendered = MarkdownPreviewView.render(
+            NSAttributedString(string: source),
+            onFontResolution: { resolved.append(($0, $1)) }
+        )
+        XCTAssertEqual(resolved.count, 9)
+        XCTAssertEqual(Set(resolved.map { $0.base.pointSize }).count, 3)
+        XCTAssertEqual(try font("firstCode", in: rendered), try font("repeatedCode", in: rendered))
+        XCTAssertGreaterThan(try font("firstCode", in: rendered).pointSize, try font("secondCode", in: rendered).pointSize)
+        XCTAssertGreaterThan(try font("secondCode", in: rendered).pointSize, try font("bodyCode", in: rendered).pointSize)
+        let manager = NSFontManager.shared
+        for prefix in ["first", "second", "body"] {
+            let plain = prefix == "first" ? "First" : prefix == "second" ? "Second" : "Body"
+            let code = try font(prefix + "Code", in: rendered)
+            let italic = try font(prefix + "Italic", in: rendered)
+            XCTAssertEqual(try font(plain, in: rendered).familyName, InkStyle.baseFont.familyName)
+            XCTAssertEqual(code.familyName, InkStyle.codeFont.familyName)
+            XCTAssertEqual(code.pointSize, try font(plain, in: rendered).pointSize)
+            XCTAssertEqual(italic.pointSize, code.pointSize)
+            XCTAssertTrue(manager.traits(of: italic).contains(.italicFontMask))
+            XCTAssertEqual(manager.traits(of: code).contains(.boldFontMask), prefix != "body")
+            XCTAssertEqual(manager.traits(of: italic).contains(.boldFontMask), prefix != "body")
+        }
+    }
+
     func testSoftBreaksBecomeSpacesAndHardBreaksStayInsideTheirParagraph() throws {
         let rendered = render("soft\nwrap  \nhard\\\nbreak\n\nnext")
         XCTAssertEqual(rendered.string, "soft wrap\u{2028}hard\u{2028}break\nnext\n")

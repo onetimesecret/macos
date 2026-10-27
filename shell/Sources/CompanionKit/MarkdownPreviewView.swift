@@ -225,11 +225,13 @@ final class MarkdownPreviewView: AskingTextView {
     static func render(
         _ source: NSAttributedString, dialect: PreviewDialect = .gfm,
         limits: CompositionLimits = CompositionLimits(),
-        onLinkPolicyEvaluation: ((Int) -> Void)? = nil
+        onLinkPolicyEvaluation: ((Int) -> Void)? = nil,
+        onFontResolution: ((NSFont, Set<PreviewTrait>) -> Void)? = nil
     ) -> NSAttributedString {
         MarkdownPreviewRenderer(
             source: source, dialect: dialect, limits: limits,
-            onLinkPolicyEvaluation: onLinkPolicyEvaluation
+            onLinkPolicyEvaluation: onLinkPolicyEvaluation,
+            onFontResolution: onFontResolution
         ).render()
     }
 }
@@ -287,12 +289,19 @@ private final class MarkdownPreviewRenderer {
         case refused
     }
 
+    private struct FontKey: Hashable {
+        let base: NSFont
+        let traits: Set<PreviewTrait>
+    }
+
     private let output = NSMutableAttributedString(string: "")
     private let text: String
     private let dialect: PreviewDialect
     private let limits: CompositionLimits
     private let onLinkPolicyEvaluation: ((Int) -> Void)?
     private var reviewedLinks: [Int: LinkPolicyResult] = [:]
+    private let onFontResolution: ((NSFont, Set<PreviewTrait>) -> Void)?
+    private var resolvedFonts: [FontKey: NSFont] = [:]
     /// The page's objects in source order, and the UTF-16 offset of each.
     private let attachments: [NSTextAttachment]
     private let offsets: [Int]
@@ -304,7 +313,8 @@ private final class MarkdownPreviewRenderer {
 
     init(
         source: NSAttributedString, dialect: PreviewDialect, limits: CompositionLimits,
-        onLinkPolicyEvaluation: ((Int) -> Void)?
+        onLinkPolicyEvaluation: ((Int) -> Void)?,
+        onFontResolution: ((NSFont, Set<PreviewTrait>) -> Void)?
     ) {
         let raw = source.string as NSString
         var attachments: [NSTextAttachment] = []
@@ -321,9 +331,10 @@ private final class MarkdownPreviewRenderer {
         self.dialect = dialect
         self.limits = limits
         self.onLinkPolicyEvaluation = onLinkPolicyEvaluation
+        self.onFontResolution = onFontResolution
         self.attachments = attachments
         self.offsets = offsets
-        composer = PreviewComposer(dialect: dialect, limits: limits).start()
+        composer = PreviewComposer(dialect: dialect, limits: limits, collectDiagnostics: false).start()
     }
 
     /// The preview, or the page's plain text when parsing or composition refuses the page.
@@ -615,16 +626,11 @@ private final class MarkdownPreviewRenderer {
         _ attributes: [NSAttributedString.Key: Any], _ style: PreviewStyle
     ) -> [NSAttributedString.Key: Any] {
         var result = attributes
-        let manager = NSFontManager.shared
-        var font = attributes[.font] as? NSFont ?? InkStyle.baseFont
+        let base = attributes[.font] as? NSFont ?? InkStyle.baseFont
+        result[.font] = resolvedFont(base, traits: style.traits)
         if style.traits.contains(.code) {
-            let inherited = manager.traits(of: font).intersection([.boldFontMask, .italicFontMask])
-            font = manager.convert(manager.convert(InkStyle.codeFont, toSize: font.pointSize), toHaveTrait: inherited)
             result[.backgroundColor] = NSColor.controlBackgroundColor
         }
-        if style.traits.contains(.strong) { font = manager.convert(font, toHaveTrait: .boldFontMask) }
-        if style.traits.contains(.emphasis) { font = manager.convert(font, toHaveTrait: .italicFontMask) }
-        result[.font] = font
         if style.traits.contains(.deletion) {
             result[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
         }
@@ -634,6 +640,22 @@ private final class MarkdownPreviewRenderer {
             result[.underlineStyle] = NSUnderlineStyle.single.rawValue
         }
         return result
+    }
+
+    private func resolvedFont(_ base: NSFont, traits: Set<PreviewTrait>) -> NSFont {
+        let key = FontKey(base: base, traits: traits)
+        if let font = resolvedFonts[key] { return font }
+        onFontResolution?(base, traits)
+        let manager = NSFontManager.shared
+        var font = base
+        if traits.contains(.code) {
+            let inherited = manager.traits(of: font).intersection([.boldFontMask, .italicFontMask])
+            font = manager.convert(manager.convert(InkStyle.codeFont, toSize: font.pointSize), toHaveTrait: inherited)
+        }
+        if traits.contains(.strong) { font = manager.convert(font, toHaveTrait: .boldFontMask) }
+        if traits.contains(.emphasis) { font = manager.convert(font, toHaveTrait: .italicFontMask) }
+        resolvedFonts[key] = font
+        return font
     }
 
     private func reviewedLink(_ style: PreviewStyle) -> NSURL? {
