@@ -1,10 +1,42 @@
 # PR 334 review follow-up
 
+S󠄁e󠄁c󠄁o󠄁n󠄁d󠄁-󠄁b󠄁a󠄁t󠄁c󠄁h󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 a󠄁l󠄁l󠄁 2󠄁,󠄁5󠄁1󠄁3󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁:󠄁 3󠄁9󠄁3󠄁 O󠄁n󠄁e󠄁t󠄁i󠄁m󠄁e󠄁P󠄁a󠄁d󠄁 a󠄁n󠄁d󠄁
+2󠄁,󠄁1󠄁2󠄁0󠄁 C󠄁o󠄁m󠄁p󠄁a󠄁n󠄁i󠄁o󠄁n󠄁K󠄁i󠄁t󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 i󠄁n󠄁l󠄁i󠄁n󠄁e󠄁 r󠄁a󠄁w󠄁-󠄁t󠄁e󠄁x󠄁t󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁s󠄁,󠄁 l󠄁o󠄁n󠄁g󠄁-󠄁l󠄁i󠄁n󠄁k󠄁
+e󠄁v󠄁a󠄁l󠄁u󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁u󠄁n󠄁t󠄁s󠄁,󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 m󠄁a󠄁t󠄁r󠄁i󠄁x󠄁 a󠄁n󠄁d󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 U󠄁+󠄁F󠄁F󠄁F󠄁C󠄁 i󠄁n󠄁k󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁.󠄁
+R󠄁u󠄁s󠄁t󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁c󠄁y󠄁 r󠄁e󠄁s󠄁o󠄁l󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁r󠄁e󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁 b󠄁a󠄁t󠄁c󠄁h󠄁'󠄁s󠄁
+p󠄁a󠄁s󠄁s󠄁i󠄁n󠄁g󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁.󠄁 F󠄁o󠄁r󠄁m󠄁a󠄁t󠄁t󠄁i󠄁n󠄁g󠄁,󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 a󠄁n󠄁d󠄁 a󠄁l󠄁l󠄁 5󠄁3󠄁 A󠄁D󠄁R󠄁 l󠄁i󠄁n󠄁t󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 a󠄁g󠄁a󠄁i󠄁n󠄁.󠄁
+
+## Automatic follow-up after the first batch
+
+A󠄁l󠄁l󠄁 s󠄁e󠄁v󠄁e󠄁n󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 o󠄁n󠄁 `b5d63c7fe653acc6130fe8f0b1f4f88316f2758b`:󠄁
+[C󠄁I󠄁](https://github.com/onetimesecret/macos/actions/runs/40569722616) a󠄁n󠄁d󠄁
+[C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁](https://github.com/onetimesecret/macos/actions/runs/40569722629).󠄁
+T󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁d󠄁 s󠄁t󠄁a󠄁t󠄁i󠄁c󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁r󠄁e󠄁e󠄁 n󠄁e󠄁w󠄁l󠄁y󠄁 p󠄁o󠄁s󠄁t󠄁e󠄁d󠄁 C󠄁o󠄁p󠄁i󠄁l󠄁o󠄁t󠄁 t󠄁h󠄁r󠄁e󠄁a󠄁d󠄁s󠄁 i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁f󠄁i󠄁e󠄁d󠄁
+t󠄁h󠄁r󠄁e󠄁e󠄁 a󠄁d󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁a󠄁b󠄁l󠄁e󠄁 i󠄁s󠄁s󠄁u󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 s󠄁e󠄁c󠄁o󠄁n󠄁d󠄁 b󠄁a󠄁t󠄁c󠄁h󠄁 a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁m󠄁:󠄁
+
+| F󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁 | D󠄁i󠄁s󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 |
+| --- | --- |
+| R󠄁e󠄁p󠄁e󠄁a󠄁t󠄁e󠄁d󠄁 l󠄁o󠄁n󠄁g󠄁-󠄁l󠄁i󠄁n󠄁k󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 | C󠄁o󠄁m󠄁p󠄁o󠄁s󠄁e󠄁r󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁s󠄁 h󠄁a󠄁v󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁g󠄁e󠄁r󠄁 o󠄁c󠄁c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 I󠄁D󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁r󠄁 c󠄁a󠄁c󠄁h󠄁e󠄁s󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁e󠄁d󠄁 `NSURL` o󠄁r󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁d󠄁 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁s󠄁 b󠄁y󠄁 o󠄁c󠄁c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁c󠄁e󠄁,󠄁 a󠄁v󠄁o󠄁i󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁 l󠄁o󠄁n󠄁g󠄁-󠄁s󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 d󠄁i󠄁c󠄁t󠄁i󠄁o󠄁n󠄁a󠄁r󠄁y󠄁 k󠄁e󠄁y󠄁 p󠄁e󠄁r󠄁 r󠄁u󠄁n󠄁.󠄁 N󠄁e󠄁s󠄁t󠄁e󠄁d󠄁/󠄁r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁e󠄁d󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁s󠄁 r󠄁e󠄁u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 s󠄁a󠄁m󠄁e󠄁 I󠄁D󠄁;󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁c󠄁t󠄁 o󠄁c󠄁c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁c󠄁t󠄁.󠄁 C󠄁o󠄁u󠄁n󠄁t󠄁-󠄁b󠄁a󠄁s󠄁e󠄁d󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁 l󠄁o󠄁n󠄁g󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁e󠄁d󠄁/󠄁r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁d󠄁 d󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 m󠄁a󠄁n󠄁y󠄁 c󠄁h󠄁i󠄁l󠄁d󠄁 r󠄁u󠄁n󠄁s󠄁,󠄁 b󠄁o󠄁t󠄁h󠄁 s󠄁y󠄁n󠄁t󠄁a󠄁x󠄁 f󠄁o󠄁r󠄁m󠄁s󠄁 a󠄁n󠄁d󠄁 b󠄁o󠄁t󠄁h󠄁 d󠄁i󠄁a󠄁l󠄁e󠄁c󠄁t󠄁s󠄁.󠄁 |
+| I󠄁m󠄁a󠄁g󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 | W󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁s󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 n󠄁o󠄁n󠄁e󠄁m󠄁p󠄁t󠄁y󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 p󠄁a󠄁r󠄁t󠄁.󠄁 E󠄁m󠄁p󠄁t󠄁y󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁s󠄁 l󠄁e󠄁a󠄁v󠄁e󠄁 t󠄁h󠄁e󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁.󠄁 R󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁 e󠄁m󠄁p󠄁t󠄁y󠄁,󠄁 t󠄁r󠄁a󠄁i󠄁l󠄁i󠄁n󠄁g󠄁 s󠄁p󠄁a󠄁c󠄁e󠄁,󠄁 n󠄁e󠄁w󠄁l󠄁i󠄁n󠄁e󠄁,󠄁 l󠄁i󠄁n󠄁e󠄁-󠄁s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁o󠄁r󠄁 a󠄁n󠄁d󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁-󠄁e󠄁n󠄁d󠄁i󠄁n󠄁g󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁s󠄁 f󠄁o󠄁r󠄁 H󠄁T󠄁M󠄁L󠄁 a󠄁n󠄁d󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁s󠄁.󠄁 |
+| I󠄁n󠄁l󠄁i󠄁n󠄁e󠄁 r󠄁a󠄁w󠄁-󠄁t󠄁e󠄁x󠄁t󠄁 f󠄁i󠄁d󠄁e󠄁l󠄁i󠄁t󠄁y󠄁 | P󠄁a󠄁r󠄁s󠄁e󠄁r󠄁-󠄁d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 t󠄁e󠄁x󠄁t󠄁 a󠄁n󠄁d󠄁 b󠄁r󠄁e󠄁a󠄁k󠄁/󠄁b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁s󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁 t󠄁r󠄁a󠄁n󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁,󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁 a󠄁n󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁e󠄁 C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 r󠄁a󠄁w󠄁-󠄁t󠄁e󠄁x󠄁t󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁.󠄁 T󠄁h󠄁e󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁-󠄁p󠄁a󠄁g󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁s󠄁 e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁 s󠄁p󠄁e󠄁l󠄁l󠄁i󠄁n󠄁g󠄁s󠄁 a󠄁n󠄁d󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 b󠄁r󠄁e󠄁a󠄁k󠄁s󠄁.󠄁 R󠄁e󠄁a󠄁l󠄁-󠄁p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁 a󠄁n󠄁d󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁h󠄁e󠄁m󠄁a󠄁t󠄁i󠄁c󠄁-󠄁b󠄁r󠄁e󠄁a󠄁k󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁s󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁;󠄁 r󠄁a󠄁w󠄁H󠄁T󠄁M󠄁L󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 c󠄁h󠄁u󠄁n󠄁k󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁a󠄁b󠄁l󠄁e󠄁.󠄁 |
+| E󠄁m󠄁p󠄁t󠄁y󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁o󠄁r󠄁 | A󠄁n󠄁 e󠄁m󠄁p󠄁t󠄁y󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 i󠄁n󠄁v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 a󠄁n󠄁d󠄁 p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁s󠄁 n󠄁o󠄁 t󠄁e󠄁x󠄁t󠄁-󠄁r󠄁a󠄁n󠄁g󠄁e󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁o󠄁r󠄁.󠄁 A󠄁n󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁/󠄁p󠄁l󠄁a󠄁c󠄁e󠄁h󠄁o󠄁l󠄁d󠄁e󠄁r󠄁 d󠄁e󠄁s󠄁i󠄁g󠄁n󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁;󠄁 i󠄁n󠄁s󠄁e󠄁r󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁 i󠄁n󠄁v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁 n󠄁o󠄁w󠄁 w󠄁o󠄁u󠄁l󠄁d󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁 c󠄁o󠄁p󠄁i󠄁e󠄁d󠄁 i󠄁n󠄁k󠄁.󠄁 |
+| E󠄁n󠄁t󠄁i󠄁t󠄁y󠄁-󠄁d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 U󠄁+󠄁F󠄁F󠄁F󠄁C󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 o󠄁r󠄁d󠄁i󠄁n󠄁a󠄁r󠄁y󠄁 t󠄁e󠄁x󠄁t󠄁 s󠄁e󠄁m󠄁a󠄁n󠄁t󠄁i󠄁c󠄁s󠄁.󠄁 A󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁r󠄁/󠄁s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁e󠄁s󠄁 t󠄁h󠄁a󠄁t󠄁 `&#xFFFC;` b󠄁e󠄁c󠄁o󠄁m󠄁e󠄁s󠄁 i󠄁n󠄁k󠄁 w󠄁i󠄁t󠄁h󠄁 n󠄁o󠄁 a󠄁t󠄁t󠄁a󠄁c󠄁h󠄁m󠄁e󠄁n󠄁t󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁 a󠄁n󠄁d󠄁 i󠄁s󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 a󠄁s󠄁 i󠄁n󠄁k󠄁.󠄁 N󠄁o󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁t󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 r󠄁e󠄁q󠄁u󠄁i󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 f󠄁o󠄁r󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁a󠄁t󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁 h󠄁a󠄁s󠄁 b󠄁e󠄁e󠄁n󠄁 i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁f󠄁i󠄁e󠄁d󠄁.󠄁 |
+| T󠄁o󠄁k󠄁e󠄁n󠄁i󠄁z󠄁e󠄁r󠄁 b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 c󠄁h󠄁a󠄁r󠄁g󠄁i󠄁n󠄁g󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 c󠄁h󠄁a󠄁r󠄁g󠄁i󠄁n󠄁g󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 P󠄁a󠄁s󠄁s󠄁i󠄁n󠄁g󠄁 p󠄁o󠄁s󠄁t󠄁-󠄁c󠄁h󠄁a󠄁r󠄁g󠄁e󠄁 `remainingInput` w󠄁o󠄁u󠄁l󠄁d󠄁 r󠄁e󠄁j󠄁e󠄁c󠄁t󠄁 a󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁 l󠄁e󠄁a󠄁f󠄁 t󠄁h󠄁a󠄁t󠄁 j󠄁u󠄁s󠄁t󠄁 c󠄁o󠄁n󠄁s󠄁u󠄁m󠄁e󠄁d󠄁 i󠄁t󠄁s󠄁 b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁;󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 e󠄁x󠄁a󠄁c󠄁t󠄁-󠄁b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁 a󠄁n󠄁d󠄁 c󠄁u󠄁m󠄁u󠄁l󠄁a󠄁t󠄁i󠄁v󠄁e󠄁-󠄁b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁 t󠄁h󠄁i󠄁s󠄁 o󠄁r󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁.󠄁 |
+| N󠄁U󠄁L󠄁L󠄁 d󠄁i󠄁a󠄁g󠄁n󠄁o󠄁s󠄁t󠄁i󠄁c󠄁 s󠄁e󠄁v󠄁e󠄁r󠄁i󠄁t󠄁y󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 f󠄁a󠄁u󠄁l󠄁t󠄁-󠄁l󠄁e󠄁v󠄁e󠄁l󠄁 r󠄁e󠄁p󠄁o󠄁r󠄁t󠄁i󠄁n󠄁g󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁e󠄁 A󠄁B󠄁I󠄁/󠄁e󠄁n󠄁c󠄁o󠄁d󠄁i󠄁n󠄁g󠄁/󠄁s󠄁e󠄁r󠄁i󠄁a󠄁l󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁/󠄁p󠄁a󠄁n󠄁i󠄁c󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁 c󠄁h󠄁a󠄁n󠄁n󠄁e󠄁l󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁s󠄁u󠄁m󠄁e󠄁r󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁e󠄁s󠄁 u󠄁n󠄁a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 i󠄁n󠄁f󠄁e󠄁r󠄁r󠄁i󠄁n󠄁g󠄁 i󠄁t󠄁s󠄁 s󠄁p󠄁e󠄁c󠄁i󠄁f󠄁i󠄁c󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁n󠄁a󠄁l󠄁 c󠄁a󠄁u󠄁s󠄁e󠄁.󠄁 |
+| M󠄁o󠄁r󠄁e󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁 s󠄁c󠄁a󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 s󠄁y󠄁n󠄁c󠄁h󠄁r󠄁o󠄁n󠄁o󠄁u󠄁s󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁d󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 a󠄁n󠄁d󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 l󠄁a󠄁t󠄁e󠄁n󠄁c󠄁y󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 N󠄁o󠄁 a󠄁s󠄁y󠄁n󠄁c󠄁h󠄁r󠄁o󠄁n󠄁o󠄁u󠄁s󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁r󠄁 o󠄁r󠄁 w󠄁h󠄁o󠄁l󠄁e󠄁-󠄁o󠄁p󠄁e󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 e󠄁r󠄁a󠄁s󠄁u󠄁r󠄁e󠄁 a󠄁s󠄁s󠄁e󠄁r󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁s󠄁 i󠄁n󠄁t󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁d󠄁.󠄁 |
+| T󠄁e󠄁x󠄁t󠄁P󠄁r󠄁o󠄁v󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 i󠄁n󠄁t󠄁e󠄁n󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 U󠄁+󠄁E󠄁0󠄁1󠄁0󠄁1󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁f󠄁i󠄁g󠄁u󠄁r󠄁e󠄁d󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 e󠄁d󠄁i󠄁t󠄁 h󠄁o󠄁o󠄁k󠄁.󠄁 O󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁 t󠄁h󠄁i󠄁r󠄁d󠄁-󠄁p󠄁a󠄁r󠄁t󠄁y󠄁 l󠄁i󠄁c󠄁e󠄁n󠄁s󠄁e󠄁 t󠄁e󠄁x󠄁t󠄁 a󠄁n󠄁d󠄁 e󠄁x󠄁e󠄁c󠄁u󠄁t󠄁a󠄁b󠄁l󠄁e󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 a󠄁r󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁e󠄁d󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁.󠄁 A󠄁 r󠄁e󠄁p󠄁o󠄁-󠄁w󠄁i󠄁d󠄁e󠄁 s󠄁t󠄁r󠄁i󠄁p󠄁 o󠄁r󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁-󠄁p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁 i󠄁s󠄁 o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 t󠄁h󠄁i󠄁s󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁-󠄁u󠄁p󠄁.󠄁 |
+| T󠄁a󠄁s󠄁k󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁r󠄁o󠄁s󠄁e󠄁 | R󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 u󠄁n󠄁n󠄁e󠄁c󠄁e󠄁s󠄁s󠄁a󠄁r󠄁y󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁e󠄁n󠄁t󠄁e󠄁n󠄁c󠄁e󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁i󠄁s󠄁 r󠄁e󠄁p󠄁o󠄁s󠄁i󠄁t󠄁o󠄁r󠄁y󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁.󠄁 A󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁m󠄁e󠄁s󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 c󠄁h󠄁a󠄁t󠄁,󠄁 n󠄁o󠄁t󠄁 r󠄁e󠄁p󠄁o󠄁s󠄁i󠄁t󠄁o󠄁r󠄁y󠄁 i󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 t󠄁o󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁e󠄁r󠄁s󠄁.󠄁 |
+
+C󠄁o󠄁p󠄁i󠄁l󠄁o󠄁t󠄁 t󠄁h󠄁r󠄁e󠄁a󠄁d󠄁s󠄁:󠄁
+[l󠄁i󠄁n󠄁k󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁](https://github.com/onetimesecret/macos/pull/334#discussion_r4393166255),󠄁
+[r󠄁a󠄁w󠄁 t󠄁e󠄁x󠄁t󠄁](https://github.com/onetimesecret/macos/pull/334#discussion_r4393166314),󠄁
+[i󠄁m󠄁a󠄁g󠄁e󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁](https://github.com/onetimesecret/macos/pull/334#discussion_r4393166359).󠄁
+
 T󠄁h󠄁i󠄁s󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁s󠄁 c󠄁o󠄁d󠄁e󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 d󠄁i󠄁s󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁e󠄁
 [i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁 C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁](https://github.com/onetimesecret/macos/pull/334#issuecomment-6451110269)
 o󠄁f󠄁 `f221e6db1302fca2d3f75d9e5ccdc766b44277de`.󠄁 T󠄁h󠄁a󠄁t󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 w󠄁a󠄁s󠄁 s󠄁t󠄁a󠄁t󠄁i󠄁c󠄁 a󠄁n󠄁d󠄁
 r󠄁e󠄁p󠄁o󠄁r󠄁t󠄁e󠄁d󠄁 n󠄁o󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁.󠄁 I󠄁t󠄁s󠄁 o󠄁b󠄁s󠄁e󠄁r󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁r󠄁e󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁,󠄁 n󠄁o󠄁t󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁t󠄁y󠄁 f󠄁o󠄁r󠄁
-p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁 g󠄁u󠄁a󠄁r󠄁a󠄁n󠄁t󠄁e󠄁e󠄁s󠄁.󠄁 P󠄁u󠄁b󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁f󠄁 r󠄁e󠄁p󠄁l󠄁i󠄁e󠄁s󠄁 i󠄁s󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁i󠄁s󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁-󠄁u󠄁p󠄁.󠄁
+p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁 g󠄁u󠄁a󠄁r󠄁a󠄁n󠄁t󠄁e󠄁e󠄁s󠄁.󠄁
 
 ## Starting state
 
@@ -46,10 +78,12 @@ T󠄁h󠄁e󠄁 n󠄁e󠄁w󠄁 s󠄁i󠄁d󠄁e󠄁-󠄁b󠄁y󠄁-󠄁s󠄁i�
 | U󠄁n󠄁s󠄁u󠄁p󠄁p󠄁o󠄁r󠄁t󠄁e󠄁d󠄁 w󠄁e󠄁l󠄁l󠄁-󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁 t󠄁a󠄁g󠄁 | P󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁 s󠄁p󠄁e󠄁l󠄁l󠄁i󠄁n󠄁g󠄁s󠄁 a󠄁n󠄁d󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 |
 | G󠄁F󠄁M󠄁-󠄁f󠄁i󠄁l󠄁t󠄁e󠄁r󠄁e󠄁d󠄁 t󠄁a󠄁g󠄁 | D󠄁e󠄁c󠄁o󠄁d󠄁e󠄁 s󠄁u󠄁p󠄁p󠄁o󠄁r󠄁t󠄁e󠄁d󠄁 e󠄁n󠄁t󠄁i󠄁t󠄁i󠄁e󠄁s󠄁 o󠄁n󠄁c󠄁e󠄁;󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 |
 
-I󠄁n󠄁 a󠄁n󠄁 o󠄁p󠄁e󠄁n󠄁 C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 r󠄁a󠄁w󠄁-󠄁t󠄁e󠄁x󠄁t󠄁 e󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁,󠄁 t󠄁e󠄁x󠄁t󠄁,󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 b󠄁r󠄁e󠄁a󠄁k󠄁/󠄁b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁s󠄁
-r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 p󠄁e󠄁r󠄁m󠄁i󠄁t󠄁t󠄁e󠄁d󠄁.󠄁 T󠄁r󠄁a󠄁i󠄁t󠄁s󠄁,󠄁 l󠄁i󠄁n󠄁k󠄁s󠄁 a󠄁n󠄁d󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁s󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁 a󠄁s󠄁 s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁u󠄁r󠄁e󠄁d󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁s󠄁.󠄁 T󠄁e󠄁s󠄁t󠄁s󠄁
-n󠄁o󠄁w󠄁 e󠄁n󠄁u󠄁m󠄁e󠄁r󠄁a󠄁t󠄁e󠄁 b󠄁o󠄁t󠄁h󠄁 s󠄁e󠄁t󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁s󠄁e󠄁 a󠄁r󠄁e󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁b󠄁s󠄁e󠄁r󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁a󠄁n󠄁 a󠄁
-b󠄁r󠄁o󠄁w󠄁s󠄁e󠄁r󠄁-󠄁e󠄁q󠄁u󠄁i󠄁v󠄁a󠄁l󠄁e󠄁n󠄁c󠄁e󠄁 o󠄁r󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁t󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 g󠄁u󠄁a󠄁r󠄁a󠄁n󠄁t󠄁e󠄁e󠄁.󠄁
+C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 r󠄁a󠄁w󠄁 H󠄁T󠄁M󠄁L󠄁 c󠄁h󠄁u󠄁n󠄁k󠄁s󠄁 k󠄁e󠄁e󠄁p󠄁 t󠄁h󠄁e󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁i󠄁z󠄁e󠄁r󠄁'󠄁s󠄁 r󠄁a󠄁w󠄁-󠄁t󠄁e󠄁x󠄁t󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁i󠄁n󠄁g󠄁.󠄁 P󠄁a󠄁r󠄁s󠄁e󠄁r󠄁-󠄁d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁
+t󠄁e󠄁x󠄁t󠄁,󠄁 b󠄁r󠄁e󠄁a󠄁k󠄁/󠄁b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁 s󠄁t󠄁a󠄁r󠄁t󠄁s󠄁 d󠄁u󠄁r󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁e󠄁 r󠄁a󠄁w󠄁-󠄁t󠄁e󠄁x󠄁t󠄁
+e󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 n󠄁o󠄁w󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁-󠄁p󠄁a󠄁g󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁.󠄁
+O󠄁b󠄁j󠄁e󠄁c󠄁t󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 i󠄁n󠄁 t󠄁h󠄁a󠄁t󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 a󠄁v󠄁o󠄁i󠄁d󠄁s󠄁 u󠄁s󠄁i󠄁n󠄁g󠄁 a󠄁l󠄁r󠄁e󠄁a󠄁d󠄁y󠄁-󠄁d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁
+M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁s󠄁 t󠄁o󠄁 r󠄁e󠄁c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁 a󠄁n󠄁 i󠄁n󠄁l󠄁i󠄁n󠄁e󠄁 s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁 o󠄁r󠄁 t󠄁e󠄁x󠄁t󠄁a󠄁r󠄁e󠄁a󠄁 b󠄁o󠄁d󠄁y󠄁.󠄁 R󠄁e󠄁a󠄁l󠄁-󠄁p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁
+r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁 e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁 s󠄁p󠄁e󠄁l󠄁l󠄁i󠄁n󠄁g󠄁s󠄁,󠄁 n󠄁e󠄁w󠄁l󠄁i󠄁n󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 h󠄁a󠄁r󠄁d󠄁 b󠄁r󠄁e󠄁a󠄁k󠄁s󠄁.󠄁
 
 ## Production-path measurement
 
