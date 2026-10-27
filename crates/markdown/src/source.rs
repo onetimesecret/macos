@@ -78,8 +78,8 @@ impl Source {
         Ok(source)
     }
 
-    /// CR and CRLF become LF, NUL becomes U+FFFD and a leading byte order mark is dropped before
-    /// any column is counted; the last line gets the LF cmark's line reader gives every line.
+    /// CR and CRLF become LF, NUL becomes U+FFFD, and the last line gets the LF cmark's line
+    /// reader gives every line. Byte order marks stay for comrak to process.
     fn build(&mut self, text: &str, objects: &[usize]) -> Result<(), ParseError> {
         let mut line = 1;
         let mut column = 1;
@@ -120,7 +120,6 @@ impl Source {
                     self.text.push('\u{FFFD}');
                     column += '\u{FFFD}'.len_utf8();
                 }
-                '\u{FEFF}' if here == 0 => {}
                 _ => {
                     self.text.push(scalar);
                     column += scalar.len_utf8();
@@ -292,9 +291,12 @@ mod tests {
     }
 
     #[test]
-    fn line_endings_nul_and_a_leading_byte_order_mark_read_as_comrak_reads_them() {
+    fn line_endings_and_nul_are_normalized_before_parsing() {
         let page = source("\u{FEFF}a\r\nb\rc\0\u{FEFF}\n\u{FFFC}", &[10]).unwrap();
-        assert_eq!(page.text.as_str(), "a\nb\nc\u{FFFD}\u{FEFF}\n\u{100000}\n");
+        assert_eq!(
+            page.text.as_str(),
+            "\u{FEFF}a\nb\nc\u{FFFD}\u{FEFF}\n\u{100000}\n"
+        );
         assert_eq!(page.positions, [Position { line: 4, column: 1 }]);
         assert_eq!(
             page.atoms,
@@ -305,6 +307,32 @@ mod tests {
         );
         assert_eq!(source("a\r", &[]).unwrap().text.as_str(), "a\n");
         assert_eq!(source("", &[]).unwrap().text.as_str(), "");
+    }
+
+    #[test]
+    fn leading_byte_order_marks_and_multibyte_text_keep_byte_columns() {
+        for count in 1..=3 {
+            let original = format!("{}é\u{100000}\u{FFFC}", "\u{FEFF}".repeat(count));
+            let page = source(&original, &[count + 3]).unwrap();
+            assert_eq!(
+                page.positions,
+                [Position {
+                    line: 1,
+                    column: count * 3 + 7,
+                }]
+            );
+            assert_eq!(page.atoms[0].offset, count + 3);
+            for dialect in [crate::Dialect::CommonMark, crate::Dialect::Gfm] {
+                let arena = comrak::Arena::new();
+                let root = comrak::parse_document(&arena, &page.text, &crate::options(dialect));
+                let paragraph = root.first_child().unwrap();
+                assert_eq!(
+                    paragraph.data().sourcepos.end.column,
+                    page.positions[0].column + 3,
+                    "{dialect:?}: {count} leading marks"
+                );
+            }
+        }
     }
 
     #[test]

@@ -130,6 +130,98 @@ fn line_endings_read_as_lf_and_atoms_keep_their_offsets_in_the_page() {
     }
 }
 
+#[test]
+fn only_the_first_leading_byte_order_mark_is_consumed() {
+    for count in 1..=3 {
+        let template = format!(
+            "{}é \u{100000} {{obj}}\r\n\r\n[r]: /u{{obj}}\r\n\r\n[x][r] tail {{obj}}",
+            "\u{FEFF}".repeat(count)
+        );
+        let (_, offsets) = page(&template);
+        for dialect in BOTH {
+            let document = document(&template, dialect).unwrap();
+            assert_eq!(
+                document.blocks,
+                [
+                    paragraph(vec![
+                        text(&format!("{}é \u{100000} ", "\u{FEFF}".repeat(count - 1))),
+                        object(0),
+                    ]),
+                    objects(&[1]),
+                    paragraph(vec![
+                        link("/u\u{FFFC}", ""),
+                        text("x"),
+                        Event::LeaveLink,
+                        text(" tail "),
+                        object(2),
+                    ]),
+                ],
+                "{dialect:?}: {count} leading marks"
+            );
+            assert_eq!(
+                document
+                    .atoms
+                    .iter()
+                    .map(|atom| atom.offset)
+                    .collect::<Vec<_>>(),
+                offsets,
+                "{dialect:?}: {count} leading marks"
+            );
+        }
+    }
+}
+
+#[test]
+fn additional_leading_byte_order_marks_prevent_a_reference_definition() {
+    for count in 1..=3 {
+        let template = format!(
+            "{}[r]: /é{{obj}}\r\n\r\n[x][r] {{obj}}\r\n\r\n\u{100000} end {{obj}}",
+            "\u{FEFF}".repeat(count)
+        );
+        let (_, offsets) = page(&template);
+        for dialect in BOTH {
+            let document = document(&template, dialect).unwrap();
+            let leading = if count == 1 {
+                objects(&[0])
+            } else {
+                paragraph(vec![
+                    text(&format!("{}[r]: /é", "\u{FEFF}".repeat(count - 1))),
+                    object(0),
+                ])
+            };
+            let use_ = if count == 1 {
+                paragraph(vec![
+                    link("/é\u{FFFC}", ""),
+                    text("x"),
+                    Event::LeaveLink,
+                    text(" "),
+                    object(1),
+                ])
+            } else {
+                paragraph(vec![text("[x][r] "), object(1)])
+            };
+            assert_eq!(
+                document.blocks,
+                [
+                    leading,
+                    use_,
+                    paragraph(vec![text("\u{100000} end "), object(2)])
+                ],
+                "{dialect:?}: {count} leading marks"
+            );
+            assert_eq!(
+                document
+                    .atoms
+                    .iter()
+                    .map(|atom| atom.offset)
+                    .collect::<Vec<_>>(),
+                offsets,
+                "{dialect:?}: {count} leading marks"
+            );
+        }
+    }
+}
+
 /// Block quotes, lists and inline containers count; the walk stops before the stack would.
 #[test]
 fn nesting_past_the_depth_limit_is_refused() {
