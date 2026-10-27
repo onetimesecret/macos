@@ -146,6 +146,8 @@ typedef enum {
  */
 /* A non-NULL refusal need not have validated UTF-8 input.
  * Decode each non-NULL result and check error before using it as a document. */
+/* Pass U+FFFC at declared sealed-object offsets; do not substitute resolved values.
+ * This caller contract follows ADR-0012 Amendment 1's Swift payload boundary. */
 /* HTML blocks and inline HTML contain the input markup without tag filtering. */
 /* An image's destination/title may contain {"object":{"_0":id}} parts.
  * An inline link's own address objects follow leaveLink; its address has U+FFFC text. */

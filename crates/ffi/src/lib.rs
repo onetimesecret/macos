@@ -4460,6 +4460,38 @@ mod tests {
     }
 
     #[test]
+    fn markdown_parse_requires_placeholders_at_declared_object_offsets() {
+        let offsets = [2_usize];
+        for dialect in [COMMONMARK, GFM] {
+            let parse = |input: &str| unsafe {
+                take_json(companion_markdown_parse_json(
+                    input.as_ptr().cast(),
+                    input.len(),
+                    offsets.as_ptr(),
+                    offsets.len(),
+                    dialect,
+                    100,
+                    8,
+                    100,
+                ))
+            };
+            let document: serde_json::Value = serde_json::from_str(&parse("a \u{FFFC}")).unwrap();
+            assert_eq!(
+                document["atoms"],
+                serde_json::json!([{"identity": "0", "offset": 2}])
+            );
+            assert_eq!(
+                document["blocks"][0]["paragraph"]["_0"],
+                serde_json::json!([{"text": {"_0": "a "}}, {"object": {"_0": "0"}}])
+            );
+            for input in ["a resolved value", "a 🦀"] {
+                let refusal: serde_json::Value = serde_json::from_str(&parse(input)).unwrap();
+                assert_eq!(refusal, serde_json::json!({"error": {"objectOffset": {}}}));
+            }
+        }
+    }
+
+    #[test]
     fn markdown_parse_refuses_more_objects_than_the_placeholder_plane_can_fit() {
         let text = "\u{FFFC}".repeat(65_535);
         for dialect in [COMMONMARK, GFM] {
