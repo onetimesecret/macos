@@ -124,6 +124,8 @@ struct PreviewCompositionStream {
     private var markdown: [PreviewTrait] = []
     private var markdownLinks: [PreviewAddress] = []
     private var html: [Frame] = []
+    /// Inside a Markdown link, accepted or refused, no HTML link applies.
+    private(set) var style = PreviewStyle()
     private var eventCount = 0
     private var remainingInput: Int
     private var seen: Set<String> = []
@@ -157,9 +159,8 @@ struct PreviewCompositionStream {
         let link: PreviewAddress?
     }
 
-    /// Inside a Markdown link, accepted or refused, no HTML link applies.
-    var style: PreviewStyle {
-        PreviewStyle(
+    private mutating func updateStyle() {
+        style = PreviewStyle(
             traits: Set(markdown).union(html.compactMap(\.trait)),
             link: markdownLinks.last ?? html.last(where: { $0.link != nil })?.link
         )
@@ -251,10 +252,12 @@ struct PreviewCompositionStream {
             guard rawTextElement == nil else { throw CompositionError.structuredEventInRawText }
             try checkDepth()
             markdown.append(trait)
+            updateStyle()
         case .leaveMarkdown(let trait):
             guard rawTextElement == nil else { throw CompositionError.structuredEventInRawText }
             guard markdown.last == trait else { throw CompositionError.unbalancedMarkdown }
             markdown.removeLast()
+            updateStyle()
         case .blockBoundary: try boundary()
         case .softBreak: try emit(.text(" ", style))
         case .hardBreak: try emit(.text("\u{2028}", style))
@@ -268,10 +271,12 @@ struct PreviewCompositionStream {
             // Emitted before the link applies: an object never takes a link.
             try recoverObjects((destination ?? []) + title)
             markdownLinks.append(address(destination, decode: false))
+            updateStyle()
         case .leaveLink:
             guard rawTextElement == nil else { throw CompositionError.structuredEventInRawText }
             guard !markdownLinks.isEmpty else { throw CompositionError.unbalancedMarkdown }
             markdownLinks.removeLast()
+            updateStyle()
         case .rawHTML(let parts):
             let tokenizer = HTMLTokenizer(
                 maximumInputScalars: limits.maximumInputScalars,
@@ -322,6 +327,8 @@ struct PreviewCompositionStream {
             }
             if index != html.count - 1 { diagnostics.append(.recoveredNesting(tag.name)) }
             html.removeSubrange(index...)
+            updateStyle()
+            try recoverObjects(tag.raw)
             return
         }
         if tag.name == "img" {
@@ -363,6 +370,7 @@ struct PreviewCompositionStream {
                     ? .refused(.sealedObject) : address(hrefs.first?.value, decode: true))
                 : nil
             html.append(Frame(name: tag.name, trait: trait, link: link))
+            updateStyle()
         }
         try recoverObjects(tag.raw)
     }

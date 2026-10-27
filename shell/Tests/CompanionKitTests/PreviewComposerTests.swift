@@ -90,6 +90,20 @@ final class PreviewComposerTests: XCTestCase {
         XCTAssertEqual(result.diagnostics, [])
     }
 
+    func testEntityAndWhitespaceTreatmentDependsOnHTMLTokenKind() throws {
+        let cases: [(String, String, [CompositionDiagnostic])] = [
+            ("a  &amp;  b", "a & b", []),
+            ("<em title='a  &amp;  b'", "<em title='a  &amp;  b'", []),
+            ("<widget title='a  &amp;  b'>", "<widget title='a  &amp;  b'>", [.escapedElement("widget")]),
+            ("<script title='a  &amp;  b'>", "<script title='a  &  b'>", [.gfmFiltered("script")]),
+        ]
+        for (source, expected, diagnostics) in cases {
+            let result = try compose([html(source)])
+            XCTAssertEqual(ink(result), expected, source)
+            XCTAssertEqual(result.diagnostics, diagnostics, source)
+        }
+    }
+
     func testSupportedFormattingSubset() throws {
         let cases: [(String, CompanionKit.PreviewTrait)] = [
             ("em", .emphasis), ("i", .emphasis), ("strong", .strong), ("b", .strong),
@@ -116,6 +130,28 @@ final class PreviewComposerTests: XCTestCase {
         ])
         XCTAssertEqual(traits(result, text: "y"), [.strong])
         XCTAssertEqual(traits(result, text: "z"), [])
+    }
+
+    func testStyleUpdatesAcrossDuplicateMarkdownAndHTMLTraitScopes() throws {
+        let stages: [(PreviewEvent, PreviewStyle)] = [
+            (.enterMarkdown(.emphasis), PreviewStyle(traits: [.emphasis])),
+            (.enterMarkdown(.emphasis), PreviewStyle(traits: [.emphasis])),
+            (html("<em><strong>"), PreviewStyle(traits: [.emphasis, .strong])),
+            (.leaveMarkdown(.emphasis), PreviewStyle(traits: [.emphasis, .strong])),
+            (html("</strong>"), PreviewStyle(traits: [.emphasis])),
+            (.leaveMarkdown(.emphasis), PreviewStyle(traits: [.emphasis])),
+            (html("</em>"), PreviewStyle()),
+        ]
+        for dialect in PreviewDialect.allCases {
+            var stream = PreviewComposer(dialect: dialect).start()
+            for (index, stage) in stages.enumerated() {
+                XCTAssertEqual(try stream.consume(stage.0), [])
+                XCTAssertEqual(stream.style, stage.1, "stage \(index)")
+                let text = "stage \(index)"
+                XCTAssertEqual(try stream.consume(.text(text)), [.text(text, stage.1)])
+            }
+            XCTAssertNoThrow(try stream.finish())
+        }
     }
 
     func testMalformedNestingClosesThroughNearestMatchingElement() throws {
@@ -272,9 +308,24 @@ final class PreviewComposerTests: XCTestCase {
         XCTAssertEqual(traits(result, text: "body"), [.emphasis])
     }
 
+    func testTextObjectsAndBreakEventsRemainPermittedInsideCommonMarkRawText() throws {
+        var stream = PreviewComposer(dialect: .commonMark).start()
+        let style = PreviewStyle()
+        XCTAssertEqual(try stream.consume(html("<script>")), [.text("<script>", style)])
+        XCTAssertEqual(try stream.consume(.text("&amp;  text")), [.text("&amp;  text", style)])
+        XCTAssertEqual(try stream.consume(.object("body")), [.object("body", style)])
+        XCTAssertEqual(try stream.consume(.blockBoundary), [.text("\n", style)])
+        XCTAssertEqual(try stream.consume(.softBreak), [.text(" ", style)])
+        XCTAssertEqual(try stream.consume(.hardBreak), [.text("\u{2028}", style)])
+        XCTAssertEqual(try stream.consume(html("</script>")), [.text("</script>", style)])
+        XCTAssertEqual(stream.diagnostics, [.escapedElement("script"), .escapedElement("script")])
+        XCTAssertNoThrow(try stream.finish())
+    }
+
     func testStructuredParserEventsInsideRawTextAreRejected() {
         for event: PreviewEvent in [
             .enterMarkdown(.strong), .leaveMarkdown(.strong),
+            .enterLink(destination: [.text("/link")], title: []), .leaveLink,
             .markdownImage(alt: [], destination: [.text("/image")]),
         ] {
             XCTAssertThrowsError(try compose([html("<script>"), event], dialect: .commonMark)) {
@@ -312,6 +363,22 @@ final class PreviewComposerTests: XCTestCase {
         ])
         XCTAssertEqual(ink(result), "<unknown data-x='[one]'><em[two]>[three]")
         XCTAssertEqual(result.objectOrder, ["one", "two", "three"])
+    }
+
+    func testObjectsInMalformedClosingTagsStayLiteralUntilAValidClose() throws {
+        for dialect in PreviewDialect.allCases {
+            let result = try compose([
+                .rawHTML([.text("<em><strong>before</em "), .object("closing"),
+                          .text("&amp;>after</em>plain")]),
+            ], dialect: dialect)
+            let nested = PreviewStyle(traits: [.emphasis, .strong])
+            XCTAssertEqual(result.runs, [
+                .text("before", nested), .text("</em ", nested), .object("closing", nested),
+                .text("&amp;>", nested), .text("after", nested), .text("plain", PreviewStyle()),
+            ])
+            XCTAssertEqual(result.objectOrder, ["closing"])
+            XCTAssertEqual(result.diagnostics, [.recoveredNesting("em")])
+        }
     }
 
     func testObjectsInIgnoredAttributesAreRecoveredAtOpeningTag() throws {
@@ -554,6 +621,34 @@ final class PreviewComposerTests: XCTestCase {
         XCTAssertEqual(link(result, text: "inside"), .some(.unreviewed("https://example.invalid/md")))
         XCTAssertEqual(link(result, text: "nested"), .some(.unreviewed("https://example.invalid/md")))
         XCTAssertEqual(link(result, text: "after"), .some(.unreviewed("https://example.invalid/html")))
+    }
+
+    func testStyleRestoresReusedLinksAfterNestedAndRecoveredScopes() throws {
+        let outer = PreviewAddress.unreviewed("/outer")
+        let same = PreviewAddress.unreviewed("/same")
+        let stages: [(PreviewEvent, PreviewStyle)] = [
+            (html("<a href='/outer'>"), PreviewStyle(link: outer)),
+            (html("<a href='/same'>"), PreviewStyle(link: same)),
+            (.enterLink(destination: [.text("/same")], title: []), PreviewStyle(link: same)),
+            (.enterLink(destination: [.text("/same")], title: []), PreviewStyle(link: same)),
+            (html("<em><a href='/inner'>"), PreviewStyle(traits: [.emphasis], link: same)),
+            (.leaveLink, PreviewStyle(traits: [.emphasis], link: same)),
+            (html("</em>"), PreviewStyle(link: same)),
+            (.leaveLink, PreviewStyle(link: same)),
+            (html("</a>"), PreviewStyle(link: outer)),
+            (html("</a>"), PreviewStyle()),
+        ]
+        for dialect in PreviewDialect.allCases {
+            var stream = PreviewComposer(dialect: dialect).start()
+            for (index, stage) in stages.enumerated() {
+                XCTAssertEqual(try stream.consume(stage.0), [])
+                XCTAssertEqual(stream.style, stage.1, "stage \(index)")
+                let text = "stage \(index)"
+                XCTAssertEqual(try stream.consume(.text(text)), [.text(text, stage.1)])
+            }
+            XCTAssertEqual(stream.diagnostics, [.recoveredNesting("em")])
+            XCTAssertNoThrow(try stream.finish())
+        }
     }
 
     func testRefusedMarkdownLinkStillShadowsAnHTMLLink() throws {
