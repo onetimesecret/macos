@@ -4257,6 +4257,65 @@ mod tests {
     }
 
     #[test]
+    fn markdown_parse_preserves_raw_html_without_tag_filtering() {
+        let text = "<script>alert(1)</script>\n\ntext <iframe>value</iframe>";
+        for dialect in [COMMONMARK, GFM] {
+            let json = unsafe { take_json(parse_markdown(text, dialect, Limits::default())) };
+            let document: serde_json::Value = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                document["blocks"][0]["html"]["_0"][0]["text"]["_0"],
+                "<script>alert(1)</script>\n"
+            );
+            assert_eq!(
+                document["blocks"][1]["paragraph"]["_0"][1]["rawHTML"]["_0"][0]["text"]["_0"],
+                "<iframe>"
+            );
+        }
+    }
+
+    #[test]
+    fn markdown_parse_caps_caller_depth_and_serializes_on_a_dispatch_sized_stack() {
+        let ceiling = companion_markdown::MAXIMUM_DEPTH;
+        let pages = [
+            ("> text".to_owned(), Some(1)),
+            (format!("{}text", "> ".repeat(ceiling)), Some(ceiling)),
+            (format!("{}text", "> ".repeat(ceiling + 1)), None),
+            (format!("{}text", "> ".repeat(50_000)), None),
+            (
+                format!("{}a{}", "![".repeat(20_000), "](/u)".repeat(20_000)),
+                None,
+            ),
+            (format!("{}text", "> - ".repeat(20_000)), None),
+        ];
+        for (page, quote_count) in pages {
+            std::thread::Builder::new()
+                .stack_size(512 * 1024)
+                .spawn(move || {
+                    for dialect in [COMMONMARK, GFM] {
+                        for maximum_depth in [0, 1, ceiling, usize::MAX] {
+                            let limits = Limits {
+                                maximum_depth,
+                                ..Limits::default()
+                            };
+                            let json = unsafe { take_json(parse_markdown(&page, dialect, limits)) };
+                            if let Some(expected) =
+                                quote_count.filter(|&depth| depth <= maximum_depth)
+                            {
+                                assert!(json.starts_with(r#"{"blocks":"#));
+                                assert_eq!(json.matches(r#""quote":"#).count(), expected);
+                            } else {
+                                assert_eq!(json, r#"{"error":{"depthLimit":{}}}"#);
+                            }
+                        }
+                    }
+                })
+                .unwrap()
+                .join()
+                .unwrap();
+        }
+    }
+
+    #[test]
     fn markdown_parse_names_each_refusal_the_page_can_reach() {
         let refusal = |text: &str, limits| unsafe { take_json(parse_markdown(text, GFM, limits)) };
         let ample = Limits::default();

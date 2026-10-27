@@ -125,6 +125,7 @@ typedef enum {
  *                       the preview's limits: Unicode scalars in the page,
  *                       nesting of quotes, lists and inline containers,
  *                       and table cells across every table of the page.
+ *                       maximum_depth is capped at 64; smaller values apply.
  *
  * Returns the document,
  *   {"blocks": [...], "atoms": [{"identity": "0", "offset": 7}, ...]},
@@ -141,6 +142,7 @@ typedef enum {
  * contained parser panic. Free a non-NULL result with
  * companion_string_free().
  */
+/* HTML blocks and inline HTML contain the input markup without tag filtering. */
 char *companion_markdown_parse_json(const char *text, size_t len,
                                     const size_t *objects, size_t objects_len,
                                     int dialect,

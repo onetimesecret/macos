@@ -17,6 +17,9 @@ pub use document::{Alignment, Atom, Block, Document, Event, HtmlPart, ListItem, 
 use document::{empty, unlabelled};
 use source::Source;
 
+/// The largest nesting limit accepted by the document walker.
+pub const MAXIMUM_DEPTH: usize = 64;
+
 /// The Markdown dialect a page is read under.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Dialect {
@@ -31,7 +34,7 @@ pub enum Dialect {
 pub struct Limits {
     /// Unicode scalars in the page.
     pub maximum_input_scalars: usize,
-    /// Block quotes, lists and inline containers, nested.
+    /// Block quotes, lists and inline containers, capped at [`MAXIMUM_DEPTH`].
     pub maximum_depth: usize,
     /// Every table of a page together, header rows and padding included.
     pub maximum_table_cells: u64,
@@ -41,7 +44,7 @@ impl Default for Limits {
     fn default() -> Self {
         Self {
             maximum_input_scalars: 1_000_000,
-            maximum_depth: 64,
+            maximum_depth: MAXIMUM_DEPTH,
             maximum_table_cells: 100_000,
         }
     }
@@ -54,7 +57,7 @@ pub enum ParseError {
     /// The page has more scalars than `Limits::maximum_input_scalars`.
     #[serde(serialize_with = "empty")]
     InputLimit,
-    /// The page nests deeper than `Limits::maximum_depth`.
+    /// The page nests deeper than `Limits::maximum_depth` or [`MAXIMUM_DEPTH`].
     #[serde(serialize_with = "empty")]
     DepthLimit,
     /// The page's tables could make more cells than `Limits::maximum_table_cells`.
@@ -112,7 +115,7 @@ pub fn parse_with_objects(
     }
     let arena = Arena::new();
     let root = parse_document(&arena, &source.text, &options(dialect));
-    let blocks = walker::walk(root, &source, limits.maximum_depth)?;
+    let blocks = walker::walk(root, &source, limits.maximum_depth.min(MAXIMUM_DEPTH))?;
     Ok(Document {
         blocks,
         atoms: source.atoms,

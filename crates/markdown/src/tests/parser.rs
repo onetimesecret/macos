@@ -167,7 +167,32 @@ fn nesting_past_the_depth_limit_is_refused() {
     }
 }
 
-/// A dispatch queue's worker thread has a 512 KiB stack; deep or unclosed nesting returns on one.
+#[test]
+fn an_oversized_caller_limit_still_refuses_nesting_past_the_internal_ceiling() {
+    let oversized = Limits {
+        maximum_depth: usize::MAX,
+        ..Limits::default()
+    };
+    let at_ceiling = format!("{}text", "> ".repeat(crate::MAXIMUM_DEPTH));
+    let above_ceiling = format!("> {at_ceiling}");
+    for dialect in BOTH {
+        assert!(crate::parse(&at_ceiling, dialect, oversized).is_ok());
+        assert_eq!(
+            crate::parse(&above_ceiling, dialect, oversized),
+            Err(ParseError::DepthLimit)
+        );
+        let lower = Limits {
+            maximum_depth: 1,
+            ..oversized
+        };
+        assert!(crate::parse("> text", dialect, lower).is_ok());
+        assert_eq!(
+            crate::parse("> > text", dialect, lower),
+            Err(ParseError::DepthLimit)
+        );
+    }
+}
+
 #[test]
 fn adversarial_nesting_returns_on_a_dispatch_sized_stack() {
     let pages = [
@@ -194,20 +219,29 @@ fn adversarial_nesting_returns_on_a_dispatch_sized_stack() {
         ("`".repeat(100_000), true),
     ];
     for (page, parses) in pages {
-        let outcomes = std::thread::Builder::new()
-            .stack_size(512 * 1024)
-            .spawn(move || {
-                BOTH.map(|dialect| crate::parse(&page, dialect, Limits::default()).map(drop))
-            })
-            .unwrap()
-            .join()
-            .unwrap();
-        let expected = if parses {
-            Ok(())
-        } else {
-            Err(ParseError::DepthLimit)
-        };
-        assert_eq!(outcomes, [expected.clone(), expected]);
+        for maximum_depth in [crate::MAXIMUM_DEPTH, usize::MAX] {
+            let page = page.clone();
+            let outcomes = std::thread::Builder::new()
+                .stack_size(512 * 1024)
+                .spawn(move || {
+                    BOTH.map(|dialect| {
+                        let limits = Limits {
+                            maximum_depth,
+                            ..Limits::default()
+                        };
+                        crate::parse(&page, dialect, limits).map(drop)
+                    })
+                })
+                .unwrap()
+                .join()
+                .unwrap();
+            let expected = if parses {
+                Ok(())
+            } else {
+                Err(ParseError::DepthLimit)
+            };
+            assert_eq!(outcomes, [expected.clone(), expected]);
+        }
     }
 }
 
