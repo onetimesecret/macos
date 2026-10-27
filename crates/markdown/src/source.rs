@@ -34,14 +34,14 @@ impl Source {
     /// `objects` are the UTF-16 offsets in `text` of the U+FFFC characters that are sealed
     /// objects, ascending.
     pub(crate) fn new(text: &str, objects: &[usize], limits: &Limits) -> Result<Self, ParseError> {
-        let mut taken = Vec::new();
+        let mut literal_count = 0usize;
         let mut nul_count = 0usize;
         for (index, scalar) in text.chars().enumerate() {
             if index >= limits.maximum_input_scalars {
                 return Err(ParseError::InputLimit);
             }
             if is_plane_16(u32::from(scalar)) {
-                taken.push(u32::from(scalar));
+                literal_count += 1;
             }
             if scalar == '\0' {
                 nul_count += 1;
@@ -50,6 +50,15 @@ impl Source {
         if objects.windows(2).any(|pair| pair[0] >= pair[1]) {
             return Err(ParseError::ObjectOffset);
         }
+        let reference_count = numeric_reference_values(text)
+            .filter(|value| is_plane_16(*value))
+            .count();
+        let mut taken = Zeroizing::new(Vec::with_capacity(literal_count + reference_count));
+        taken.extend(
+            text.chars()
+                .map(u32::from)
+                .filter(|value| is_plane_16(*value)),
+        );
         taken.extend(numeric_reference_values(text).filter(|value| is_plane_16(*value)));
         let base = window(objects.len(), &mut taken)?;
         let capacity = text
@@ -190,34 +199,35 @@ fn window(count: usize, taken: &mut [u32]) -> Result<u32, ParseError> {
 /// U+10FFFF.
 fn numeric_reference_values(text: &str) -> impl Iterator<Item = u32> {
     let bytes = text.as_bytes();
-    let mut values = Vec::new();
     let mut index = 0;
-    while index + 3 < bytes.len() {
-        if bytes[index] != b'&' || bytes[index + 1] != b'#' {
-            index += 1;
-            continue;
-        }
-        let mut cursor = index + 2;
-        let hex = (bytes[cursor] | 0x20) == b'x';
-        if hex {
-            cursor += 1;
-        }
-        let digits = cursor;
-        let mut value: u32 = 0;
-        let mut in_range = true;
-        while let Some(digit) = bytes.get(cursor).and_then(|&byte| digit(byte, hex)) {
-            if in_range {
-                value = value * if hex { 16 } else { 10 } + digit;
-                in_range = value <= 0x10_FFFF;
+    std::iter::from_fn(move || {
+        while index + 3 < bytes.len() {
+            if bytes[index] != b'&' || bytes[index + 1] != b'#' {
+                index += 1;
+                continue;
             }
-            cursor += 1;
+            let mut cursor = index + 2;
+            let hex = (bytes[cursor] | 0x20) == b'x';
+            if hex {
+                cursor += 1;
+            }
+            let digits = cursor;
+            let mut value: u32 = 0;
+            let mut in_range = true;
+            while let Some(digit) = bytes.get(cursor).and_then(|&byte| digit(byte, hex)) {
+                if in_range {
+                    value = value * if hex { 16 } else { 10 } + digit;
+                    in_range = value <= 0x10_FFFF;
+                }
+                cursor += 1;
+            }
+            index = cursor;
+            if cursor > digits && bytes.get(cursor) == Some(&b';') && in_range {
+                return Some(value);
+            }
         }
-        if cursor > digits && bytes.get(cursor) == Some(&b';') && in_range {
-            values.push(value);
-        }
-        index = cursor;
-    }
-    values.into_iter()
+        None
+    })
 }
 
 fn digit(byte: u8, hex: bool) -> Option<u32> {
@@ -243,6 +253,24 @@ mod tests {
             numeric_reference_values("&#65; &#x41; &#X41; &#0000000065; &#x110000; &#; &#x; &#12")
                 .collect();
         assert_eq!(values, [65, 65, 65, 65]);
+    }
+
+    #[test]
+    fn numeric_reference_scan_resumes_after_malformed_adjacent_and_long_values() {
+        let values: Vec<u32> =
+            numeric_reference_values("&#;&#65;&#x;&#X41;&#x110000;&#66;&#&#67;&#x&#68;&#69")
+                .collect();
+        assert_eq!(values, [65, 65, 66, 67, 68]);
+        let long = format!(
+            "&#{}65;&#x{}41;&#{};&#67;",
+            "0".repeat(8192),
+            "0".repeat(8192),
+            "9".repeat(8192)
+        );
+        assert_eq!(
+            numeric_reference_values(&long).collect::<Vec<_>>(),
+            [65, 65, 67]
+        );
     }
 
     #[test]
