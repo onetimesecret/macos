@@ -71,12 +71,14 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
 
     func testDialectSettingChangesGFMExtensionsInAMountedPreview() throws {
         let model = try makeModel()
-        let ink = "~~gone~~\n\n- [x] done\n\n| Name | Value |\n| --- | --- |\n| a | b |\n\nwww.example.com"
+        let rows = (0..<24).map { "| a \($0) | b \($0) |" }.joined(separator: "\n")
+        let ink = "~~gone~~\n\n- [x] done\n\n| Name | Value |\n| --- | --- |\n" + rows + "\n\nwww.example.com"
         let page = try page(in: model, saying: ink)
         model.toggleMarkdownPreview(for: page)
         let roll = try mountRoll(model)
         defer { roll.window.close() }
         let preview = try preview(for: page, in: roll)
+        var heights: [CGFloat] = []
         for dialect in [PreviewDialect.gfm, .commonMark, .gfm] {
             model.markdownDialect = dialect
             let storage = try XCTUnwrap(preview.textStorage)
@@ -93,7 +95,10 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
             XCTAssertEqual(hasLink, dialect == .gfm)
             XCTAssertEqual(preview.string.contains("☑\tdone"), dialect == .gfm)
             XCTAssertEqual(preview.string.contains("[x] done"), dialect == .commonMark)
+            heights.append(preview.frame.height)
         }
+        XCTAssertGreaterThan(abs(heights[0] - heights[1]), 1)
+        XCTAssertEqual(heights[0], heights[2], accuracy: 1)
         XCTAssertEqual(source(for: page, in: model), ink)
     }
 
@@ -130,6 +135,22 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
             model.markdownDialect = dialect
             XCTAssertEqual(preview.string, dialect == .gfm ? "<script>x</script>\n" : ink + "\n")
         }
+        XCTAssertEqual(source(for: page, in: model), ink)
+    }
+
+    func testUnclosedCommonMarkRawTextUsesTheOriginalPageAndGFMRestoresFormatting() throws {
+        let model = try makeModel()
+        let ink = "# Heading\n\na <script> b\n\n# After"
+        let page = try page(in: model, saying: ink)
+        model.toggleMarkdownPreview(for: page)
+        let roll = try mountRoll(model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        XCTAssertEqual(preview.string, "Heading\na <script> b\nAfter\n")
+        model.markdownDialect = .commonMark
+        XCTAssertEqual(preview.string, ink + "\n")
+        model.markdownDialect = .gfm
+        XCTAssertEqual(preview.string, "Heading\na <script> b\nAfter\n")
         XCTAssertEqual(source(for: page, in: model), ink)
     }
 

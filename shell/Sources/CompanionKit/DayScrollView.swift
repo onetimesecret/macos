@@ -473,8 +473,6 @@ final class DayStackView: NSView {
             name: NSView.boundsDidChangeNotification,
             object: clip
         )
-        // Preview changes can restyle the editor without changing the global setting.
-        // Registered by selector so this observation retires with the view.
         for name in [PageModel.quietRenderingsDidInvalidateNotification, PageModel.markdownDialectDidChangeNotification] {
             NotificationCenter.default.addObserver(
                 self, selector: #selector(renderingPreferencesChanged), name: name, object: model)
