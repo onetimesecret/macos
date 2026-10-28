@@ -38,7 +38,8 @@ enum PreviewImageRequestPolicy {
         guard !host.hasSuffix("."), host.utf8.count <= 253 else { return false }
         let labels = host.split(separator: ".", omittingEmptySubsequences: false)
         guard labels.count >= 2,
-              !["localhost", "local", "internal", "home", "lan", "test", "invalid", "arpa"].contains(String(labels.last!)),
+              !["localhost", "local", "internal", "home", "lan", "test", "invalid", "arpa",
+                "onion", "i2p", "alt", "localdomain"].contains(String(labels.last!)),
               labels.last!.utf8.contains(where: { (97...122).contains($0) })
         else { return false }
         return labels.allSatisfy { label in
@@ -110,11 +111,6 @@ final class PreviewImageLoader {
         try Task.checkCancellation()
         let image = try await PreviewImageDecoder.shared.decode(data)
         try Task.checkCancellation()
-        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-    }
-
-    static func decode(_ data: Data) throws -> NSImage {
-        let image = try decodePixelImage(data)
         return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     }
 

@@ -83,6 +83,8 @@ final class PreviewImageLoaderTests: XCTestCase {
             "https://user:password@images.example.com/a", "https://images.example.com:444/a",
             "https://images.example.com./a", "https://-bad.example.com/a",
             "https://router.home.arpa/a", "https://1.0.0.127.in-addr.arpa/a", "https://arpa/a",
+            "https://hidden.onion/a", "https://hidden.i2p/a", "https://service.alt/a",
+            "https://printer.localdomain/a",
         ] {
             XCTAssertNil(PreviewImageRequestPolicy.url(for: .unreviewed(address)), address)
             XCTAssertNotNil(PreviewImageRequestPolicy.refusal(for: .unreviewed(address)), address)
@@ -329,5 +331,12 @@ private extension PreviewImageDecoder {
         observe(true, Thread.isMainThread)
         defer { observe(false, Thread.isMainThread) }
         return try decode(data)
+    }
+}
+
+private extension PreviewImageLoader {
+    static func decode(_ data: Data) throws -> NSImage {
+        let image = try decodePixelImage(data)
+        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     }
 }
