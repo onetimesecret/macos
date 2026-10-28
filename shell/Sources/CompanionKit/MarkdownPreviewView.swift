@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import os
 
 /// A rendered page whose AppKit copy, link, reader and drag routes follow Law 0001's preview rows.
@@ -225,13 +226,11 @@ final class MarkdownPreviewView: AskingTextView {
     static func render(
         _ source: NSAttributedString, dialect: PreviewDialect = .gfm,
         limits: CompositionLimits = CompositionLimits(),
-        onLinkPolicyEvaluation: ((Int) -> Void)? = nil,
-        onFontResolution: ((NSFont, Set<PreviewTrait>) -> Void)? = nil
+        onDiagnostic: ((PreviewRenderingDiagnostic) -> Void)? = nil
     ) -> NSAttributedString {
         MarkdownPreviewRenderer(
             source: source, dialect: dialect, limits: limits,
-            onLinkPolicyEvaluation: onLinkPolicyEvaluation,
-            onFontResolution: onFontResolution
+            onDiagnostic: onDiagnostic
         ).render()
     }
 }
@@ -246,6 +245,11 @@ extension NSAttributedString.Key {
 struct PreviewImageDescriptor: Hashable {
     let occurrence: Int
     let destination: PreviewAddress
+}
+
+enum PreviewRenderingDiagnostic {
+    case linkPolicyEvaluation(Int)
+    case fontResolution(NSFont, Set<PreviewTrait>)
 }
 
 /// The preview's delegate: a link opens only by `openAimedLink`, and an object's
@@ -298,9 +302,8 @@ private final class MarkdownPreviewRenderer {
     private let text: String
     private let dialect: PreviewDialect
     private let limits: CompositionLimits
-    private let onLinkPolicyEvaluation: ((Int) -> Void)?
+    private let onDiagnostic: ((PreviewRenderingDiagnostic) -> Void)?
     private var reviewedLinks: [Int: LinkPolicyResult] = [:]
-    private let onFontResolution: ((NSFont, Set<PreviewTrait>) -> Void)?
     private var resolvedFonts: [FontKey: NSFont] = [:]
     /// The page's objects in source order, and the UTF-16 offset of each.
     private let attachments: [NSTextAttachment]
@@ -313,8 +316,7 @@ private final class MarkdownPreviewRenderer {
 
     init(
         source: NSAttributedString, dialect: PreviewDialect, limits: CompositionLimits,
-        onLinkPolicyEvaluation: ((Int) -> Void)?,
-        onFontResolution: ((NSFont, Set<PreviewTrait>) -> Void)?
+        onDiagnostic: ((PreviewRenderingDiagnostic) -> Void)?
     ) {
         let raw = source.string as NSString
         var attachments: [NSTextAttachment] = []
@@ -330,8 +332,7 @@ private final class MarkdownPreviewRenderer {
         text = source.string
         self.dialect = dialect
         self.limits = limits
-        self.onLinkPolicyEvaluation = onLinkPolicyEvaluation
-        self.onFontResolution = onFontResolution
+        self.onDiagnostic = onDiagnostic
         self.attachments = attachments
         self.offsets = offsets
         composer = PreviewComposer(dialect: dialect, limits: limits, collectDiagnostics: false).start()
@@ -443,6 +444,8 @@ private final class MarkdownPreviewRenderer {
         case .codeBlock(let info, let literal):
             var nested = context
             let block = NSTextBlock()
+            block.setContentWidth(100, type: .percentageValueType)
+            block.setValue(0, type: .absoluteValueType, for: .minimumWidth)
             block.backgroundColor = .controlBackgroundColor
             block.setWidth(8, type: .absoluteValueType, for: .padding)
             nested.blocks.append(block)
@@ -454,6 +457,8 @@ private final class MarkdownPreviewRenderer {
         case .quote(let children):
             var nested = context
             let block = NSTextBlock()
+            block.setContentWidth(100, type: .percentageValueType)
+            block.setValue(0, type: .absoluteValueType, for: .minimumWidth)
             block.setWidth(3, type: .absoluteValueType, for: .border, edge: .minX)
             block.setBorderColor(.separatorColor)
             block.setWidth(10, type: .absoluteValueType, for: .padding, edge: .minX)
@@ -645,7 +650,7 @@ private final class MarkdownPreviewRenderer {
     private func resolvedFont(_ base: NSFont, traits: Set<PreviewTrait>) -> NSFont {
         let key = FontKey(base: base, traits: traits)
         if let font = resolvedFonts[key] { return font }
-        onFontResolution?(base, traits)
+        onDiagnostic?(.fontResolution(base, traits))
         let manager = NSFontManager.shared
         var font = base
         if traits.contains(.code) {
@@ -664,7 +669,7 @@ private final class MarkdownPreviewRenderer {
         if let reviewed = reviewedLinks[occurrence] {
             result = reviewed
         } else {
-            onLinkPolicyEvaluation?(occurrence)
+            onDiagnostic?(.linkPolicyEvaluation(occurrence))
             if case .unreviewed(let address)? = style.link, let url = safeURL(address) {
                 result = .accepted(url as NSURL)
             } else {
@@ -714,11 +719,25 @@ private final class MarkdownPreviewRenderer {
             components.fragment = nil
         } else {
             // `https://docs.example.com@evil.example/` opens evil.example: userinfo refuses the link.
-            guard let host = components.host, !host.isEmpty,
+            guard let host = components.percentEncodedHost?.removingPercentEncoding, !host.isEmpty,
+                  !host.unicodeScalars.contains(where: { forbidden.contains($0) }),
+                  host.rangeOfCharacter(from: CharacterSet(charactersIn: "@/?#")) == nil,
+                  !host.contains(":") || isIPv6Host(host),
                   components.user == nil, components.password == nil
             else { return nil }
         }
         return components.url
+    }
+
+    private func isIPv6Host(_ host: String) -> Bool {
+        guard host.hasPrefix("["), host.hasSuffix("]") else { return false }
+        let parts = host.dropFirst().dropLast().split(separator: "%", maxSplits: 1, omittingEmptySubsequences: false)
+        if parts.count == 2 {
+            let unreserved = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+            guard !parts[1].isEmpty, parts[1].unicodeScalars.allSatisfy({ unreserved.contains($0) }) else { return false }
+        }
+        var address = in6_addr()
+        return String(parts[0]).withCString { inet_pton(AF_INET6, $0, &address) == 1 }
     }
 
     /// The object a composed identity names, as its attachment character.

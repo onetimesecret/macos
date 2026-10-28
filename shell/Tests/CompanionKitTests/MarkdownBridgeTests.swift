@@ -100,6 +100,36 @@ final class MarkdownBridgeTests: XCTestCase {
         XCTAssertEqual(released, 1)
     }
 
+    func testDecodedOrderedListNumbersRejectOverflowIncludingNestedLists() throws {
+        let item = MarkdownListItem(task: nil, blocks: [.paragraph([.text("item")])])
+        for (start, count, accepted) in [(Int.max, 2, false), (-1, 1, false), (Int.max, 1, true),
+                                         (Int.max - 1, 2, true), (0, 2, true)] {
+            let list = MarkdownBlock.list(ordered: true, start: start, tight: true,
+                                          items: Array(repeating: item, count: count))
+            for block in [list, .quote([list]), .list(ordered: false, start: 0, tight: true,
+                                                    items: [MarkdownListItem(task: nil, blocks: [list])])] {
+                let expected = MarkdownDocument(blocks: [block], atoms: [])
+                let data = try JSONEncoder().encode(expected)
+                let pointer = try XCTUnwrap(strdup(String(decoding: data, as: UTF8.self)))
+                var released = 0
+                let decode = {
+                    try MarkdownParser.decode(pointer, release: {
+                        released += 1
+                        free($0)
+                    })
+                }
+                if accepted {
+                    XCTAssertEqual(try decode(), expected)
+                } else {
+                    XCTAssertThrowsError(try decode()) {
+                        XCTAssertEqual($0 as? MarkdownBridgeError, .invalidResponse)
+                    }
+                }
+                XCTAssertEqual(released, 1, "start \(start), count \(count)")
+            }
+        }
+    }
+
     func testRealFFIReadsEmptyInputEmbeddedNULAndUTF16ObjectOffsets() throws {
         for dialect in PreviewDialect.allCases {
             XCTAssertEqual(try MarkdownParser.parse("", dialect: dialect), MarkdownDocument(blocks: [], atoms: []))

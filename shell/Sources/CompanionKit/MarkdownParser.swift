@@ -50,10 +50,24 @@ enum MarkdownParser {
             guard document.atoms.count == objects.count,
                   document.atoms.enumerated().allSatisfy({ index, atom in
                       atom.identity == String(index) && atom.offset == objects[index]
-                  })
+                  }), document.blocks.allSatisfy(hasValidListNumbers)
             else { throw MarkdownBridgeError.invalidResponse }
             return document
         case .refused(let error): throw error
+        }
+    }
+
+    private static func hasValidListNumbers(_ block: MarkdownBlock) -> Bool {
+        switch block {
+        case .quote(let blocks):
+            return blocks.allSatisfy(hasValidListNumbers)
+        case .list(let ordered, let start, _, let items):
+            if ordered {
+                guard start >= 0, !start.addingReportingOverflow(max(0, items.count - 1)).overflow else { return false }
+            }
+            return items.allSatisfy { $0.blocks.allSatisfy(hasValidListNumbers) }
+        default:
+            return true
         }
     }
 

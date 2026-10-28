@@ -153,6 +153,56 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         }
     }
 
+    func testWebHostsWithEncodedWhitespaceControlsAndAuthorityDelimitersAreNotInteractive() throws {
+        let encodedScalars = [
+            "%00", "%09", "%0D%0A", "%1F", "%7F", "%C2%85", "%20", "%E2%80%A8",
+            "%40", "%2F", "%3F", "%23", "%3A",
+        ]
+        for dialect in PreviewDialect.allCases {
+            for scheme in ["http", "https"] {
+                for encoded in encodedScalars {
+                    let address = "\(scheme)://docs.example.com\(encoded)evil.example/"
+                    for source in ["[address](\(address))", "<a href=\"\(address)\">address</a>"] {
+                        let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect)
+                        XCTAssertEqual(rendered.string, "address\n", "\(dialect): \(source)")
+                        XCTAssertNil(try link("address", in: rendered), "\(dialect): \(source)")
+                    }
+                }
+            }
+        }
+    }
+
+    func testWebLinksKeepValidEncodedHostsIPv6PortsAndPathDelimiters() throws {
+        let addresses = [
+            "http://example.com:8080/a?x=1#top",
+            "https://exa%6Dple.com/@user/%3A%2F%3F%23%40?x=1#top",
+            "https://b%C3%BCcher.example/",
+            "http://[::1]/", "https://[2001:db8::1]:8443/a?x=1#top",
+            "https://[::ffff:192.0.2.1]/", "http://[fe80::1%25en0]/",
+        ]
+        for dialect in PreviewDialect.allCases {
+            for address in addresses {
+                for source in ["[address](\(address))", "<a href=\"\(address)\">address</a>"] {
+                    let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect)
+                    XCTAssertEqual(rendered.string, "address\n", "\(dialect): \(source)")
+                    XCTAssertEqual(try link("address", in: rendered)?.absoluteString, address, "\(dialect): \(source)")
+                }
+            }
+        }
+    }
+
+    func testBracketedWebHostsRequireAValidIPv6Address() throws {
+        for dialect in PreviewDialect.allCases {
+            for address in ["https://[bad:host]/", "http://[2001:db8::1::2]/", "https://[::1%25]/"] {
+                for source in ["[address](\(address))", "<a href=\"\(address)\">address</a>"] {
+                    let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect)
+                    XCTAssertEqual(rendered.string, "address\n", "\(dialect): \(source)")
+                    XCTAssertNil(try link("address", in: rendered), "\(dialect): \(source)")
+                }
+            }
+        }
+    }
+
     func testEachLongLinkOccurrenceEvaluatesPolicyOnceAcrossStyledRuns() throws {
         let path = String(repeating: "a", count: 24_000)
         let labels = (0..<128).map { "em\($0)strong\($0)" }.joined()
@@ -163,7 +213,9 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
                     var evaluated: [Int] = []
                     let rendered = MarkdownPreviewView.render(
                         NSAttributedString(string: source), dialect: dialect,
-                        onLinkPolicyEvaluation: { evaluated.append($0) }
+                        onDiagnostic: {
+                            if case .linkPolicyEvaluation(let occurrence) = $0 { evaluated.append(occurrence) }
+                        }
                     )
                     XCTAssertEqual(rendered.string, labels + "\n")
                     XCTAssertEqual(evaluated, [0])
@@ -202,7 +254,9 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
                 var evaluated: [Int] = []
                 let rendered = MarkdownPreviewView.render(
                     NSAttributedString(string: source), dialect: dialect,
-                    onLinkPolicyEvaluation: { evaluated.append($0) }
+                    onDiagnostic: {
+                        if case .linkPolicyEvaluation(let occurrence) = $0 { evaluated.append(occurrence) }
+                    }
                 )
                 XCTAssertEqual(rendered.string, "outer-start emphasis markdown bold outer-restored html-inner outer-end repeat\n")
                 XCTAssertEqual(evaluated, [0, 1, 2, 3])
@@ -230,8 +284,12 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         var links: [Int] = []
         let rendered = MarkdownPreviewView.render(
             NSAttributedString(string: source),
-            onLinkPolicyEvaluation: { links.append($0) },
-            onFontResolution: { resolved.append(($0, $1)) }
+            onDiagnostic: {
+                switch $0 {
+                case .linkPolicyEvaluation(let occurrence): links.append(occurrence)
+                case .fontResolution(let base, let traits): resolved.append((base, traits))
+                }
+            }
         )
         let expected: Set<Set<CompanionKit.PreviewTrait>> = [
             [], [.strong], [.emphasis], [.strong, .emphasis], [.code],
@@ -273,7 +331,9 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         var resolved: [(base: NSFont, traits: Set<CompanionKit.PreviewTrait>)] = []
         let rendered = MarkdownPreviewView.render(
             NSAttributedString(string: source),
-            onFontResolution: { resolved.append(($0, $1)) }
+            onDiagnostic: {
+                if case .fontResolution(let base, let traits) = $0 { resolved.append((base, traits)) }
+            }
         )
         XCTAssertEqual(resolved.count, 9)
         XCTAssertEqual(Set(resolved.map { $0.base.pointSize }).count, 3)
@@ -508,6 +568,44 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertTrue(view.isSelectable)
         XCTAssertTrue(container.widthTracksTextView)
         XCTAssertEqual(view.textStorage?.layoutManagers.count, 1)
+    }
+
+    func testQuoteAndCodeBlocksAfterATableUseThePreviewWidthAndReflowOnResize() throws {
+        let words = Array(repeating: "wrapping words", count: 12).joined(separator: " ")
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        view.reseed(with: PageModel.QuietRendering(text: NSAttributedString(string: """
+        | Name | Value |
+        | --- | --- |
+        | row | value |
+
+        > quoted \(words)
+        >
+        > > nested \(words)
+
+        ```
+        coded \(words)
+        ```
+        """), fenceRegions: []))
+        let manager = try XCTUnwrap(view.layoutManager)
+        let container = try XCTUnwrap(view.textContainer)
+        var heights: [CGFloat] = []
+        for width: CGFloat in [320, 760, 320] {
+            view.setFrameSize(NSSize(width: width, height: 4000))
+            manager.ensureLayout(for: container)
+            for label in ["quoted", "nested", "coded"] {
+                let index = (view.string as NSString).range(of: label).location
+                XCTAssertNotEqual(index, NSNotFound)
+                let glyph = manager.glyphIndexForCharacter(at: index)
+                let fragment = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+                XCTAssertGreaterThan(fragment.width, container.size.width * 0.8, "\(width): \(label)")
+                XCTAssertLessThanOrEqual(fragment.maxX, container.size.width + 1, "\(width): \(label)")
+            }
+            let used = manager.usedRect(for: container)
+            XCTAssertLessThanOrEqual(used.maxX, container.size.width + 1)
+            heights.append(used.height)
+        }
+        XCTAssertGreaterThan(heights[0], heights[1])
+        XCTAssertEqual(heights[0], heights[2], accuracy: 1)
     }
 
     /// An object in a cell of a multi column table takes the cell's width, not the
