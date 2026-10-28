@@ -355,6 +355,23 @@ final class PreviewComposerTests: XCTestCase {
         XCTAssertNoThrow(try stream.finish())
     }
 
+    func testFinalUnclosedCommonMarkRawTextKeepsObjectOnlyTailAndFinishes() throws {
+        for tag in ["script", "plaintext"] {
+            var stream = PreviewComposer(dialect: .commonMark).start()
+            try stream.beginBlock()
+            var runs = try stream.consume(html("<\(tag)>"))
+            runs += try stream.consume(.object("first"))
+            runs += try stream.consume(.object("second"))
+            XCTAssertNoThrow(try stream.finish(), tag)
+            XCTAssertEqual(runs, [
+                .text("<\(tag)>", PreviewStyle()),
+                .object("first", PreviewStyle()), .object("second", PreviewStyle()),
+            ], tag)
+            XCTAssertEqual(runs.objectIdentities, ["first", "second"], tag)
+            XCTAssertEqual(stream.diagnostics, [.escapedElement(tag)], tag)
+        }
+    }
+
     func testDecodedTextAndStructuredParserEventsInsideRawTextAreRejected() {
         for event: PreviewEvent in [
             .text("&"), .text(""), .blockBoundary, .softBreak, .hardBreak,

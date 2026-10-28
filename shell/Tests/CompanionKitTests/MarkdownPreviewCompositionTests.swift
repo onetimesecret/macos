@@ -106,6 +106,25 @@ final class MarkdownPreviewCompositionTests: XCTestCase {
         }
     }
 
+    func testFinalUnclosedCommonMarkRawTextKeepsObjectOnlyTailThroughTheRealParser() throws {
+        for name in ["script", "plaintext"] {
+            let (input, objects) = source(["# Heading\n\nprefix <\(name)>", nil, nil])
+            let rendered = MarkdownPreviewView.render(input, dialect: .commonMark)
+            XCTAssertEqual(rendered.string, "Heading\nprefix <\(name)>\u{FFFC}\u{FFFC}\n")
+            let shown = attachments(in: rendered)
+            XCTAssertEqual(shown.count, objects.count)
+            for (actual, expected) in zip(shown, objects) { XCTAssertTrue(actual === expected) }
+        }
+    }
+
+    func testTrimmedEmptyImageBlockLeavesTheNextVisibleSourceOccurrenceNumber() {
+        for dialect in PreviewDialect.allCases {
+            let rendered = render("<div> <img> </div>\n\n<img alt='visible'>", dialect: dialect)
+            XCTAssertEqual(rendered.string, "visible\n")
+            XCTAssertEqual(images(in: rendered).map { $0.0.occurrence }, [1])
+        }
+    }
+
     /// `A <em>one **two**</em>` spans HTML and Markdown nodes; each word takes both scopes.
     func testMarkdownAndHTMLFormattingCombineAcrossEachOther() throws {
         let rendered = render("A <em>one **two**</em> end and **bold <em>both</em>** after")
