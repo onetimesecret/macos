@@ -5,6 +5,7 @@ mod definitions;
 mod html;
 mod json;
 mod parser;
+mod profile;
 mod sealed_atoms;
 mod tree_shapes;
 

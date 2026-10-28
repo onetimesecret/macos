@@ -8,10 +8,6 @@ let package = Package(
     name: "OnetimePad",
     defaultLocalization: "en",
     platforms: [.macOS(.v13)], // MenuBarExtra needs macOS 13+
-    dependencies: [
-        // Patch releases only: a minor of a parser under a security product is reviewed, not floated into.
-        .package(url: "https://github.com/swiftlang/swift-markdown.git", .upToNextMinor(from: "0.9.0")),
-    ],
     targets: [
         // Produced by scripts/build-core.sh. Exposes the C ABI in
         // crates/ffi/include/companion_ffi.h as the CompanionCore module.
@@ -31,7 +27,7 @@ let package = Package(
         // same mark scripts/render-icon.swift bakes into the app icon.
         .target(
             name: "CompanionKit",
-            dependencies: ["CompanionCore", .product(name: "Markdown", package: "swift-markdown")],
+            dependencies: ["CompanionCore"],
             path: "Sources/CompanionKit",
             resources: [.process("Resources")]
         ),

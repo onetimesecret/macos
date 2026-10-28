@@ -46,6 +46,25 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         return found
     }
 
+    private func nativeTableCells(in rendered: NSAttributedString) -> [NSTextTableBlock] {
+        var cells: [ObjectIdentifier: NSTextTableBlock] = [:]
+        rendered.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: rendered.length)) { value, _, _ in
+            for case let cell as NSTextTableBlock in (value as? NSParagraphStyle)?.textBlocks ?? [] {
+                cells[ObjectIdentifier(cell)] = cell
+            }
+        }
+        return Array(cells.values)
+    }
+
+    private func table(columns: Int, bodyRows: Int, headerPrefix: String = "h") -> String {
+        let header = "| " + (0..<columns).map { "\(headerPrefix)\($0)" }.joined(separator: " | ") + " |"
+        let separator = "| " + Array(repeating: "---", count: columns).joined(separator: " | ") + " |"
+        let rows = (0..<bodyRows).map { row in
+            "| " + Array(repeating: String(row), count: columns).joined(separator: " | ") + " |"
+        }
+        return ([header, separator] + rows).joined(separator: "\n")
+    }
+
     func testHeadingsAndInlineFormattingRemoveSyntaxAndKeepParagraphBoundaries() throws {
         let rendered = render("""
         # Heading **bold**
@@ -102,6 +121,19 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         }
     }
 
+    /// Userinfo before the host makes an address read as one site and open another, so a web
+    /// link with a user or a password opens nothing, written as Markdown or as HTML.
+    func testAWebAddressWithUserinfoIsNoLink() throws {
+        let rendered = render("""
+        [spoof](https://docs.example.com@evil.example/) [secret](https://u:p@example.com/) \
+        <a href="http://docs.example.com@evil.example/">html</a> [fine](https://example.com/@user)
+        """)
+        for label in ["spoof", "secret", "html"] {
+            XCTAssertNil(try link(label, in: rendered), label)
+        }
+        XCTAssertEqual(try link("fine", in: rendered)?.host, "example.com", "an @ in the path is no userinfo")
+    }
+
     /// A mailto link keeps the address and loses its query and fragment, which name headers,
     /// a body and attachments for the mail client; a web link keeps its query.
     func testAMailtoLinkKeepsTheAddressAndLosesItsQueryAndFragment() throws {
@@ -112,6 +144,316 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(try link("mail", in: rendered)?.absoluteString, "mailto:a@example.com")
         XCTAssertEqual(try link("plain", in: rendered)?.absoluteString, "mailto:a@example.com")
         XCTAssertEqual(try link("web", in: rendered)?.absoluteString, "https://example.com/a?x=1#top")
+    }
+
+    func testMailtoAddressesWithEncodedWhitespaceOrControlsAreNotInteractive() throws {
+        let encodedScalars = ["%00", "%09", "%0D%0A", "%1F", "%7F", "%C2%85", "%20", "%E2%80%A8"]
+        for dialect in PreviewDialect.allCases {
+            for encoded in encodedScalars {
+                let address = "mailto:reader\(encoded)@example.com?subject=hi#top"
+                for source in ["[address](\(address))", "<a href=\"\(address)\">address</a>"] {
+                    let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect)
+                    XCTAssertEqual(rendered.string, "address\n", source)
+                    XCTAssertNil(try link("address", in: rendered), source)
+                }
+            }
+        }
+    }
+
+    func testMailtoAddressesKeepEncodedNonASCIIAndRemoveEncodedQueryControls() throws {
+        let address = "mailto:jos%C3%A9@example.com?subject=hi%0D%0Abcc:other@example.com#top"
+        for dialect in PreviewDialect.allCases {
+            for source in ["[address](\(address))", "<a href=\"\(address)\">address</a>"] {
+                let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect)
+                let url = try XCTUnwrap(try link("address", in: rendered), source)
+                XCTAssertEqual(url.absoluteString, "mailto:jos%C3%A9@example.com", source)
+                XCTAssertEqual(URLComponents(url: url, resolvingAgainstBaseURL: false)?.path, "josé@example.com")
+            }
+        }
+    }
+
+    func testFormatCharactersInWebHostsAndMailtoAddressesAreRefusedAfterParsing() throws {
+        let formats = ["\u{00AD}", "\u{200B}", "\u{200C}", "\u{200D}", "\u{200E}",
+                       "\u{202A}", "\u{202E}", "\u{2066}", "\u{2069}", "\u{FEFF}"]
+        var addresses: [(destination: String, allowed: Bool)] = [
+            ("https://b%C3%BCcher.example/", true), ("mailto:jos%C3%A9@example.com", true),
+        ]
+        for format in formats {
+            let encoded = format.utf8.map { String(format: "%%%02X", $0) }.joined()
+            for spelling in [format, encoded] {
+                for destination in ["http://exam\(spelling)ple.test/", "https://exa\(spelling)mple.test/",
+                                    "mailto:read\(spelling)er@example.test", "mailto:reader@exam\(spelling)ple.test"] {
+                    addresses.append((destination, false))
+                }
+            }
+        }
+        for dialect in PreviewDialect.allCases {
+            for address in addresses {
+                for source in ["[address](\(address.destination))", "<a href=\"\(address.destination)\">address</a>"] {
+                    var evaluations: [Int] = []
+                    let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect,
+                                                             onDiagnostic: {
+                        if case .linkPolicyEvaluation(let occurrence) = $0 { evaluations.append(occurrence) }
+                    })
+                    let context = "\(dialect): \(String(reflecting: source))"
+                    XCTAssertEqual(rendered.string, "address\n", context)
+                    XCTAssertEqual(evaluations, [0], context)
+                    XCTAssertEqual(try link("address", in: rendered) != nil, address.allowed, context)
+                }
+            }
+        }
+    }
+
+    func testWebHostsWithEncodedWhitespaceControlsAndAuthorityDelimitersAreNotInteractive() throws {
+        let encodedScalars = [
+            "%00", "%09", "%0D%0A", "%1F", "%7F", "%C2%85", "%20", "%E2%80%A8",
+            "%40", "%2F", "%3F", "%23", "%3A",
+        ]
+        for dialect in PreviewDialect.allCases {
+            for scheme in ["http", "https"] {
+                for encoded in encodedScalars {
+                    let address = "\(scheme)://docs.example.com\(encoded)evil.example/"
+                    for source in ["[address](\(address))", "<a href=\"\(address)\">address</a>"] {
+                        let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect)
+                        XCTAssertEqual(rendered.string, "address\n", "\(dialect): \(source)")
+                        XCTAssertNil(try link("address", in: rendered), "\(dialect): \(source)")
+                    }
+                }
+            }
+        }
+    }
+
+    func testWebLinksKeepValidEncodedHostsIPv6PortsAndPathDelimiters() throws {
+        let addresses = [
+            "http://example.com:8080/a?x=1#top",
+            "https://exa%6Dple.com/@user/%3A%2F%3F%23%40?x=1#top",
+            "https://b%C3%BCcher.example/",
+            "http://[::1]/", "https://[2001:db8::1]:8443/a?x=1#top",
+            "https://[::ffff:192.0.2.1]/", "http://[fe80::1%25en0]/", "https://[::]/",
+        ]
+        for dialect in PreviewDialect.allCases {
+            for address in addresses {
+                for source in ["[address](\(address))", "<a href=\"\(address)\">address</a>"] {
+                    let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect)
+                    XCTAssertEqual(rendered.string, "address\n", "\(dialect): \(source)")
+                    XCTAssertEqual(try link("address", in: rendered)?.absoluteString, address, "\(dialect): \(source)")
+                }
+            }
+        }
+    }
+
+    func testBracketedWebHostsRequireAValidIPv6Address() throws {
+        for dialect in PreviewDialect.allCases {
+            for address in ["https://[bad:host]/", "http://[2001:db8::1::2]/", "https://[::1%25]/"] {
+                for source in ["[address](\(address))", "<a href=\"\(address)\">address</a>"] {
+                    let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect)
+                    XCTAssertEqual(rendered.string, "address\n", "\(dialect): \(source)")
+                    XCTAssertNil(try link("address", in: rendered), "\(dialect): \(source)")
+                }
+            }
+        }
+    }
+
+    func testEachLongLinkOccurrenceEvaluatesPolicyOnceAcrossStyledRuns() throws {
+        let path = String(repeating: "a", count: 24_000)
+        let labels = (0..<128).map { "em\($0)strong\($0)" }.joined()
+        let body = (0..<128).map { "<em>em\($0)</em><strong>strong\($0)</strong>" }.joined()
+        for dialect in PreviewDialect.allCases {
+            for (address, allowed) in [("https://example.com/" + path, true), ("javascript:" + path, false)] {
+                for source in ["[\(body)](\(address))", "<a href=\"\(address)\">\(body)</a>"] {
+                    var evaluated: [Int] = []
+                    let rendered = MarkdownPreviewView.render(
+                        NSAttributedString(string: source), dialect: dialect,
+                        onDiagnostic: {
+                            if case .linkPolicyEvaluation(let occurrence) = $0 { evaluated.append(occurrence) }
+                        }
+                    )
+                    XCTAssertEqual(rendered.string, labels + "\n")
+                    XCTAssertEqual(evaluated, [0])
+                    var styledRuns = 0
+                    rendered.enumerateAttribute(.font, in: NSRange(location: 0, length: rendered.length)) { _, _, _ in
+                        styledRuns += 1
+                    }
+                    XCTAssertGreaterThanOrEqual(styledRuns, 256)
+                    let first = rendered.attribute(.link, at: try range("em0", in: rendered).location,
+                                                   effectiveRange: nil) as? NSURL
+                    let last = rendered.attribute(.link, at: try range("strong127", in: rendered).location,
+                                                  effectiveRange: nil) as? NSURL
+                    if allowed {
+                        XCTAssertNotNil(first)
+                        XCTAssertTrue(first === last)
+                    } else {
+                        XCTAssertNil(first)
+                        XCTAssertNil(last)
+                    }
+                }
+            }
+        }
+    }
+
+    func testLinkPolicyOccurrencesAreReusedOnRestorationAndRenewedForRepeatedDestinations() throws {
+        let path = String(repeating: "b", count: 8_000)
+        let accepted = "https://example.com/" + path
+        let refused = "javascript:" + path
+        for dialect in PreviewDialect.allCases {
+            for (outer, inner, outerAllowed) in [(accepted, refused, true), (refused, accepted, false)] {
+                let source = """
+                <a href="\(outer)">outer-start <em>emphasis</em> \
+                [markdown <strong>bold</strong>](\(inner)) outer-restored \
+                <a href="\(inner)">html-inner</a> outer-end</a> <a href="\(outer)">repeat</a>
+                """
+                var evaluated: [Int] = []
+                let rendered = MarkdownPreviewView.render(
+                    NSAttributedString(string: source), dialect: dialect,
+                    onDiagnostic: {
+                        if case .linkPolicyEvaluation(let occurrence) = $0 { evaluated.append(occurrence) }
+                    }
+                )
+                XCTAssertEqual(rendered.string, "outer-start emphasis markdown bold outer-restored html-inner outer-end repeat\n")
+                XCTAssertEqual(evaluated, [0, 1, 2, 3])
+                for label in ["outer-start", "emphasis", "outer-restored", "outer-end", "repeat"] {
+                    XCTAssertEqual(try link(label, in: rendered)?.absoluteString, outerAllowed ? outer : nil, label)
+                }
+                for label in ["markdown", "bold", "html-inner"] {
+                    XCTAssertEqual(try link(label, in: rendered)?.absoluteString, outerAllowed ? nil : inner, label)
+                }
+            }
+        }
+    }
+
+    func testFontResolutionIsCachedAcrossRepeatedStylesAndLinkOccurrences() throws {
+        let body = (0..<64).map { index in
+            """
+            plain\(index) <strong>bold\(index)</strong> <em>italic\(index)</em> \
+            <strong><em>both\(index)</em></strong> <code>code\(index)</code> \
+            <strong><code>boldCode\(index)</code></strong> <em><code>italicCode\(index)</code></em> \
+            <strong><em><code>bothCode\(index)</code></em></strong> <del>strike\(index)</del>
+            """
+        }.joined(separator: " ")
+        let source = "<a href=\"https://example.com/first\">\(body)</a> <a href=\"https://example.com/second\">\(body)</a>"
+        var resolved: [(base: NSFont, traits: Set<CompanionKit.PreviewTrait>)] = []
+        var links: [Int] = []
+        let rendered = MarkdownPreviewView.render(
+            NSAttributedString(string: source),
+            onDiagnostic: {
+                switch $0 {
+                case .linkPolicyEvaluation(let occurrence): links.append(occurrence)
+                case .fontResolution(let base, let traits): resolved.append((base, traits))
+                case .fontSizing, .fontTraitConversion: break
+                }
+            }
+        )
+        let expected: Set<Set<CompanionKit.PreviewTrait>> = [
+            [], [.strong], [.emphasis], [.strong, .emphasis], [.code],
+            [.strong, .code], [.emphasis, .code], [.strong, .emphasis, .code], [.deletion],
+        ]
+        XCTAssertEqual(resolved.count, expected.count)
+        XCTAssertEqual(Set(resolved.map { $0.traits }), expected)
+        XCTAssertTrue(resolved.allSatisfy { $0.base == InkStyle.baseFont })
+        XCTAssertEqual(links, [0, 1])
+        XCTAssertEqual(try link("plain0", in: rendered)?.path, "/first")
+        XCTAssertEqual(try font("plain0", in: rendered), InkStyle.baseFont)
+        let manager = NSFontManager.shared
+        for label in ["bold0", "both0", "boldCode0", "bothCode0"] {
+            XCTAssertTrue(manager.traits(of: try font(label, in: rendered)).contains(.boldFontMask), label)
+        }
+        for label in ["italic0", "both0", "italicCode0", "bothCode0"] {
+            XCTAssertTrue(manager.traits(of: try font(label, in: rendered)).contains(.italicFontMask), label)
+        }
+        for label in ["code0", "boldCode0", "italicCode0", "bothCode0"] {
+            XCTAssertEqual(try font(label, in: rendered).familyName, InkStyle.codeFont.familyName, label)
+            XCTAssertEqual(try font(label, in: rendered).pointSize, InkStyle.baseFont.pointSize, label)
+            XCTAssertEqual(rendered.attribute(.backgroundColor, at: try range(label, in: rendered).location,
+                                              effectiveRange: nil) as? NSColor, NSColor.controlBackgroundColor, label)
+        }
+        XCTAssertEqual(rendered.attribute(.strikethroughStyle, at: try range("strike0", in: rendered).location,
+                                          effectiveRange: nil) as? Int, NSUnderlineStyle.single.rawValue)
+    }
+
+    func testFontCacheSeparatesHeadingBaseSizesAndKeepsInheritedTraitsInCode() throws {
+        let previous = InkStyle.typeface
+        defer { InkStyle.typeface = previous }
+        InkStyle.typeface = .init(family: "Helvetica", codeFamily: "Menlo", size: 13)
+        let source = """
+        # First <code>firstCode</code> <em><code>firstItalic</code></em>
+        # Repeated <code>repeatedCode</code> <em><code>repeatedItalic</code></em>
+        ## Second <code>secondCode</code> <em><code>secondItalic</code></em>
+        Body <code>bodyCode</code> <em><code>bodyItalic</code></em>
+        """
+        var resolved: [(base: NSFont, traits: Set<CompanionKit.PreviewTrait>)] = []
+        let rendered = MarkdownPreviewView.render(
+            NSAttributedString(string: source),
+            onDiagnostic: {
+                if case .fontResolution(let base, let traits) = $0 { resolved.append((base, traits)) }
+            }
+        )
+        XCTAssertEqual(resolved.count, 11)
+        XCTAssertEqual(Set(resolved.map { $0.base.pointSize }).count, 3)
+        XCTAssertEqual(try font("firstCode", in: rendered), try font("repeatedCode", in: rendered))
+        XCTAssertGreaterThan(try font("firstCode", in: rendered).pointSize, try font("secondCode", in: rendered).pointSize)
+        XCTAssertGreaterThan(try font("secondCode", in: rendered).pointSize, try font("bodyCode", in: rendered).pointSize)
+        let manager = NSFontManager.shared
+        for prefix in ["first", "second", "body"] {
+            let plain = prefix == "first" ? "First" : prefix == "second" ? "Second" : "Body"
+            let code = try font(prefix + "Code", in: rendered)
+            let italic = try font(prefix + "Italic", in: rendered)
+            XCTAssertEqual(try font(plain, in: rendered).familyName, InkStyle.baseFont.familyName)
+            XCTAssertEqual(code.familyName, InkStyle.codeFont.familyName)
+            XCTAssertEqual(code.pointSize, try font(plain, in: rendered).pointSize)
+            XCTAssertEqual(italic.pointSize, code.pointSize)
+            XCTAssertTrue(manager.traits(of: italic).contains(.italicFontMask))
+            XCTAssertEqual(manager.traits(of: code).contains(.boldFontMask), prefix != "body")
+            XCTAssertEqual(manager.traits(of: italic).contains(.boldFontMask), prefix != "body")
+        }
+    }
+
+    func testHeadingAndTableHeaderFontConversionsAreCachedAcrossRepeatedBlocks() throws {
+        let previous = InkStyle.typeface
+        defer { InkStyle.typeface = previous }
+        InkStyle.typeface = .init(family: "Helvetica", codeFamily: "Menlo", size: 13)
+        let scales: [CGFloat] = [1.8, 1.55, 1.35, 1.18, 1.08, 1]
+        for repetitions in [1, 32] {
+            let source = (0..<repetitions).map { index in
+                (1...6).map { level in
+                    "\(String(repeating: "#", count: level)) heading-\(index)-\(level)"
+                }.joined(separator: "\n\n") + """
+
+
+                | header-\(index)-0 | header-\(index)-1 |
+                | --- | --- |
+                | cell-\(index)-0 | cell-\(index)-1 |
+                """
+            }.joined(separator: "\n\n")
+            var resolutions = 0
+            var sizes: [(base: NSFont, size: CGFloat)] = []
+            var conversions: [(base: NSFont, traits: NSFontTraitMask)] = []
+            let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), onDiagnostic: {
+                switch $0 {
+                case .linkPolicyEvaluation: break
+                case .fontResolution: resolutions += 1
+                case .fontSizing(let base, let size): sizes.append((base, size))
+                case .fontTraitConversion(let base, let traits): conversions.append((base, traits))
+                }
+            })
+            XCTAssertEqual(resolutions, 13, "\(repetitions)")
+            XCTAssertEqual(sizes.count, 5, "\(repetitions)")
+            XCTAssertEqual(Set(sizes.map { $0.size }).count, 5)
+            XCTAssertTrue(sizes.allSatisfy { $0.base == InkStyle.baseFont })
+            XCTAssertEqual(conversions.count, 6, "\(repetitions)")
+            XCTAssertEqual(Set(conversions.map { $0.base.pointSize }).count, 6)
+            XCTAssertTrue(conversions.allSatisfy { $0.traits == .boldFontMask })
+            for level in 1...6 {
+                let heading = try font("heading-\(repetitions - 1)-\(level)", in: rendered)
+                XCTAssertEqual(heading.pointSize, InkStyle.baseFont.pointSize * scales[level - 1], accuracy: 0.01)
+                XCTAssertTrue(NSFontManager.shared.traits(of: heading).contains(.boldFontMask))
+            }
+            for column in 0...1 {
+                let header = try font("header-\(repetitions - 1)-\(column)", in: rendered)
+                XCTAssertEqual(header.pointSize, InkStyle.baseFont.pointSize)
+                XCTAssertTrue(NSFontManager.shared.traits(of: header).contains(.boldFontMask))
+                XCTAssertEqual(try font("cell-\(repetitions - 1)-\(column)", in: rendered), InkStyle.baseFont)
+            }
+        }
     }
 
     func testSoftBreaksBecomeSpacesAndHardBreaksStayInsideTheirParagraph() throws {
@@ -163,6 +505,35 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(try style("continuation", in: rendered).firstLineHeadIndent, outer.headIndent)
     }
 
+    func testOrderedTasksKeepTheirOrdinalsHangingIndentsAndShownSelectionText() throws {
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        view.isSelectedPage = true
+        view.reseed(with: PageModel.QuietRendering(text: NSAttributedString(string: """
+        8. ordinary
+        9. [x] done
+        10. [ ] pending
+
+            continuation
+        11. next
+        """), fenceRegions: []))
+        let expected = "8.\tordinary\n9. ☑\tdone\n10. ☐\tpending\ncontinuation\n11.\tnext\n"
+        XCTAssertEqual(view.string, expected)
+        let rendered = try XCTUnwrap(view.textStorage)
+        let ordinary = try style("ordinary", in: rendered)
+        let markerWidth = ("10. ☐" as NSString).size(withAttributes: [.font: InkStyle.baseFont]).width
+        XCTAssertGreaterThan(ordinary.headIndent - ordinary.firstLineHeadIndent, markerWidth)
+        for label in ["done", "pending", "next"] {
+            let paragraph = try style(label, in: rendered)
+            XCTAssertEqual(paragraph.headIndent, ordinary.headIndent, label)
+            XCTAssertEqual(paragraph.firstLineHeadIndent, ordinary.firstLineHeadIndent, label)
+            XCTAssertEqual(paragraph.tabStops.first?.location, paragraph.headIndent, label)
+        }
+        XCTAssertEqual(try style("continuation", in: rendered).headIndent, ordinary.headIndent)
+        XCTAssertEqual(try style("continuation", in: rendered).firstLineHeadIndent, ordinary.headIndent)
+        view.selectAll(nil)
+        XCTAssertEqual(view.shownSelection(), [[.ink(expected)]])
+    }
+
     func testBlockquotesAndThematicBreaksUseNativeParagraphBlocks() throws {
         let rendered = render("> quote **bold**\n>\n> > nested\n\n---\n\nafter")
         XCTAssertFalse(rendered.string.contains(">"))
@@ -175,7 +546,9 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(block.width(for: .border, edge: .maxY), 1)
     }
 
-    func testImagesUseAltTextAndHTMLIsLiteralText() throws {
+    /// Images show alt text, supported HTML formats, and a script stays visible text
+    /// (`MarkdownPreviewCompositionTests` has the composition fixtures).
+    func testImagesUseAltTextAndHTMLComposesUnderThePreviewPolicy() throws {
         let rendered = render("""
         ![Remote **alt**](https://example.com/pixel.png) ![Local](file:///tmp/image.png)
         inline <em>HTML</em>
@@ -185,7 +558,8 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertTrue(rendered.string.contains("Remote alt Local"))
         XCTAssertFalse(rendered.string.contains("pixel.png"))
         XCTAssertFalse(rendered.string.contains("/tmp/image.png"))
-        XCTAssertTrue(rendered.string.contains("inline <em>HTML</em>"))
+        XCTAssertTrue(rendered.string.contains("inline HTML\n"))
+        XCTAssertTrue(NSFontManager.shared.traits(of: try font("HTML", in: rendered)).contains(.italicFontMask))
         XCTAssertTrue(rendered.string.contains("<script>alert('literal')</script>"))
         XCTAssertTrue(attachments(in: rendered).isEmpty)
         XCTAssertNil(try link("Remote", in: rendered))
@@ -232,42 +606,173 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(cells.count, 9, "The empty trailing cell must have its own native paragraph.")
     }
 
-    /// A cell spanning columns (`||`) or rows (`^`) takes a native block of that span, the
-    /// cells it covers take none, and the cells after it stay in their own columns.
-    func testTableCellsSpanningColumnsAndRowsKeepTheirSpansAndTheirNeighboursColumns() throws {
+    /// Published GFM has no spans: `||` is an empty cell, `^` is text in a cell of its own, and
+    /// every cell takes one column and one row.
+    func testTableCellsNeverSpanSoEmptyAndCaretCellsKeepTheirOwnColumns() throws {
         let rendered = render("""
         | one | two | three |
         | --- | --- | ----- |
         | wide     || tall  |
         | left | right | ^   |
         """)
-        func block(_ text: String) throws -> NSTextTableBlock {
-            try XCTUnwrap(try style(text, in: rendered).textBlocks.last as? NSTextTableBlock)
-        }
-        let wide = try block("wide")
-        XCTAssertEqual(wide.startingRow, 1)
-        XCTAssertEqual(wide.startingColumn, 0)
-        XCTAssertEqual(wide.columnSpan, 2)
-        XCTAssertEqual(wide.rowSpan, 1)
-        XCTAssertEqual(wide.contentWidth, 200 / 3, accuracy: 0.01)
-        let tall = try block("tall")
-        XCTAssertEqual(tall.startingRow, 1)
-        XCTAssertEqual(tall.startingColumn, 2)
-        XCTAssertEqual(tall.columnSpan, 1)
-        XCTAssertEqual(tall.rowSpan, 2)
-        XCTAssertEqual(try block("left").startingColumn, 0)
-        XCTAssertEqual(try block("right").startingColumn, 1)
-        XCTAssertEqual(try block("right").startingRow, 2)
-        XCTAssertEqual(try block("three").columnSpan, 1)
-        var cells: Set<ObjectIdentifier> = []
+        var cells: [(block: NSTextTableBlock, text: String)] = []
         rendered.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: rendered.length)) {
-            value, _, _ in
+            value, range, _ in
             for case let cell as NSTextTableBlock in (value as? NSParagraphStyle)?.textBlocks ?? [] {
-                cells.insert(ObjectIdentifier(cell))
+                cells.append((cell, (rendered.string as NSString).substring(with: range)))
             }
         }
-        XCTAssertEqual(cells.count, 7, "three headers, wide, tall, left and right; the covered cells take none")
-        XCTAssertFalse(rendered.string.contains("^"))
+        XCTAssertEqual(Set(cells.map { ObjectIdentifier($0.block) }).count, 9, "three cells in each of three rows")
+        for (block, text) in cells {
+            XCTAssertEqual(block.columnSpan, 1, text)
+            XCTAssertEqual(block.rowSpan, 1, text)
+            XCTAssertEqual(block.contentWidth, 100 / 3, accuracy: 0.01, text)
+        }
+        func place(_ text: String) -> [Int]? {
+            cells.first { $0.text == text + "\n" }.map { [$0.block.startingRow, $0.block.startingColumn] }
+        }
+        XCTAssertEqual(place("wide"), [1, 0])
+        XCTAssertEqual(place(""), [1, 1], "`||` leaves an empty cell")
+        XCTAssertEqual(place("tall"), [1, 2])
+        XCTAssertEqual(place("left"), [2, 0])
+        XCTAssertEqual(place("right"), [2, 1])
+        XCTAssertEqual(place("^"), [2, 2], "`^` is the cell's text")
+    }
+
+    func testNativeTableBudgetCountsHeadersAndPaddedEmptyCellsAtTheBoundary() {
+        let source = "| Left | Right |\n| --- | --- |\n| one |\n| two |"
+        let allowed = NativePreviewLimits(maximumTableColumns: 2, maximumTableCells: 6)
+        let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), nativeLimits: allowed)
+        XCTAssertEqual(nativeTableCells(in: rendered).count, 6)
+        XCTAssertFalse(rendered.string.contains("|"))
+        let refused = NativePreviewLimits(maximumTableColumns: 2, maximumTableCells: 5)
+        let fallback = MarkdownPreviewView.render(NSAttributedString(string: source), nativeLimits: refused)
+        XCTAssertEqual(fallback.string, source + "\n")
+        XCTAssertTrue(nativeTableCells(in: fallback).isEmpty)
+    }
+
+    func testNativeTableBudgetRejectsExtraColumnsOrCellsForTheWholePage() {
+        let limits = NativePreviewLimits(maximumTableColumns: 2, maximumTableCells: 6)
+        for body in [table(columns: 3, bodyRows: 1), table(columns: 2, bodyRows: 3)] {
+            let source = "# Before **heading**\n\n" + body
+            let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), nativeLimits: limits)
+            XCTAssertEqual(rendered.string, source + "\n")
+            XCTAssertTrue(nativeTableCells(in: rendered).isEmpty)
+            XCTAssertEqual(rendered.attribute(.font, at: 0, effectiveRange: nil) as? NSFont, InkStyle.baseFont)
+        }
+    }
+
+    func testNativeTableBudgetAccumulatesAcrossSeparateTables() {
+        let limits = NativePreviewLimits(maximumTableColumns: 2, maximumTableCells: 8)
+        let tables = ["a", "b", "c"].map { table(columns: 2, bodyRows: 1, headerPrefix: $0) }
+        let atLimit = tables.prefix(2).joined(separator: "\n\n")
+        let rendered = MarkdownPreviewView.render(NSAttributedString(string: atLimit), nativeLimits: limits)
+        XCTAssertEqual(nativeTableCells(in: rendered).count, 8)
+        let pastLimit = tables.joined(separator: "\n\n")
+        let fallback = MarkdownPreviewView.render(NSAttributedString(string: pastLimit), nativeLimits: limits)
+        XCTAssertEqual(fallback.string, pastLimit + "\n")
+        XCTAssertTrue(nativeTableCells(in: fallback).isEmpty)
+    }
+
+    func testNativeTableFallbackRestoresTheOriginalTextAndEveryObjectOnce() {
+        let source = NSMutableAttributedString(string: "# Before **heading**\r\n\r\n| One | Two |\r\n| --- | --- |\r\n| ")
+        let first = chip(1)
+        let second = chip(2)
+        source.append(NSAttributedString(attachment: first))
+        source.append(NSAttributedString(string: " | kept |\r\n\r\n| Three | Four |\r\n| --- | --- |\r\n| "))
+        source.append(NSAttributedString(attachment: second))
+        source.append(NSAttributedString(string: " | tail |"))
+        let original = NSAttributedString(attributedString: source)
+        let rendered = MarkdownPreviewView.render(source, nativeLimits: NativePreviewLimits(
+            maximumTableColumns: 2, maximumTableCells: 6
+        ))
+        XCTAssertEqual(rendered.string, source.string.replacingOccurrences(of: "\r\n", with: "\n") + "\n")
+        XCTAssertEqual(rendered.attribute(.font, at: 0, effectiveRange: nil) as? NSFont, InkStyle.baseFont)
+        XCTAssertTrue(nativeTableCells(in: rendered).isEmpty)
+        let found = attachments(in: rendered)
+        XCTAssertEqual(found.count, 2)
+        XCTAssertTrue(found.first === first)
+        XCTAssertTrue(found.last === second)
+        XCTAssertEqual(rendered.string.filter { $0 == "\u{FFFC}" }.count, 2)
+        XCTAssertTrue(source.isEqual(to: original))
+    }
+
+    func testNativeTableBudgetDoesNotApplyToParagraphPipesOrCommonMark() throws {
+        let limits = NativePreviewLimits(maximumTableColumns: 0, maximumTableCells: 0)
+        for dialect in PreviewDialect.allCases {
+            let source = "# Heading\n\none | two\n\n`code | text`"
+            let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect, nativeLimits: limits)
+            XCTAssertEqual(rendered.string, "Heading\none | two\ncode | text\n")
+            XCTAssertGreaterThan(try font("Heading", in: rendered).pointSize, InkStyle.baseFont.pointSize)
+        }
+        let source = "# Heading\n\n" + table(columns: 9, bodyRows: 1)
+        let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: .commonMark, nativeLimits: limits)
+        XCTAssertTrue(rendered.string.hasPrefix("Heading\n| h0 |"))
+        XCTAssertTrue(nativeTableCells(in: rendered).isEmpty)
+        XCTAssertGreaterThan(try font("Heading", in: rendered).pointSize, InkStyle.baseFont.pointSize)
+    }
+
+    func testNativeTableBudgetRejectsOverflowingCellProductsAndCumulativeTotals() {
+        let limits = NativePreviewLimits(maximumTableColumns: Int.max, maximumTableCells: Int.max)
+        XCTAssertNil(limits.tableCellTotal(rows: Int.max, columns: 2, alreadyRendered: 0))
+        XCTAssertNil(limits.tableCellTotal(rows: 1, columns: 1, alreadyRendered: Int.max))
+        XCTAssertEqual(limits.tableCellTotal(rows: 1, columns: 1, alreadyRendered: Int.max - 1), Int.max)
+    }
+
+    func testOptInNativeTableRenderAndLayoutProfile() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["PREVIEW_NATIVE_TABLE_PROFILE"] == "1")
+        let suite = "native-table-profile-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let model = isolatedModel(defaults: defaults)
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let source = table(columns: 8, bodyRows: 127)
+        model.syncDocument(sheet: page, runs: [.ink(source)])
+        model.toggleMarkdownPreview(for: page)
+        let rendering = model.quietRendering(for: page)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let view = MarkdownPreviewView(page: page, coordinator: coordinator)
+        view.frame = NSRect(x: 0, y: 0, width: 320, height: 720)
+        let start = Date.timeIntervalSinceReferenceDate
+        XCTAssertNil(view.reseed(with: rendering))
+        let seeded = Date.timeIntervalSinceReferenceDate
+        let storage = try XCTUnwrap(view.textStorage)
+        XCTAssertEqual(nativeTableCells(in: storage).count, 1_024)
+        let manager = try XCTUnwrap(view.layoutManager)
+        let container = try XCTUnwrap(view.textContainer)
+        for width: CGFloat in [320, 640] {
+            let beforeLayout = Date.timeIntervalSinceReferenceDate
+            view.setFrameSize(NSSize(width: width, height: 720))
+            manager.ensureLayout(for: container)
+            let laidOut = Date.timeIntervalSinceReferenceDate
+            let used = manager.usedRect(for: container)
+            XCTAssertGreaterThan(used.width, 0)
+            XCTAssertGreaterThan(used.height, 0)
+            XCTAssertLessThanOrEqual(used.maxX, container.size.width + 1)
+            storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+                guard (value as? NSParagraphStyle)?.textBlocks.last is NSTextTableBlock else { return }
+                let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                let bounds = manager.boundingRect(forGlyphRange: glyphs, in: container)
+                let fragment = manager.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+                XCTAssertGreaterThan(fragment.width, 0)
+                XCTAssertLessThanOrEqual(fragment.width, container.size.width / 8 + 1)
+                XCTAssertGreaterThanOrEqual(bounds.minX, -1)
+                XCTAssertLessThanOrEqual(bounds.maxX, container.size.width + 1)
+            }
+            print("native-table-profile cells=1024 columns=8 width=\(Int(width)) bytes=\(source.utf8.count) render_ms=\((seeded - start) * 1_000) layout_ms=\((laidOut - beforeLayout) * 1_000) used_width=\(used.width) used_height=\(used.height)")
+            if let directory = ProcessInfo.processInfo.environment["PREVIEW_QA_ARTIFACTS"] {
+                view.drawsBackground = true
+                view.backgroundColor = .textBackgroundColor
+                view.setFrameSize(NSSize(width: width, height: min(used.height + view.textContainerInset.height * 2, 720)))
+                let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+                view.effectiveAppearance.performAsCurrentDrawingAppearance { view.cacheDisplay(in: view.bounds, to: bitmap) }
+                let output = URL(fileURLWithPath: directory, isDirectory: true)
+                try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+                try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                    .write(to: output.appendingPathComponent("native-table-1024-\(Int(width)).png"))
+            }
+        }
     }
 
     func testTableLayoutWrapsToThePreviewWidthAndReflowsOnResize() throws {
@@ -300,6 +805,44 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertTrue(view.isSelectable)
         XCTAssertTrue(container.widthTracksTextView)
         XCTAssertEqual(view.textStorage?.layoutManagers.count, 1)
+    }
+
+    func testQuoteAndCodeBlocksAfterATableUseThePreviewWidthAndReflowOnResize() throws {
+        let words = Array(repeating: "wrapping words", count: 12).joined(separator: " ")
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        view.reseed(with: PageModel.QuietRendering(text: NSAttributedString(string: """
+        | Name | Value |
+        | --- | --- |
+        | row | value |
+
+        > quoted \(words)
+        >
+        > > nested \(words)
+
+        ```
+        coded \(words)
+        ```
+        """), fenceRegions: []))
+        let manager = try XCTUnwrap(view.layoutManager)
+        let container = try XCTUnwrap(view.textContainer)
+        var heights: [CGFloat] = []
+        for width: CGFloat in [320, 760, 320] {
+            view.setFrameSize(NSSize(width: width, height: 4000))
+            manager.ensureLayout(for: container)
+            for label in ["quoted", "nested", "coded"] {
+                let index = (view.string as NSString).range(of: label).location
+                XCTAssertNotEqual(index, NSNotFound)
+                let glyph = manager.glyphIndexForCharacter(at: index)
+                let fragment = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+                XCTAssertGreaterThan(fragment.width, container.size.width * 0.8, "\(width): \(label)")
+                XCTAssertLessThanOrEqual(fragment.maxX, container.size.width + 1, "\(width): \(label)")
+            }
+            let used = manager.usedRect(for: container)
+            XCTAssertLessThanOrEqual(used.maxX, container.size.width + 1)
+            heights.append(used.height)
+        }
+        XCTAssertGreaterThan(heights[0], heights[1])
+        XCTAssertEqual(heights[0], heights[2], accuracy: 1)
     }
 
     /// An object in a cell of a multi column table takes the cell's width, not the
@@ -413,9 +956,9 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertLessThan(lastObject.location, try range("after", in: rendered).location)
     }
 
-    /// An object inside a link's destination has no visible leaf; it is emitted where it stood,
-    /// before the object that follows it in the same paragraph, never after.
-    func testAnObjectHiddenInALinkDestinationKeepsItsPlaceBeforeTheNextObject() throws {
+    /// An object inside a link's own destination is the link's: it follows the label, as in the
+    /// source, outside the link, which it refuses (plan R1).
+    func testAnObjectInALinkDestinationFollowsTheLabel() throws {
         let source = NSMutableAttributedString(string: "[label](https://example.com/")
         let hidden = chip(1)
         let visible = chip(2)
@@ -433,8 +976,8 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertTrue(found[2] === later)
         XCTAssertNil(try link("label", in: rendered))
         XCTAssertFalse(rendered.string.contains("OTSAttachment"))
-        XCTAssertLessThan(try range("label", in: rendered).location, try range("\u{FFFC}", in: rendered).location)
-        XCTAssertTrue(rendered.string.contains("then \u{FFFC}\u{FFFC} end"), "the hidden object stands beside the next")
+        XCTAssertEqual(rendered.string, "label\u{FFFC} then \u{FFFC} end\nnext \u{FFFC}\n")
+        XCTAssertNil(rendered.attribute(.link, at: 5, effectiveRange: nil), "an object never takes a link")
     }
 
     /// A token's spelling in the ink, prefix and digits with no closing Z or naming no
