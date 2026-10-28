@@ -6,7 +6,17 @@ import XCTest
 @MainActor
 final class MarkdownIntegrationPerformanceTests: XCTestCase {
     func testSyntheticParseDecodeAndNativeComposition() throws {
-        for repetitions in [100, 1_000] {
+        try parseAndRender(repetitions: [100], reportTimings: false)
+    }
+
+    func testOptInLargePreviewProfile() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["PREVIEW_PROFILE"] == "1")
+        try parseAndRender(repetitions: [100, 1_000], reportTimings: true)
+        try reseedBatch(repetitions: 1_000, reportTimings: true)
+    }
+
+    private func parseAndRender(repetitions counts: [Int], reportTimings: Bool) throws {
+        for repetitions in counts {
             let text = String(repeating: "## Heading **bold**\n\nText &amp; [link](https://example.com).\n\n", count: repetitions)
             for dialect in PreviewDialect.allCases {
                 let start = Date.timeIntervalSinceReferenceDate
@@ -16,18 +26,24 @@ final class MarkdownIntegrationPerformanceTests: XCTestCase {
                 let finished = Date.timeIntervalSinceReferenceDate
                 XCTAssertEqual(document.blocks.count, repetitions * 2)
                 XCTAssertFalse(rendered.string.contains("**"))
-                print("preview-profile \(dialect) input=\(text.utf8.count) parse_decode_ms=\((parsed - start) * 1_000) full_render_ms=\((finished - parsed) * 1_000)")
+                if reportTimings {
+                    print("preview-profile \(dialect) input=\(text.utf8.count) parse_decode_ms=\((parsed - start) * 1_000) full_render_ms=\((finished - parsed) * 1_000)")
+                }
             }
         }
     }
 
     func testSeveralLargePreviewsReseedAndLayoutInOneBatch() throws {
+        try reseedBatch(repetitions: 100, reportTimings: false)
+    }
+
+    private func reseedBatch(repetitions: Int, reportTimings: Bool) throws {
         let suite = "markdown-preview-performance-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
         let model = isolatedModel(defaults: defaults)
         let coordinator = InkEditorView.Coordinator(model: model)
-        let source = String(repeating: "## Heading **bold**\n\nText &amp; [link](https://example.com).\n\n", count: 1_000)
+        let source = String(repeating: "## Heading **bold**\n\nText &amp; [link](https://example.com).\n\n", count: repetitions)
         var pages: [UInt64] = []
         for _ in 0..<4 {
             model.newPage()
@@ -51,6 +67,8 @@ final class MarkdownIntegrationPerformanceTests: XCTestCase {
         let laidOut = Date.timeIntervalSinceReferenceDate
         for (preview, rendering) in zip(previews, renderings) { XCTAssertNil(preview.reseed(with: rendering)) }
         let reused = Date.timeIntervalSinceReferenceDate
-        print("preview-batch pages=\(previews.count) bytes_per_page=\(source.utf8.count) reseed_ms=\((seeded - start) * 1_000) layout_ms=\((laidOut - seeded) * 1_000) unchanged_reseed_ms=\((reused - laidOut) * 1_000)")
+        if reportTimings {
+            print("preview-batch pages=\(previews.count) bytes_per_page=\(source.utf8.count) reseed_ms=\((seeded - start) * 1_000) layout_ms=\((laidOut - seeded) * 1_000) unchanged_reseed_ms=\((reused - laidOut) * 1_000)")
+        }
     }
 }

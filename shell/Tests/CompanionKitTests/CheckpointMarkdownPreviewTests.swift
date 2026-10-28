@@ -18,6 +18,116 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         return model
     }
 
+    func testRustHTMLPreviewExposesRenderedAccessibilityTextAndKeyboardSelection() throws {
+        let model = try makeModel()
+        let source = "# Heading\n\n<strong>Native HTML</strong> &amp; ![image description](https://example.invalid/image)\n\n[link](https://example.invalid/)"
+        let page = try page(in: model, saying: source)
+        let roll = try mountRoll(model)
+        defer { roll.window.close() }
+        XCTAssertTrue(roll.window.makeFirstResponder(try XCTUnwrap(roll.stack.editor)))
+        let toggle = try button(in: header(for: page, in: roll))
+        _ = toggle.accessibilityPerformPress()
+        XCTAssertEqual(toggle.state, .on)
+        let preview = try preview(for: page, in: roll)
+        let range = NSRange(location: 0, length: preview.string.utf16.count)
+        XCTAssertEqual(preview.accessibilityRole(), .textArea)
+        XCTAssertTrue(preview.isAccessibilityElement())
+        XCTAssertEqual(preview.accessibilityNumberOfCharacters(), range.length)
+        XCTAssertEqual(preview.accessibilityString(for: range), preview.string)
+        XCTAssertFalse(preview.string.contains("<strong>"))
+        XCTAssertTrue(preview.string.contains("Native HTML & image description"))
+        XCTAssertTrue(roll.window.firstResponder === preview)
+        preview.setAccessibilitySelectedTextRange(NSRange(location: 0, length: 7))
+        XCTAssertEqual(preview.selectedRange(), NSRange(location: 0, length: 7))
+        XCTAssertEqual(preview.accessibilitySelectedText(), "Heading")
+        preview.setSelectedRange(NSRange(location: 0, length: 0))
+        preview.selectionGranularity = .selectByCharacter
+        preview.moveRightAndModifySelection(nil)
+        XCTAssertEqual(preview.accessibilitySelectedText(), "H")
+        let frame = preview.accessibilityFrame(for: NSRange(location: 0, length: 7))
+        XCTAssertGreaterThan(frame.width, 0)
+        XCTAssertGreaterThan(frame.height, 0)
+        XCTAssertFalse(preview.isEditable)
+        _ = toggle.accessibilityPerformPress()
+        XCTAssertEqual(toggle.state, .off)
+        XCTAssertTrue(roll.window.firstResponder === roll.stack.editor)
+        XCTAssertEqual(roll.stack.editor?.string, source)
+    }
+
+    func testNativePreviewVisualSpecimensAtTwoWidthsAndAppearances() throws {
+        let model = try makeModel()
+        let source = """
+        # Native preview
+
+        <strong>Bold HTML</strong>, <em>italic</em>, <code>code</code> &amp; café 日本語.
+
+        7. [x] Completed task
+        8. [ ] Pending task with enough text to wrap at the narrow measure.
+
+        | Name | Value |
+        | --- | ---: |
+        | **alpha** | 42 |
+        | beta | 100 |
+
+        > Quoted text with [a link](https://example.invalid/).
+
+        ![image description](https://example.invalid/image)
+
+        ```swift
+        let value = 42
+        ```
+        """
+        let page = try page(in: model, saying: source)
+        model.toggleMarkdownPreview(for: page)
+        let roll = try mountRoll(model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        preview.drawsBackground = true
+        preview.backgroundColor = .textBackgroundColor
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            preview.appearance = try XCTUnwrap(NSAppearance(named: name))
+            for width in [CGFloat(320), 640] {
+                preview.setFrameSize(NSSize(width: width, height: 900))
+                let layout = try XCTUnwrap(preview.layoutManager)
+                layout.ensureLayout(for: try XCTUnwrap(preview.textContainer))
+                let used = layout.usedRect(for: try XCTUnwrap(preview.textContainer))
+                XCTAssertLessThanOrEqual(used.maxX, width)
+                XCTAssertGreaterThan(used.height, 200)
+                XCTAssertLessThan(used.height, preview.frame.height)
+                let bitmap = try XCTUnwrap(preview.bitmapImageRepForCachingDisplay(in: preview.bounds))
+                preview.effectiveAppearance.performAsCurrentDrawingAppearance {
+                    preview.cacheDisplay(in: preview.bounds, to: bitmap)
+                }
+                if let directory = ProcessInfo.processInfo.environment["PREVIEW_QA_ARTIFACTS"] {
+                    let output = URL(fileURLWithPath: directory, isDirectory: true)
+                    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+                    let filename = "preview-\(name.rawValue)-\(Int(width)).png"
+                    try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                        .write(to: output.appendingPathComponent(filename))
+                }
+            }
+        }
+    }
+
+    func testSealedPreviewAccessibilityUsesTheRenderedTextWithoutTheSealedFixture() throws {
+        let gated = try makeGatedModel()
+        let (page, _) = try sealedPreviewPage(in: gated.model)
+        let roll = try mountRoll(gated.model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        let range = NSRange(location: 0, length: preview.string.utf16.count)
+        let accessible = try XCTUnwrap(preview.accessibilityAttributedString(for: range))
+        XCTAssertEqual(accessible.string, preview.string)
+        XCTAssertFalse(accessible.string.contains("SECRET"))
+        XCTAssertFalse(accessible.string.contains("# Heading"))
+        XCTAssertTrue(accessible.string.contains("\u{FFFC}"))
+        XCTAssertTrue(roll.window.makeFirstResponder(preview))
+        preview.setAccessibilitySelectedTextRange(range)
+        XCTAssertEqual(preview.accessibilitySelectedText(), preview.string)
+        XCTAssertEqual(preview.shownSelection().count, 1)
+        XCTAssertTrue(preview.isSelectedPage)
+    }
+
     @discardableResult
     private func page(in model: PageModel, saying ink: String = "# Heading\nbody") throws -> UInt64 {
         model.newPage()
