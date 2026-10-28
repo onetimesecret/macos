@@ -51,6 +51,21 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         XCTAssertEqual(model.dirtyMarks, marks)
     }
 
+    func testDialectObservationWorksBeforeTheRollHasAScrollClip() throws {
+        let model = try makeModel()
+        let page = try page(in: model, saying: "~~detached~~")
+        model.toggleMarkdownPreview(for: page)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        coordinator.surface = model.owner
+        let stack = DayStackView(model: model, coordinator: coordinator, emptyHint: "hint")
+        stack.observeRoll()
+        XCTAssertNil(stack.enclosingScrollView)
+        model.markdownDialect = .commonMark
+        XCTAssertEqual(stack.previewRegions[page]?.string, "~~detached~~\n")
+        model.markdownDialect = .gfm
+        XCTAssertEqual(stack.previewRegions[page]?.string, "detached\n")
+    }
+
     func testPreviewOpenedAfterDialectChangeUsesTheNewDialectAndReseedsCachedSource() throws {
         let model = try makeModel()
         let page = try page(in: model, saying: "~~later~~")
@@ -971,7 +986,8 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
 
     func testSelectedPreviewOwnershipRoundTripRestoresOriginalEditorAndStorage() throws {
         let model = try makeModel()
-        let page = try page(in: model)
+        let ink = "# Heading\n~~body~~"
+        let page = try page(in: model, saying: ink)
         let roll = try mountRoll(model)
         defer { roll.window.close() }
         let editor = try XCTUnwrap(roll.stack.editor)
@@ -988,18 +1004,20 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         XCTAssertEqual(incoming.coordinator.surface, other)
         XCTAssertEqual(incoming.coordinator.currentSheet, page)
         XCTAssertTrue(incoming.stack.editor?.textStorage === storage)
-        _ = try preview(for: page, in: incoming)
+        let currentPreview = try preview(for: page, in: incoming)
+        model.markdownDialect = .commonMark
+        XCTAssertEqual(currentPreview.string, "Heading\n~~body~~\n")
 
         model.transferOwnership(to: originalOwner)
         DayScrollView.updateRoll(
             roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
         XCTAssertNil(incoming.coordinator.currentSheet)
-        _ = try preview(for: page, in: roll)
+        XCTAssertEqual(try preview(for: page, in: roll).string, "Heading\n~~body~~\n")
         model.toggleMarkdownPreview(for: page)
 
         XCTAssertTrue(roll.stack.editor === editor)
         XCTAssertTrue(try XCTUnwrap(editor.textStorage) === storage)
-        XCTAssertEqual(editor.string, "# Heading\nbody")
+        XCTAssertEqual(editor.string, ink)
         XCTAssertEqual(roll.coordinator.currentSheet, page)
         XCTAssertEqual(model.selectedPageID, page)
         XCTAssertTrue(try body(for: page, in: roll) === editor)

@@ -453,6 +453,10 @@ final class DayStackView: NSView {
     /// zeroing, so it retires with this view and needs no `deinit` to
     /// unpick it.
     func observeRoll() {
+        for name in [PageModel.quietRenderingsDidInvalidateNotification, PageModel.markdownDialectDidChangeNotification] {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(renderingPreferencesChanged), name: name, object: model)
+        }
         guard let clip = enclosingScrollView?.contentView else { return }
         clip.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(
@@ -473,10 +477,6 @@ final class DayStackView: NSView {
             name: NSView.boundsDidChangeNotification,
             object: clip
         )
-        for name in [PageModel.quietRenderingsDidInvalidateNotification, PageModel.markdownDialectDidChangeNotification] {
-            NotificationCenter.default.addObserver(
-                self, selector: #selector(renderingPreferencesChanged), name: name, object: model)
-        }
     }
 
     private func observeEditor(_ editor: InkTextView) {
