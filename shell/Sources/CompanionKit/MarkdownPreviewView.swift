@@ -9,25 +9,25 @@ final class MarkdownPreviewView: AskingTextView {
     /// The page this preview shows and asks.
     let page: UInt64
     private weak var coordinator: InkEditorView.Coordinator?
+    private let imageLoad: @MainActor (URL) async throws -> NSImage
     private let previewStorage: NSTextStorage
     private var seeded: PageModel.QuietRendering?
     private var seededDialect: PreviewDialect?
     private let links = PreviewLinks()
     private var imageControlsReady = false
     private var imageOwnership: AnyCancellable?
-    private(set) lazy var imageControls: PreviewImageControls = {
-        if let coordinator {
-            return PreviewImageControls(preview: self, load: coordinator.model.previewImageLoad)
-        }
-        return PreviewImageControls(preview: self)
-    }()
+    private(set) lazy var imageControls = PreviewImageControls(preview: self, load: imageLoad)
     var onImageLayoutChanged: (() -> Void)?
 
-    var mayLoadImages: Bool {
+    var isImagePresentationActive: Bool {
         guard isSelectedPage, window != nil, let coordinator,
-              coordinator.model.owner == coordinator.surface else { return false }
-        return mayReadOut
+              coordinator.model.owner == coordinator.surface,
+              coordinator.model.selectedPageID == page,
+              coordinator.model.tabs.contains(where: { $0.pageID == page }) else { return false }
+        return true
     }
+
+    var mayLoadImages: Bool { isImagePresentationActive && mayReadOut }
 
     /// A click on a preview of a page the roll has not selected promotes it (ADR-0030).
     var onPromote: (() -> Void)?
@@ -36,7 +36,7 @@ final class MarkdownPreviewView: AskingTextView {
     var isSelectedPage = false {
         didSet {
             isSelectable = isSelectedPage
-            if oldValue != isSelectedPage { imageControls.discard() }
+            if imageControlsReady, oldValue != isSelectedPage { imageControls.discard() }
         }
     }
 
@@ -46,6 +46,8 @@ final class MarkdownPreviewView: AskingTextView {
     init(page: UInt64, coordinator: InkEditorView.Coordinator?) {
         self.page = page
         self.coordinator = coordinator
+        if let coordinator { imageLoad = coordinator.model.previewImageLoad }
+        else { imageLoad = { try await PreviewImageLoader().load($0) } }
         let storage = NSTextStorage()
         previewStorage = storage
         let manager = NSLayoutManager()
@@ -82,7 +84,7 @@ final class MarkdownPreviewView: AskingTextView {
         imageControlsReady = true
         imageOwnership = coordinator?.model.$owner.dropFirst().sink { [weak self] owner in
             guard let self, owner != self.coordinator?.surface else { return }
-            self.imageControls.discard()
+            Task { @MainActor [weak self] in self?.imageControls.discard() }
         }
     }
 
@@ -265,7 +267,10 @@ final class MarkdownPreviewView: AskingTextView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if imageControlsReady, window == nil { imageControls.discard() }
+        if imageControlsReady {
+            if window == nil { imageControls.discard() }
+            else { imageControls.resize() }
+        }
     }
 
     override func accessibilityChildren() -> [Any]? {
@@ -278,6 +283,7 @@ final class MarkdownPreviewView: AskingTextView {
     }
 
     override nonisolated func accessibilityHitTest(_ point: NSPoint) -> Any? {
+        guard Thread.isMainThread else { return super.accessibilityHitTest(point) }
         let button: NSButton? = MainActor.assumeIsolated {
             if imageControlsReady, let window {
                 let local = convert(window.convertPoint(fromScreen: point), from: nil)

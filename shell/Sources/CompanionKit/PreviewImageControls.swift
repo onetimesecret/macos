@@ -59,6 +59,8 @@ final class PreviewImageControls {
     private var original = NSAttributedString(string: "")
     private var entries: [Entry] = []
     private var presenting = false
+    private var needsAnotherPresentation = false
+    private var presentationScheduled = false
     private let loadImage: @MainActor (URL) async throws -> NSImage
 
     var buttons: [NSButton] { entries.map(\.button) }
@@ -147,7 +149,7 @@ final class PreviewImageControls {
             entry.image = nil
             entry.failure = nil
         }
-        present()
+        changed()
     }
 
     private func clearEntries() {
@@ -172,14 +174,20 @@ final class PreviewImageControls {
             changed()
             return
         }
-        guard preview.mayLoadImages,
-              activeImages < Self.maximumActiveImages,
+        guard preview.mayLoadImages else { discard(); return }
+        guard activeImages < Self.maximumActiveImages,
               let url = PreviewImageRequestPolicy.url(for: entry.descriptor.destination) else { return }
         let generation = UUID()
         entry.generation = generation
         entry.failure = nil
         let load = loadImage
         entry.task = Task { [weak self, weak entry] in
+            defer {
+                if let self, let entry, entry.generation == generation, entry.task != nil {
+                    entry.task = nil
+                    self.changed()
+                }
+            }
             do {
                 guard !Task.isCancelled, entry?.generation == generation else { return }
                 guard self?.preview?.mayLoadImages == true else {
@@ -219,9 +227,19 @@ final class PreviewImageControls {
     }
 
     private func present() {
-        guard !presenting, let preview, let storage = preview.textStorage else { return }
+        guard !presenting else {
+            needsAnotherPresentation = true
+            return
+        }
+        guard let preview, let storage = preview.textStorage else { return }
         presenting = true
-        defer { presenting = false }
+        defer {
+            presenting = false
+            if needsAnotherPresentation {
+                needsAnotherPresentation = false
+                schedulePresentation()
+            }
+        }
         let availableWidth = max(20, preview.bounds.width - preview.textContainerInset.width * 2 - 16)
         storage.beginEditing()
         for entry in entries {
@@ -254,6 +272,16 @@ final class PreviewImageControls {
         preview.needsDisplay = true
     }
 
+    private func schedulePresentation() {
+        guard !presentationScheduled else { return }
+        presentationScheduled = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.presentationScheduled = false
+            self.changed()
+        }
+    }
+
     private func configure(_ entry: Entry) {
         let url = PreviewImageRequestPolicy.url(for: entry.descriptor.destination)
         let host = url?.host ?? ""
@@ -275,7 +303,7 @@ final class PreviewImageControls {
         entry.button.title = url == nil ? CompanionL10n.string("Image unavailable")
             : CompanionL10n.format(actionKey, host)
         let hasReservation = entry.task != nil || entry.image != nil
-        entry.button.isEnabled = url != nil && preview?.isSelectedPage == true
+        entry.button.isEnabled = url != nil && preview?.isImagePresentationActive == true
             && (hasReservation || activeImages < Self.maximumActiveImages)
         let policy = CompanionL10n.string("One HTTPS image request. No redirects, cookies, or saved credentials.")
         let help = url.map { "\($0.absoluteString)\n\(policy)" }

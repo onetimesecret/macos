@@ -105,6 +105,20 @@ final class PreviewImageControlsTests: XCTestCase {
         }
     }
 
+    @MainActor
+    private final class PresentationReentry: NSObject {
+        let action: @MainActor () -> Void
+        private(set) var calls = 0
+
+        init(action: @escaping @MainActor () -> Void) { self.action = action }
+
+        @objc func updated(_ notification: Notification) {
+            guard calls == 0 else { return }
+            calls += 1
+            action()
+        }
+    }
+
     func testOpeningScrollingAndDialectChangesDoNotLoadImages() async throws {
         let fixture = try fixture()
         defer { fixture.window.close() }
@@ -335,6 +349,7 @@ final class PreviewImageControlsTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(20))
         XCTAssertFalse(fixture.preview.mayLoadImages)
         XCTAssertEqual(fixture.preview.imageControls.loadedImageCount, 0)
+        XCTAssertFalse(fixture.preview.imageControls.buttons[0].isEnabled)
         fixture.preview.imageControls.buttons[0].performClick(nil)
         try await Task.sleep(for: .milliseconds(20))
         XCTAssertEqual(pending.addresses.count, 1)
@@ -629,6 +644,95 @@ final class PreviewImageControlsTests: XCTestCase {
         preview.imageControls.seed(moved, preserveConsent: true)
         XCTAssertEqual(preview.imageControls.loadedImageCount, 0)
         XCTAssertTrue(preview.imageControls.buttons[0].title.hasPrefix("Load"))
+        XCTAssertEqual(fixture.loader.requests.count, 1)
+    }
+
+
+    func testDiscardRemeasuresTheMountedPreviewWithoutAnExplicitRollUpdate() async throws {
+        let fixture = try fixture()
+        defer { fixture.window.close() }
+        fixture.loader.handler = { _ in NSImage(size: NSSize(width: 500, height: 500)) }
+        let height = fixture.preview.frame.height
+        fixture.preview.imageControls.buttons[0].performClick(nil)
+        try await eventually { fixture.preview.imageControls.loadedImageCount == 1 && fixture.preview.frame.height > height }
+        fixture.preview.imageControls.discard()
+        XCTAssertEqual(fixture.preview.imageControls.loadedImageCount, 0)
+        try await eventually { abs(fixture.preview.frame.height - height) < 1 }
+        XCTAssertEqual(fixture.loader.requests.count, 1)
+    }
+
+    func testExpiredImageActivationShowsTheExistingRefusalAndDisablesTheControl() async throws {
+        let fixture = try fixture()
+        defer { fixture.window.close() }
+        let button = fixture.preview.imageControls.buttons[0]
+        XCTAssertTrue(button.isEnabled)
+        let tab = try XCTUnwrap(fixture.model.tabs.first { $0.pageID == fixture.page }?.id)
+        XCTAssertTrue(fixture.model.coreClient.setRung(tab: tab, rung: .oneHour))
+        XCTAssertTrue(fixture.model.coreClient.ageForTests(byMs: 2 * 60 * 60 * 1_000))
+        fixture.model.notice = nil
+        button.performClick(nil)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(fixture.loader.requests.isEmpty)
+        XCTAssertEqual(fixture.model.notice, PageModel.pageExpiredLine)
+        XCTAssertFalse(button.isEnabled)
+        XCTAssertFalse(fixture.model.tabs.contains { $0.pageID == fixture.page })
+    }
+
+    func testALoaderThatCancelsItsOwnTaskReleasesItsImageReservation() async throws {
+        let source = (0..<5).map { index in
+            "![image\(index)](https://example.com/\(index == 3 ? "cancel" : String(index)).png)"
+        }.joined(separator: "\n\n")
+        let fixture = try fixture(source)
+        defer { fixture.window.close() }
+        let pending = PendingLoads()
+        fixture.loader.handler = { url in
+            if url.lastPathComponent == "cancel.png" {
+                withUnsafeCurrentTask { $0?.cancel() }
+                return self.image()
+            }
+            return try await pending.load(url)
+        }
+        for index in 0..<4 { fixture.preview.imageControls.buttons[index].performClick(nil) }
+        XCTAssertFalse(fixture.preview.imageControls.buttons[4].isEnabled)
+        try await eventually {
+            fixture.loader.requests.count == 4
+                && fixture.preview.imageControls.buttons[3].title.hasPrefix("Load")
+                && fixture.preview.imageControls.buttons[4].isEnabled
+        }
+        XCTAssertEqual(fixture.preview.imageControls.loadedImageCount, 0)
+        fixture.preview.imageControls.buttons[4].performClick(nil)
+        try await eventually { pending.addresses.count == 4 }
+        for index in 0..<4 { pending.finish(index, with: image()) }
+        try await eventually { fixture.preview.imageControls.loadedImageCount == 4 }
+        XCTAssertEqual(fixture.loader.requests.count, 5)
+        XCTAssertTrue(fixture.preview.imageControls.buttons[3].title.hasPrefix("Load"))
+        XCTAssertFalse(fixture.preview.imageControls.buttons[3].isEnabled)
+    }
+
+    func testReentrantDiscardSchedulesACompletePresentationAfterTheCurrentPass() async throws {
+        let fixture = try fixture()
+        defer { fixture.window.close() }
+        fixture.loader.handler = { _ in self.image() }
+        let controls = fixture.preview.imageControls
+        controls.buttons[0].performClick(nil)
+        try await eventually { controls.loadedImageCount == 1 }
+        let storage = try XCTUnwrap(fixture.preview.textStorage)
+        let observer = PresentationReentry { controls.discard() }
+        NotificationCenter.default.addObserver(
+            observer, selector: #selector(PresentationReentry.updated(_:)),
+            name: NSTextStorage.didProcessEditingNotification, object: storage)
+        defer { NotificationCenter.default.removeObserver(observer) }
+        controls.resize()
+        XCTAssertEqual(observer.calls, 1)
+        try await eventually {
+            guard controls.loadedImageCount == 0 else { return false }
+            var loadedAttachment = false
+            storage.enumerateAttribute(.previewLoadedImage, in: NSRange(location: 0, length: storage.length)) {
+                value, _, _ in
+                loadedAttachment = loadedAttachment || value != nil
+            }
+            return !loadedAttachment && controls.buttons[0].title.hasPrefix("Load")
+        }
         XCTAssertEqual(fixture.loader.requests.count, 1)
     }
 
