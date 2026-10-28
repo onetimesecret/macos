@@ -68,7 +68,12 @@ final class PreviewImageControls {
         self.preview = preview
     }
 
-    func seed(_ text: NSAttributedString) {
+    func seed(_ text: NSAttributedString, preserveConsent: Bool = false) {
+        if preserveConsent, original.string == text.string {
+            original = text
+            present()
+            return
+        }
         clearEntries()
         original = text
         text.enumerateAttribute(.previewImage, in: NSRange(location: 0, length: text.length)) { value, range, _ in

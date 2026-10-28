@@ -237,7 +237,7 @@ final class MarkdownPreviewView: AskingTextView {
         let sameSource = dialect == seededDialect && seeded?.text.isEqual(to: rendering.text) == true
         seeded = rendering
         seededDialect = dialect
-        if !sameSource { imageControls.seed(Self.render(rendering.text, dialect: dialect)) }
+        imageControls.seed(Self.render(rendering.text, dialect: dialect), preserveConsent: sameSource)
         needsDisplay = true
         return previous
     }
