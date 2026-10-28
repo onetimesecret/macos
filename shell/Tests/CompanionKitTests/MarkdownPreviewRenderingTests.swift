@@ -153,6 +153,38 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         }
     }
 
+    func testFormatCharactersInWebHostsAndMailtoAddressesAreRefusedAfterParsing() throws {
+        let formats = ["\u{00AD}", "\u{200B}", "\u{200C}", "\u{200D}", "\u{200E}",
+                       "\u{202A}", "\u{202E}", "\u{2066}", "\u{2069}", "\u{FEFF}"]
+        var addresses: [(destination: String, allowed: Bool)] = [
+            ("https://b%C3%BCcher.example/", true), ("mailto:jos%C3%A9@example.com", true),
+        ]
+        for format in formats {
+            let encoded = format.utf8.map { String(format: "%%%02X", $0) }.joined()
+            for spelling in [format, encoded] {
+                for destination in ["http://exam\(spelling)ple.test/", "https://exa\(spelling)mple.test/",
+                                    "mailto:read\(spelling)er@example.test", "mailto:reader@exam\(spelling)ple.test"] {
+                    addresses.append((destination, false))
+                }
+            }
+        }
+        for dialect in PreviewDialect.allCases {
+            for address in addresses {
+                for source in ["[address](\(address.destination))", "<a href=\"\(address.destination)\">address</a>"] {
+                    var evaluations: [Int] = []
+                    let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect,
+                                                             onDiagnostic: {
+                        if case .linkPolicyEvaluation(let occurrence) = $0 { evaluations.append(occurrence) }
+                    })
+                    let context = "\(dialect): \(String(reflecting: source))"
+                    XCTAssertEqual(rendered.string, "address\n", context)
+                    XCTAssertEqual(evaluations, [0], context)
+                    XCTAssertEqual(try link("address", in: rendered) != nil, address.allowed, context)
+                }
+            }
+        }
+    }
+
     func testWebHostsWithEncodedWhitespaceControlsAndAuthorityDelimitersAreNotInteractive() throws {
         let encodedScalars = [
             "%00", "%09", "%0D%0A", "%1F", "%7F", "%C2%85", "%20", "%E2%80%A8",

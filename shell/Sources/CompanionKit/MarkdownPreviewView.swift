@@ -465,7 +465,7 @@ private final class MarkdownPreviewRenderer {
             attributes[.font] = InkStyle.codeFont
             // The info string shows nothing but its objects, which open the block.
             let content = try parts(info.objectIdentities.map(HTMLPart.object) + literal, attributes: attributes)
-            paragraph(content, context: nested, marker: marker)
+            paragraph(content, context: nested)
         case .quote(let children):
             var nested = context
             let block = NSTextBlock()
@@ -484,8 +484,8 @@ private final class MarkdownPreviewRenderer {
         case .html(let parts):
             // A block of tags alone, or of a comment, leaves no empty paragraph.
             let content = trimmed(try compose(.rawHTML(parts), attributes: baseAttributes))
-            if content.length > 0 || marker != nil {
-                paragraph(content, context: context, marker: marker)
+            if content.length > 0 {
+                paragraph(content, context: context)
             }
         case .thematicBreak:
             var nested = context
@@ -502,7 +502,6 @@ private final class MarkdownPreviewRenderer {
         case .objects(let identities):
             // Each object with no element of its own is a paragraph of its own.
             for identity in identities {
-                try composer.beginBlock()
                 paragraph(try compose(.object(identity), attributes: baseAttributes), context: context)
             }
         }
