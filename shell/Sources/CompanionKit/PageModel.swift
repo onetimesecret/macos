@@ -800,6 +800,17 @@ public final class PageModel: ObservableObject {
         }
     }
     private static let previewRenderingKey = "previewRendering"
+
+    /// The parser used by rendered Markdown previews.
+    @Published public var markdownDialect: PreviewDialect {
+        didSet {
+            guard markdownDialect != oldValue else { return }
+            defaults.set(markdownDialect.rawValue, forKey: Self.markdownDialectKey)
+            invalidateQuietRenderings()
+        }
+    }
+    private static let markdownDialectKey = "markdownDialect"
+
     private static let pagePreviewKey = "pageMarkdownPreviewV2"
     private var pagePreviewOverrides: [String: Bool] = [:]
 
@@ -1589,6 +1600,8 @@ public final class PageModel: ObservableObject {
         // eye expects of a page it can already read.
         previewRendering = (defaults.string(forKey: Self.previewRenderingKey)
             .flatMap(PreviewRenderingScope.init(rawValue:))) ?? .allPages
+        markdownDialect = defaults.string(forKey: Self.markdownDialectKey)
+            .flatMap(PreviewDialect.init(rawValue:)) ?? .gfm
         pagePreviewOverrides = defaults.dictionary(forKey: Self.pagePreviewKey) as? [String: Bool] ?? [:]
         languageDetectionEnabled =
             defaults.object(forKey: Self.languageDetectionKey) as? Bool ?? false

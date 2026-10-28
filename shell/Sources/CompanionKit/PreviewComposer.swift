@@ -1,5 +1,5 @@
-/// The Markdown dialect a rendered page preview composes raw HTML under (plan R1 to R3).
-enum PreviewDialect: CaseIterable, Sendable {
+/// The parser dialect used for a rendered Markdown preview.
+public enum PreviewDialect: String, CaseIterable, Sendable {
     case commonMark
     case gfm
 }

@@ -10,6 +10,7 @@ final class MarkdownPreviewView: AskingTextView {
     private weak var coordinator: InkEditorView.Coordinator?
     private let previewStorage: NSTextStorage
     private var seeded: PageModel.QuietRendering?
+    private var seededDialect: PreviewDialect?
     private let links = PreviewLinks()
 
     /// A click on a preview of a page the roll has not selected promotes it (ADR-0030).
@@ -212,11 +213,12 @@ final class MarkdownPreviewView: AskingTextView {
 
     /// The text it replaced, or nil on the first seeding and for the rendering already seeded.
     @discardableResult
-    func reseed(with rendering: PageModel.QuietRendering) -> String? {
-        guard rendering !== seeded else { return nil }
+    func reseed(with rendering: PageModel.QuietRendering, dialect: PreviewDialect = .gfm) -> String? {
+        guard rendering !== seeded || dialect != seededDialect else { return nil }
         let previous = seeded == nil ? nil : previewStorage.string
         seeded = rendering
-        previewStorage.setAttributedString(Self.render(rendering.text))
+        seededDialect = dialect
+        previewStorage.setAttributedString(Self.render(rendering.text, dialect: dialect))
         needsDisplay = true
         return previous
     }

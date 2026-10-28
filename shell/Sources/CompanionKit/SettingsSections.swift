@@ -435,6 +435,18 @@ public struct CodeSettingsView: View {
             }
 
             Section {
+                Picker("Markdown dialect", selection: $model.markdownDialect) {
+                    Text("GitHub Flavored Markdown").tag(PreviewDialect.gfm)
+                    Text("CommonMark").tag(PreviewDialect.commonMark)
+                }
+                .pickerStyle(.radioGroup)
+            } header: {
+                SettingsCaption(
+                    "How rendered previews interpret Markdown. GitHub Flavored Markdown adds tables, task lists, strikethrough and extended autolinks. Open previews update immediately."
+                )
+            }
+
+            Section {
                 Picker("Preview rendering", selection: $model.previewRendering) {
                     Text("Focused page only").tag(PreviewRenderingScope.focusedOnly)
                     Text("All pages").tag(PreviewRenderingScope.allPages)

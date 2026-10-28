@@ -919,7 +919,8 @@ final class DayStackView: NSView {
             follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
         }
         for (page, region) in previewRegions {
-            follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
+            follow(page, in: region, replacing: region.reseed(
+                with: model.quietRendering(for: page), dialect: model.markdownDialect))
         }
     }
 
@@ -945,7 +946,8 @@ final class DayStackView: NSView {
             self.update(projection: self.model.timeUnits, selectedPage: page, readOnly: self.readOnly)
         }
         region.isSelectedPage = selected
-        follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
+        follow(page, in: region, replacing: region.reseed(
+            with: model.quietRendering(for: page), dialect: model.markdownDialect))
         previewRegions[page] = region
         return region
     }
