@@ -178,7 +178,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
             "https://exa%6Dple.com/@user/%3A%2F%3F%23%40?x=1#top",
             "https://b%C3%BCcher.example/",
             "http://[::1]/", "https://[2001:db8::1]:8443/a?x=1#top",
-            "https://[::ffff:192.0.2.1]/", "http://[fe80::1%25en0]/",
+            "https://[::ffff:192.0.2.1]/", "http://[fe80::1%25en0]/", "https://[::]/",
         ]
         for dialect in PreviewDialect.allCases {
             for address in addresses {
@@ -288,6 +288,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
                 switch $0 {
                 case .linkPolicyEvaluation(let occurrence): links.append(occurrence)
                 case .fontResolution(let base, let traits): resolved.append((base, traits))
+                case .fontSizing, .fontTraitConversion: break
                 }
             }
         )
@@ -335,7 +336,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
                 if case .fontResolution(let base, let traits) = $0 { resolved.append((base, traits)) }
             }
         )
-        XCTAssertEqual(resolved.count, 9)
+        XCTAssertEqual(resolved.count, 11)
         XCTAssertEqual(Set(resolved.map { $0.base.pointSize }).count, 3)
         XCTAssertEqual(try font("firstCode", in: rendered), try font("repeatedCode", in: rendered))
         XCTAssertGreaterThan(try font("firstCode", in: rendered).pointSize, try font("secondCode", in: rendered).pointSize)
@@ -352,6 +353,55 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
             XCTAssertTrue(manager.traits(of: italic).contains(.italicFontMask))
             XCTAssertEqual(manager.traits(of: code).contains(.boldFontMask), prefix != "body")
             XCTAssertEqual(manager.traits(of: italic).contains(.boldFontMask), prefix != "body")
+        }
+    }
+
+    func testHeadingAndTableHeaderFontConversionsAreCachedAcrossRepeatedBlocks() throws {
+        let previous = InkStyle.typeface
+        defer { InkStyle.typeface = previous }
+        InkStyle.typeface = .init(family: "Helvetica", codeFamily: "Menlo", size: 13)
+        let scales: [CGFloat] = [1.8, 1.55, 1.35, 1.18, 1.08, 1]
+        for repetitions in [1, 32] {
+            let source = (0..<repetitions).map { index in
+                (1...6).map { level in
+                    "\(String(repeating: "#", count: level)) heading-\(index)-\(level)"
+                }.joined(separator: "\n\n") + """
+
+
+                | header-\(index)-0 | header-\(index)-1 |
+                | --- | --- |
+                | cell-\(index)-0 | cell-\(index)-1 |
+                """
+            }.joined(separator: "\n\n")
+            var resolutions = 0
+            var sizes: [(base: NSFont, size: CGFloat)] = []
+            var conversions: [(base: NSFont, traits: NSFontTraitMask)] = []
+            let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), onDiagnostic: {
+                switch $0 {
+                case .linkPolicyEvaluation: break
+                case .fontResolution: resolutions += 1
+                case .fontSizing(let base, let size): sizes.append((base, size))
+                case .fontTraitConversion(let base, let traits): conversions.append((base, traits))
+                }
+            })
+            XCTAssertEqual(resolutions, 13, "\(repetitions)")
+            XCTAssertEqual(sizes.count, 5, "\(repetitions)")
+            XCTAssertEqual(Set(sizes.map { $0.size }).count, 5)
+            XCTAssertTrue(sizes.allSatisfy { $0.base == InkStyle.baseFont })
+            XCTAssertEqual(conversions.count, 6, "\(repetitions)")
+            XCTAssertEqual(Set(conversions.map { $0.base.pointSize }).count, 6)
+            XCTAssertTrue(conversions.allSatisfy { $0.traits == .boldFontMask })
+            for level in 1...6 {
+                let heading = try font("heading-\(repetitions - 1)-\(level)", in: rendered)
+                XCTAssertEqual(heading.pointSize, InkStyle.baseFont.pointSize * scales[level - 1], accuracy: 0.01)
+                XCTAssertTrue(NSFontManager.shared.traits(of: heading).contains(.boldFontMask))
+            }
+            for column in 0...1 {
+                let header = try font("header-\(repetitions - 1)-\(column)", in: rendered)
+                XCTAssertEqual(header.pointSize, InkStyle.baseFont.pointSize)
+                XCTAssertTrue(NSFontManager.shared.traits(of: header).contains(.boldFontMask))
+                XCTAssertEqual(try font("cell-\(repetitions - 1)-\(column)", in: rendered), InkStyle.baseFont)
+            }
         }
     }
 

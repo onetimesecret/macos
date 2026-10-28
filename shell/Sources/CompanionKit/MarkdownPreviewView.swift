@@ -250,6 +250,8 @@ struct PreviewImageDescriptor: Hashable {
 enum PreviewRenderingDiagnostic {
     case linkPolicyEvaluation(Int)
     case fontResolution(NSFont, Set<PreviewTrait>)
+    case fontSizing(NSFont, CGFloat)
+    case fontTraitConversion(NSFont, NSFontTraitMask)
 }
 
 /// The preview's delegate: a link opens only by `openAimedLink`, and an object's
@@ -298,6 +300,17 @@ private final class MarkdownPreviewRenderer {
         let traits: Set<PreviewTrait>
     }
 
+    private struct FontSizeKey: Hashable {
+        let base: NSFont
+        let size: CGFloat
+    }
+
+    private static let headingScales: [CGFloat] = [1.8, 1.55, 1.35, 1.18, 1.08, 1]
+    private static let htmlEdgeContent = CharacterSet(charactersIn: " \t\r\n\u{000C}").inverted
+    private static let forbiddenAddressScalars = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
+    private static let authorityDelimiters = CharacterSet(charactersIn: "@/?#")
+    private static let ipv6ScopeScalars = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+
     private let output = NSMutableAttributedString(string: "")
     private let text: String
     private let dialect: PreviewDialect
@@ -305,6 +318,7 @@ private final class MarkdownPreviewRenderer {
     private let onDiagnostic: ((PreviewRenderingDiagnostic) -> Void)?
     private var reviewedLinks: [Int: LinkPolicyResult] = [:]
     private var resolvedFonts: [FontKey: NSFont] = [:]
+    private var sizedFonts: [FontSizeKey: NSFont] = [:]
     /// The page's objects in source order, and the UTF-16 offset of each.
     private let attachments: [NSTextAttachment]
     private let offsets: [Int]
@@ -390,9 +404,9 @@ private final class MarkdownPreviewRenderer {
         return result
     }
 
-    private var baseAttributes: [NSAttributedString.Key: Any] {
-        [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]
-    }
+    private lazy var baseAttributes: [NSAttributedString.Key: Any] = [
+        .font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor,
+    ]
 
     private func paragraphStyle(_ context: Context, marker: String? = nil) -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
@@ -431,10 +445,8 @@ private final class MarkdownPreviewRenderer {
         switch block {
         case .heading(let level, let events):
             var attributes = baseAttributes
-            let scale: [CGFloat] = [1.8, 1.55, 1.35, 1.18, 1.08, 1]
-            let size = InkStyle.baseFont.pointSize * scale[min(5, max(0, level - 1))]
-            let sized = NSFontManager.shared.convert(InkStyle.baseFont, toSize: size)
-            attributes[.font] = NSFontManager.shared.convert(sized, toHaveTrait: .boldFontMask)
+            let size = InkStyle.baseFont.pointSize * Self.headingScales[min(5, max(0, level - 1))]
+            attributes[.font] = resolvedFont(sizedFont(InkStyle.baseFont, size: size), traits: [.strong])
             let style = paragraphStyle(context, marker: marker)
             style.paragraphSpacingBefore = level <= 2 ? 10 : 6
             style.paragraphSpacing = 6
@@ -500,10 +512,9 @@ private final class MarkdownPreviewRenderer {
     private func trimmed(_ text: NSAttributedString) -> NSAttributedString {
         let string = text.string as NSString
         // U+2028 is what `br` composes to, a break the block keeps at either end.
-        let kept = CharacterSet(charactersIn: " \t\r\n\u{000C}").inverted
-        let first = string.rangeOfCharacter(from: kept)
+        let first = string.rangeOfCharacter(from: Self.htmlEdgeContent)
         guard first.location != NSNotFound else { return NSAttributedString(string: "") }
-        let last = string.rangeOfCharacter(from: kept, options: .backwards)
+        let last = string.rangeOfCharacter(from: Self.htmlEdgeContent, options: .backwards)
         return text.attributedSubstring(from: NSRange(
             location: first.location, length: NSMaxRange(last) - first.location
         ))
@@ -572,7 +583,7 @@ private final class MarkdownPreviewRenderer {
                 }
                 var attributes = baseAttributes
                 if rowIndex == 0 {
-                    attributes[.font] = NSFontManager.shared.convert(InkStyle.baseFont, toHaveTrait: .boldFontMask)
+                    attributes[.font] = resolvedFont(InkStyle.baseFont, traits: [.strong])
                 }
                 try composer.beginBlock()
                 let content = column < cells.count
@@ -655,12 +666,27 @@ private final class MarkdownPreviewRenderer {
         var font = base
         if traits.contains(.code) {
             let inherited = manager.traits(of: font).intersection([.boldFontMask, .italicFontMask])
-            font = manager.convert(manager.convert(InkStyle.codeFont, toSize: font.pointSize), toHaveTrait: inherited)
+            font = convertedFont(sizedFont(InkStyle.codeFont, size: font.pointSize), traits: inherited)
         }
-        if traits.contains(.strong) { font = manager.convert(font, toHaveTrait: .boldFontMask) }
-        if traits.contains(.emphasis) { font = manager.convert(font, toHaveTrait: .italicFontMask) }
+        if traits.contains(.strong) { font = convertedFont(font, traits: .boldFontMask) }
+        if traits.contains(.emphasis) { font = convertedFont(font, traits: .italicFontMask) }
         resolvedFonts[key] = font
         return font
+    }
+
+    private func sizedFont(_ base: NSFont, size: CGFloat) -> NSFont {
+        guard base.pointSize != size else { return base }
+        let key = FontSizeKey(base: base, size: size)
+        if let font = sizedFonts[key] { return font }
+        onDiagnostic?(.fontSizing(base, size))
+        let font = NSFontManager.shared.convert(base, toSize: size)
+        sizedFonts[key] = font
+        return font
+    }
+
+    private func convertedFont(_ base: NSFont, traits: NSFontTraitMask) -> NSFont {
+        onDiagnostic?(.fontTraitConversion(base, traits))
+        return NSFontManager.shared.convert(base, toHaveTrait: traits)
     }
 
     private func reviewedLink(_ style: PreviewStyle) -> NSURL? {
@@ -704,15 +730,14 @@ private final class MarkdownPreviewRenderer {
     }
 
     private func safeURL(_ destination: String) -> URL? {
-        let forbidden = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
-        guard !destination.unicodeScalars.contains(where: { forbidden.contains($0) }),
+        guard !destination.unicodeScalars.contains(where: { Self.forbiddenAddressScalars.contains($0) }),
               var components = URLComponents(string: destination),
               let scheme = components.scheme?.lowercased(),
               ["http", "https", "mailto"].contains(scheme)
         else { return nil }
         if scheme == "mailto" {
             guard !components.path.isEmpty,
-                  !components.path.unicodeScalars.contains(where: { forbidden.contains($0) })
+                  !components.path.unicodeScalars.contains(where: { Self.forbiddenAddressScalars.contains($0) })
             else { return nil }
             // A mailto query names headers and attachments for the mail client; the address alone opens.
             components.query = nil
@@ -720,8 +745,8 @@ private final class MarkdownPreviewRenderer {
         } else {
             // `https://docs.example.com@evil.example/` opens evil.example: userinfo refuses the link.
             guard let host = components.percentEncodedHost?.removingPercentEncoding, !host.isEmpty,
-                  !host.unicodeScalars.contains(where: { forbidden.contains($0) }),
-                  host.rangeOfCharacter(from: CharacterSet(charactersIn: "@/?#")) == nil,
+                  !host.unicodeScalars.contains(where: { Self.forbiddenAddressScalars.contains($0) }),
+                  host.rangeOfCharacter(from: Self.authorityDelimiters) == nil,
                   !host.contains(":") || isIPv6Host(host),
                   components.user == nil, components.password == nil
             else { return nil }
@@ -730,11 +755,11 @@ private final class MarkdownPreviewRenderer {
     }
 
     private func isIPv6Host(_ host: String) -> Bool {
-        guard host.hasPrefix("["), host.hasSuffix("]") else { return false }
-        let parts = host.dropFirst().dropLast().split(separator: "%", maxSplits: 1, omittingEmptySubsequences: false)
+        let literal = host.hasPrefix("[") && host.hasSuffix("]") ? String(host.dropFirst().dropLast()) : host
+        let parts = literal.split(separator: "%", maxSplits: 1, omittingEmptySubsequences: false)
         if parts.count == 2 {
-            let unreserved = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
-            guard !parts[1].isEmpty, parts[1].unicodeScalars.allSatisfy({ unreserved.contains($0) }) else { return false }
+            guard !parts[1].isEmpty,
+                  parts[1].unicodeScalars.allSatisfy({ Self.ipv6ScopeScalars.contains($0) }) else { return false }
         }
         var address = in6_addr()
         return String(parts[0]).withCString { inet_pton(AF_INET6, $0, &address) == 1 }
