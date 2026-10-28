@@ -119,7 +119,7 @@ final class PreviewImageControls {
                 entry.button.setAccessibilityRole(.button)
                 entry.button.setAccessibilityElement(true)
                 entry.button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-                entry.button.lineBreakMode = .byTruncatingMiddle
+                entry.button.lineBreakMode = .byTruncatingHead
                 entry.button.target = self
                 entry.button.action = #selector(activate(_:))
                 entry.button.tag = entries.count
@@ -253,6 +253,7 @@ final class PreviewImageControls {
     }
 
     func resize() {
+        guard !entries.isEmpty else { return }
         entries.forEach(configure)
         schedulePresentation()
     }

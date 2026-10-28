@@ -49,7 +49,7 @@ final class MarkdownPreviewView: AskingTextView {
         self.page = page
         self.coordinator = coordinator
         if let coordinator { imageLoad = coordinator.model.previewImageLoad }
-        else { imageLoad = { try await PreviewImageLoader().load($0) } }
+        else { imageLoad = { _ in throw PreviewImageLoadError.invalidURL } }
         let storage = NSTextStorage()
         previewStorage = storage
         let manager = NSLayoutManager()
@@ -247,11 +247,12 @@ final class MarkdownPreviewView: AskingTextView {
     @discardableResult
     func reseed(with rendering: PageModel.QuietRendering, dialect: PreviewDialect) -> String? {
         if rendering === seeded, dialect == seededDialect { return nil }
-        let previous = seeded == nil ? nil : previewStorage.string
         let sameSource = dialect == seededDialect && seeded?.text.isEqual(to: rendering.text) == true
+        let reusesImageTemplate = sameSource && !imageControls.buttons.isEmpty
+        let previous = seeded == nil || reusesImageTemplate ? nil : previewStorage.string
         seeded = rendering
         seededDialect = dialect
-        if sameSource, !imageControls.buttons.isEmpty { return nil }
+        if reusesImageTemplate { return nil }
         imageControls.seed(Self.render(rendering.text, dialect: dialect), preserveConsent: sameSource)
         needsDisplay = true
         return previous
@@ -293,8 +294,10 @@ final class MarkdownPreviewView: AskingTextView {
 
     override func accessibilityChildren() -> [Any]? {
         let buttons = imageControlsReady ? imageControls.buttons : []
-        var children = super.accessibilityChildren() ?? []
-        for button in buttons where !children.contains(where: { ($0 as AnyObject) === button }) {
+        var children = (super.accessibilityChildren() ?? []).filter { child in
+            !buttons.contains(where: { $0.isHidden && (child as AnyObject) === $0 })
+        }
+        for button in buttons where !button.isHidden && !children.contains(where: { ($0 as AnyObject) === button }) {
             children.append(button)
         }
         return children
@@ -305,7 +308,7 @@ final class MarkdownPreviewView: AskingTextView {
         let button: NSButton? = MainActor.assumeIsolated {
             if imageControlsReady, let window {
                 let local = convert(window.convertPoint(fromScreen: point), from: nil)
-                if let button = imageControls.buttons.first(where: { $0.frame.contains(local) }) { return button }
+                if let button = imageControls.buttons.first(where: { !$0.isHidden && $0.frame.contains(local) }) { return button }
             }
             return nil
         }

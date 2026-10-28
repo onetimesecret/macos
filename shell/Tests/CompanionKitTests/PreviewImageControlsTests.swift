@@ -847,9 +847,29 @@ final class PreviewImageControlsTests: XCTestCase {
         storage.setAttributedString(NSAttributedString(string: ""))
         fixture.preview.imageControls.layout()
         XCTAssertTrue(button.isHidden)
+        XCTAssertFalse((fixture.preview.accessibilityChildren() ?? []).contains { ($0 as AnyObject) === button })
         button.performClick(nil)
         XCTAssertTrue(fixture.loader.requests.isEmpty)
         XCTAssertEqual(fixture.preview.imageControls.loadedImageCount, 0)
+    }
+
+    func testPreviewWithoutImagesDoesNotScheduleImageLayoutOnResize() async throws {
+        let fixture = try fixture("# Plain preview\n\nNo image controls")
+        defer { fixture.window.close() }
+        XCTAssertTrue(fixture.preview.imageControls.buttons.isEmpty)
+        let storage = try XCTUnwrap(fixture.preview.textStorage)
+        let observer = StorageEdits()
+        NotificationCenter.default.addObserver(
+            observer, selector: #selector(StorageEdits.updated(_:)),
+            name: NSTextStorage.didProcessEditingNotification, object: storage)
+        defer { NotificationCenter.default.removeObserver(observer) }
+        var layouts = 0
+        fixture.preview.onImageLayoutChanged = { layouts += 1 }
+        for _ in 0..<5 { fixture.preview.imageControls.resize() }
+        await Task.yield()
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(observer.calls, 0)
+        XCTAssertEqual(layouts, 0)
     }
 
 }
