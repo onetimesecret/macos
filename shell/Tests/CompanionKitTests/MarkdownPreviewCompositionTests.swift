@@ -280,7 +280,7 @@ final class MarkdownPreviewCompositionTests: XCTestCase {
 
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         view.isSelectedPage = true
-        view.reseed(with: PageModel.QuietRendering(text: text, fenceRegions: []))
+        view.reseed(with: PageModel.QuietRendering(text: text, fenceRegions: []), dialect: .gfm)
         view.selectAll(nil)
         XCTAssertEqual(view.shownSelection(), [[
             .ink("alt "), .chip(1), .ink(" then "), .chip(2), .ink("html "), .chip(3), .ink(" and "),
@@ -438,7 +438,7 @@ final class MarkdownPreviewCompositionTests: XCTestCase {
 
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         view.isSelectedPage = true
-        view.reseed(with: PageModel.QuietRendering(text: NSAttributedString(string: markdown), fenceRegions: []))
+        view.reseed(with: PageModel.QuietRendering(text: NSAttributedString(string: markdown), fenceRegions: []), dialect: .gfm)
         view.setFrameSize(NSSize(width: 480, height: 2000))
         let manager = try XCTUnwrap(view.layoutManager)
         manager.ensureLayout(for: try XCTUnwrap(view.textContainer))

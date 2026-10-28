@@ -215,11 +215,11 @@ final class MarkdownBridgeTests: XCTestCase {
     func testReseedingTheSameRenderingKeepsThePreviewAndNewInputRefreshesIt() {
         let preview = MarkdownPreviewView(page: 1, coordinator: nil)
         let first = PageModel.QuietRendering(text: NSAttributedString(string: "**first**"), fenceRegions: [])
-        XCTAssertNil(preview.reseed(with: first))
+        XCTAssertNil(preview.reseed(with: first, dialect: .gfm))
         XCTAssertEqual(preview.string, "first\n")
-        XCTAssertNil(preview.reseed(with: first))
+        XCTAssertNil(preview.reseed(with: first, dialect: .gfm))
         let next = PageModel.QuietRendering(text: NSAttributedString(string: "<em>next</em>"), fenceRegions: [])
-        XCTAssertEqual(preview.reseed(with: next), "first\n")
+        XCTAssertEqual(preview.reseed(with: next, dialect: .gfm), "first\n")
         XCTAssertEqual(preview.string, "next\n")
     }
 
@@ -234,7 +234,7 @@ final class MarkdownBridgeTests: XCTestCase {
         let preview = MarkdownPreviewView(page: 1, coordinator: nil)
         preview.reseed(with: PageModel.QuietRendering(
             text: NSAttributedString(string: "<div>&#xFFFC;</div>"), fenceRegions: []
-        ))
+        ), dialect: .gfm)
         preview.setSelectedRange(NSRange(location: 0, length: preview.string.utf16.count))
         XCTAssertEqual(preview.shownSelection(), [[.ink("\u{FFFC}\n")]])
     }

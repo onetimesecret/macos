@@ -431,7 +431,7 @@ final class MarkdownSealedAtomTests: XCTestCase {
 
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         view.isSelectedPage = true
-        view.reseed(with: PageModel.QuietRendering(text: source(excess).0, fenceRegions: []))
+        view.reseed(with: PageModel.QuietRendering(text: source(excess).0, fenceRegions: []), dialect: .gfm)
         view.selectAll(nil)
         XCTAssertEqual(view.shownSelection(), [[
             .ink("a\nb\nc\nd"), .chip(1), .ink("\ne\nf "), .chip(2), .ink("\n\n"),

@@ -806,10 +806,13 @@ public final class PageModel: ObservableObject {
         didSet {
             guard markdownDialect != oldValue else { return }
             defaults.set(markdownDialect.rawValue, forKey: Self.markdownDialectKey)
-            invalidateQuietRenderings()
+            NotificationCenter.default.post(
+                name: Self.markdownDialectDidChangeNotification, object: self)
         }
     }
     private static let markdownDialectKey = "markdownDialect"
+    public static let markdownDialectDidChangeNotification =
+        Notification.Name("PageModel.markdownDialectDidChange")
 
     private static let pagePreviewKey = "pageMarkdownPreviewV2"
     private var pagePreviewOverrides: [String: Bool] = [:]

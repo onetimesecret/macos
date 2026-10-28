@@ -475,12 +475,10 @@ final class DayStackView: NSView {
         )
         // Preview changes can restyle the editor without changing the global setting.
         // Registered by selector so this observation retires with the view.
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(quietRenderingsInvalidated),
-            name: PageModel.quietRenderingsDidInvalidateNotification,
-            object: model
-        )
+        for name in [PageModel.quietRenderingsDidInvalidateNotification, PageModel.markdownDialectDidChangeNotification] {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(renderingPreferencesChanged), name: name, object: model)
+        }
     }
 
     private func observeEditor(_ editor: InkTextView) {
@@ -578,7 +576,7 @@ final class DayStackView: NSView {
 
     /// Refresh the mounted editor, header controls and quiet regions
     /// after the model invalidates preview renderings.
-    @objc private func quietRenderingsInvalidated(_ notification: Notification) {
+    @objc private func renderingPreferencesChanged(_ notification: Notification) {
         update(projection: model.timeUnits, selectedPage: model.selectedPageID, readOnly: readOnly)
     }
 

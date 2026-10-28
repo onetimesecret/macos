@@ -118,6 +118,21 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         }
     }
 
+    func testDialectChangeRefreshesRawHTMLThroughTheMountedPreview() throws {
+        let model = try makeModel()
+        let ink = "<script><em>x</em></script>"
+        let page = try page(in: model, saying: ink)
+        model.toggleMarkdownPreview(for: page)
+        let roll = try mountRoll(model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        for dialect in [PreviewDialect.gfm, .commonMark, .gfm] {
+            model.markdownDialect = dialect
+            XCTAssertEqual(preview.string, dialect == .gfm ? "<script>x</script>\n" : ink + "\n")
+        }
+        XCTAssertEqual(source(for: page, in: model), ink)
+    }
+
     func testRustHTMLPreviewExposesRenderedAccessibilityTextAndKeyboardSelection() throws {
         let model = try makeModel()
         let source = "# Heading\n\n<strong>Native HTML</strong> &amp; ![image description](https://example.invalid/image)\n\n[link](https://example.invalid/)"

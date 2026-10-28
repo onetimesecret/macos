@@ -1,7 +1,7 @@
 /// The parser dialect used for a rendered Markdown preview.
 public enum PreviewDialect: String, CaseIterable, Sendable {
-    case commonMark
-    case gfm
+    case commonMark = "commonMark"
+    case gfm = "gfm"
 }
 
 enum PreviewTrait: Hashable, Codable, Sendable {

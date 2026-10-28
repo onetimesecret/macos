@@ -211,10 +211,9 @@ final class MarkdownPreviewView: AskingTextView {
         return super.beginDraggingSession(with: items, event: event, source: source)
     }
 
-    /// The text it replaced, or nil on the first seeding and for the rendering already seeded.
     @discardableResult
-    func reseed(with rendering: PageModel.QuietRendering, dialect: PreviewDialect = .gfm) -> String? {
-        guard rendering !== seeded || dialect != seededDialect else { return nil }
+    func reseed(with rendering: PageModel.QuietRendering, dialect: PreviewDialect) -> String? {
+        if rendering === seeded, dialect == seededDialect { return nil }
         let previous = seeded == nil ? nil : previewStorage.string
         seeded = rendering
         seededDialect = dialect

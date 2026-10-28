@@ -439,7 +439,7 @@ public struct CodeSettingsView: View {
                     Text("GitHub Flavored Markdown").tag(PreviewDialect.gfm)
                     Text("CommonMark").tag(PreviewDialect.commonMark)
                 }
-                .pickerStyle(.radioGroup)
+                .pickerStyle(.inline)
             } header: {
                 SettingsCaption(
                     "How rendered previews interpret Markdown. GitHub Flavored Markdown adds tables, task lists, strikethrough and extended autolinks. Open previews update immediately."
