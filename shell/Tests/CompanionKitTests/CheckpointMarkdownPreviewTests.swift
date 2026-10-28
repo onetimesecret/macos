@@ -18,6 +18,157 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         return model
     }
 
+    func testDialectChangeRefreshesSelectedAndUnselectedPreviewsInEveryMountedRoll() throws {
+        let model = try makeModel()
+        let first = try page(in: model, saying: "~~first~~")
+        let second = try page(in: model, saying: "~~second~~")
+        model.toggleMarkdownPreview(for: first)
+        model.toggleMarkdownPreview(for: second)
+        let rolls = [try mountRoll(model), try mountRoll(model)]
+        defer { rolls.forEach { $0.window.close() } }
+        let marks = model.dirtyMarks
+        for scope in PreviewRenderingScope.allCases {
+            model.previewRendering = scope
+            for dialect in [PreviewDialect.commonMark, .gfm] {
+                model.markdownDialect = dialect
+                for roll in rolls {
+                    let quiet = try preview(for: first, in: roll)
+                    let selected = try preview(for: second, in: roll)
+                    XCTAssertEqual(quiet.string, dialect == .gfm ? "first\n" : "~~first~~\n")
+                    XCTAssertEqual(selected.string, dialect == .gfm ? "second\n" : "~~second~~\n")
+                    XCTAssertFalse(quiet.isSelectedPage)
+                    XCTAssertTrue(selected.isSelectedPage)
+                    XCTAssertEqual(selected.accessibilityString(for: NSRange(
+                        location: 0, length: selected.string.utf16.count)), selected.string)
+                }
+                XCTAssertEqual(model.previewRendering, scope)
+                XCTAssertTrue(model.markdownPreviewEnabled(for: first))
+                XCTAssertTrue(model.markdownPreviewEnabled(for: second))
+            }
+        }
+        XCTAssertEqual(source(for: first, in: model), "~~first~~")
+        XCTAssertEqual(source(for: second, in: model), "~~second~~")
+        XCTAssertEqual(model.dirtyMarks, marks)
+    }
+
+    func testDialectObservationWorksBeforeTheRollHasAScrollClip() throws {
+        let model = try makeModel()
+        let page = try page(in: model, saying: "~~detached~~")
+        model.toggleMarkdownPreview(for: page)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        coordinator.surface = model.owner
+        let stack = DayStackView(model: model, coordinator: coordinator, emptyHint: "hint")
+        stack.observeRoll()
+        XCTAssertNil(stack.enclosingScrollView)
+        model.markdownDialect = .commonMark
+        XCTAssertEqual(stack.previewRegions[page]?.string, "~~detached~~\n")
+        model.markdownDialect = .gfm
+        XCTAssertEqual(stack.previewRegions[page]?.string, "detached\n")
+    }
+
+    func testPreviewOpenedAfterDialectChangeUsesTheNewDialectAndReseedsCachedSource() throws {
+        let model = try makeModel()
+        let page = try page(in: model, saying: "~~later~~")
+        let roll = try mountRoll(model)
+        defer { roll.window.close() }
+        model.markdownDialect = .commonMark
+        XCTAssertFalse(model.markdownPreviewEnabled(for: page))
+        model.toggleMarkdownPreview(for: page)
+        let preview = try preview(for: page, in: roll)
+        XCTAssertEqual(preview.string, "~~later~~\n")
+        let cached = model.quietRendering(for: page)
+        XCTAssertEqual(preview.reseed(with: cached, dialect: .gfm), "~~later~~\n")
+        XCTAssertEqual(preview.string, "later\n")
+        XCTAssertNil(preview.reseed(with: cached, dialect: .gfm))
+        XCTAssertEqual(preview.reseed(with: cached, dialect: .commonMark), "later\n")
+        XCTAssertEqual(preview.string, "~~later~~\n")
+    }
+
+    func testDialectSettingChangesGFMExtensionsInAMountedPreview() throws {
+        let model = try makeModel()
+        let rows = (0..<24).map { "| a \($0) | b \($0) |" }.joined(separator: "\n")
+        let ink = "~~gone~~\n\n- [x] done\n\n| Name | Value |\n| --- | --- |\n" + rows + "\n\nwww.example.com"
+        let page = try page(in: model, saying: ink)
+        model.toggleMarkdownPreview(for: page)
+        let roll = try mountRoll(model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        var heights: [CGFloat] = []
+        for dialect in [PreviewDialect.gfm, .commonMark, .gfm] {
+            model.markdownDialect = dialect
+            let storage = try XCTUnwrap(preview.textStorage)
+            var hasTable = false
+            var hasDeletion = false
+            var hasLink = false
+            storage.enumerateAttributes(in: NSRange(location: 0, length: storage.length)) { attrs, _, _ in
+                hasTable = hasTable || !((attrs[.paragraphStyle] as? NSParagraphStyle)?.textBlocks.isEmpty ?? true)
+                hasDeletion = hasDeletion || (attrs[.strikethroughStyle] as? Int ?? 0) != 0
+                hasLink = hasLink || attrs[.link] != nil
+            }
+            XCTAssertEqual(hasTable, dialect == .gfm)
+            XCTAssertEqual(hasDeletion, dialect == .gfm)
+            XCTAssertEqual(hasLink, dialect == .gfm)
+            XCTAssertEqual(preview.string.contains("☑\tdone"), dialect == .gfm)
+            XCTAssertEqual(preview.string.contains("[x] done"), dialect == .commonMark)
+            heights.append(preview.frame.height)
+        }
+        XCTAssertGreaterThan(abs(heights[0] - heights[1]), 1)
+        XCTAssertEqual(heights[0], heights[2], accuracy: 1)
+        XCTAssertEqual(source(for: page, in: model), ink)
+    }
+
+    func testDialectChangesKeepTheSealedChipIdentityInThePreview() throws {
+        let gated = try makeGatedModel()
+        let (page, chip) = try sealedPreviewPage(in: gated.model)
+        let roll = try mountRoll(gated.model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        let originalInk = self.source(for: page, in: gated.model)
+        for dialect in [PreviewDialect.commonMark, .gfm, .commonMark] {
+            gated.model.markdownDialect = dialect
+            let storage = try XCTUnwrap(preview.textStorage)
+            var attachments: [ChipAttachment] = []
+            storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
+                if let value = value as? ChipAttachment { attachments.append(value) }
+            }
+            XCTAssertEqual(attachments.count, 1)
+            XCTAssertEqual(attachments.first?.info.chipId, chip)
+            XCTAssertFalse(storage.string.contains("SECRET"))
+            XCTAssertEqual(self.source(for: page, in: gated.model), originalInk)
+        }
+    }
+
+    func testDialectChangeRefreshesRawHTMLThroughTheMountedPreview() throws {
+        let model = try makeModel()
+        let ink = "<script><em>x</em></script>"
+        let page = try page(in: model, saying: ink)
+        model.toggleMarkdownPreview(for: page)
+        let roll = try mountRoll(model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        for dialect in [PreviewDialect.gfm, .commonMark, .gfm] {
+            model.markdownDialect = dialect
+            XCTAssertEqual(preview.string, dialect == .gfm ? "<script>x</script>\n" : ink + "\n")
+        }
+        XCTAssertEqual(source(for: page, in: model), ink)
+    }
+
+    func testUnclosedCommonMarkRawTextUsesTheOriginalPageAndGFMRestoresFormatting() throws {
+        let model = try makeModel()
+        let ink = "# Heading\n\na <script> b\n\n# After"
+        let page = try page(in: model, saying: ink)
+        model.toggleMarkdownPreview(for: page)
+        let roll = try mountRoll(model)
+        defer { roll.window.close() }
+        let preview = try preview(for: page, in: roll)
+        XCTAssertEqual(preview.string, "Heading\na <script> b\nAfter\n")
+        model.markdownDialect = .commonMark
+        XCTAssertEqual(preview.string, ink + "\n")
+        model.markdownDialect = .gfm
+        XCTAssertEqual(preview.string, "Heading\na <script> b\nAfter\n")
+        XCTAssertEqual(source(for: page, in: model), ink)
+    }
+
     func testRustHTMLPreviewExposesRenderedAccessibilityTextAndKeyboardSelection() throws {
         let model = try makeModel()
         let source = "# Heading\n\n<strong>Native HTML</strong> &amp; ![image description](https://example.invalid/image)\n\n[link](https://example.invalid/)"
@@ -835,7 +986,8 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
 
     func testSelectedPreviewOwnershipRoundTripRestoresOriginalEditorAndStorage() throws {
         let model = try makeModel()
-        let page = try page(in: model)
+        let ink = "# Heading\n~~body~~"
+        let page = try page(in: model, saying: ink)
         let roll = try mountRoll(model)
         defer { roll.window.close() }
         let editor = try XCTUnwrap(roll.stack.editor)
@@ -852,18 +1004,20 @@ final class CheckpointMarkdownPreviewTests: XCTestCase {
         XCTAssertEqual(incoming.coordinator.surface, other)
         XCTAssertEqual(incoming.coordinator.currentSheet, page)
         XCTAssertTrue(incoming.stack.editor?.textStorage === storage)
-        _ = try preview(for: page, in: incoming)
+        let currentPreview = try preview(for: page, in: incoming)
+        model.markdownDialect = .commonMark
+        XCTAssertEqual(currentPreview.string, "Heading\n~~body~~\n")
 
         model.transferOwnership(to: originalOwner)
         DayScrollView.updateRoll(
             roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
         XCTAssertNil(incoming.coordinator.currentSheet)
-        _ = try preview(for: page, in: roll)
+        XCTAssertEqual(try preview(for: page, in: roll).string, "Heading\n~~body~~\n")
         model.toggleMarkdownPreview(for: page)
 
         XCTAssertTrue(roll.stack.editor === editor)
         XCTAssertTrue(try XCTUnwrap(editor.textStorage) === storage)
-        XCTAssertEqual(editor.string, "# Heading\nbody")
+        XCTAssertEqual(editor.string, ink)
         XCTAssertEqual(roll.coordinator.currentSheet, page)
         XCTAssertEqual(model.selectedPageID, page)
         XCTAssertTrue(try body(for: page, in: roll) === editor)

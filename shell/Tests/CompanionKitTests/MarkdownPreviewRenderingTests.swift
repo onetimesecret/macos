@@ -515,7 +515,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
 
             continuation
         11. next
-        """), fenceRegions: []))
+        """), fenceRegions: []), dialect: .gfm)
         let expected = "8.\tordinary\n9. ☑\tdone\n10. ☐\tpending\ncontinuation\n11.\tnext\n"
         XCTAssertEqual(view.string, expected)
         let rendered = try XCTUnwrap(view.textStorage)
@@ -735,7 +735,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         let view = MarkdownPreviewView(page: page, coordinator: coordinator)
         view.frame = NSRect(x: 0, y: 0, width: 320, height: 720)
         let start = Date.timeIntervalSinceReferenceDate
-        XCTAssertNil(view.reseed(with: rendering))
+        XCTAssertNil(view.reseed(with: rendering, dialect: model.markdownDialect))
         let seeded = Date.timeIntervalSinceReferenceDate
         let storage = try XCTUnwrap(view.textStorage)
         XCTAssertEqual(nativeTableCells(in: storage).count, 1_024)
@@ -782,7 +782,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         view.reseed(with: PageModel.QuietRendering(
             text: NSAttributedString(string: "| Name | Description |\n| --- | --- |\n| row | \(words) |"),
             fenceRegions: []
-        ))
+        ), dialect: .gfm)
         let manager = try XCTUnwrap(view.layoutManager)
         let container = try XCTUnwrap(view.textContainer)
         func layout(width: CGFloat) -> NSRect {
@@ -822,7 +822,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         ```
         coded \(words)
         ```
-        """), fenceRegions: []))
+        """), fenceRegions: []), dialect: .gfm)
         let manager = try XCTUnwrap(view.layoutManager)
         let container = try XCTUnwrap(view.textContainer)
         var heights: [CGFloat] = []
@@ -855,7 +855,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         let object = chip(1)
         source.append(NSAttributedString(attachment: object))
         source.append(NSAttributedString(string: " | beside |"))
-        view.reseed(with: PageModel.QuietRendering(text: source, fenceRegions: []))
+        view.reseed(with: PageModel.QuietRendering(text: source, fenceRegions: []), dialect: .gfm)
         let manager = try XCTUnwrap(view.layoutManager)
         let container = try XCTUnwrap(view.textContainer)
         let index = (view.string as NSString).range(of: "\u{FFFC}").location
@@ -893,7 +893,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         source.append(NSAttributedString(string: " then "))
         source.append(NSAttributedString(attachment: chip(6)))
         source.append(NSAttributedString(string: " end"))
-        view.reseed(with: PageModel.QuietRendering(text: source, fenceRegions: []))
+        view.reseed(with: PageModel.QuietRendering(text: source, fenceRegions: []), dialect: .gfm)
         XCTAssertEqual(view.string, "see a link \u{FFFC} then \u{FFFC} end\n")
 
         view.selectAll(nil)
@@ -1017,18 +1017,18 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
     func testReseedingSkipsTheSameIdentityButRendersANewWrapper() throws {
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         let rendering = PageModel.QuietRendering(text: NSAttributedString(string: "**first**"), fenceRegions: [])
-        XCTAssertNil(view.reseed(with: rendering), "a first seeding replaced no text")
+        XCTAssertNil(view.reseed(with: rendering, dialect: .gfm), "a first seeding replaced no text")
         XCTAssertEqual(view.string, "first\n")
         let storage = try XCTUnwrap(view.textStorage)
         let sentinel = NSAttributedString.Key("MarkdownPreviewIdentityTest")
         storage.addAttribute(sentinel, value: true, range: NSRange(location: 0, length: 1))
-        XCTAssertNil(view.reseed(with: rendering), "the same rendering replaced nothing")
+        XCTAssertNil(view.reseed(with: rendering, dialect: .gfm), "the same rendering replaced nothing")
         XCTAssertNotNil(storage.attribute(sentinel, at: 0, effectiveRange: nil))
         let replacement = PageModel.QuietRendering(text: rendering.text, fenceRegions: [])
-        XCTAssertEqual(view.reseed(with: replacement), "first\n")
+        XCTAssertEqual(view.reseed(with: replacement, dialect: .gfm), "first\n")
         XCTAssertNil(storage.attribute(sentinel, at: 0, effectiveRange: nil))
         XCTAssertEqual(
-            view.reseed(with: PageModel.QuietRendering(text: NSAttributedString(string: "# second"), fenceRegions: [])),
+            view.reseed(with: PageModel.QuietRendering(text: NSAttributedString(string: "# second"), fenceRegions: []), dialect: .gfm),
             "first\n")
         XCTAssertEqual(view.string, "second\n")
     }

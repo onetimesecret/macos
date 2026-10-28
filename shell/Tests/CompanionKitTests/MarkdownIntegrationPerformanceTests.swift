@@ -57,7 +57,7 @@ final class MarkdownIntegrationPerformanceTests: XCTestCase {
         for preview in previews { preview.frame = NSRect(x: 0, y: 0, width: 420, height: 320) }
         let start = Date.timeIntervalSinceReferenceDate
         for (preview, rendering) in zip(previews, renderings) {
-            XCTAssertNil(preview.reseed(with: rendering))
+            XCTAssertNil(preview.reseed(with: rendering, dialect: model.markdownDialect))
             XCTAssertTrue(preview.string.hasPrefix("Heading bold\n"))
         }
         let seeded = Date.timeIntervalSinceReferenceDate
@@ -65,7 +65,9 @@ final class MarkdownIntegrationPerformanceTests: XCTestCase {
             if let container = preview.textContainer { preview.layoutManager?.ensureLayout(for: container) }
         }
         let laidOut = Date.timeIntervalSinceReferenceDate
-        for (preview, rendering) in zip(previews, renderings) { XCTAssertNil(preview.reseed(with: rendering)) }
+        for (preview, rendering) in zip(previews, renderings) {
+            XCTAssertNil(preview.reseed(with: rendering, dialect: model.markdownDialect))
+        }
         let reused = Date.timeIntervalSinceReferenceDate
         if reportTimings {
             print("preview-batch pages=\(previews.count) bytes_per_page=\(source.utf8.count) reseed_ms=\((seeded - start) * 1_000) layout_ms=\((laidOut - seeded) * 1_000) unchanged_reseed_ms=\((reused - laidOut) * 1_000)")

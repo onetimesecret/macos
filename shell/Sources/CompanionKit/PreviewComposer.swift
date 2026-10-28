@@ -1,7 +1,7 @@
-/// The Markdown dialect a rendered page preview composes raw HTML under (plan R1 to R3).
-enum PreviewDialect: CaseIterable, Sendable {
-    case commonMark
-    case gfm
+/// The parser dialect used for a rendered Markdown preview.
+public enum PreviewDialect: String, CaseIterable, Sendable {
+    case commonMark = "commonMark"
+    case gfm = "gfm"
 }
 
 enum PreviewTrait: Hashable, Codable, Sendable {
@@ -308,12 +308,16 @@ struct PreviewCompositionStream {
             markdownLinks.removeLast()
             updateStyle()
         case .rawHTML(let parts):
+            let recognizesRawText = switch dialect {
+            case .commonMark: true
+            case .gfm: false
+            }
             let tokenizer = HTMLTokenizer(
                 maximumInputScalars: limits.maximumInputScalars,
                 maximumTokens: max(0, limits.maximumTokens - tokenCount)
             )
             let tokenization = try tokenizer.tokenize(
-                parts, rawTextElement: rawTextElement, recognizingRawText: dialect == .commonMark
+                parts, rawTextElement: rawTextElement, recognizingRawText: recognizesRawText
             )
             rawTextElement = tokenization.rawTextElement
             tokenCount += tokenization.tokens.count
@@ -331,10 +335,14 @@ struct PreviewCompositionStream {
 
     private mutating func consume(_ tag: HTMLTag) throws {
         // Apply the GFM raw-token filter before the native element policy.
-        if dialect == .gfm, Self.filtered.contains(tag.name) {
-            diagnose(.gfmFiltered(tag.name))
-            try emitParts(tag.raw, decode: true)
-            return
+        switch dialect {
+        case .commonMark: break
+        case .gfm:
+            if Self.filtered.contains(tag.name) {
+                diagnose(.gfmFiltered(tag.name))
+                try emitParts(tag.raw, decode: true)
+                return
+            }
         }
         guard Self.allowed.contains(tag.name) else {
             diagnose(.escapedElement(tag.name))

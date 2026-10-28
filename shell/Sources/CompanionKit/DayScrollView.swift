@@ -453,6 +453,10 @@ final class DayStackView: NSView {
     /// zeroing, so it retires with this view and needs no `deinit` to
     /// unpick it.
     func observeRoll() {
+        for name in [PageModel.quietRenderingsDidInvalidateNotification, PageModel.markdownDialectDidChangeNotification] {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(renderingPreferencesChanged), name: name, object: model)
+        }
         guard let clip = enclosingScrollView?.contentView else { return }
         clip.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(
@@ -472,14 +476,6 @@ final class DayStackView: NSView {
             selector: #selector(rollScrolled),
             name: NSView.boundsDidChangeNotification,
             object: clip
-        )
-        // Preview changes can restyle the editor without changing the global setting.
-        // Registered by selector so this observation retires with the view.
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(quietRenderingsInvalidated),
-            name: PageModel.quietRenderingsDidInvalidateNotification,
-            object: model
         )
     }
 
@@ -578,7 +574,7 @@ final class DayStackView: NSView {
 
     /// Refresh the mounted editor, header controls and quiet regions
     /// after the model invalidates preview renderings.
-    @objc private func quietRenderingsInvalidated(_ notification: Notification) {
+    @objc private func renderingPreferencesChanged(_ notification: Notification) {
         update(projection: model.timeUnits, selectedPage: model.selectedPageID, readOnly: readOnly)
     }
 
@@ -919,7 +915,8 @@ final class DayStackView: NSView {
             follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
         }
         for (page, region) in previewRegions {
-            follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
+            follow(page, in: region, replacing: region.reseed(
+                with: model.quietRendering(for: page), dialect: model.markdownDialect))
         }
     }
 
@@ -945,7 +942,8 @@ final class DayStackView: NSView {
             self.update(projection: self.model.timeUnits, selectedPage: page, readOnly: self.readOnly)
         }
         region.isSelectedPage = selected
-        follow(page, in: region, replacing: region.reseed(with: model.quietRendering(for: page)))
+        follow(page, in: region, replacing: region.reseed(
+            with: model.quietRendering(for: page), dialect: model.markdownDialect))
         previewRegions[page] = region
         return region
     }

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- C󠄁h󠄁o󠄁o󠄁s󠄁e󠄁 G󠄁i󠄁t󠄁H󠄁u󠄁b󠄁 F󠄁l󠄁a󠄁v󠄁o󠄁r󠄁e󠄁d󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 o󠄁r󠄁 C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 i󠄁n󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 →󠄁 C󠄁o󠄁d󠄁e󠄁 →󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁
+  d󠄁i󠄁a󠄁l󠄁e󠄁c󠄁t󠄁.󠄁 G󠄁F󠄁M󠄁 i󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁;󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 c󠄁h󠄁o󠄁i󠄁c󠄁e󠄁 r󠄁e󠄁f󠄁r󠄁e󠄁s󠄁h󠄁e󠄁s󠄁 o󠄁p󠄁e󠄁n󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁
+  p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 i󠄁m󠄁m󠄁e󠄁d󠄁i󠄁a󠄁t󠄁e󠄁l󠄁y󠄁.󠄁 (󠄁#󠄁3󠄁3󠄁2󠄁)󠄁
+
 ### Changed
 
 - **M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁e󠄁 s󠄁u󠄁p󠄁p󠄁o󠄁r󠄁t󠄁e󠄁d󠄁 H󠄁T󠄁M󠄁L󠄁 f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁s󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁e󠄁x󠄁t󠄁.󠄁**
