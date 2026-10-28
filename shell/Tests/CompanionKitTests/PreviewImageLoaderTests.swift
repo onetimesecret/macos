@@ -23,6 +23,7 @@ final class PreviewImageLoaderTests: XCTestCase {
         init(_ value: Value) { self.value = value }
         func set(_ value: Value) { lock.lock(); self.value = value; lock.unlock() }
         func get() -> Value { lock.lock(); defer { lock.unlock() }; return value }
+        func update(_ operation: (inout Value) -> Void) { lock.lock(); defer { lock.unlock() }; operation(&value) }
     }
 
     private final class ChallengeSender: NSObject, URLAuthenticationChallengeSender {
@@ -81,6 +82,7 @@ final class PreviewImageLoaderTests: XCTestCase {
             "https://2130706433/a", "https://0177.0.0.1/a", "https://[::1]/a",
             "https://user:password@images.example.com/a", "https://images.example.com:444/a",
             "https://images.example.com./a", "https://-bad.example.com/a",
+            "https://router.home.arpa/a", "https://1.0.0.127.in-addr.arpa/a", "https://arpa/a",
         ] {
             XCTAssertNil(PreviewImageRequestPolicy.url(for: .unreviewed(address)), address)
             XCTAssertNotNil(PreviewImageRequestPolicy.refusal(for: .unreviewed(address)), address)
@@ -88,7 +90,7 @@ final class PreviewImageLoaderTests: XCTestCase {
         XCTAssertNil(PreviewImageRequestPolicy.url(for: .refused(.sealedObject)))
         XCTAssertNil(PreviewImageRequestPolicy.url(for: .refused(.missing)))
         XCTAssertEqual(PreviewImageRequestPolicy.url(for: .unreviewed("https://images.example.com:443/a#fragment"))?.absoluteString,
-                       "https://images.example.com:443/a")
+                       "https://images.example.com/a")
         XCTAssertNil(PreviewImageRequestPolicy.refusal(for: .unreviewed("https://images.example.com/a")))
     }
 
@@ -113,6 +115,8 @@ final class PreviewImageLoaderTests: XCTestCase {
         XCTAssertNil(request.value(forHTTPHeaderField: "Referer"))
         XCTAssertEqual(request.value(forHTTPHeaderField: "Cache-Control"), "no-store")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "image/png, image/jpeg, image/gif")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "OnetimePad-ImagePreview")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept-Language"), "*")
         XCTAssertFalse(request.httpShouldHandleCookies)
         XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
         XCTAssertEqual(request.timeoutInterval, 15)
@@ -128,6 +132,11 @@ final class PreviewImageLoaderTests: XCTestCase {
         XCTAssertNil(PreviewImageRequestPolicy.url(for: .unreviewed(address + "a")))
         XCTAssertEqual(PreviewImageRequestPolicy.url(for: .unreviewed(prefix + "an%20image.png"))?.absoluteString,
                        prefix + "an%20image.png")
+    }
+
+    func testUnicodeHostnameAndItsPunycodeSpellingHaveExplicitPolicyResults() {
+        XCTAssertNil(PreviewImageRequestPolicy.url(for: .unreviewed("https://bücher.example/a")))
+        XCTAssertNil(PreviewImageRequestPolicy.url(for: .unreviewed("https://xn--bcher-kva.example/a")))
     }
 
     func testServerCookieIsNotReusedForAnotherExplicitLoad() async throws {
@@ -215,6 +224,36 @@ final class PreviewImageLoaderTests: XCTestCase {
         XCTAssertLessThan(pixel.blueComponent, 0.01)
     }
 
+    func testSharedDecoderRunsOffMainAndSerializesConcurrentImages() async throws {
+        let data = try fixture(width: 3_200, height: 400)
+        let observation = Box((active: 0, maximum: 0, mainThread: false, started: 0))
+        let observe: @Sendable (Bool, Bool) -> Void = { starting, mainThread in
+            observation.update { state in
+                state.mainThread = state.mainThread || mainThread
+                if starting {
+                    state.active += 1
+                    state.started += 1
+                    state.maximum = max(state.maximum, state.active)
+                } else {
+                    state.active -= 1
+                }
+            }
+        }
+        async let first = PreviewImageDecoder.shared.decodeObservedForTest(data, observe: observe)
+        async let second = PreviewImageDecoder.shared.decodeObservedForTest(data, observe: observe)
+        async let third = PreviewImageDecoder.shared.decodeObservedForTest(data, observe: observe)
+        let images = try await [first, second, third]
+        for image in images {
+            XCTAssertEqual(image.width, 1_600)
+            XCTAssertEqual(image.height, 200)
+        }
+        let state = observation.get()
+        XCTAssertFalse(state.mainThread)
+        XCTAssertEqual(state.maximum, 1)
+        XCTAssertEqual(state.started, 3)
+        XCTAssertEqual(state.active, 0)
+    }
+
     func testCancellingSuspendedLoadCompletesWithoutAnImage() async throws {
         let started = expectation(description: "request started")
         StubProtocol.reply = { _, _, _ in started.fulfill() }
@@ -250,5 +289,13 @@ final class PreviewImageLoaderTests: XCTestCase {
             client.urlProtocol(stub, didReceive: challenge)
         }
         await failure(.authentication)
+    }
+}
+
+private extension PreviewImageDecoder {
+    func decodeObservedForTest(_ data: Data, observe: @Sendable (Bool, Bool) -> Void) throws -> CGImage {
+        observe(true, Thread.isMainThread)
+        defer { observe(false, Thread.isMainThread) }
+        return try decode(data)
     }
 }

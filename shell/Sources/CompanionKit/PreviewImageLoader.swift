@@ -23,6 +23,7 @@ enum PreviewImageRequestPolicy {
               let host = parts.host?.lowercased(), validHost(host)
         else { return nil }
         parts.fragment = nil
+        parts.port = nil
         return parts.url
     }
 
@@ -36,7 +37,7 @@ enum PreviewImageRequestPolicy {
         guard !host.hasSuffix("."), host.utf8.count <= 253 else { return false }
         let labels = host.split(separator: ".", omittingEmptySubsequences: false)
         guard labels.count >= 2,
-              !["localhost", "local", "internal", "home", "lan", "test", "invalid"].contains(String(labels.last!)),
+              !["localhost", "local", "internal", "home", "lan", "test", "invalid", "arpa"].contains(String(labels.last!)),
               labels.last!.utf8.contains(where: { (97...122).contains($0) })
         else { return false }
         return labels.allSatisfy { label in
@@ -72,14 +73,14 @@ final class PreviewImageLoader {
     private let configuration: URLSessionConfiguration
 
     init(configuration: URLSessionConfiguration = .ephemeral) {
-        self.configuration = configuration.copy() as! URLSessionConfiguration
+        self.configuration = configuration.copy() as? URLSessionConfiguration ?? .ephemeral
     }
 
     func load(_ url: URL) async throws -> NSImage {
         guard let approved = PreviewImageRequestPolicy.url(for: .unreviewed(url.absoluteString)) else {
             throw PreviewImageLoadError.invalidURL
         }
-        let config = configuration.copy() as! URLSessionConfiguration
+        let config = configuration.copy() as? URLSessionConfiguration ?? .ephemeral
         config.urlCache = nil
         config.urlCredentialStorage = nil
         config.httpCookieStorage = nil
@@ -94,6 +95,8 @@ final class PreviewImageLoader {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = PreviewImageRequestPolicy.timeout
         request.setValue("image/png, image/jpeg, image/gif", forHTTPHeaderField: "Accept")
+        request.setValue("OnetimePad-ImagePreview", forHTTPHeaderField: "User-Agent")
+        request.setValue("*", forHTTPHeaderField: "Accept-Language")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         let transfer = PreviewImageTransfer()
         let data = try await withTaskCancellationHandler {
@@ -104,10 +107,17 @@ final class PreviewImageLoader {
             transfer.cancel()
         }
         try Task.checkCancellation()
-        return try Self.decode(data)
+        let image = try await PreviewImageDecoder.shared.decode(data)
+        try Task.checkCancellation()
+        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     }
 
     static func decode(_ data: Data) throws -> NSImage {
+        let image = try decodePixelImage(data)
+        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+    }
+
+    nonisolated static func decodePixelImage(_ data: Data) throws -> CGImage {
         guard data.count <= PreviewImageRequestPolicy.maximumBytes else { throw PreviewImageLoadError.tooLarge }
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               let type = CGImageSourceGetType(source) else { throw PreviewImageLoadError.invalidImage }
@@ -130,7 +140,16 @@ final class PreviewImageLoader {
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             throw PreviewImageLoadError.invalidImage
         }
-        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+        return image
+    }
+}
+
+actor PreviewImageDecoder {
+    static let shared = PreviewImageDecoder()
+
+    func decode(_ data: Data) throws -> CGImage {
+        try Task.checkCancellation()
+        return try autoreleasepool { try PreviewImageLoader.decodePixelImage(data) }
     }
 }
 
@@ -157,8 +176,8 @@ private final class PreviewImageTransfer: NSObject, URLSessionDataDelegate, @unc
         self.session = session
         let task = session.dataTask(with: request)
         self.task = task
-        task.resume()
         lock.unlock()
+        task.resume()
     }
 
     func cancel() { finish(.failure(PreviewImageLoadError.cancelled)) }
