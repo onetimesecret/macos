@@ -60,7 +60,7 @@ final class PreviewImageControlsTests: XCTestCase {
             if predicate() { return }
             try await Task.sleep(for: .milliseconds(5))
         }
-        XCTFail("The image state did not settle", file: file, line: line)
+        _ = try XCTUnwrap(predicate() ? true : nil, "The image state did not settle", file: file, line: line)
     }
 
     private func image() -> NSImage {
@@ -117,6 +117,26 @@ final class PreviewImageControlsTests: XCTestCase {
             calls += 1
             action()
         }
+    }
+
+    @MainActor
+    private final class StorageEdits: NSObject {
+        private(set) var calls = 0
+
+        @objc func updated(_ notification: Notification) { calls += 1 }
+    }
+
+    private func loadedPictureBounds(in preview: MarkdownPreviewView) -> [CGRect] {
+        guard let storage = preview.textStorage else { return [] }
+        var bounds: [CGRect] = []
+        storage.enumerateAttribute(.previewLoadedImage, in: NSRange(location: 0, length: storage.length)) {
+            value, range, _ in
+            guard value != nil,
+                  let picture = storage.attribute(.attachment, at: range.location,
+                                                  effectiveRange: nil) as? NSTextAttachment else { return }
+            bounds.append(picture.bounds)
+        }
+        return bounds
     }
 
     func testOpeningScrollingAndDialectChangesDoNotLoadImages() async throws {
@@ -347,7 +367,7 @@ final class PreviewImageControlsTests: XCTestCase {
         fixture.model.transferOwnership(to: other)
         pending.finish(0, with: image())
         try await Task.sleep(for: .milliseconds(20))
-        XCTAssertFalse(fixture.preview.mayLoadImages)
+        XCTAssertFalse(fixture.preview.authorizeImageLoad())
         XCTAssertEqual(fixture.preview.imageControls.loadedImageCount, 0)
         XCTAssertFalse(fixture.preview.imageControls.buttons[0].isEnabled)
         fixture.preview.imageControls.buttons[0].performClick(nil)
@@ -368,7 +388,7 @@ final class PreviewImageControlsTests: XCTestCase {
         pending.finish(0, with: image())
         try await Task.sleep(for: .milliseconds(20))
         XCTAssertEqual(fixture.preview.imageControls.loadedImageCount, 0)
-        XCTAssertFalse(fixture.preview.mayLoadImages)
+        XCTAssertFalse(fixture.preview.authorizeImageLoad())
         fixture.preview.imageControls.buttons.first?.performClick(nil)
         try await Task.sleep(for: .milliseconds(20))
         XCTAssertEqual(pending.addresses.count, 1)
@@ -472,6 +492,11 @@ final class PreviewImageControlsTests: XCTestCase {
             fixture.window.setContentSize(NSSize(width: width, height: 900))
             fixture.scroll.frame = NSRect(x: 0, y: 0, width: width, height: 900)
             fixture.update()
+            let room = max(20, fixture.preview.bounds.width - fixture.preview.textContainerInset.width * 2 - 16)
+            try await eventually {
+                let pictures = self.loadedPictureBounds(in: fixture.preview)
+                return pictures.count == 2 && abs(pictures[0].width - min(1600, room)) < 1
+            }
             fixture.preview.layoutSubtreeIfNeeded()
             XCTAssertEqual(fixture.preview.imageControls.loadedImageCount, 2, "Resizing keeps the current image interaction")
             manager.ensureLayout(for: container)
@@ -723,7 +748,8 @@ final class PreviewImageControlsTests: XCTestCase {
             name: NSTextStorage.didProcessEditingNotification, object: storage)
         defer { NotificationCenter.default.removeObserver(observer) }
         controls.resize()
-        XCTAssertEqual(observer.calls, 1)
+        XCTAssertEqual(observer.calls, 0)
+        try await eventually { observer.calls == 1 }
         try await eventually {
             guard controls.loadedImageCount == 0 else { return false }
             var loadedAttachment = false
@@ -734,6 +760,96 @@ final class PreviewImageControlsTests: XCTestCase {
             return !loadedAttachment && controls.buttons[0].title.hasPrefix("Load")
         }
         XCTAssertEqual(fixture.loader.requests.count, 1)
+    }
+
+
+    func testResizeDefersStorageEditsUntilTheQueuedPresentation() async throws {
+        let fixture = try fixture()
+        defer { fixture.window.close() }
+        fixture.loader.handler = { _ in NSImage(size: NSSize(width: 800, height: 400)) }
+        fixture.preview.imageControls.buttons[0].performClick(nil)
+        try await eventually { fixture.preview.imageControls.loadedImageCount == 1 }
+        try await Task.sleep(for: .milliseconds(20))
+        let storage = try XCTUnwrap(fixture.preview.textStorage)
+        let observer = StorageEdits()
+        NotificationCenter.default.addObserver(
+            observer, selector: #selector(StorageEdits.updated(_:)),
+            name: NSTextStorage.didProcessEditingNotification, object: storage)
+        defer { NotificationCenter.default.removeObserver(observer) }
+        let before = loadedPictureBounds(in: fixture.preview)
+        fixture.window.setContentSize(NSSize(width: 320, height: 320))
+        fixture.scroll.frame = NSRect(x: 0, y: 0, width: 320, height: 320)
+        fixture.update()
+        XCTAssertEqual(observer.calls, 0)
+        XCTAssertEqual(loadedPictureBounds(in: fixture.preview), before)
+        let room = max(20, fixture.preview.bounds.width - fixture.preview.textContainerInset.width * 2 - 16)
+        try await eventually {
+            guard let bounds = self.loadedPictureBounds(in: fixture.preview).first else { return false }
+            return observer.calls > 0 && abs(bounds.width - room) < 1
+        }
+        XCTAssertEqual(fixture.preview.imageControls.loadedImageCount, 1)
+        XCTAssertEqual(fixture.loader.requests.count, 1)
+    }
+
+    func testRetainedWindowCloseDiscardsImagesAndCancelsAnInflightResult() async throws {
+        let fixture = try fixture(Self.markdown + "\n\n" + Self.markdown)
+        defer { fixture.window.close() }
+        let pending = PendingLoads()
+        var calls = 0
+        fixture.loader.handler = { url in
+            calls += 1
+            if calls == 1 { return self.image() }
+            return try await pending.load(url)
+        }
+        let controls = fixture.preview.imageControls
+        controls.buttons[0].performClick(nil)
+        try await eventually { controls.loadedImageCount == 1 }
+        controls.buttons[1].performClick(nil)
+        try await eventually { pending.addresses.count == 1 }
+        fixture.window.close()
+        XCTAssertTrue(fixture.window.contentView === fixture.scroll)
+        XCTAssertFalse(fixture.preview.isImagePresentationActive)
+        XCTAssertEqual(controls.loadedImageCount, 0)
+        XCTAssertTrue(controls.buttons.allSatisfy { !$0.isEnabled })
+        pending.finish(0, with: image())
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(controls.loadedImageCount, 0)
+        XCTAssertTrue(loadedPictureBounds(in: fixture.preview).isEmpty)
+        controls.buttons[0].performClick(nil)
+        XCTAssertEqual(fixture.loader.requests.count, 2)
+    }
+
+    func testLongAltTextIsCompleteInRenderedCopyAndBoundedInTheControlAnnouncement() throws {
+        for alt in [String(repeating: "a", count: 400), "a" + String(repeating: "\u{0301}", count: 4_000)] {
+            let fixture = try fixture("![\(alt)](\(Self.address))")
+            defer { fixture.window.close() }
+            let button = fixture.preview.imageControls.buttons[0]
+            XCTAssertTrue(button.isEnabled)
+            let spoken = try XCTUnwrap(button.accessibilityLabel())
+            XCTAssertLessThan(spoken.utf16.count, 600)
+            XCTAssertTrue(spoken.hasSuffix("…"))
+            XCTAssertTrue(fixture.preview.string.contains(alt))
+            fixture.preview.setSelectedRange(NSRange(location: 0, length: fixture.preview.string.utf16.count))
+            let ink = fixture.preview.shownSelection().flatMap { $0 }.reduce(into: "") {
+                if case .ink(let text) = $1 { $0 += text }
+            }
+            XCTAssertEqual(ink, alt + "\n")
+            XCTAssertTrue(fixture.loader.requests.isEmpty)
+        }
+    }
+
+    func testClearedStorageHidesTheOldControlAndRefusesItsAction() throws {
+        let fixture = try fixture()
+        defer { fixture.window.close() }
+        let button = fixture.preview.imageControls.buttons[0]
+        XCTAssertFalse(button.isHidden)
+        let storage = try XCTUnwrap(fixture.preview.textStorage)
+        storage.setAttributedString(NSAttributedString(string: ""))
+        fixture.preview.imageControls.layout()
+        XCTAssertTrue(button.isHidden)
+        button.performClick(nil)
+        XCTAssertTrue(fixture.loader.requests.isEmpty)
+        XCTAssertEqual(fixture.preview.imageControls.loadedImageCount, 0)
     }
 
 }

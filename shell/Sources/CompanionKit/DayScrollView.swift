@@ -933,6 +933,9 @@ final class DayStackView: NSView {
     /// its page as a click on a quiet page does (ADR-0030).
     private func previewRegion(for page: UInt64, selected: Bool) -> MarkdownPreviewView {
         let region = previewRegions[page] ?? MarkdownPreviewView(page: page, coordinator: coordinator)
+        if region.frame.width == 0 {
+            region.setFrameSize(NSSize(width: clipWidth, height: 1))
+        }
         region.onImageLayoutChanged = { [weak self] in
             Task { @MainActor [weak self] in self?.relayout() }
         }

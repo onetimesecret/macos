@@ -41,6 +41,10 @@ final class PreviewImageControls {
     private final class Entry {
         let descriptor: PreviewImageDescriptor
         let range: NSRange
+        let approvedURL: URL?
+        let host: String
+        let refusal: String?
+        let spokenAlt: String
         var controlRange = NSRange()
         var pictureRange = NSRange()
         let button = PreviewImageButton()
@@ -49,10 +53,29 @@ final class PreviewImageControls {
         var failure: String?
         var generation = UUID()
 
-        init(descriptor: PreviewImageDescriptor, range: NSRange) {
+        init(descriptor: PreviewImageDescriptor, range: NSRange, text: NSAttributedString) {
             self.descriptor = descriptor
             self.range = range
+            approvedURL = PreviewImageRequestPolicy.url(for: descriptor.destination)
+            host = approvedURL?.host ?? ""
+            refusal = approvedURL == nil ? PreviewImageRequestPolicy.refusal(for: descriptor.destination) : nil
+            var alt = ""
+            text.enumerateAttributes(in: range) { attributes, partRange, stop in
+                guard attributes[.previewImagePlaceholder] == nil else { return }
+                let part = attributes[.attachment] is ChipAttachment
+                    ? CompanionL10n.string("[sealed content]")
+                    : (text.string as NSString).substring(with: partRange)
+                alt.unicodeScalars.append(contentsOf: part.unicodeScalars.prefix(241 - alt.unicodeScalars.count))
+                if alt.unicodeScalars.count > 240 { stop.pointee = true }
+            }
+            if alt.isEmpty { spokenAlt = CompanionL10n.string("Image") }
+            else if alt.unicodeScalars.count > 240 {
+                spokenAlt = String(String.UnicodeScalarView(alt.unicodeScalars.prefix(240))) + "…"
+            }
+            else { spokenAlt = alt }
         }
+
+        deinit { task?.cancel() }
     }
 
     private weak var preview: MarkdownPreviewView?
@@ -89,7 +112,7 @@ final class PreviewImageControls {
         if !preserveConsent || original.string != text.string || !sameImages {
             clearEntries()
             for (descriptor, range) in descriptors {
-                let entry = Entry(descriptor: descriptor, range: range)
+                let entry = Entry(descriptor: descriptor, range: range, text: text)
                 entry.button.preview = preview
                 entry.button.bezelStyle = .rounded
                 entry.button.controlSize = .small
@@ -142,6 +165,10 @@ final class PreviewImageControls {
     }
 
     func discard() {
+        guard entries.contains(where: { $0.task != nil || $0.image != nil || $0.failure != nil }) else {
+            entries.forEach(configure)
+            return
+        }
         for entry in entries {
             entry.generation = UUID()
             entry.task?.cancel()
@@ -164,7 +191,11 @@ final class PreviewImageControls {
     @objc private func activate(_ button: NSButton) {
         guard entries.indices.contains(button.tag), let preview else { return }
         let entry = entries[button.tag]
-        guard entry.button === button else { return }
+        guard entry.button === button, !button.isHidden,
+              let storage = preview.textStorage, validRanges(entry, in: storage) else {
+            button.isHidden = true
+            return
+        }
         if entry.task != nil || entry.image != nil {
             entry.generation = UUID()
             entry.task?.cancel()
@@ -174,9 +205,9 @@ final class PreviewImageControls {
             changed()
             return
         }
-        guard preview.mayLoadImages else { discard(); return }
+        guard preview.authorizeImageLoad() else { discard(); return }
         guard activeImages < Self.maximumActiveImages,
-              let url = PreviewImageRequestPolicy.url(for: entry.descriptor.destination) else { return }
+              let url = entry.approvedURL else { return }
         let generation = UUID()
         entry.generation = generation
         entry.failure = nil
@@ -190,7 +221,7 @@ final class PreviewImageControls {
             }
             do {
                 guard !Task.isCancelled, entry?.generation == generation else { return }
-                guard self?.preview?.mayLoadImages == true else {
+                guard self?.preview?.authorizeImageLoad() == true else {
                     self?.discard()
                     return
                 }
@@ -198,14 +229,14 @@ final class PreviewImageControls {
                 guard !Task.isCancelled, let self, let entry,
                       entry.generation == generation else { return }
                 entry.task = nil
-                guard self.preview?.mayLoadImages == true else { self.discard(); return }
+                guard self.preview?.authorizeImageLoad() == true else { self.discard(); return }
                 entry.image = image
                 self.changed()
             } catch {
                 guard !Task.isCancelled, let self, let entry,
                       entry.generation == generation else { return }
                 entry.task = nil
-                guard self.preview?.mayLoadImages == true else { self.discard(); return }
+                guard self.preview?.authorizeImageLoad() == true else { self.discard(); return }
                 entry.failure = error.localizedDescription
                 self.changed()
             }
@@ -222,8 +253,8 @@ final class PreviewImageControls {
     }
 
     func resize() {
-        present()
-        preview?.needsLayout = true
+        entries.forEach(configure)
+        schedulePresentation()
     }
 
     private func present() {
@@ -243,7 +274,11 @@ final class PreviewImageControls {
         let availableWidth = max(20, preview.bounds.width - preview.textContainerInset.width * 2 - 16)
         storage.beginEditing()
         for entry in entries {
-            guard NSMaxRange(entry.pictureRange) <= storage.length else { continue }
+            guard validRanges(entry, in: storage) else {
+                entry.button.isHidden = true
+                continue
+            }
+            entry.button.isHidden = false
             configure(entry)
             let paragraph = original.attribute(.paragraphStyle, at: entry.range.location,
                                                effectiveRange: nil) as? NSParagraphStyle
@@ -283,36 +318,39 @@ final class PreviewImageControls {
     }
 
     private func configure(_ entry: Entry) {
-        let url = PreviewImageRequestPolicy.url(for: entry.descriptor.destination)
-        let host = url?.host ?? ""
+        let url = entry.approvedURL
         let actionKey: String
         if entry.task != nil { actionKey = "preview.image.cancel_from" }
         else if entry.image != nil { actionKey = "preview.image.unload_from" }
         else if entry.failure != nil { actionKey = "preview.image.retry_from" }
         else { actionKey = "preview.image.load_from" }
-        var alt = ""
-        original.enumerateAttributes(in: entry.range) { attributes, range, _ in
-            if attributes[.previewImagePlaceholder] != nil { return }
-            if attributes[.attachment] is ChipAttachment {
-                alt += CompanionL10n.string("[sealed content]")
-            } else {
-                alt += (original.string as NSString).substring(with: range)
-            }
-        }
-        if alt.isEmpty { alt = CompanionL10n.string("Image") }
         entry.button.title = url == nil ? CompanionL10n.string("Image unavailable")
-            : CompanionL10n.format(actionKey, host)
+            : CompanionL10n.format(actionKey, entry.host)
         let hasReservation = entry.task != nil || entry.image != nil
         entry.button.isEnabled = url != nil && preview?.isImagePresentationActive == true
             && (hasReservation || activeImages < Self.maximumActiveImages)
         let policy = CompanionL10n.string("One HTTPS image request. No redirects, cookies, or saved credentials.")
         let help = url.map { "\($0.absoluteString)\n\(policy)" }
-            ?? PreviewImageRequestPolicy.refusal(for: entry.descriptor.destination) ?? CompanionL10n.string("Image unavailable")
+            ?? entry.refusal ?? CompanionL10n.string("Image unavailable")
         let capacity = !hasReservation && activeImages >= Self.maximumActiveImages
             ? CompanionL10n.string("Unload or cancel another image first (four images at a time).") : nil
         entry.button.toolTip = [entry.failure, capacity, help].compactMap { $0 }.joined(separator: "\n")
-        entry.button.setAccessibilityLabel(CompanionL10n.format("preview.image.accessibility", entry.button.title, alt))
+        entry.button.setAccessibilityLabel(CompanionL10n.format("preview.image.accessibility", entry.button.title, entry.spokenAlt))
         entry.button.setAccessibilityHelp(entry.button.toolTip)
+    }
+
+    private func validRanges(_ entry: Entry, in storage: NSTextStorage) -> Bool {
+        guard entry.controlRange.length == 1, entry.pictureRange.length == 1,
+              entry.controlRange.location >= 0,
+              entry.pictureRange.location == NSMaxRange(entry.controlRange),
+              NSMaxRange(entry.pictureRange) <= storage.length else { return false }
+        let text = storage.string as NSString
+        return text.character(at: entry.controlRange.location) == 0xFFFC
+            && text.character(at: entry.pictureRange.location) == 0xFFFC
+            && storage.attribute(.previewImageControl, at: entry.controlRange.location,
+                                 effectiveRange: nil) as? Int == entry.descriptor.occurrence
+            && storage.attribute(.attachment, at: entry.pictureRange.location,
+                                 effectiveRange: nil) is NSTextAttachment
     }
 
     func layout() {
@@ -320,7 +358,11 @@ final class PreviewImageControls {
               let manager = preview.layoutManager, let container = preview.textContainer else { return }
         manager.ensureLayout(for: container)
         for entry in entries {
-            guard NSMaxRange(entry.controlRange) <= storage.length else { continue }
+            guard validRanges(entry, in: storage) else {
+                entry.button.isHidden = true
+                continue
+            }
+            entry.button.isHidden = false
             let glyphs = manager.glyphRange(forCharacterRange: entry.controlRange, actualCharacterRange: nil)
             let bounds = manager.boundingRect(forGlyphRange: glyphs, in: container)
             entry.button.frame = bounds.offsetBy(dx: preview.textContainerOrigin.x, dy: preview.textContainerOrigin.y)

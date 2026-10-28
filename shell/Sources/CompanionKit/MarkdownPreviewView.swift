@@ -16,18 +16,20 @@ final class MarkdownPreviewView: AskingTextView {
     private let links = PreviewLinks()
     private var imageControlsReady = false
     private var imageOwnership: AnyCancellable?
+    private var imageWindowLifecycle: AnyCancellable?
+    private var imageWindowIsClosing = false
     private(set) lazy var imageControls = PreviewImageControls(preview: self, load: imageLoad)
     var onImageLayoutChanged: (() -> Void)?
 
     var isImagePresentationActive: Bool {
-        guard isSelectedPage, window != nil, let coordinator,
+        guard isSelectedPage, window != nil, !imageWindowIsClosing, let coordinator,
               coordinator.model.owner == coordinator.surface,
               coordinator.model.selectedPageID == page,
               coordinator.model.tabs.contains(where: { $0.pageID == page }) else { return false }
         return true
     }
 
-    var mayLoadImages: Bool { isImagePresentationActive && mayReadOut }
+    func authorizeImageLoad() -> Bool { isImagePresentationActive && mayReadOut }
 
     /// A click on a preview of a page the roll has not selected promotes it (ADR-0030).
     var onPromote: (() -> Void)?
@@ -249,6 +251,7 @@ final class MarkdownPreviewView: AskingTextView {
         let sameSource = dialect == seededDialect && seeded?.text.isEqual(to: rendering.text) == true
         seeded = rendering
         seededDialect = dialect
+        if sameSource, !imageControls.buttons.isEmpty { return nil }
         imageControls.seed(Self.render(rendering.text, dialect: dialect), preserveConsent: sameSource)
         needsDisplay = true
         return previous
@@ -267,10 +270,25 @@ final class MarkdownPreviewView: AskingTextView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if imageControlsReady {
-            if window == nil { imageControls.discard() }
-            else { imageControls.resize() }
+        guard imageControlsReady else { return }
+        imageWindowLifecycle = nil
+        imageWindowIsClosing = false
+        guard let window else { imageControls.discard(); return }
+        let names = [NSWindow.willCloseNotification, NSWindow.didBecomeKeyNotification,
+                     NSWindow.didChangeOcclusionStateNotification]
+        imageWindowLifecycle = Publishers.MergeMany(names.map {
+            NotificationCenter.default.publisher(for: $0)
+        }).sink { [weak self, weak window] notification in
+            guard let self, let window, notification.object as? NSWindow === window else { return }
+            if notification.name == NSWindow.willCloseNotification {
+                self.imageWindowIsClosing = true
+                self.imageControls.discard()
+            } else if window.isKeyWindow || window.occlusionState.contains(.visible) {
+                self.imageWindowIsClosing = false
+                self.imageControls.resize()
+            }
         }
+        imageControls.resize()
     }
 
     override func accessibilityChildren() -> [Any]? {
