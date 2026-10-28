@@ -226,10 +226,11 @@ final class MarkdownPreviewView: AskingTextView {
     static func render(
         _ source: NSAttributedString, dialect: PreviewDialect = .gfm,
         limits: CompositionLimits = CompositionLimits(),
+        nativeLimits: NativePreviewLimits = NativePreviewLimits(),
         onDiagnostic: ((PreviewRenderingDiagnostic) -> Void)? = nil
     ) -> NSAttributedString {
         MarkdownPreviewRenderer(
-            source: source, dialect: dialect, limits: limits,
+            source: source, dialect: dialect, limits: limits, nativeLimits: nativeLimits,
             onDiagnostic: onDiagnostic
         ).render()
     }
@@ -245,6 +246,20 @@ extension NSAttributedString.Key {
 struct PreviewImageDescriptor: Hashable {
     let occurrence: Int
     let destination: PreviewAddress
+}
+
+struct NativePreviewLimits {
+    var maximumTableColumns = 8
+    var maximumTableCells = 1_024
+
+    func tableCellTotal(rows: Int, columns: Int, alreadyRendered: Int) -> Int? {
+        guard rows >= 0, columns > 0, alreadyRendered >= 0, columns <= maximumTableColumns else { return nil }
+        let cells = rows.multipliedReportingOverflow(by: columns)
+        guard !cells.overflow else { return nil }
+        let total = alreadyRendered.addingReportingOverflow(cells.partialValue)
+        guard !total.overflow, total.partialValue <= maximumTableCells else { return nil }
+        return total.partialValue
+    }
 }
 
 enum PreviewRenderingDiagnostic {
@@ -288,6 +303,7 @@ private final class MarkdownPreviewRenderer {
     /// with no columns or a row wider than its columns, or a rendering that left an object out.
     private enum RenderFailure: Error {
         case unknownObject, objectShownTwice, tableWithoutColumns, rowWiderThanTable, objectMissing
+        case nativeTableLimit
     }
 
     private enum LinkPolicyResult {
@@ -315,6 +331,8 @@ private final class MarkdownPreviewRenderer {
     private let text: String
     private let dialect: PreviewDialect
     private let limits: CompositionLimits
+    private let nativeLimits: NativePreviewLimits
+    private var nativeTableCells = 0
     private let onDiagnostic: ((PreviewRenderingDiagnostic) -> Void)?
     private var reviewedLinks: [Int: LinkPolicyResult] = [:]
     private var resolvedFonts: [FontKey: NSFont] = [:]
@@ -329,7 +347,7 @@ private final class MarkdownPreviewRenderer {
     private var shown: Set<Int> = []
 
     init(
-        source: NSAttributedString, dialect: PreviewDialect, limits: CompositionLimits,
+        source: NSAttributedString, dialect: PreviewDialect, limits: CompositionLimits, nativeLimits: NativePreviewLimits,
         onDiagnostic: ((PreviewRenderingDiagnostic) -> Void)?
     ) {
         let raw = source.string as NSString
@@ -346,6 +364,7 @@ private final class MarkdownPreviewRenderer {
         text = source.string
         self.dialect = dialect
         self.limits = limits
+        self.nativeLimits = nativeLimits
         self.onDiagnostic = onDiagnostic
         self.attachments = attachments
         self.offsets = offsets
@@ -376,7 +395,7 @@ private final class MarkdownPreviewRenderer {
              MarkdownParseError.noPlaceholderWindow, MarkdownParseError.duplicateObject,
              CompositionError.inputLimit, CompositionError.eventLimit,
              CompositionError.depthLimit, CompositionError.outputLimit, CompositionError.structuredEventInRawText,
-             HTMLTokenizationError.inputLimit, HTMLTokenizationError.tokenLimit:
+             HTMLTokenizationError.inputLimit, HTMLTokenizationError.tokenLimit, RenderFailure.nativeTableLimit:
             logger.info("plain text preview: \(String(describing: error), privacy: .public)")
         default:
             logger.fault("plain text preview: \(String(describing: error), privacy: .public)")
@@ -551,6 +570,9 @@ private final class MarkdownPreviewRenderer {
         let columnCount = alignments.count
         guard columnCount > 0 else { throw RenderFailure.tableWithoutColumns }
         guard rows.allSatisfy({ $0.count <= columnCount }) else { throw RenderFailure.rowWiderThanTable }
+        guard let total = nativeLimits.tableCellTotal(rows: rows.count, columns: columnCount, alreadyRendered: nativeTableCells)
+        else { throw RenderFailure.nativeTableLimit }
+        nativeTableCells = total
         let table = NSTextTable()
         table.numberOfColumns = columnCount
         table.layoutAlgorithm = .fixedLayoutAlgorithm

@@ -46,6 +46,25 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         return found
     }
 
+    private func nativeTableCells(in rendered: NSAttributedString) -> [NSTextTableBlock] {
+        var cells: [ObjectIdentifier: NSTextTableBlock] = [:]
+        rendered.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: rendered.length)) { value, _, _ in
+            for case let cell as NSTextTableBlock in (value as? NSParagraphStyle)?.textBlocks ?? [] {
+                cells[ObjectIdentifier(cell)] = cell
+            }
+        }
+        return Array(cells.values)
+    }
+
+    private func table(columns: Int, bodyRows: Int, headerPrefix: String = "h") -> String {
+        let header = "| " + (0..<columns).map { "\(headerPrefix)\($0)" }.joined(separator: " | ") + " |"
+        let separator = "| " + Array(repeating: "---", count: columns).joined(separator: " | ") + " |"
+        let rows = (0..<bodyRows).map { row in
+            "| " + Array(repeating: String(row), count: columns).joined(separator: " | ") + " |"
+        }
+        return ([header, separator] + rows).joined(separator: "\n")
+    }
+
     func testHeadingsAndInlineFormattingRemoveSyntaxAndKeepParagraphBoundaries() throws {
         let rendered = render("""
         # Heading **bold**
@@ -618,6 +637,142 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(place("left"), [2, 0])
         XCTAssertEqual(place("right"), [2, 1])
         XCTAssertEqual(place("^"), [2, 2], "`^` is the cell's text")
+    }
+
+    func testNativeTableBudgetCountsHeadersAndPaddedEmptyCellsAtTheBoundary() {
+        let source = "| Left | Right |\n| --- | --- |\n| one |\n| two |"
+        let allowed = NativePreviewLimits(maximumTableColumns: 2, maximumTableCells: 6)
+        let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), nativeLimits: allowed)
+        XCTAssertEqual(nativeTableCells(in: rendered).count, 6)
+        XCTAssertFalse(rendered.string.contains("|"))
+        let refused = NativePreviewLimits(maximumTableColumns: 2, maximumTableCells: 5)
+        let fallback = MarkdownPreviewView.render(NSAttributedString(string: source), nativeLimits: refused)
+        XCTAssertEqual(fallback.string, source + "\n")
+        XCTAssertTrue(nativeTableCells(in: fallback).isEmpty)
+    }
+
+    func testNativeTableBudgetRejectsExtraColumnsOrCellsForTheWholePage() {
+        let limits = NativePreviewLimits(maximumTableColumns: 2, maximumTableCells: 6)
+        for body in [table(columns: 3, bodyRows: 1), table(columns: 2, bodyRows: 3)] {
+            let source = "# Before **heading**\n\n" + body
+            let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), nativeLimits: limits)
+            XCTAssertEqual(rendered.string, source + "\n")
+            XCTAssertTrue(nativeTableCells(in: rendered).isEmpty)
+            XCTAssertEqual(rendered.attribute(.font, at: 0, effectiveRange: nil) as? NSFont, InkStyle.baseFont)
+        }
+    }
+
+    func testNativeTableBudgetAccumulatesAcrossSeparateTables() {
+        let limits = NativePreviewLimits(maximumTableColumns: 2, maximumTableCells: 8)
+        let tables = ["a", "b", "c"].map { table(columns: 2, bodyRows: 1, headerPrefix: $0) }
+        let atLimit = tables.prefix(2).joined(separator: "\n\n")
+        let rendered = MarkdownPreviewView.render(NSAttributedString(string: atLimit), nativeLimits: limits)
+        XCTAssertEqual(nativeTableCells(in: rendered).count, 8)
+        let pastLimit = tables.joined(separator: "\n\n")
+        let fallback = MarkdownPreviewView.render(NSAttributedString(string: pastLimit), nativeLimits: limits)
+        XCTAssertEqual(fallback.string, pastLimit + "\n")
+        XCTAssertTrue(nativeTableCells(in: fallback).isEmpty)
+    }
+
+    func testNativeTableFallbackRestoresTheOriginalTextAndEveryObjectOnce() {
+        let source = NSMutableAttributedString(string: "# Before **heading**\r\n\r\n| One | Two |\r\n| --- | --- |\r\n| ")
+        let first = chip(1)
+        let second = chip(2)
+        source.append(NSAttributedString(attachment: first))
+        source.append(NSAttributedString(string: " | kept |\r\n\r\n| Three | Four |\r\n| --- | --- |\r\n| "))
+        source.append(NSAttributedString(attachment: second))
+        source.append(NSAttributedString(string: " | tail |"))
+        let original = NSAttributedString(attributedString: source)
+        let rendered = MarkdownPreviewView.render(source, nativeLimits: NativePreviewLimits(
+            maximumTableColumns: 2, maximumTableCells: 6
+        ))
+        XCTAssertEqual(rendered.string, source.string.replacingOccurrences(of: "\r\n", with: "\n") + "\n")
+        XCTAssertEqual(rendered.attribute(.font, at: 0, effectiveRange: nil) as? NSFont, InkStyle.baseFont)
+        XCTAssertTrue(nativeTableCells(in: rendered).isEmpty)
+        let found = attachments(in: rendered)
+        XCTAssertEqual(found.count, 2)
+        XCTAssertTrue(found.first === first)
+        XCTAssertTrue(found.last === second)
+        XCTAssertEqual(rendered.string.filter { $0 == "\u{FFFC}" }.count, 2)
+        XCTAssertTrue(source.isEqual(to: original))
+    }
+
+    func testNativeTableBudgetDoesNotApplyToParagraphPipesOrCommonMark() throws {
+        let limits = NativePreviewLimits(maximumTableColumns: 0, maximumTableCells: 0)
+        for dialect in PreviewDialect.allCases {
+            let source = "# Heading\n\none | two\n\n`code | text`"
+            let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: dialect, nativeLimits: limits)
+            XCTAssertEqual(rendered.string, "Heading\none | two\ncode | text\n")
+            XCTAssertGreaterThan(try font("Heading", in: rendered).pointSize, InkStyle.baseFont.pointSize)
+        }
+        let source = "# Heading\n\n" + table(columns: 9, bodyRows: 1)
+        let rendered = MarkdownPreviewView.render(NSAttributedString(string: source), dialect: .commonMark, nativeLimits: limits)
+        XCTAssertTrue(rendered.string.hasPrefix("Heading\n| h0 |"))
+        XCTAssertTrue(nativeTableCells(in: rendered).isEmpty)
+        XCTAssertGreaterThan(try font("Heading", in: rendered).pointSize, InkStyle.baseFont.pointSize)
+    }
+
+    func testNativeTableBudgetRejectsOverflowingCellProductsAndCumulativeTotals() {
+        let limits = NativePreviewLimits(maximumTableColumns: Int.max, maximumTableCells: Int.max)
+        XCTAssertNil(limits.tableCellTotal(rows: Int.max, columns: 2, alreadyRendered: 0))
+        XCTAssertNil(limits.tableCellTotal(rows: 1, columns: 1, alreadyRendered: Int.max))
+        XCTAssertEqual(limits.tableCellTotal(rows: 1, columns: 1, alreadyRendered: Int.max - 1), Int.max)
+    }
+
+    func testOptInNativeTableRenderAndLayoutProfile() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["PREVIEW_NATIVE_TABLE_PROFILE"] == "1")
+        let suite = "native-table-profile-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let model = isolatedModel(defaults: defaults)
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let source = table(columns: 8, bodyRows: 127)
+        model.syncDocument(sheet: page, runs: [.ink(source)])
+        model.toggleMarkdownPreview(for: page)
+        let rendering = model.quietRendering(for: page)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let view = MarkdownPreviewView(page: page, coordinator: coordinator)
+        view.frame = NSRect(x: 0, y: 0, width: 320, height: 720)
+        let start = Date.timeIntervalSinceReferenceDate
+        XCTAssertNil(view.reseed(with: rendering))
+        let seeded = Date.timeIntervalSinceReferenceDate
+        let storage = try XCTUnwrap(view.textStorage)
+        XCTAssertEqual(nativeTableCells(in: storage).count, 1_024)
+        let manager = try XCTUnwrap(view.layoutManager)
+        let container = try XCTUnwrap(view.textContainer)
+        for width: CGFloat in [320, 640] {
+            let beforeLayout = Date.timeIntervalSinceReferenceDate
+            view.setFrameSize(NSSize(width: width, height: 720))
+            manager.ensureLayout(for: container)
+            let laidOut = Date.timeIntervalSinceReferenceDate
+            let used = manager.usedRect(for: container)
+            XCTAssertGreaterThan(used.width, 0)
+            XCTAssertGreaterThan(used.height, 0)
+            XCTAssertLessThanOrEqual(used.maxX, container.size.width + 1)
+            storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+                guard (value as? NSParagraphStyle)?.textBlocks.last is NSTextTableBlock else { return }
+                let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                let bounds = manager.boundingRect(forGlyphRange: glyphs, in: container)
+                let fragment = manager.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+                XCTAssertGreaterThan(fragment.width, 0)
+                XCTAssertLessThanOrEqual(fragment.width, container.size.width / 8 + 1)
+                XCTAssertGreaterThanOrEqual(bounds.minX, -1)
+                XCTAssertLessThanOrEqual(bounds.maxX, container.size.width + 1)
+            }
+            print("native-table-profile cells=1024 columns=8 width=\(Int(width)) bytes=\(source.utf8.count) render_ms=\((seeded - start) * 1_000) layout_ms=\((laidOut - beforeLayout) * 1_000) used_width=\(used.width) used_height=\(used.height)")
+            if let directory = ProcessInfo.processInfo.environment["PREVIEW_QA_ARTIFACTS"] {
+                view.drawsBackground = true
+                view.backgroundColor = .textBackgroundColor
+                view.setFrameSize(NSSize(width: width, height: min(used.height + view.textContainerInset.height * 2, 720)))
+                let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+                view.effectiveAppearance.performAsCurrentDrawingAppearance { view.cacheDisplay(in: view.bounds, to: bitmap) }
+                let output = URL(fileURLWithPath: directory, isDirectory: true)
+                try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+                try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                    .write(to: output.appendingPathComponent("native-table-1024-\(Int(width)).png"))
+            }
+        }
     }
 
     func testTableLayoutWrapsToThePreviewWidthAndReflowsOnResize() throws {
