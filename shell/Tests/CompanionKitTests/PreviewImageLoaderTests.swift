@@ -171,6 +171,7 @@ final class PreviewImageLoaderTests: XCTestCase {
     func testUnicodeHostnameAndItsPunycodeSpellingHaveExplicitPolicyResults() {
         XCTAssertNil(PreviewImageRequestPolicy.url(for: .unreviewed("https://bücher.example/a")))
         XCTAssertNil(PreviewImageRequestPolicy.url(for: .unreviewed("https://xn--bcher-kva.example/a")))
+        XCTAssertNil(PreviewImageRequestPolicy.url(for: .unreviewed("https://xn--a.example/a")))
     }
 
     func testServerCookieIsNotReusedForAnotherExplicitLoad() async throws {

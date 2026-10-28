@@ -43,7 +43,7 @@ enum PreviewImageRequestPolicy {
               labels.last!.utf8.contains(where: { (97...122).contains($0) })
         else { return false }
         return labels.allSatisfy { label in
-            !label.isEmpty && label.utf8.count <= 63 && label.first != "-" && label.last != "-"
+            !label.isEmpty && !label.hasPrefix("xn--") && label.utf8.count <= 63 && label.first != "-" && label.last != "-"
                 && label.utf8.allSatisfy { (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }
         }
     }
