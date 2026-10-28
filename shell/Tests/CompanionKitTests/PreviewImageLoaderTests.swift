@@ -122,6 +122,38 @@ final class PreviewImageLoaderTests: XCTestCase {
         XCTAssertEqual(request.timeoutInterval, 15)
     }
 
+    func testValidatedHostnameIsCanonicalInPolicyAndTransportURLs() async throws {
+        let image = try fixture()
+        let requests = Box<[URLRequest]>([])
+        StubProtocol.reply = { request, client, stub in
+            requests.set(requests.get() + [request])
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "image/png"])!
+            client.urlProtocol(stub, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client.urlProtocol(stub, didLoad: image)
+            client.urlProtocolDidFinishLoading(stub)
+        }
+        let loader = loader()
+        let addresses = [
+            "https://IMAGES.Example.COM/a",
+            "https://%69mages.example.com/a",
+            "https://images.%65xample.com:443/a#fragment",
+        ]
+        for address in addresses {
+            let approved = try XCTUnwrap(PreviewImageRequestPolicy.url(for: .unreviewed(address)))
+            XCTAssertEqual(approved.absoluteString, "https://images.example.com/a")
+            XCTAssertEqual(approved.host, "images.example.com")
+            let url = try XCTUnwrap(URL(string: address))
+            _ = try await loader.load(url)
+        }
+        XCTAssertEqual(requests.get().count, addresses.count)
+        for request in requests.get() {
+            XCTAssertEqual(request.url?.absoluteString, "https://images.example.com/a")
+            XCTAssertEqual(request.url?.host, "images.example.com")
+        }
+    }
+
     func testAddressPolicyRejectsRawWhitespaceControlsAndOversizedAddresses() {
         for suffix in [" a.png", "\ta.png", "\na.png", "\ra.png", "\u{0}a.png", "\u{7F}a.png", "\u{A0}a.png"] {
             XCTAssertNil(PreviewImageRequestPolicy.url(for: .unreviewed("https://images.example.com/" + suffix)))

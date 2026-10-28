@@ -22,6 +22,7 @@ enum PreviewImageRequestPolicy {
               parts.port == nil || parts.port == 443,
               let host = parts.host?.lowercased(), validHost(host)
         else { return nil }
+        parts.percentEncodedHost = host
         parts.fragment = nil
         parts.port = nil
         return parts.url
