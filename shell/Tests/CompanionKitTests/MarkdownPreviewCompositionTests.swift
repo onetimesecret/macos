@@ -125,6 +125,20 @@ final class MarkdownPreviewCompositionTests: XCTestCase {
         }
     }
 
+    func testStrayLessThanWithAnApostropheDoesNotConsumeFollowingHTML() throws {
+        for dialect in PreviewDialect.allCases {
+            let plain = render("<div>a < b's c > d</div>", dialect: dialect)
+            XCTAssertEqual(plain.string, "a < b's c > d\n")
+            let (input, objects) = source(["<div>a < b's ", nil, " <b>bold</b></div>"])
+            let rendered = MarkdownPreviewView.render(input, dialect: dialect)
+            XCTAssertEqual(rendered.string, "a < b's \u{FFFC} bold\n")
+            XCTAssertTrue(try traits("bold", in: rendered).contains(.boldFontMask))
+            let shown = attachments(in: rendered)
+            XCTAssertEqual(shown.count, 1)
+            XCTAssertTrue(shown.first === objects.first)
+        }
+    }
+
     /// `A <em>one **two**</em>` spans HTML and Markdown nodes; each word takes both scopes.
     func testMarkdownAndHTMLFormattingCombineAcrossEachOther() throws {
         let rendered = render("A <em>one **two**</em> end and **bold <em>both</em>** after")

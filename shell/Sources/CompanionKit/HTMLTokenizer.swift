@@ -123,6 +123,13 @@ struct HTMLTokenizer {
                 continue
             }
 
+            guard canStartMarkup(atoms, at: index) else {
+                repeat { index += 1 } while index < atoms.count
+                    && isScalar(atoms, index, 0x3C) && !canStartMarkup(atoms, at: index)
+                if index - start > 1, index < atoms.count, isScalar(atoms, index, 0x3E) { index += 1 }
+                tokens.append(.literal(sourceParts(atoms, start..<index)))
+                continue
+            }
             index += 1
             var quote: Unicode.Scalar?
             var terminated = false
@@ -151,6 +158,14 @@ struct HTMLTokenizer {
             }
         }
         return HTMLTokenization(tokens: tokens, rawTextElement: mode?.rawValue)
+    }
+
+    private func canStartMarkup(_ atoms: AtomStorage, at start: Int) -> Bool {
+        var index = start + 1
+        guard index < atoms.count else { return false }
+        if isScalar(atoms, index, 0x21) || isScalar(atoms, index, 0x3F) { return true }
+        if isScalar(atoms, index, 0x2F) { index += 1 }
+        return index < atoms.count && isLetter(atoms[index])
     }
 
     private enum RawTextMode: String {
@@ -221,8 +236,11 @@ struct HTMLTokenizer {
 
         subscript(index: Int) -> Atom {
             let unit = units[index]
-            if let scalar = Unicode.Scalar(unit) { return .scalar(scalar) }
-            return .object(objects[Int(unit - Self.objectBase)])
+            if unit >= Self.objectBase { return .object(objects[Int(unit - Self.objectBase)]) }
+            guard let scalar = Unicode.Scalar(unit) else {
+                preconditionFailure("AtomStorage contains an invalid Unicode scalar")
+            }
+            return .scalar(scalar)
         }
 
         private static func spend(_ remaining: inout Int) throws {

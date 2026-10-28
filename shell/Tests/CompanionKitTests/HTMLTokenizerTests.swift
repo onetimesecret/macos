@@ -40,6 +40,41 @@ final class HTMLTokenizerTests: XCTestCase {
         ])
     }
 
+    func testStrayLessThanBeforeAQuoteDoesNotAbsorbClosingOrFollowingTags() throws {
+        for quote in ["'", "\""] {
+            let comparison = " b\(quote)s c > d"
+            let input: [HTMLPart] = [.text("<div>a <" + comparison + "</div>")]
+            let tokens = try HTMLTokenizer().tokenize(input)
+            XCTAssertEqual(tokens, [
+                tag("div", raw: [.text("<div>")]), .text([.text("a ")]),
+                .literal([.text("<")]), .text([.text(comparison)]),
+                tag("div", raw: [.text("</div>")], closing: true),
+            ], quote)
+            assertSource(tokens, equals: input)
+
+            let beforeBold = " b\(quote)s "
+            let nested: [HTMLPart] = [.text("<div>a <" + beforeBold + "<b>bold</b></div>")]
+            let nestedTokens = try HTMLTokenizer().tokenize(nested)
+            XCTAssertEqual(nestedTokens, [
+                tag("div", raw: [.text("<div>")]), .text([.text("a ")]),
+                .literal([.text("<")]), .text([.text(beforeBold)]),
+                tag("b", raw: [.text("<b>")]), .text([.text("bold")]),
+                tag("b", raw: [.text("</b>")], closing: true),
+                tag("div", raw: [.text("</div>")], closing: true),
+            ], quote)
+            assertSource(nestedTokens, equals: nested)
+
+            let invalidClosing: [HTMLPart] = [.text("</" + beforeBold + "<b>bold</b>")]
+            let closingTokens = try HTMLTokenizer().tokenize(invalidClosing)
+            XCTAssertEqual(closingTokens, [
+                .literal([.text("<")]), .text([.text("/" + beforeBold)]),
+                tag("b", raw: [.text("<b>")]), .text([.text("bold")]),
+                tag("b", raw: [.text("</b>")], closing: true),
+            ], quote)
+            assertSource(closingTokens, equals: invalidClosing)
+        }
+    }
+
     func testBooleanAndEmptyAttributesRemainDistinct() throws {
         let raw = #"<input disabled empty="" other='' checked = yes foo bar>"#
         XCTAssertEqual(try HTMLTokenizer().tokenize([.text(raw)]), [
@@ -70,7 +105,11 @@ final class HTMLTokenizerTests: XCTestCase {
 
     func testNonASCIINamesStayLiteralWithoutNarrowingToASCII() throws {
         for scalar in ["é", "\u{141}", "\u{10041}", "\u{10FFFF}"] {
-            for raw in ["<\(scalar)>", "<A\(scalar)>", "</A\(scalar)>", "<a \(scalar)=x>"] {
+            let invalidOpening: [HTMLPart] = [.text("<\(scalar)>")]
+            let openingTokens = try HTMLTokenizer().tokenize(invalidOpening)
+            XCTAssertEqual(openingTokens, [.literal([.text("<")]), .text([.text("\(scalar)>")])])
+            assertSource(openingTokens, equals: invalidOpening)
+            for raw in ["<A\(scalar)>", "</A\(scalar)>", "<a \(scalar)=x>"] {
                 let input: [HTMLPart] = [.text(raw)]
                 let tokens = try HTMLTokenizer().tokenize(input)
                 XCTAssertEqual(tokens, [.literal(input)])
@@ -140,8 +179,11 @@ final class HTMLTokenizerTests: XCTestCase {
     }
 
     func testObjectsCannotSupplyAnyPartOfTagNames() throws {
+        let invalidOpening: [HTMLPart] = [.text("<"), .object("a"), .text(">")]
+        let openingTokens = try HTMLTokenizer().tokenize(invalidOpening)
+        XCTAssertEqual(openingTokens, [.literal([.text("<")]), .text([.object("a"), .text(">")])])
+        assertSource(openingTokens, equals: invalidOpening)
         let inputs: [[HTMLPart]] = [
-            [.text("<"), .object("a"), .text(">")],
             [.text("<a"), .object("suffix"), .text(">")],
             [.text("</a"), .object("suffix"), .text(">")],
             [.text("</a "), .object("trailing"), .text(">")],
@@ -203,15 +245,39 @@ final class HTMLTokenizerTests: XCTestCase {
 
     func testUnsupportedTagSyntaxRemainsLiteral() throws {
         for raw in [
-            "< a>", "<1a>", "<ä>", "<a ä=x>", "<a.b>", "<a / >", "</a/>", "</a x>",
+            "<a ä=x>", "<a.b>", "<a / >", "</a/>", "</a x>",
             "<a x=>", "<a x=one=two>", "<a x=one<two>", "<a x=`bad`>", "<a x=\"v\"y=two>",
         ] {
             XCTAssertEqual(try HTMLTokenizer().tokenize([.text(raw)]), [.literal([.text(raw)])], raw)
         }
     }
 
+    func testInvalidMarkupPrefixesEmitOnlyTheLessThanAsLiteral() throws {
+        for raw in ["< a>", "<1a>", "<ä>", "</", "</ >", "</1a>", "<\"quoted >", "<'quoted >"] {
+            let input: [HTMLPart] = [.text(raw)]
+            let tokens = try HTMLTokenizer().tokenize(input)
+            XCTAssertEqual(tokens, [.literal([.text("<")]), .text([.text(String(raw.dropFirst()))])], raw)
+            assertSource(tokens, equals: input)
+        }
+    }
+
+    func testObjectsAndEntitiesAfterStrayLessThanStayInSourceOrderBeforeATag() throws {
+        let input: [HTMLPart] = [
+            .text("<"), .object("first\"'<>"), .text(" b's &amp; "), .object("second"), .text("<b>bold</b>"),
+        ]
+        let tokens = try HTMLTokenizer().tokenize(input)
+        XCTAssertEqual(tokens, [
+            .literal([.text("<")]),
+            .text([.object("first\"'<>"), .text(" b's &amp; "), .object("second")]),
+            tag("b", raw: [.text("<b>")]), .text([.text("bold")]),
+            tag("b", raw: [.text("</b>")], closing: true),
+        ])
+        assertSource(tokens, equals: input)
+        assertObjectOrder(tokens, equals: ["first\"'<>", "second"])
+    }
+
     func testEOFInsideMarkupKeepsTheEntireRemainderLiteral() throws {
-        for raw in ["<", "</", "<a", "<a ", "<a x=", "<a x='v>tail<b>", "<a x=\"v>tail<b>"] {
+        for raw in ["<", "<a", "<a ", "<a x=", "<a x='v>tail<b>", "<a x=\"v>tail<b>"] {
             let input: [HTMLPart] = [.text("before" + raw)]
             let tokens = try HTMLTokenizer().tokenize(input)
             XCTAssertEqual(tokens, [.text([.text("before")]), .literal([.text(raw)])], raw)
@@ -402,6 +468,18 @@ final class HTMLTokenizerTests: XCTestCase {
         XCTAssertEqual(tokens.count, 1)
         XCTAssertTrue(tokens == [.literal([.text(raw)])])
         assertSource(tokens, equals: [.text(raw)])
+    }
+
+    func testBoundedLessThanRunStopsBeforeARealTagAndSpendsTheTokenBudget() throws {
+        let prefix = String(repeating: "<", count: 32_768)
+        let input: [HTMLPart] = [.text(prefix + "<b>bold</b>")]
+        let tokens = try HTMLTokenizer(maximumTokens: 4).tokenize(input)
+        XCTAssertEqual(tokens, [
+            .literal([.text(prefix)]), tag("b", raw: [.text("<b>")]), .text([.text("bold")]),
+            tag("b", raw: [.text("</b>")], closing: true),
+        ])
+        assertSource(tokens, equals: input)
+        assertError(HTMLTokenizer(maximumTokens: 3), input, .tokenLimit)
     }
 
     func testDeterministicBoundedRandomSourcePreservation() throws {

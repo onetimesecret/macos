@@ -18,10 +18,11 @@ enum MarkdownParser {
         guard limits.maximumInputScalars >= 0, limits.maximumDepth >= 0,
               limits.maximumTableCells >= 0 else { throw MarkdownBridgeError.invalidLimits }
         guard objects.allSatisfy({ $0 >= 0 }) else { throw MarkdownParseError.objectOffset }
+        let byteCount = text.utf8.count
         let pointer = text.withCString { bytes in
             objects.withUnsafeBufferPointer { offsets in
                 companion_markdown_parse_json(
-                    bytes, text.utf8.count, offsets.baseAddress, offsets.count,
+                    bytes, byteCount, offsets.baseAddress, offsets.count,
                     dialect == .gfm ? 1 : 0, limits.maximumInputScalars,
                     limits.maximumDepth, UInt64(limits.maximumTableCells)
                 )
