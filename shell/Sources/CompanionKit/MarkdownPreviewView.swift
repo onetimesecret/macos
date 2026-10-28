@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Darwin
 import os
 
@@ -12,13 +13,26 @@ final class MarkdownPreviewView: AskingTextView {
     private var seeded: PageModel.QuietRendering?
     private var seededDialect: PreviewDialect?
     private let links = PreviewLinks()
+    private var imageControlsReady = false
+    private var imageOwnership: AnyCancellable?
+    private(set) lazy var imageControls = PreviewImageControls(preview: self)
+    var onImageLayoutChanged: (() -> Void)?
+
+    var mayLoadImages: Bool {
+        guard isSelectedPage, window != nil, let coordinator,
+              coordinator.model.owner == coordinator.surface else { return false }
+        return mayReadOut
+    }
 
     /// A click on a preview of a page the roll has not selected promotes it (ADR-0030).
     var onPromote: (() -> Void)?
 
     /// Only the selected page's preview is selectable and may take the keys (ADR-0030).
     var isSelectedPage = false {
-        didSet { isSelectable = isSelectedPage }
+        didSet {
+            isSelectable = isSelectedPage
+            if oldValue != isSelectedPage { imageControls.discard() }
+        }
     }
 
     /// Drag sessions this view began; the tests pin it at none.
@@ -60,6 +74,11 @@ final class MarkdownPreviewView: AskingTextView {
         TextOffers.offerUngatedReaders(false, on: self)
         links.preview = self
         delegate = links
+        imageControlsReady = true
+        imageOwnership = coordinator?.model.$owner.dropFirst().sink { [weak self] owner in
+            guard let self, owner != self.coordinator?.surface else { return }
+            self.imageControls.discard()
+        }
     }
 
     @available(*, unavailable)
@@ -215,11 +234,48 @@ final class MarkdownPreviewView: AskingTextView {
     func reseed(with rendering: PageModel.QuietRendering, dialect: PreviewDialect) -> String? {
         if rendering === seeded, dialect == seededDialect { return nil }
         let previous = seeded == nil ? nil : previewStorage.string
+        let sameSource = dialect == seededDialect && seeded?.text.isEqual(to: rendering.text) == true
         seeded = rendering
         seededDialect = dialect
-        previewStorage.setAttributedString(Self.render(rendering.text, dialect: dialect))
+        if !sameSource { imageControls.seed(Self.render(rendering.text, dialect: dialect)) }
         needsDisplay = true
         return previous
+    }
+
+    override func layout() {
+        super.layout()
+        if imageControlsReady { imageControls.layout() }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let widthChanged = frame.width != newSize.width
+        super.setFrameSize(newSize)
+        if imageControlsReady, widthChanged { imageControls.resize() }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if imageControlsReady, window == nil { imageControls.discard() }
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        let buttons = imageControlsReady ? imageControls.buttons : []
+        var children = super.accessibilityChildren() ?? []
+        for button in buttons where !children.contains(where: { ($0 as AnyObject) === button }) {
+            children.append(button)
+        }
+        return children
+    }
+
+    override nonisolated func accessibilityHitTest(_ point: NSPoint) -> Any? {
+        let button: NSButton? = MainActor.assumeIsolated {
+            if imageControlsReady, let window {
+                let local = convert(window.convertPoint(fromScreen: point), from: nil)
+                if let button = imageControls.buttons.first(where: { $0.frame.contains(local) }) { return button }
+            }
+            return nil
+        }
+        return button ?? super.accessibilityHitTest(point)
     }
 
     /// `dialect` selects the pinned parser that reads the page (`MarkdownParser`, plan R1) and how
@@ -242,8 +298,7 @@ extension NSAttributedString.Key {
     static let previewImage = NSAttributedString.Key("CompanionKitPreviewImage")
 }
 
-/// An image in one rendering: its ordinal among that rendering's images, and its address as
-/// composed. Image loading is separate work in the Markdown preview design plan.
+/// An image's ordinal and composed address in one rendering.
 struct PreviewImageDescriptor: Hashable {
     let occurrence: Int
     let destination: PreviewAddress
@@ -729,8 +784,7 @@ private final class MarkdownPreviewRenderer {
         return nil
     }
 
-    /// An image as its alt text and objects in secondary ink, marked with its descriptor and
-    /// no link. Image loading is separate work in the Markdown preview design plan.
+    /// Alt text and objects remain ink beside the separate loading controls.
     private func inertImage(
         _ image: PreviewImage, attributes: [NSAttributedString.Key: Any]
     ) throws -> NSAttributedString {
@@ -746,6 +800,9 @@ private final class MarkdownPreviewRenderer {
             case .text(let text): result.append(NSAttributedString(string: text, attributes: alt))
             case .object(let identity): result.append(try object(identity))
             }
+        }
+        if result.length == 0 {
+            result.append(NSAttributedString(string: CompanionL10n.string("[Image]"), attributes: alt))
         }
         result.addAttribute(.previewImage, value: descriptor, range: NSRange(location: 0, length: result.length))
         return result
