@@ -130,25 +130,11 @@ struct HTMLTokenizer {
                 tokens.append(.literal(sourceParts(atoms, start..<index)))
                 continue
             }
-            index += 1
-            var quote: Unicode.Scalar?
-            var terminated = false
-            while index < atoms.count {
-                if case .scalar(let scalar) = atoms[index] {
-                    if let activeQuote = quote {
-                        if scalar == activeQuote { quote = nil }
-                    } else if scalar.value == 0x22 || scalar.value == 0x27 {
-                        quote = scalar
-                    } else if scalar.value == 0x3E {
-                        index += 1
-                        terminated = true
-                        break
-                    }
-                }
-                index += 1
-            }
+            let declaration = isScalar(atoms, index + 1, 0x21) || isScalar(atoms, index + 1, 0x3F)
+            let end = declaration ? declarationEnd(atoms, at: index) : tagEnd(atoms, at: index)
+            index = end ?? atoms.count
             let raw = sourceParts(atoms, start..<index)
-            if terminated, let tag = parseTag(atoms, start..<index, raw: raw) {
+            if end != nil, let tag = parseTag(atoms, start..<index, raw: raw) {
                 tokens.append(.tag(tag))
                 if recognizingRawText && !tag.isClosing && !tag.isSelfClosing {
                     mode = RawTextMode(rawValue: tag.name)
@@ -166,6 +152,75 @@ struct HTMLTokenizer {
         if isScalar(atoms, index, 0x21) || isScalar(atoms, index, 0x3F) { return true }
         if isScalar(atoms, index, 0x2F) { index += 1 }
         return index < atoms.count && isLetter(atoms[index])
+    }
+
+    private func declarationEnd(_ atoms: AtomStorage, at start: Int) -> Int? {
+        var index = start + 1
+        var quote: Unicode.Scalar?
+        while index < atoms.count {
+            if case .scalar(let scalar) = atoms[index] {
+                if let activeQuote = quote {
+                    if scalar == activeQuote { quote = nil }
+                } else if scalar.value == 0x22 || scalar.value == 0x27 {
+                    quote = scalar
+                } else if scalar.value == 0x3E {
+                    return index + 1
+                }
+            }
+            index += 1
+        }
+        return nil
+    }
+
+    private func tagEnd(_ atoms: AtomStorage, at start: Int) -> Int? {
+        var index = start + 1
+        if isScalar(atoms, index, 0x2F) { return unquotedMarkupEnd(atoms, from: index + 1) }
+        index += 1
+        while index < atoms.count && isNameContinuation(atoms[index], attribute: false) { index += 1 }
+        while index < atoms.count {
+            let beforeWhitespace = index
+            skipWhitespace(atoms, &index, end: atoms.count)
+            guard index < atoms.count else { return nil }
+            if isScalar(atoms, index, 0x3E) { return index + 1 }
+            if isScalar(atoms, index, 0x2F) { return unquotedMarkupEnd(atoms, from: index + 1) }
+            guard index > beforeWhitespace, isAttributeNameStart(atoms[index]) else {
+                return unquotedMarkupEnd(atoms, from: index)
+            }
+            index += 1
+            while index < atoms.count && isNameContinuation(atoms[index], attribute: true) { index += 1 }
+            var equalsIndex = index
+            skipWhitespace(atoms, &equalsIndex, end: atoms.count)
+            if equalsIndex < atoms.count, isScalar(atoms, equalsIndex, 0x3D) {
+                index = equalsIndex + 1
+                skipWhitespace(atoms, &index, end: atoms.count)
+                guard index < atoms.count else { return nil }
+                if isScalar(atoms, index, 0x22) || isScalar(atoms, index, 0x27) {
+                    let quote = atoms[index]
+                    index += 1
+                    while index < atoms.count && !sameScalar(atoms[index], quote) { index += 1 }
+                    guard index < atoms.count else { return nil }
+                    index += 1
+                } else {
+                    while index < atoms.count && !isWhitespace(atoms[index]) {
+                        if isScalar(atoms, index, 0x3E) { return index + 1 }
+                        guard isUnquotedValueAtom(atoms[index]) else {
+                            return unquotedMarkupEnd(atoms, from: index)
+                        }
+                        index += 1
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    private func unquotedMarkupEnd(_ atoms: AtomStorage, from start: Int) -> Int? {
+        var index = start
+        while index < atoms.count {
+            if isScalar(atoms, index, 0x3E) { return index + 1 }
+            index += 1
+        }
+        return nil
     }
 
     private enum RawTextMode: String {
@@ -237,10 +292,7 @@ struct HTMLTokenizer {
         subscript(index: Int) -> Atom {
             let unit = units[index]
             if unit >= Self.objectBase { return .object(objects[Int(unit - Self.objectBase)]) }
-            guard let scalar = Unicode.Scalar(unit) else {
-                preconditionFailure("AtomStorage contains an invalid Unicode scalar")
-            }
-            return .scalar(scalar)
+            return .scalar(Unicode.Scalar(unit) ?? "\u{FFFD}")
         }
 
         private static func spend(_ remaining: inout Int) throws {
@@ -334,12 +386,7 @@ struct HTMLTokenizer {
                 } else {
                     let valueStart = index
                     while index < end && !isWhitespace(atoms[index]) {
-                        if case .scalar(let scalar) = atoms[index] {
-                            switch scalar.value {
-                            case 0x22, 0x27, 0x3C, 0x3D, 0x60: return nil
-                            default: break
-                            }
-                        }
+                        guard isUnquotedValueAtom(atoms[index]) else { return nil }
                         index += 1
                     }
                     value = sourceParts(atoms, valueStart..<index)
@@ -408,6 +455,14 @@ struct HTMLTokenizer {
         guard case .scalar(let scalar) = atom else { return false }
         return (0x30...0x39).contains(scalar.value) || scalar.value == 0x2D
             || (attribute && scalar.value == 0x2E)
+    }
+
+    private func isUnquotedValueAtom(_ atom: Atom) -> Bool {
+        guard case .scalar(let scalar) = atom else { return true }
+        switch scalar.value {
+        case 0x22, 0x27, 0x3C, 0x3D, 0x60: return false
+        default: return true
+        }
     }
 
     private func isWhitespace(_ atom: Atom) -> Bool {

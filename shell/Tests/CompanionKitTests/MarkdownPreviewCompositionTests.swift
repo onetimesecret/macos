@@ -139,6 +139,21 @@ final class MarkdownPreviewCompositionTests: XCTestCase {
         }
     }
 
+    func testMalformedAttributeQuotesKeepLaterFormattingAndOriginalObjects() throws {
+        for dialect in PreviewDialect.allCases {
+            for opening in [#"<div class=a"b>"#, "<div class=a'b>",
+                            #"<div cla"ss=a>"#, "<div class=a='b>"] {
+                let (input, objects) = source([opening + "text", nil, "</div><b>styled</b>"])
+                let rendered = MarkdownPreviewView.render(input, dialect: dialect)
+                XCTAssertEqual(rendered.string, opening + "text\u{FFFC}\nstyled\n")
+                XCTAssertTrue(try traits("styled", in: rendered).contains(.boldFontMask))
+                let shown = attachments(in: rendered)
+                XCTAssertEqual(shown.count, 1)
+                XCTAssertTrue(shown.first === objects.first)
+            }
+        }
+    }
+
     /// `A <em>one **two**</em>` spans HTML and Markdown nodes; each word takes both scopes.
     func testMarkdownAndHTMLFormattingCombineAcrossEachOther() throws {
         let rendered = render("A <em>one **two**</em> end and **bold <em>both</em>** after")

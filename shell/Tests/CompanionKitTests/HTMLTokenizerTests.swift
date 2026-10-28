@@ -40,6 +40,47 @@ final class HTMLTokenizerTests: XCTestCase {
         ])
     }
 
+    func testQuotesInMalformedAttributeNamesAndUnquotedValuesDoNotAbsorbLaterTags() throws {
+        for quote in ["'", "\""] {
+            let malformed = [
+                "class=a\(quote)b", "class=a=\(quote)b", "class=a=\(quote)b other=\(quote)c",
+                "cl\(quote)ass=x", "cl\(quote)ass=\(quote)x", "class\(quote)=value",
+                "class=one=two\(quote)", "class=x\(quote) y=\(quote)z",
+            ]
+            for attributes in malformed {
+                let opening: [HTMLPart] = [.text("<div " + attributes), .object("attribute"), .text(">")]
+                let input = opening + [.text("text > tail</div><b>"), .object("body"), .text("bold</b>")]
+                let tokens = try HTMLTokenizer().tokenize(input)
+                XCTAssertEqual(tokens, [
+                    .literal(opening), .text([.text("text > tail")]),
+                    tag("div", raw: [.text("</div>")], closing: true),
+                    tag("b", raw: [.text("<b>")]), .text([.object("body"), .text("bold")]),
+                    tag("b", raw: [.text("</b>")], closing: true),
+                ], attributes)
+                assertSource(tokens, equals: input)
+                assertObjectOrder(tokens, equals: ["attribute", "body"])
+            }
+        }
+    }
+
+    func testQuotedAttributeValuesAfterEqualsAndWhitespaceKeepGreaterThanAndEquals() throws {
+        for quote in ["'", "\""] {
+            let opposite = quote == "'" ? "\"" : "'"
+            let value: [HTMLPart] = [.text("a>b=c" + opposite + " &amp; "), .object("value" + quote + ">")]
+            let opening: [HTMLPart] = [.text("<div class \t=\n " + quote)] + value + [.text(quote + ">")]
+            let input = opening + [.text("text</div><b>bold</b>")]
+            let tokens = try HTMLTokenizer().tokenize(input)
+            XCTAssertEqual(tokens, [
+                tag("div", raw: coalesced(opening), attributes: [attribute("class", value)]), .text([.text("text")]),
+                tag("div", raw: [.text("</div>")], closing: true),
+                tag("b", raw: [.text("<b>")]), .text([.text("bold")]),
+                tag("b", raw: [.text("</b>")], closing: true),
+            ], quote)
+            assertSource(tokens, equals: input)
+            assertObjectOrder(tokens, equals: ["value" + quote + ">"])
+        }
+    }
+
     func testStrayLessThanBeforeAQuoteDoesNotAbsorbClosingOrFollowingTags() throws {
         for quote in ["'", "\""] {
             let comparison = " b\(quote)s c > d"
