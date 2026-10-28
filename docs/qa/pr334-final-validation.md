@@ -59,8 +59,8 @@ git diff --check
 python3 scripts/lint-adrs.py docs/adr
 ```
 
-T󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 2󠄁,󠄁5󠄁3󠄁9󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁:󠄁 3󠄁9󠄁3󠄁 O󠄁n󠄁e󠄁t󠄁i󠄁m󠄁e󠄁P󠄁a󠄁d󠄁 a󠄁n󠄁d󠄁 2󠄁,󠄁1󠄁4󠄁6󠄁 C󠄁o󠄁m󠄁p󠄁a󠄁n󠄁i󠄁o󠄁n󠄁K󠄁i󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁;󠄁
-o󠄁n󠄁e󠄁 a󠄁d󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁 w󠄁a󠄁s󠄁 s󠄁k󠄁i󠄁p󠄁p󠄁e󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁 r󠄁u󠄁n󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 2󠄁4󠄁7󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁a󠄁t󠄁
+T󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 2󠄁,󠄁5󠄁4󠄁3󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁:󠄁 3󠄁9󠄁3󠄁 O󠄁n󠄁e󠄁t󠄁i󠄁m󠄁e󠄁P󠄁a󠄁d󠄁 a󠄁n󠄁d󠄁 2󠄁,󠄁1󠄁5󠄁0󠄁 C󠄁o󠄁m󠄁p󠄁a󠄁n󠄁i󠄁o󠄁n󠄁K󠄁i󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁;󠄁
+o󠄁n󠄁e󠄁 a󠄁d󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁 w󠄁a󠄁s󠄁 s󠄁k󠄁i󠄁p󠄁p󠄁e󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁 r󠄁u󠄁n󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 2󠄁5󠄁1󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁a󠄁t󠄁
 s󠄁a󠄁m󠄁e󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁 s󠄁k󠄁i󠄁p󠄁p󠄁e󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 l󠄁a󠄁r󠄁g󠄁e󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁 a󠄁l󠄁s󠄁o󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 w󠄁h󠄁e󠄁n󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁e󠄁d󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁.󠄁
 W󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁l󠄁l󠄁 5󠄁3󠄁 A󠄁D󠄁R󠄁 l󠄁i󠄁n󠄁t󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁.󠄁 C󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁-󠄁h󠄁e󠄁a󠄁d󠄁 r󠄁e󠄁m󠄁o󠄁t󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 a󠄁r󠄁e󠄁
 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 P󠄁R󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁i󠄁o󠄁n󠄁.󠄁
@@ -98,9 +98,11 @@ c󠄁o󠄁n󠄁f󠄁i󠄁r󠄁m󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 e󠄁a󠄁r󠄁l�
 - E󠄁n󠄁t󠄁i󠄁t󠄁y󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁i󠄁n󠄁g󠄁 u󠄁s󠄁e󠄁s󠄁 a󠄁 f󠄁i󠄁x󠄁e󠄁d󠄁 s󠄁m󠄁a󠄁l󠄁l󠄁 n󠄁a󠄁m󠄁e󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁,󠄁 n󠄁o󠄁t󠄁 t󠄁h󠄁e󠄁 H󠄁T󠄁M󠄁L󠄁5󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁,󠄁 a󠄁n󠄁d󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁e󠄁d󠄁 l󠄁o󠄁o󠄁k󠄁a󠄁h󠄁e󠄁a󠄁d󠄁:󠄁
   a󠄁t󠄁 m󠄁o󠄁s󠄁t󠄁 3󠄁1󠄁 n󠄁a󠄁m󠄁e󠄁 s󠄁c󠄁a󠄁l󠄁a󠄁r󠄁s󠄁 b󠄁e󠄁t󠄁w󠄁e󠄁e󠄁n󠄁 a󠄁m󠄁p󠄁e󠄁r󠄁s󠄁a󠄁n󠄁d󠄁 a󠄁n󠄁d󠄁 s󠄁e󠄁m󠄁i󠄁c󠄁o󠄁l󠄁o󠄁n󠄁.󠄁 T󠄁i󠄁g󠄁h󠄁t󠄁 a󠄁n󠄁d󠄁 l󠄁o󠄁o󠄁s󠄁e󠄁 l󠄁i󠄁s󠄁t󠄁s󠄁 c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁l󠄁y󠄁
   s󠄁h󠄁a󠄁r󠄁e󠄁 s󠄁p󠄁a󠄁c󠄁i󠄁n󠄁g󠄁.󠄁 T󠄁h󠄁e󠄁s󠄁e󠄁 a󠄁r󠄁e󠄁 f󠄁i󠄁d󠄁e󠄁l󠄁i󠄁t󠄁y󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁s󠄁;󠄁 n󠄁o󠄁 c󠄁o󠄁n󠄁f󠄁o󠄁r󠄁m󠄁a󠄁n󠄁c󠄁e󠄁 b󠄁e󠄁y󠄁o󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁e󠄁d󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁t󠄁 i󠄁s󠄁 a󠄁s󠄁s󠄁e󠄁r󠄁t󠄁e󠄁d󠄁.󠄁
-- S󠄁w󠄁i󠄁f󠄁t󠄁'󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁C󠄁S󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁,󠄁 F󠄁o󠄁u󠄁n󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 D󠄁a󠄁t󠄁a󠄁 a󠄁n󠄁d󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 u󠄁s󠄁e󠄁 o󠄁r󠄁d󠄁i󠄁n󠄁a󠄁r󠄁y󠄁
-  a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁/󠄁d󠄁e󠄁a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁n󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 w󠄁i󠄁p󠄁e󠄁.󠄁 R󠄁u󠄁s󠄁t󠄁 z󠄁e󠄁r󠄁o󠄁i󠄁z󠄁i󠄁n󠄁g󠄁 o󠄁w󠄁n󠄁e󠄁r󠄁s󠄁 d󠄁o󠄁 n󠄁o󠄁t󠄁 e󠄁x󠄁t󠄁e󠄁n󠄁d󠄁 t󠄁o󠄁
-  t󠄁h󠄁e󠄁s󠄁e󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 A󠄁v󠄁o󠄁i󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁 U󠄁T󠄁F󠄁-󠄁8󠄁 c󠄁o󠄁p󠄁y󠄁 w󠄁o󠄁u󠄁l󠄁d󠄁 n󠄁o󠄁t󠄁 w󠄁i󠄁p󠄁e󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁 S󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 t󠄁r󠄁e󠄁e󠄁.󠄁
+- S󠄁w󠄁i󠄁f󠄁t󠄁'󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁C󠄁S󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 a󠄁n󠄁d󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 r󠄁e󠄁c󠄁e󠄁i󠄁v󠄁e󠄁 n󠄁o󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 w󠄁i󠄁p󠄁e󠄁.󠄁
+  T󠄁h󠄁e󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁 D󠄁a󠄁t󠄁a󠄁 v󠄁i󠄁e󠄁w󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 R󠄁u󠄁s󠄁t󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁e󠄁 b󠄁u󠄁f󠄁f󠄁e󠄁r󠄁 u󠄁n󠄁t󠄁i󠄁l󠄁 t󠄁h󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁s󠄁
+  i󠄁t󠄁;󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁 a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁e󠄁d󠄁 F󠄁o󠄁u󠄁n󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁r󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁i󠄁e󠄁s󠄁 a󠄁r󠄁e󠄁 n󠄁o󠄁t󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁 w󠄁i󠄁p󠄁e󠄁d󠄁 h󠄁e󠄁r󠄁e󠄁.󠄁
+  R󠄁u󠄁s󠄁t󠄁 z󠄁e󠄁r󠄁o󠄁i󠄁z󠄁i󠄁n󠄁g󠄁 o󠄁w󠄁n󠄁e󠄁r󠄁s󠄁 d󠄁o󠄁 n󠄁o󠄁t󠄁 e󠄁x󠄁t󠄁e󠄁n󠄁d󠄁 t󠄁o󠄁 i󠄁n󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 c󠄁o󠄁p󠄁i󠄁e󠄁s󠄁.󠄁 A󠄁v󠄁o󠄁i󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁 U󠄁T󠄁F󠄁-󠄁8󠄁 c󠄁o󠄁p󠄁y󠄁
+  w󠄁o󠄁u󠄁l󠄁d󠄁 n󠄁o󠄁t󠄁 w󠄁i󠄁p󠄁e󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁 S󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 t󠄁r󠄁e󠄁e󠄁.󠄁
 - P󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁n󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 T󠄁e󠄁x󠄁t󠄁P󠄁r󠄁o󠄁v󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁l󠄁o󠄁g󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁t󠄁i󠄁c󠄁e󠄁 p󠄁r󠄁o󠄁s󠄁e󠄁.󠄁
 
 ## Final tokenizer follow-up
@@ -123,3 +125,27 @@ T󠄁h󠄁e󠄁r󠄁e󠄁 i󠄁s󠄁 n󠄁o󠄁 n󠄁e󠄁w󠄁 v󠄁i󠄁s󠄁i
 u󠄁s󠄁e󠄁s󠄁 w󠄁h󠄁a󠄁t󠄁 t󠄁h󠄁a󠄁t󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 s󠄁h󠄁o󠄁w󠄁s󠄁.󠄁 T󠄁h󠄁a󠄁t󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 f󠄁o󠄁r󠄁 f󠄁u󠄁t󠄁u󠄁r󠄁e󠄁
 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁-󠄁s󠄁t󠄁a󠄁t󠄁e󠄁 d󠄁e󠄁s󠄁i󠄁g󠄁n󠄁.󠄁 N󠄁o󠄁 n󠄁o󠄁t󠄁i󠄁c󠄁e󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁s󠄁 s󠄁t󠄁r󠄁i󠄁p󠄁p󠄁e󠄁d󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁 c󠄁o󠄁m󠄁m󠄁e󠄁n󠄁t󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁
 t󠄁h󠄁e󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 o󠄁r󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁i󠄁e󠄁s󠄁.󠄁
+
+## Attribute-state and address coverage follow-up
+
+T󠄁h󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 o󠄁f󠄁 1󠄁3󠄁7󠄁3󠄁d󠄁0󠄁7󠄁6󠄁 f󠄁o󠄁u󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁s󠄁i󠄁d󠄁u󠄁a󠄁l󠄁 m󠄁a󠄁l󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁-󠄁a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 o󠄁f󠄁 t󠄁h󠄁e󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁-󠄁s󠄁c󠄁a󠄁n󠄁n󠄁i󠄁n󠄁g󠄁
+d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁.󠄁 T󠄁h󠄁e󠄁 t󠄁a󠄁g󠄁 p󠄁r󠄁e󠄁-󠄁s󠄁c󠄁a󠄁n󠄁 n󠄁o󠄁w󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁s󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁-󠄁n󠄁a󠄁m󠄁e󠄁/󠄁v󠄁a󠄁l󠄁u󠄁e󠄁 g󠄁r󠄁a󠄁m󠄁m󠄁a󠄁r󠄁,󠄁 s󠄁h󠄁a󠄁r󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 u󠄁n󠄁q󠄁u󠄁o󠄁t󠄁e󠄁d󠄁-󠄁v󠄁a󠄁l󠄁u󠄁e󠄁
+p󠄁r󠄁e󠄁d󠄁i󠄁c󠄁a󠄁t󠄁e󠄁 w󠄁i󠄁t󠄁h󠄁 p󠄁a󠄁r󠄁s󠄁i󠄁n󠄁g󠄁.󠄁 O󠄁n󠄁l󠄁y󠄁 a󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁 e󠄁q󠄁u󠄁a󠄁l󠄁s󠄁/󠄁v󠄁a󠄁l󠄁u󠄁e󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁 c󠄁a󠄁n󠄁 b󠄁e󠄁g󠄁i󠄁n󠄁 a󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁d󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁.󠄁
+M󠄁a󠄁l󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁 n󠄁a󠄁m󠄁e󠄁s󠄁 o󠄁r󠄁 u󠄁n󠄁q󠄁u󠄁o󠄁t󠄁e󠄁d󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁s󠄁 u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁 g󠄁r󠄁e󠄁a󠄁t󠄁e󠄁r󠄁-󠄁t󠄁h󠄁a󠄁n󠄁 d󠄁e󠄁l󠄁i󠄁m󠄁i󠄁t󠄁e󠄁r󠄁;󠄁
+v󠄁a󠄁l󠄁i󠄁d󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁d󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁s󠄁 c󠄁a󠄁n󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁 g󠄁r󠄁e󠄁a󠄁t󠄁e󠄁r󠄁-󠄁t󠄁h󠄁a󠄁n󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁s󠄁.󠄁 D󠄁e󠄁c󠄁l󠄁a󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁/󠄁P󠄁I󠄁 s󠄁c󠄁a󠄁n󠄁n󠄁i󠄁n󠄁g󠄁
+r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁.󠄁 T󠄁o󠄁k󠄁e󠄁n󠄁-󠄁l󠄁e󠄁v󠄁e󠄁l󠄁 m󠄁a󠄁t󠄁r󠄁i󠄁c󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁 r󠄁e󠄁a󠄁l󠄁-󠄁p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁s󠄁
+a󠄁n󠄁d󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁q󠄁u󠄁e󠄁n󠄁t󠄁 f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁t󠄁i󠄁n󠄁g󠄁.󠄁
+
+T󠄁h󠄁e󠄁 p󠄁r󠄁i󠄁v󠄁a󠄁t󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁c󠄁t󠄁 r󠄁e󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 k󠄁e󠄁e󠄁p󠄁s󠄁 f󠄁o󠄁u󠄁r󠄁-󠄁b󠄁y󠄁t󠄁e󠄁 u󠄁n󠄁i󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁w󠄁 s󠄁u󠄁b󠄁s󠄁t󠄁i󠄁t󠄁u󠄁t󠄁e󠄁s󠄁 U󠄁+󠄁F󠄁F󠄁F󠄁D󠄁 f󠄁o󠄁r󠄁
+a󠄁n󠄁 i󠄁n󠄁v󠄁a󠄁l󠄁i󠄁d󠄁 s󠄁c󠄁a󠄁l󠄁a󠄁r󠄁 u󠄁n󠄁i󠄁t󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁a󠄁n󠄁 a󠄁b󠄁o󠄁r󠄁t󠄁i󠄁n󠄁g󠄁.󠄁 N󠄁o󠄁r󠄁m󠄁a󠄁l󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 s󠄁t󠄁a󠄁r󠄁t󠄁s󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁y󠄁p󠄁e󠄁d󠄁
+U󠄁n󠄁i󠄁c󠄁o󠄁d󠄁e󠄁 s󠄁c󠄁a󠄁l󠄁a󠄁r󠄁s󠄁;󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁/󠄁s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁-󠄁r󠄁e󠄁c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁a󠄁s󠄁e󠄁s󠄁 c󠄁o󠄁n󠄁t󠄁i󠄁n󠄁u󠄁e󠄁 t󠄁o󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁 i󠄁t󠄁.󠄁
+
+A󠄁 3󠄁2󠄁8󠄁-󠄁c󠄁a󠄁s󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 m󠄁a󠄁t󠄁r󠄁i󠄁x󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 r󠄁a󠄁w󠄁/󠄁e󠄁n󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁s󠄁 i󠄁n󠄁 w󠄁e󠄁b󠄁 h󠄁o󠄁s󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 m󠄁a󠄁i󠄁l󠄁t󠄁o󠄁
+a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁e󠄁s󠄁,󠄁 b󠄁o󠄁t󠄁h󠄁 s󠄁y󠄁n󠄁t󠄁a󠄁x󠄁e󠄁s󠄁/󠄁d󠄁i󠄁a󠄁l󠄁e󠄁c󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁l󠄁l󠄁o󠄁w󠄁e󠄁d󠄁 n󠄁o󠄁n󠄁-󠄁A󠄁S󠄁C󠄁I󠄁I󠄁 e󠄁x󠄁a󠄁m󠄁p󠄁l󠄁e󠄁s󠄁.󠄁 E󠄁v󠄁e󠄁r󠄁y󠄁 c󠄁a󠄁s󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁
+o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁 a󠄁n󠄁d󠄁 a󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁 e󠄁v󠄁a󠄁l󠄁u󠄁a󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 s󠄁o󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 u󠄁n󠄁p󠄁a󠄁r󠄁s󠄁e󠄁d󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁 c󠄁a󠄁n󠄁n󠄁o󠄁t󠄁 s󠄁a󠄁t󠄁i󠄁s󠄁f󠄁y󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁.󠄁
+U󠄁n󠄁r󠄁e󠄁a󠄁c󠄁h󠄁a󠄁b󠄁l󠄁e󠄁 H󠄁T󠄁M󠄁L󠄁/󠄁c󠄁o󠄁d󠄁e󠄁 m󠄁a󠄁r󠄁k󠄁e󠄁r󠄁 p󠄁a󠄁t󠄁h󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁d󠄁u󠄁n󠄁d󠄁a󠄁n󠄁t󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁-󠄁l󠄁o󠄁o󠄁p󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁 r󠄁e󠄁s󠄁e󠄁t󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁.󠄁
+
+T󠄁h󠄁e󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 d󠄁e󠄁s󠄁i󠄁g󠄁n󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁 n󠄁o󠄁w󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁s󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁/󠄁f󠄁i󠄁l󠄁t󠄁e󠄁r󠄁e󠄁d󠄁 e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁,󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁
+b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁i󠄁e󠄁s󠄁,󠄁 d󠄁u󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁e󠄁-󠄁a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁 m󠄁e󠄁t󠄁a󠄁d󠄁a󠄁t󠄁a󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁.󠄁 T󠄁h󠄁e󠄁 a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
+r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 b󠄁o󠄁r󠄁r󠄁o󠄁w󠄁e󠄁d󠄁 D󠄁a󠄁t󠄁a󠄁 v󠄁i󠄁e󠄁w󠄁 o󠄁v󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁 R󠄁u󠄁s󠄁t󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁e󠄁 f󠄁r󠄁o󠄁m󠄁 i󠄁n󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁
+a󠄁n󠄁d󠄁 F󠄁o󠄁u󠄁n󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁/󠄁l󠄁a󠄁t󠄁e󠄁n󠄁c󠄁y󠄁 a󠄁n󠄁d󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁-󠄁s󠄁t󠄁a󠄁t󠄁e󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁-󠄁u󠄁p󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁.󠄁
