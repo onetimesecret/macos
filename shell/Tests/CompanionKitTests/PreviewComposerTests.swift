@@ -199,6 +199,22 @@ final class PreviewComposerTests: XCTestCase {
         XCTAssertEqual(ink(result), "one\ntwo\u{2028}three\nfour")
     }
 
+    func testBlockSeparatorsHaveNoLinkAndTheHTMLLinkResumesAfterward() throws {
+        for dialect in PreviewDialect.allCases {
+            for boundary in [PreviewEvent.blockBoundary, html("<p>"), html("</div>")] {
+                let result = try compose([
+                    html("<a href='/link'><em>before"), boundary, .text("after"),
+                    html("</em></a>"), .text("outside"),
+                ], dialect: dialect)
+                let linked = PreviewStyle(traits: [.emphasis], link: .unreviewed("/link"), linkOccurrence: 0)
+                XCTAssertEqual(result.runs, [
+                    .text("before", linked), .text("\n", PreviewStyle(traits: [.emphasis])),
+                    .text("after", linked), .text("outside", PreviewStyle()),
+                ])
+            }
+        }
+    }
+
     /// `p` and `div` break the line and open no scope: omitted closing tags cost no depth,
     /// a stray closing tag is a break rather than literal text, and formatting continues.
     func testBlockElementsBreakLinesWithoutOpeningScope() throws {
@@ -517,6 +533,22 @@ final class PreviewComposerTests: XCTestCase {
         XCTAssertEqual(images(result).first?.destination, .refused(.sealedObject))
     }
 
+    func testDuplicateHTMLDestinationsUseTheFirstValueDecodedOnce() throws {
+        let cases: [(String, PreviewAddress)] = [
+            ("'/first?x=&amp;amp;'", .unreviewed("/first?x=&amp;")),
+            ("''", .refused(.missing)),
+        ]
+        for dialect in PreviewDialect.allCases {
+            for (source, expected) in cases {
+                let result = try compose([
+                    html("<img src=\(source) src='/ignored' alt='image'><a href=\(source) href='/ignored'>link</a>"),
+                ], dialect: dialect)
+                XCTAssertEqual(images(result).first?.destination, expected)
+                XCTAssertEqual(link(result, text: "link"), .some(expected))
+            }
+        }
+    }
+
     func testReservedPlaceholderAddressesAreRefusedAfterHTMLDecoding() throws {
         for source in ["\u{FFFC}", "&#xFFFC;", "&#65532;"] {
             let result = try compose([html("<img src='https://example.invalid/\(source)' alt='a'>")])
@@ -539,7 +571,7 @@ final class PreviewComposerTests: XCTestCase {
             if pieces[0] == "img" {
                 XCTAssertEqual(images(result).first?.destination, .refused(.sealedObject))
             } else {
-                XCTAssertEqual(result.runs.last, .text("label", PreviewStyle(link: .refused(.sealedObject))))
+                XCTAssertEqual(result.runs.last, .text("label", PreviewStyle(link: .refused(.sealedObject), linkOccurrence: 0)))
             }
         }
     }
@@ -558,7 +590,7 @@ final class PreviewComposerTests: XCTestCase {
         ])
         XCTAssertEqual(ink(result), "[link]label")
         XCTAssertEqual(result.objectOrder, ["link"])
-        XCTAssertEqual(result.runs.last, .text("label", PreviewStyle(link: .refused(.sealedObject))))
+        XCTAssertEqual(result.runs.last, .text("label", PreviewStyle(link: .refused(.sealedObject), linkOccurrence: 0)))
     }
 
     func testDuplicateObjectIdentityRejectsWholeComposition() {
@@ -679,6 +711,21 @@ final class PreviewComposerTests: XCTestCase {
         }
     }
 
+    func testDefaultDepthLimitCountsUnclosedSpansAcrossBlocks() throws {
+        for dialect in PreviewDialect.allCases {
+            let composer = PreviewComposer(dialect: dialect)
+            XCTAssertEqual(composer.limits.maximumDepth, 64)
+            let accepted = (0..<64).flatMap { _ in [html("<span>x"), PreviewEvent.blockBoundary] }
+            XCTAssertEqual(ink(try composer.compose(accepted)), String(repeating: "x\n", count: 64))
+            for count in [65, 100] {
+                let events = (0..<count).flatMap { _ in [html("<span>x"), PreviewEvent.blockBoundary] }
+                XCTAssertThrowsError(try composer.compose(events)) {
+                    XCTAssertEqual($0 as? CompositionError, .depthLimit)
+                }
+            }
+        }
+    }
+
     func testDeterministicObjectOrderAcrossMixedContexts() throws {
         for dialect in PreviewDialect.allCases {
             for count in 1...64 {
@@ -725,19 +772,33 @@ final class PreviewComposerTests: XCTestCase {
         XCTAssertEqual(link(result, text: "after"), .some(.unreviewed("https://example.invalid/html")))
     }
 
+    func testUnclosedHTMLLinkRemainsActiveAcrossNativeBlocksUntilCompositionEnds() throws {
+        for dialect in PreviewDialect.allCases {
+            let composer = PreviewComposer(dialect: dialect)
+            var stream = composer.start()
+            _ = try stream.consume(html("<a href='/link'>"))
+            let linked = PreviewStyle(link: .unreviewed("/link"), linkOccurrence: 0)
+            XCTAssertEqual(try stream.consume(.text("first")), [.text("first", linked)])
+            try stream.beginBlock()
+            XCTAssertEqual(try stream.consume(.text("second")), [.text("second", linked)])
+            XCTAssertNoThrow(try stream.finish())
+            XCTAssertEqual(try composer.compose([.text("next")]).runs, [.text("next", PreviewStyle())])
+        }
+    }
+
     func testStyleRestoresReusedLinksAfterNestedAndRecoveredScopes() throws {
         let outer = PreviewAddress.unreviewed("/outer")
         let same = PreviewAddress.unreviewed("/same")
         let stages: [(PreviewEvent, PreviewStyle)] = [
-            (html("<a href='/outer'>"), PreviewStyle(link: outer)),
-            (html("<a href='/same'>"), PreviewStyle(link: same)),
-            (.enterLink(destination: [.text("/same")], title: []), PreviewStyle(link: same)),
-            (.enterLink(destination: [.text("/same")], title: []), PreviewStyle(link: same)),
-            (html("<em><a href='/inner'>"), PreviewStyle(traits: [.emphasis], link: same)),
-            (.leaveLink, PreviewStyle(traits: [.emphasis], link: same)),
-            (html("</em>"), PreviewStyle(link: same)),
-            (.leaveLink, PreviewStyle(link: same)),
-            (html("</a>"), PreviewStyle(link: outer)),
+            (html("<a href='/outer'>"), PreviewStyle(link: outer, linkOccurrence: 0)),
+            (html("<a href='/same'>"), PreviewStyle(link: same, linkOccurrence: 1)),
+            (.enterLink(destination: [.text("/same")], title: []), PreviewStyle(link: same, linkOccurrence: 2)),
+            (.enterLink(destination: [.text("/same")], title: []), PreviewStyle(link: same, linkOccurrence: 3)),
+            (html("<em><a href='/inner'>"), PreviewStyle(traits: [.emphasis], link: same, linkOccurrence: 3)),
+            (.leaveLink, PreviewStyle(traits: [.emphasis], link: same, linkOccurrence: 2)),
+            (html("</em>"), PreviewStyle(link: same, linkOccurrence: 2)),
+            (.leaveLink, PreviewStyle(link: same, linkOccurrence: 1)),
+            (html("</a>"), PreviewStyle(link: outer, linkOccurrence: 0)),
             (html("</a>"), PreviewStyle()),
         ]
         for dialect in PreviewDialect.allCases {
@@ -753,7 +814,7 @@ final class PreviewComposerTests: XCTestCase {
         }
     }
 
-    func testEqualDisplayStylesKeepDistinctLinkOccurrenceKeys() throws {
+    func testStyleEqualityDistinguishesLinkOccurrencesAndRestoresTheSameScope() throws {
         let result = try compose([
             html("<a href='/same'>"), .text("outer"),
             .enterLink(destination: [.text("/same")], title: []), .text("markdown"),
@@ -764,7 +825,11 @@ final class PreviewComposerTests: XCTestCase {
             return nil
         }
         let first = try XCTUnwrap(styles.first)
-        XCTAssertEqual(styles, Array(repeating: first, count: 4))
+        XCTAssertEqual(styles.map(\.traits), Array(repeating: first.traits, count: 4))
+        XCTAssertEqual(styles.map(\.link), Array(repeating: first.link, count: 4))
+        XCTAssertEqual(styles[0], styles[2])
+        XCTAssertNotEqual(styles[0], styles[1])
+        XCTAssertNotEqual(styles[0], styles[3])
         XCTAssertEqual(styles.map(\.linkOccurrence), [0, 1, 0, 2])
         XCTAssertEqual(Set(styles.compactMap(\.linkOccurrence)).count, 3)
     }

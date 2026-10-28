@@ -39,10 +39,6 @@ struct PreviewStyle: Equatable {
     var traits: Set<PreviewTrait> = []
     var link: PreviewAddress?
     var linkOccurrence: Int?
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.traits == rhs.traits && lhs.link == rhs.link
-    }
 }
 
 /// An image as composition leaves it: an address and the alt text and objects shown in its place.
@@ -377,9 +373,7 @@ struct PreviewCompositionStream {
                     fallback += value.objectIdentities.map(HTMLPart.object)
                 }
             }
-            let sources = tag.attributes.filter { $0.name == "src" }
-            let destination: PreviewAddress = sources.contains(where: { address($0.value, decode: true) == .refused(.sealedObject) })
-                ? .refused(.sealedObject) : address(sources.first?.value, decode: true)
+            let destination = address(tag.attributes, named: "src")
             try emit(.image(PreviewImage(destination: destination, fallback: fallback), style))
             return
         }
@@ -398,11 +392,8 @@ struct PreviewCompositionStream {
             case "code": trait = .code
             default: trait = nil
             }
-            let hrefs = tag.attributes.filter { $0.name == "href" }
             let destination: PreviewAddress? = tag.name == "a"
-                ? (hrefs.contains(where: { address($0.value, decode: true) == .refused(.sealedObject) })
-                    ? .refused(.sealedObject) : address(hrefs.first?.value, decode: true))
-                : nil
+                ? address(tag.attributes, named: "href") : nil
             let link = destination.map { linkScope($0) }
             html.append(Frame(name: tag.name, trait: trait, link: link))
             updateStyle()
@@ -412,6 +403,16 @@ struct PreviewCompositionStream {
 
     private mutating func diagnose(_ diagnostic: CompositionDiagnostic) {
         if collectDiagnostics { diagnostics.append(diagnostic) }
+    }
+
+    private func address(_ attributes: [HTMLAttribute], named name: String) -> PreviewAddress {
+        var first: PreviewAddress?
+        for attribute in attributes where attribute.name == name {
+            let candidate = address(attribute.value, decode: true)
+            if candidate == .refused(.sealedObject) { return candidate }
+            if first == nil { first = candidate }
+        }
+        return first ?? .refused(.missing)
     }
 
     private func address(_ parts: [HTMLPart]?, decode: Bool) -> PreviewAddress {
@@ -479,7 +480,12 @@ struct PreviewCompositionStream {
     }
 
     private mutating func boundary() throws {
-        if !atBoundary { try emit(.text("\n", style)) }
+        if !atBoundary {
+            var separatorStyle = style
+            separatorStyle.link = nil
+            separatorStyle.linkOccurrence = nil
+            try emit(.text("\n", separatorStyle))
+        }
     }
 
     private mutating func emit(_ run: PreviewRun) throws {
