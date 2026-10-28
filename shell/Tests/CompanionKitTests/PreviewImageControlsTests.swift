@@ -17,6 +17,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let stack: DayStackView
         let coordinator: InkEditorView.Coordinator
         let preview: MarkdownPreviewView
+        let loader: TestLoader
 
         func update() {
             stack.update(projection: model.timeUnits, selectedPage: model.selectedPageID, readOnly: false)
@@ -27,7 +28,9 @@ final class PreviewImageControlsTests: XCTestCase {
         let suite = "companion-image-controls-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-        let model = isolatedModel(defaults: defaults, saveDebounce: 3_600)
+        let loader = TestLoader()
+        let model = isolatedModel(defaults: defaults, saveDebounce: 3_600,
+                                  previewImageLoad: { try await loader.load($0) })
         model.showsTimeUnits = true
         model.newPage()
         let page = try XCTUnwrap(model.selectedPageID)
@@ -46,7 +49,7 @@ final class PreviewImageControlsTests: XCTestCase {
         stack.update(projection: model.timeUnits, selectedPage: page, readOnly: false)
         let preview = try XCTUnwrap(stack.previewRegions[page])
         return Fixture(model: model, page: page, window: window, scroll: scroll,
-                       stack: stack, coordinator: coordinator, preview: preview)
+                       stack: stack, coordinator: coordinator, preview: preview, loader: loader)
     }
 
     private func eventually(
@@ -67,6 +70,21 @@ final class PreviewImageControlsTests: XCTestCase {
     private func source(in fixture: Fixture) -> String {
         fixture.model.coreClient.documentRuns(sheet: fixture.page).reduce(into: "") {
             if case .ink(let ink) = $1 { $0 += ink }
+        }
+    }
+
+    private enum TestLoadError: Error { case unexpectedRequest }
+
+    @MainActor
+    private final class TestLoader {
+        private(set) var requests: [URL] = []
+        var handler: @MainActor (URL) async throws -> NSImage = { _ in
+            throw TestLoadError.unexpectedRequest
+        }
+
+        func load(_ url: URL) async throws -> NSImage {
+            requests.append(url)
+            return try await handler(url)
         }
     }
 
@@ -91,7 +109,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let fixture = try fixture()
         defer { fixture.window.close() }
         var requests: [URL] = []
-        fixture.preview.imageControls.loadImage = { url in
+        fixture.loader.handler = { url in
             requests.append(url)
             return self.image()
         }
@@ -111,6 +129,7 @@ final class PreviewImageControlsTests: XCTestCase {
         fixture.update()
         try await Task.sleep(for: .milliseconds(20))
         XCTAssertTrue(requests.isEmpty)
+        XCTAssertTrue(fixture.loader.requests.isEmpty)
         XCTAssertEqual(fixture.preview.imageControls.loadedImageCount, 0)
         XCTAssertTrue(fixture.preview.imageControls.buttons[0].title.hasPrefix("Load"))
     }
@@ -120,7 +139,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let fixture = try fixture(source)
         defer { fixture.window.close() }
         var requests: [URL] = []
-        fixture.preview.imageControls.loadImage = { url in
+        fixture.loader.handler = { url in
             requests.append(url)
             return self.image()
         }
@@ -142,7 +161,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let fixture = try fixture("![](\(Self.address)) <img src=\"\(Self.address)\" alt=\"\">")
         defer { fixture.window.close() }
         var requests = 0
-        fixture.preview.imageControls.loadImage = { _ in
+        fixture.loader.handler = { _ in
             requests += 1
             return self.image()
         }
@@ -151,13 +170,18 @@ final class PreviewImageControlsTests: XCTestCase {
         try await eventually { fixture.preview.imageControls.loadedImageCount == 1 }
         XCTAssertEqual(requests, 1)
         XCTAssertTrue(fixture.preview.imageControls.buttons[0].title.hasPrefix("Load"))
+        fixture.preview.setSelectedRange(NSRange(location: 0, length: fixture.preview.string.utf16.count))
+        let copied = fixture.preview.shownSelection().flatMap { $0 }.reduce(into: "") {
+            if case .ink(let text) = $1 { $0 += text }
+        }
+        XCTAssertTrue(copied.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     func testUnsupportedDestinationsHaveDisabledControlsAndNeverReachTheLoader() async throws {
         let fixture = try fixture("![Local](file:///tmp/image.png) ![Insecure](http://example.com/a.png)")
         defer { fixture.window.close() }
         var requests = 0
-        fixture.preview.imageControls.loadImage = { _ in
+        fixture.loader.handler = { _ in
             requests += 1
             return self.image()
         }
@@ -177,7 +201,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let fixture = try fixture()
         defer { fixture.window.close() }
         let pending = PendingLoads()
-        fixture.preview.imageControls.loadImage = { try await pending.load($0) }
+        fixture.loader.handler = { try await pending.load($0) }
         fixture.preview.imageControls.buttons[0].performClick(nil)
         try await eventually { pending.addresses.count == 1 }
         XCTAssertTrue(fixture.preview.imageControls.buttons[0].title.hasPrefix("Cancel"))
@@ -197,7 +221,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let fixture = try fixture()
         defer { fixture.window.close() }
         let pending = PendingLoads()
-        fixture.preview.imageControls.loadImage = { try await pending.load($0) }
+        fixture.loader.handler = { try await pending.load($0) }
         let button = fixture.preview.imageControls.buttons[0]
         button.performClick(nil)
         button.performClick(nil)
@@ -212,7 +236,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let fixture = try fixture()
         defer { fixture.window.close() }
         var requests = 0
-        fixture.preview.imageControls.loadImage = { _ in
+        fixture.loader.handler = { _ in
             requests += 1
             if requests == 1 { throw PreviewImageLoadError.invalidImage }
             return self.image()
@@ -235,7 +259,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let fixture = try fixture()
         defer { fixture.window.close() }
         let pending = PendingLoads()
-        fixture.preview.imageControls.loadImage = { try await pending.load($0) }
+        fixture.loader.handler = { try await pending.load($0) }
         fixture.preview.imageControls.buttons[0].performClick(nil)
         try await eventually { pending.addresses.count == 1 }
         fixture.model.markdownDialect = .commonMark
@@ -251,7 +275,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let fixture = try fixture()
         defer { fixture.window.close() }
         var requests = 0
-        fixture.preview.imageControls.loadImage = { _ in
+        fixture.loader.handler = { _ in
             requests += 1
             return self.image()
         }
@@ -278,7 +302,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let fixture = try fixture()
         defer { fixture.window.close() }
         var requests = 0
-        fixture.preview.imageControls.loadImage = { _ in
+        fixture.loader.handler = { _ in
             requests += 1
             return self.image()
         }
@@ -302,7 +326,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let fixture = try fixture()
         defer { fixture.window.close() }
         let pending = PendingLoads()
-        fixture.preview.imageControls.loadImage = { try await pending.load($0) }
+        fixture.loader.handler = { try await pending.load($0) }
         fixture.preview.imageControls.buttons[0].performClick(nil)
         try await eventually { pending.addresses.count == 1 }
         let other: PresentationOwner = fixture.model.owner == .panel ? .editorWindow : .panel
@@ -320,7 +344,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let fixture = try fixture()
         defer { fixture.window.close() }
         let pending = PendingLoads()
-        fixture.preview.imageControls.loadImage = { try await pending.load($0) }
+        fixture.loader.handler = { try await pending.load($0) }
         fixture.preview.imageControls.buttons[0].performClick(nil)
         try await eventually { pending.addresses.count == 1 }
         let tab = try XCTUnwrap(fixture.model.tabs.first { $0.pageID == fixture.page }?.id)
@@ -339,7 +363,7 @@ final class PreviewImageControlsTests: XCTestCase {
     func testLoadedImagesAndControlsDoNotEnterShownSelectionOrEnableDragging() async throws {
         let fixture = try fixture("before " + Self.markdown + " after")
         defer { fixture.window.close() }
-        fixture.preview.imageControls.loadImage = { _ in self.image() }
+        fixture.loader.handler = { _ in self.image() }
         fixture.preview.imageControls.buttons[0].performClick(nil)
         try await eventually { fixture.preview.imageControls.loadedImageCount == 1 }
         fixture.preview.setSelectedRange(NSRange(location: 0, length: fixture.preview.string.utf16.count))
@@ -362,7 +386,7 @@ final class PreviewImageControlsTests: XCTestCase {
         let fixture = try fixture((0..<5).map { "![image\($0)](\(Self.address))" }.joined(separator: "\n\n"))
         defer { fixture.window.close() }
         let pending = PendingLoads()
-        fixture.preview.imageControls.loadImage = { try await pending.load($0) }
+        fixture.loader.handler = { try await pending.load($0) }
         for index in 0..<4 { fixture.preview.imageControls.buttons[index].performClick(nil) }
         try await eventually { pending.addresses.count == 4 }
         XCTAssertFalse(fixture.preview.imageControls.buttons[4].isEnabled)
@@ -420,12 +444,12 @@ final class PreviewImageControlsTests: XCTestCase {
         }
         let image = NSImage(size: NSSize(width: 1600, height: 900))
         image.addRepresentation(bitmap)
-        fixture.preview.imageControls.loadImage = { _ in image }
+        fixture.loader.handler = { _ in image }
         let initialHeight = fixture.preview.frame.height
         fixture.preview.imageControls.buttons[0].performClick(nil)
         fixture.preview.imageControls.buttons[3].performClick(nil)
         try await eventually { fixture.preview.imageControls.loadedImageCount == 2 }
-        XCTAssertGreaterThan(fixture.preview.frame.height, initialHeight)
+        try await eventually { fixture.preview.frame.height > initialHeight }
         let manager = try XCTUnwrap(fixture.preview.layoutManager)
         let container = try XCTUnwrap(fixture.preview.textContainer)
         let storage = try XCTUnwrap(fixture.preview.textStorage)
@@ -486,7 +510,7 @@ final class PreviewImageControlsTests: XCTestCase {
         fixture.model.toggleMarkdownPreview(for: fixture.page)
         fixture.update()
         let preview = try XCTUnwrap(fixture.stack.previewRegions[fixture.page])
-        preview.imageControls.loadImage = { _ in self.image() }
+        fixture.loader.handler = { _ in self.image() }
         XCTAssertEqual(preview.imageControls.buttons.count, 1)
         preview.imageControls.buttons[0].performClick(nil)
         try await eventually { preview.imageControls.loadedImageCount == 1 }
@@ -502,4 +526,110 @@ final class PreviewImageControlsTests: XCTestCase {
         }
         XCTAssertFalse(fragment.plainText.contains("SECRET"))
     }
+
+    func testLoadingUnloadingAndResizingKeepTheTextStreamAndSelectionStable() async throws {
+        let fixture = try fixture("before " + Self.markdown + " after")
+        defer { fixture.window.close() }
+        fixture.loader.handler = { _ in NSImage(size: NSSize(width: 800, height: 500)) }
+        let storage = try XCTUnwrap(fixture.preview.textStorage)
+        let original = storage.string
+        let selection = (original as NSString).range(of: "after")
+        let sentinel = NSAttributedString.Key("PreviewImageTestSentinel")
+        storage.addAttribute(sentinel, value: "preserved", range: selection)
+        fixture.preview.setSelectedRange(selection)
+        let button = fixture.preview.imageControls.buttons[0]
+        button.performClick(nil)
+        XCTAssertEqual(storage.string, original)
+        XCTAssertEqual(fixture.preview.selectedRange(), selection)
+        try await eventually { fixture.preview.imageControls.loadedImageCount == 1 }
+        XCTAssertEqual(storage.string, original)
+        XCTAssertEqual(fixture.preview.selectedRange(), selection)
+        XCTAssertEqual(storage.attribute(sentinel, at: selection.location, effectiveRange: nil) as? String, "preserved")
+        fixture.preview.setFrameSize(NSSize(width: 300, height: fixture.preview.frame.height))
+        fixture.preview.layoutSubtreeIfNeeded()
+        XCTAssertEqual(storage.string, original)
+        XCTAssertEqual(fixture.preview.selectedRange(), selection)
+        XCTAssertEqual(storage.attribute(sentinel, at: selection.location, effectiveRange: nil) as? String, "preserved")
+        button.performClick(nil)
+        XCTAssertEqual(fixture.preview.imageControls.loadedImageCount, 0)
+        XCTAssertEqual(storage.string, original)
+        XCTAssertEqual(fixture.preview.selectedRange(), selection)
+        XCTAssertEqual(storage.attribute(sentinel, at: selection.location, effectiveRange: nil) as? String, "preserved")
+        XCTAssertTrue(button === fixture.preview.imageControls.buttons[0])
+    }
+
+    func testLoadingAndUnloadingRestoreTheSamePreviewReadingLine() async throws {
+        let lines = (0..<60).map { "line \($0) has enough text to recognize the reading position" }.joined(separator: "\n\n")
+        let fixture = try fixture(Self.markdown + "\n\n" + lines)
+        defer { fixture.window.close() }
+        fixture.loader.handler = { _ in NSImage(size: NSSize(width: 500, height: 300)) }
+        let preview = fixture.preview
+        let manager = try XCTUnwrap(preview.layoutManager)
+        let container = try XCTUnwrap(preview.textContainer)
+        let index = (preview.string as NSString).range(of: "line 20 ").location
+        XCTAssertNotEqual(index, NSNotFound)
+        func lineYInClip() -> CGFloat {
+            manager.ensureLayout(for: container)
+            let glyphs = manager.glyphRange(forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
+            let bounds = manager.boundingRect(forGlyphRange: glyphs, in: container)
+            return preview.frame.minY + preview.textContainerOrigin.y + bounds.minY
+                - fixture.scroll.contentView.bounds.minY
+        }
+        let documentY = lineYInClip() + fixture.scroll.contentView.bounds.minY
+        fixture.stack.scroll(toDocumentOffset: documentY + 2, animated: false)
+        let place = try XCTUnwrap(fixture.stack.currentPlace)
+        XCTAssertEqual(place.page, fixture.page)
+        XCTAssertEqual(place.reading, .preview)
+        let before = lineYInClip()
+        let height = preview.frame.height
+        let text = preview.string
+        preview.imageControls.buttons[0].performClick(nil)
+        try await eventually { preview.imageControls.loadedImageCount == 1 && preview.frame.height > height }
+        XCTAssertEqual(preview.string, text)
+        XCTAssertEqual(fixture.stack.currentPlace?.anchor.characterIndex, place.anchor.characterIndex)
+        XCTAssertEqual(lineYInClip(), before, accuracy: 1)
+        preview.imageControls.buttons[0].performClick(nil)
+        try await eventually { abs(preview.frame.height - height) < 1 }
+        XCTAssertEqual(preview.string, text)
+        XCTAssertEqual(fixture.stack.currentPlace?.anchor.characterIndex, place.anchor.characterIndex)
+        XCTAssertEqual(lineYInClip(), before, accuracy: 1)
+    }
+
+    func testPreserveConsentRechecksDestinationsEvenWhenTheAltTextIsUnchanged() async throws {
+        let fixture = try fixture()
+        defer { fixture.window.close() }
+        fixture.loader.handler = { _ in self.image() }
+        let preview = fixture.preview
+        preview.imageControls.buttons[0].performClick(nil)
+        try await eventually { preview.imageControls.loadedImageCount == 1 }
+        let current = MarkdownPreviewView.render(NSAttributedString(string: Self.markdown))
+        let changed = MarkdownPreviewView.render(NSAttributedString(
+            string: "![A small image](https://other.example.org/new.png)"))
+        XCTAssertEqual(current.string, changed.string)
+        preview.imageControls.seed(changed, preserveConsent: true)
+        XCTAssertEqual(preview.imageControls.loadedImageCount, 0)
+        XCTAssertTrue(preview.imageControls.buttons[0].title.hasPrefix("Load"))
+        XCTAssertTrue(preview.imageControls.buttons[0].title.contains("other.example.org"))
+        XCTAssertEqual(fixture.loader.requests.count, 1)
+        preview.imageControls.buttons[0].performClick(nil)
+        try await eventually { preview.imageControls.loadedImageCount == 1 }
+        XCTAssertEqual(fixture.loader.requests.map(\.absoluteString), [Self.address, "https://other.example.org/new.png"])
+    }
+
+    func testPreserveConsentRechecksImageRangesInAnUnchangedTextStream() async throws {
+        let fixture = try fixture("a![same](\(Self.address))same")
+        defer { fixture.window.close() }
+        fixture.loader.handler = { _ in self.image() }
+        let preview = fixture.preview
+        preview.imageControls.buttons[0].performClick(nil)
+        try await eventually { preview.imageControls.loadedImageCount == 1 }
+        let first = MarkdownPreviewView.render(NSAttributedString(string: "a![same](\(Self.address))same"))
+        let moved = MarkdownPreviewView.render(NSAttributedString(string: "asame![same](\(Self.address))"))
+        XCTAssertEqual(first.string, moved.string)
+        preview.imageControls.seed(moved, preserveConsent: true)
+        XCTAssertEqual(preview.imageControls.loadedImageCount, 0)
+        XCTAssertTrue(preview.imageControls.buttons[0].title.hasPrefix("Load"))
+        XCTAssertEqual(fixture.loader.requests.count, 1)
+    }
+
 }

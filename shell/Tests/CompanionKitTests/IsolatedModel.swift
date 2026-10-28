@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import XCTest
 
@@ -28,7 +29,8 @@ extension XCTestCase {
         formFactor: FormFactor = .backdrop,
         defaults: UserDefaults,
         tag: String = UUID().uuidString,
-        saveDebounce: TimeInterval? = nil
+        saveDebounce: TimeInterval? = nil,
+        previewImageLoad: (@MainActor (URL) async throws -> NSImage)? = nil
     ) -> PageModel {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("companion-isolated-\(UUID().uuidString)", isDirectory: true)
@@ -39,7 +41,8 @@ extension XCTestCase {
             seams: .init(
                 stateDirectory: directory,
                 client: .ephemeral(tag: tag),
-                saveDebounce: saveDebounce
+                saveDebounce: saveDebounce,
+                previewImageLoad: previewImageLoad
             )
         )
     }

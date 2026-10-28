@@ -120,7 +120,7 @@ final class MarkdownPreviewCompositionTests: XCTestCase {
     func testEmptyImageBlockKeepsItsOwnControlDescriptorAndTheNextOccurrenceNumber() {
         for dialect in PreviewDialect.allCases {
             let rendered = render("<div> <img> </div>\n\n<img alt='visible'>", dialect: dialect)
-            XCTAssertEqual(rendered.string, "[Image]\nvisible\n")
+            XCTAssertEqual(rendered.string, "\u{200B}\nvisible\n")
             XCTAssertEqual(images(in: rendered).map { $0.0.occurrence }, [0, 1])
         }
     }
@@ -245,7 +245,7 @@ final class MarkdownPreviewCompositionTests: XCTestCase {
         srcset="https://example.invalid/b.png 2x" onerror="run()"> \
         [![Badge](https://example.invalid/badge.svg)](https://example.com/project) ![](https://example.invalid/empty.png)
         """)
-        XCTAssertEqual(rendered.string, "Remote alt Logo & mark Badge [Image]\n")
+        XCTAssertEqual(rendered.string, "Remote alt Logo & mark Badge \u{200B}\n")
         let found = images(in: rendered)
         XCTAssertEqual(found.map(\.0), [
             PreviewImageDescriptor(occurrence: 0, destination: .unreviewed("https://example.invalid/pixel.png")),
@@ -253,7 +253,7 @@ final class MarkdownPreviewCompositionTests: XCTestCase {
             PreviewImageDescriptor(occurrence: 2, destination: .unreviewed("https://example.invalid/badge.svg")),
             PreviewImageDescriptor(occurrence: 3, destination: .unreviewed("https://example.invalid/empty.png")),
         ])
-        XCTAssertEqual(found.map(\.1), ["Remote alt", "Logo & mark", "Badge", "[Image]"])
+        XCTAssertEqual(found.map(\.1), ["Remote alt", "Logo & mark", "Badge", "\u{200B}"])
         for alt in ["Remote", "Logo", "Badge"] {
             XCTAssertNil(try link(alt, in: rendered), alt)
             XCTAssertEqual(try attribute(.foregroundColor, of: alt, in: rendered) as? NSColor,

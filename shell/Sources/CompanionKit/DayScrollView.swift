@@ -934,7 +934,7 @@ final class DayStackView: NSView {
     private func previewRegion(for page: UInt64, selected: Bool) -> MarkdownPreviewView {
         let region = previewRegions[page] ?? MarkdownPreviewView(page: page, coordinator: coordinator)
         region.onImageLayoutChanged = { [weak self] in
-            self?.relayout()
+            Task { @MainActor [weak self] in self?.relayout() }
         }
         region.onPromote = { [weak self] in
             guard let self, self.model.owner == self.coordinator.surface,

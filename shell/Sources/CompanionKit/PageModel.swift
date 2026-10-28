@@ -1391,6 +1391,7 @@ public final class PageModel: ObservableObject {
 
     /// Where a link the person opens goes: the shared workspace, or a test's recorder.
     private let openURL: @MainActor (URL) -> Void
+    let previewImageLoad: @MainActor (URL) async throws -> NSImage
 
     /// Where Quit Anyway asks for termination: `NSApp`, or a test's recorder.
     private let requestTermination: @MainActor () -> Void
@@ -1454,6 +1455,7 @@ public final class PageModel: ObservableObject {
         /// Where a link the person opens goes: a recorder of the test's own, so
         /// a suite never starts a browser; nil is the shared workspace's.
         let openURL: (@MainActor (URL) -> Void)?
+        let previewImageLoad: (@MainActor (URL) async throws -> NSImage)?
         /// Where Quit Anyway asks for termination: a recorder of the test's own, so
         /// a suite never terminates its runner; nil is `NSApp`'s.
         let requestTermination: (@MainActor () -> Void)?
@@ -1474,6 +1476,7 @@ public final class PageModel: ObservableObject {
             writeCutFragment: (@MainActor (SealedFragment, NSPasteboard) -> Bool)? = nil,
             wakeNotifications: NotificationCenter? = nil,
             openURL: (@MainActor (URL) -> Void)? = nil,
+            previewImageLoad: (@MainActor (URL) async throws -> NSImage)? = nil,
             requestTermination: (@MainActor () -> Void)? = nil
         ) {
             self.stateDirectory = stateDirectory
@@ -1489,6 +1492,7 @@ public final class PageModel: ObservableObject {
             self.writeCutFragment = writeCutFragment
             self.wakeNotifications = wakeNotifications
             self.openURL = openURL
+            self.previewImageLoad = previewImageLoad
             self.requestTermination = requestTermination
         }
     }
@@ -1573,6 +1577,7 @@ public final class PageModel: ObservableObject {
         ambientPasteboard = seams.ambientPasteboard ?? .general
         writeCutFragment = seams.writeCutFragment ?? { $0.write(to: $1) }
         openURL = seams.openURL ?? { NSWorkspace.shared.open($0) }
+        previewImageLoad = seams.previewImageLoad ?? { try await PreviewImageLoader().load($0) }
         requestTermination = seams.requestTermination ?? { NSApp?.terminate(nil) }
         wakeCenter = seams.wakeNotifications ?? NSWorkspace.shared.notificationCenter
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")

@@ -15,7 +15,12 @@ final class MarkdownPreviewView: AskingTextView {
     private let links = PreviewLinks()
     private var imageControlsReady = false
     private var imageOwnership: AnyCancellable?
-    private(set) lazy var imageControls = PreviewImageControls(preview: self)
+    private(set) lazy var imageControls: PreviewImageControls = {
+        if let coordinator {
+            return PreviewImageControls(preview: self, load: coordinator.model.previewImageLoad)
+        }
+        return PreviewImageControls(preview: self)
+    }()
     var onImageLayoutChanged: (() -> Void)?
 
     var mayLoadImages: Bool {
@@ -132,14 +137,19 @@ final class MarkdownPreviewView: AskingTextView {
     func shownSelection() -> [[CompanionClient.ShownRun]] {
         selectedRanges.map(\.rangeValue).filter { $0.length > 0 }.map { range in
             var runs: [CompanionClient.ShownRun] = []
+            var ink: [String] = []
             let text = previewStorage.string as NSString
-            previewStorage.enumerateAttribute(.attachment, in: range) { value, run, _ in
-                guard let chip = value as? ChipAttachment else {
-                    if value == nil, run.length > 0 { runs.append(.ink(text.substring(with: run))) }
+            previewStorage.enumerateAttributes(in: range) { attributes, run, _ in
+                guard let chip = attributes[.attachment] as? ChipAttachment else {
+                    if attributes[.attachment] == nil, attributes[.previewImagePlaceholder] == nil, run.length > 0 {
+                        ink.append(text.substring(with: run))
+                    }
                     return
                 }
+                if !ink.isEmpty { runs.append(.ink(ink.joined())); ink.removeAll(keepingCapacity: true) }
                 for _ in 0..<run.length { runs.append(.chip(chip.info.chipId)) }
             }
+            if !ink.isEmpty { runs.append(.ink(ink.joined())) }
             return runs
         }
     }
@@ -296,6 +306,7 @@ final class MarkdownPreviewView: AskingTextView {
 extension NSAttributedString.Key {
     /// An image's alt text and objects in a rendered preview, valued by its `PreviewImageDescriptor`.
     static let previewImage = NSAttributedString.Key("CompanionKitPreviewImage")
+    static let previewImagePlaceholder = NSAttributedString.Key("CompanionKitPreviewImagePlaceholder")
 }
 
 /// An image's ordinal and composed address in one rendering.
@@ -802,7 +813,8 @@ private final class MarkdownPreviewRenderer {
             }
         }
         if result.length == 0 {
-            result.append(NSAttributedString(string: CompanionL10n.string("[Image]"), attributes: alt))
+            alt[.previewImagePlaceholder] = true
+            result.append(NSAttributedString(string: "\u{200B}", attributes: alt))
         }
         result.addAttribute(.previewImage, value: descriptor, range: NSRange(location: 0, length: result.length))
         return result

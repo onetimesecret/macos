@@ -1,6 +1,34 @@
 /* The creation and modification dates in an edited block's metadata. */
 "created %@ · edited %@" = "created %@ · edited %@";
 
+/* Markdown preview image buttons. The argument is the destination hostname. */
+"preview.image.load_from" = "Load image from %@";
+"preview.image.cancel_from" = "Cancel image from %@";
+"preview.image.unload_from" = "Unload image from %@";
+"preview.image.retry_from" = "Retry image from %@";
+
+/* Image control accessibility: action and destination, then image alt text. */
+"preview.image.accessibility" = "%1$@: %2$@";
+"Image" = "Image";
+"Image unavailable" = "Image unavailable";
+"[sealed content]" = "[sealed content]";
+
+/* Request policy and capacity help for the image controls. */
+"One HTTPS image request. No redirects, cookies, or saved credentials." = "One HTTPS image request. No redirects, cookies, or saved credentials.";
+"Unload or cancel another image first (four images at a time)." = "Unload or cancel another image first (four images at a time).";
+"Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local names and IP addresses are unavailable." = "Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local names and IP addresses are unavailable.";
+
+/* Markdown preview image request and decode errors. */
+"This image address is unavailable." = "This image address is unavailable.";
+"The server did not return an image." = "The server did not return an image.";
+"The image exceeds the 5 MiB download limit." = "The image exceeds the 5 MiB download limit.";
+"Only PNG, JPEG, and GIF images can be loaded." = "Only PNG, JPEG, and GIF images can be loaded.";
+"The image could not be decoded." = "The image could not be decoded.";
+"The image exceeds the dimension limit." = "The image exceeds the dimension limit.";
+"The image request redirected. Redirects are unavailable." = "The image request redirected. Redirects are unavailable.";
+"The image requires authentication." = "The image requires authentication.";
+"Image loading was cancelled." = "Image loading was cancelled.";
+
 /* The creation and modification dates in an edited block's accessibility label. */
 "Created %@; edited %@" = "Created %@; edited %@";
 
