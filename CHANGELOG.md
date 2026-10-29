@@ -1119,6 +1119,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- F󠄁i󠄁x󠄁 s󠄁e󠄁a󠄁l󠄁e󠄁d󠄁-󠄁o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 a󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 d󠄁e󠄁f󠄁i󠄁n󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁j󠄁e󠄁c󠄁t󠄁e󠄁d󠄁
+  t󠄁i󠄁t󠄁l󠄁e󠄁s󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁p󠄁e󠄁a󠄁t󠄁e󠄁d󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 u󠄁s󠄁e󠄁s󠄁.󠄁 (󠄁#󠄁3󠄁3󠄁2󠄁)󠄁
+
 - Settings no longer opens automatically at application startup.
 
 - **A paste's origin URL is wiped when it goes** (`companion-core`
