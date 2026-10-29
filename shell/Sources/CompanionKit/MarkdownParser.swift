@@ -11,9 +11,15 @@ enum MarkdownBridgeError: Error, Equatable {
 }
 
 enum MarkdownParser {
+    struct Timings {
+        let bridge: TimeInterval
+        let decode: TimeInterval
+    }
+
     static func parse(
         _ text: String, objects: [Int] = [], dialect: PreviewDialect,
-        limits: CompositionLimits = CompositionLimits()
+        limits: CompositionLimits = CompositionLimits(),
+        onTiming: ((Timings) -> Void)? = nil
     ) throws -> MarkdownDocument {
         guard limits.maximumInputScalars >= 0, limits.maximumDepth >= 0,
               limits.maximumTableCells >= 0 else { throw MarkdownBridgeError.invalidLimits }
@@ -23,6 +29,7 @@ enum MarkdownParser {
         case .gfm: 1
         }
         let byteCount = text.utf8.count
+        let started = ProcessInfo.processInfo.systemUptime
         let pointer = text.withCString { bytes in
             objects.withUnsafeBufferPointer { offsets in
                 companion_markdown_parse_json(
@@ -31,6 +38,10 @@ enum MarkdownParser {
                     limits.maximumDepth, UInt64(limits.maximumTableCells)
                 )
             }
+        }
+        let bridged = ProcessInfo.processInfo.systemUptime
+        defer {
+            onTiming?(Timings(bridge: bridged - started, decode: ProcessInfo.processInfo.systemUptime - bridged))
         }
         return try decode(pointer, objects: objects)
     }
@@ -90,5 +101,16 @@ enum MarkdownParser {
                 self = .document(try MarkdownDocument(from: decoder))
             }
         }
+    }
+}
+
+actor MarkdownPreviewParsing {
+    static let shared = MarkdownPreviewParsing()
+
+    func parse(_ text: String, objects: [Int], dialect: PreviewDialect, limits: CompositionLimits) throws -> MarkdownDocument {
+        try Task.checkCancellation()
+        let document = try MarkdownParser.parse(text, objects: objects, dialect: dialect, limits: limits)
+        try Task.checkCancellation()
+        return document
     }
 }

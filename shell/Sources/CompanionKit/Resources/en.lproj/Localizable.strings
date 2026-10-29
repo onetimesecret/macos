@@ -135,3 +135,4 @@
 
 /* The page editor, as VoiceOver names it. */
 "editor.content" = "Editor content";
+"Rendering preview…" = "Rendering preview…";

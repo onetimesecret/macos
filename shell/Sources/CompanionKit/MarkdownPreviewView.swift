@@ -13,6 +13,10 @@ final class MarkdownPreviewView: AskingTextView {
     private let previewStorage: NSTextStorage
     private var seeded: PageModel.QuietRendering?
     private var seededDialect: PreviewDialect?
+    private var renderingTask: Task<Void, Never>?
+    private(set) var isRendering = false
+    private var pendingPreviousText: String?
+    var onRenderingChanged: ((String?) -> Void)?
     private let links = PreviewLinks()
     private var imageControlsReady = false
     private var imageOwnership: AnyCancellable?
@@ -37,7 +41,7 @@ final class MarkdownPreviewView: AskingTextView {
     /// Only the selected page's preview is selectable and may take the keys (ADR-0030).
     var isSelectedPage = false {
         didSet {
-            isSelectable = isSelectedPage
+            isSelectable = isSelectedPage && !isRendering
             if imageControlsReady, oldValue != isSelectedPage { imageControls.discard() }
         }
     }
@@ -120,7 +124,7 @@ final class MarkdownPreviewView: AskingTextView {
 
     /// The page is asked, as the editor asks it; with no page to ask, nothing leaves.
     override var mayReadOut: Bool {
-        coordinator?.model.givesOut(sheet: page) ?? false
+        !isRendering && (coordinator?.model.givesOut(sheet: page) ?? false)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -139,7 +143,8 @@ final class MarkdownPreviewView: AskingTextView {
     /// The selection as the core composes it: the rendered text between the objects as
     /// the ink runs and each object by chip id, in rendered order (Law 0001, copy row).
     func shownSelection() -> [[CompanionClient.ShownRun]] {
-        selectedRanges.map(\.rangeValue).filter { $0.length > 0 }.map { range in
+        guard !isRendering else { return [] }
+        return selectedRanges.map(\.rangeValue).filter { $0.length > 0 }.map { range in
             var runs: [CompanionClient.ShownRun] = []
             var ink: [String] = []
             let text = previewStorage.string as NSString
@@ -160,7 +165,7 @@ final class MarkdownPreviewView: AskingTextView {
 
     /// Copy composes through the core, which refuses past the deadline (Law 0001, copy row).
     override func copy(_ sender: Any?) {
-        guard let coordinator else { return }
+        guard !isRendering, let coordinator else { return }
         coordinator.model.copyShownSelection(shownSelection(), sheet: page)
     }
 
@@ -201,7 +206,7 @@ final class MarkdownPreviewView: AskingTextView {
 
     /// The composition for a service, its refusal told as a copy's is.
     private func composedForRequester() -> SealedFragment? {
-        guard let coordinator else { return nil }
+        guard !isRendering, let coordinator else { return nil }
         let composition = coordinator.model.composeShownSelection(shownSelection(), sheet: page)
         if let line = PageModel.refusalLine(for: composition, .copy) { coordinator.model.flash(line) }
         guard case .composed(let fragment) = composition else { return nil }
@@ -249,14 +254,43 @@ final class MarkdownPreviewView: AskingTextView {
         if rendering === seeded, dialect == seededDialect { return nil }
         let sameSource = dialect == seededDialect && seeded?.text.isEqual(to: rendering.text) == true
         let reusesImageTemplate = sameSource && !imageControls.buttons.isEmpty
-        let previous = seeded == nil || reusesImageTemplate ? nil : previewStorage.string
+        let previous = isRendering ? pendingPreviousText : (seeded == nil || reusesImageTemplate ? nil : previewStorage.string)
         seeded = rendering
         seededDialect = dialect
         if reusesImageTemplate { return nil }
+        renderingTask?.cancel()
+        renderingTask = nil
+        isRendering = false
+        pendingPreviousText = nil
+        if rendering.text.length >= 16_384 {
+            let renderer = MarkdownPreviewRenderer(
+                source: rendering.text, dialect: dialect, limits: CompositionLimits(),
+                nativeLimits: NativePreviewLimits(), onDiagnostic: nil)
+            isRendering = true
+            isSelectable = false
+            pendingPreviousText = previous
+            imageControls.seed(NSAttributedString(string: CompanionL10n.string("Rendering preview…")), preserveConsent: false)
+            renderingTask = Task { @MainActor [weak self] in
+                guard let result = await renderer.renderCooperatively(), !Task.isCancelled,
+                      let self, self.seeded === rendering, self.seededDialect == dialect else { return }
+                self.isRendering = false
+                self.isSelectable = self.isSelectedPage
+                self.pendingPreviousText = nil
+                self.imageControls.seed(result, preserveConsent: false)
+                self.renderingTask = nil
+                self.needsDisplay = true
+                self.onRenderingChanged?(previous)
+            }
+            needsDisplay = true
+            return nil
+        }
+        isSelectable = isSelectedPage
         imageControls.seed(Self.render(rendering.text, dialect: dialect), preserveConsent: sameSource)
         needsDisplay = true
         return previous
     }
+
+    deinit { renderingTask?.cancel() }
 
     override func layout() {
         super.layout()
@@ -267,6 +301,11 @@ final class MarkdownPreviewView: AskingTextView {
         let widthChanged = frame.width != newSize.width
         super.setFrameSize(newSize)
         if imageControlsReady, widthChanged { imageControls.resize() }
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        if imageControlsReady { imageControls.resize() }
     }
 
     override func viewDidMoveToWindow() {
@@ -473,6 +512,26 @@ private final class MarkdownPreviewRenderer {
             try composer.finish()
             guard shown.count == attachments.count else { throw RenderFailure.objectMissing }
             return NSAttributedString(attributedString: output)
+        } catch {
+            Self.log(error)
+            return plainText()
+        }
+    }
+
+    func renderCooperatively() async -> NSAttributedString? {
+        do {
+            let document = try await MarkdownPreviewParsing.shared.parse(text, objects: offsets, dialect: dialect, limits: limits)
+            for (index, block) in document.blocks.enumerated() {
+                try Task.checkCancellation()
+                try renderBlock(block, context: Context())
+                if index % 16 == 15 { await Task.yield() }
+            }
+            try Task.checkCancellation()
+            try composer.finish()
+            guard shown.count == attachments.count else { throw RenderFailure.objectMissing }
+            return NSAttributedString(attributedString: output)
+        } catch is CancellationError {
+            return nil
         } catch {
             Self.log(error)
             return plainText()
