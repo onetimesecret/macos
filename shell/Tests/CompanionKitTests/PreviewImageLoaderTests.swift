@@ -138,6 +138,7 @@ final class PreviewImageLoaderTests: XCTestCase {
         }
         let loader = loader()
         let addresses = [
+            "HTTPS://IMAGES.Example.COM/a",
             "https://IMAGES.Example.COM/a",
             "https://%69mages.example.com/a",
             "https://images.%65xample.com:443/a#fragment",

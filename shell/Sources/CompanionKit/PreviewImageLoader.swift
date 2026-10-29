@@ -10,6 +10,10 @@ enum PreviewImageRequestPolicy {
     static let maximumAddressBytes = 8_192
     static let timeout: TimeInterval = 15
 
+    static var requestSummary: String {
+        CompanionL10n.string("One HTTPS image request using system DNS and proxies. The hostname may reach a local network. No redirects, cookies, or saved credentials.")
+    }
+
     static func url(for destination: PreviewAddress) -> URL? {
         guard case .unreviewed(let address) = destination,
               address.utf8.count <= maximumAddressBytes,
@@ -23,6 +27,7 @@ enum PreviewImageRequestPolicy {
               let host = parts.host?.lowercased(), validHost(host)
         else { return nil }
         parts.percentEncodedHost = host
+        parts.scheme = "https"
         parts.fragment = nil
         parts.port = nil
         return parts.url
@@ -30,7 +35,7 @@ enum PreviewImageRequestPolicy {
 
     static func refusal(for destination: PreviewAddress) -> String? {
         url(for: destination) == nil
-            ? CompanionL10n.string("Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local names and IP addresses are unavailable.")
+            ? CompanionL10n.string("Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local-name URLs and IP-literal URLs are unavailable.")
             : nil
     }
 
