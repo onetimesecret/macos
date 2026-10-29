@@ -55,6 +55,8 @@ jobs:
         run: cargo test -p companion-ffi --features test-util
       - name: cargo-deny
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2; cargo-deny 0.20.2
+        with:
+          arguments: --all-features --locked
       - name: Prepare vendored comrak registry-origin advisory check
         run: ./scripts/verify-vendored-comrak.py --advisory-workspace target/comrak-advisories-${{ github.run_id }}-${{ github.run_attempt }}
       - name: cargo-deny (vendored comrak upstream version)
