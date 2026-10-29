@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -41,6 +42,8 @@ enum PreviewImageRequestPolicy {
 
     private static func validHost(_ host: String) -> Bool {
         guard !host.hasSuffix("."), host.utf8.count <= 253 else { return false }
+        var numericAddress = in_addr()
+        guard host.withCString({ inet_aton($0, &numericAddress) }) == 0 else { return false }
         let labels = host.split(separator: ".", omittingEmptySubsequences: false)
         guard labels.count >= 2,
               !["localhost", "local", "internal", "home", "lan", "test", "invalid", "arpa",

@@ -6,7 +6,7 @@ import XCTest
 
 @MainActor
 final class PreviewImageLoaderTests: XCTestCase {
-    private final class StubProtocol: URLProtocol, @unchecked Sendable {
+    private final class StubProtocol: URLProtocol {
         static nonisolated(unsafe) var reply: ((URLRequest, any URLProtocolClient, URLProtocol) -> Void)?
         override class func canInit(with request: URLRequest) -> Bool { true }
         override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -122,6 +122,25 @@ final class PreviewImageLoaderTests: XCTestCase {
         XCTAssertFalse(request.httpShouldHandleCookies)
         XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
         XCTAssertEqual(request.timeoutInterval, 15)
+    }
+
+    func testNumericIPv4SpellingsAreRefusedBeforeTransportStarts() async {
+        let requests = Box(0)
+        StubProtocol.reply = { _, client, stub in
+            requests.update { $0 += 1 }
+            client.urlProtocol(stub, didFailWithError: URLError(.badURL))
+        }
+        for address in [
+            "https://0x7f.0x0.0x0.0x1/a", "https://0x7f.0x1/a",
+            "https://127.0.0.0x1/a", "https://0x7f.00.00.0x1/a",
+            "https://000.0x1/a", "https://0x7f000001/a", "https://127.1/a",
+            "https://%30x7f.%30x1/a",
+        ] {
+            XCTAssertNil(PreviewImageRequestPolicy.url(for: .unreviewed(address)), address)
+            XCTAssertNotNil(PreviewImageRequestPolicy.refusal(for: .unreviewed(address)), address)
+            await failure(.invalidURL, url: address)
+        }
+        XCTAssertEqual(requests.get(), 0)
     }
 
     func testValidatedHostnameIsCanonicalInPolicyAndTransportURLs() async throws {
