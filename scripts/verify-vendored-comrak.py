@@ -25,7 +25,7 @@ VERSION = "0.57.0"
 ARCHIVE_SHA256 = "b5ef59c72b988dfc7c73ec58ec0dc50f95dd87d7f1f39f428902bc379cea8507"
 ARCHIVE_URL = "https://static.crates.io/crates/comrak/comrak-0.57.0.crate"
 INVENTORY = "crates/markdown/patches/comrak-0.57.0-vendor.json"
-INVENTORY_SHA256 = "366064603223bb611916decfcfb4a84d0b7ad1588602a04bbe86482958591442"
+INVENTORY_SHA256 = "140779a3fcfbcf33107445313d614686978356552e7bbb7f157b206e6e495eca"
 REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
 
 
@@ -88,6 +88,7 @@ def upstream_archive(archive: Path | None) -> bytes:
         else:
             with urllib.request.urlopen(ARCHIVE_URL, timeout=30) as response:
                 data = response.read(1_000_001)
+            require(len(data) <= 1_000_000, "upstream archive exceeds the download limit")
     require(digest(data) == ARCHIVE_SHA256, "upstream archive checksum mismatch")
     return data
 
@@ -96,6 +97,10 @@ def verify_upstream(root: Path, inventory: dict, archive: Path | None) -> None:
     data = upstream_archive(archive)
     prefix = f"comrak-{VERSION}/"
     expected = inventory["files"]
+    excluded = set(inventory["excluded_files"])
+    require(len(excluded) == len(inventory["excluded_files"]), "duplicate excluded archive files")
+    require(not excluded.intersection(expected), "excluded archive file is also vendored")
+    observed_exclusions = set()
     with tempfile.TemporaryDirectory(prefix="verify-comrak-") as temporary:
         rebuilt = Path(temporary)
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as package:
@@ -104,12 +109,15 @@ def verify_upstream(root: Path, inventory: dict, archive: Path | None) -> None:
                     continue
                 relative = member.name[len(prefix):]
                 if relative not in expected:
+                    require(relative in excluded, f"unlisted archive file exclusion: {relative}")
+                    observed_exclusions.add(relative)
                     continue
                 source = package.extractfile(member)
                 require(source is not None, f"cannot read archive member: {relative}")
                 target = rebuilt / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(source.read())
+        require(observed_exclusions == excluded, "excluded archive file list differs")
         (rebuilt / "tests").mkdir(exist_ok=True)
         for name in inventory["patches"]:
             completed = subprocess.run(

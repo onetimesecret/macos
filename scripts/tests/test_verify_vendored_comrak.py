@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import os
 from pathlib import Path
 import shutil
 import tempfile
+import tarfile
 import tomllib
 import unittest
+from unittest import mock
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
@@ -74,6 +78,41 @@ class VendoredComrakVerificationTests(unittest.TestCase):
         archive.write_bytes(b"not the pinned crate archive")
         with self.assertRaisesRegex(VERIFY.VerificationError, "archive checksum mismatch"):
             VERIFY.verify_upstream(self.root, VERIFY.verify_tree(self.root), archive)
+
+    def archive_partition(self, exclusions):
+        output = io.BytesIO()
+        with tarfile.open(fileobj=output, mode="w:gz") as archive:
+            for name, content in [("README.md", b"retained"), ("bench.rs", b"omitted")]:
+                member = tarfile.TarInfo(f"comrak-{VERIFY.VERSION}/{name}")
+                member.size = len(content)
+                archive.addfile(member, io.BytesIO(content))
+        inventory = {"files": {"README.md": VERIFY.digest(b"retained")},
+                     "excluded_files": exclusions, "patches": {}}
+        with mock.patch.object(VERIFY, "upstream_archive", return_value=output.getvalue()):
+            VERIFY.verify_upstream(self.root, inventory, None)
+
+    def test_archive_partition_accounts_for_every_omitted_file(self):
+        self.archive_partition(["bench.rs"])
+
+    def test_unlisted_archive_exclusion_is_rejected(self):
+        with self.assertRaisesRegex(VERIFY.VerificationError, "unlisted archive file exclusion"):
+            self.archive_partition([])
+
+    def test_nonexistent_archive_exclusion_is_rejected(self):
+        with self.assertRaisesRegex(VERIFY.VerificationError, "excluded archive file list differs"):
+            self.archive_partition(["bench.rs", "missing.rs"])
+
+    def test_duplicate_and_retained_archive_exclusions_are_rejected(self):
+        for exclusions, message in [(["bench.rs", "bench.rs"], "duplicate"),
+                                    (["README.md", "bench.rs"], "also vendored")]:
+            with self.subTest(exclusions=exclusions), self.assertRaisesRegex(VERIFY.VerificationError, message):
+                self.archive_partition(exclusions)
+
+    def test_oversize_download_reports_the_download_limit(self):
+        with mock.patch.dict(os.environ, {"CARGO_HOME": str(self.root)}), \
+             mock.patch.object(VERIFY.urllib.request, "urlopen", return_value=io.BytesIO(b"x" * 1_000_001)):
+            with self.assertRaisesRegex(VERIFY.VerificationError, "archive exceeds the download limit"):
+                VERIFY.upstream_archive(None)
 
     def test_advisory_lock_restores_registry_origin_and_existing_versions(self):
         projected = tomllib.loads(VERIFY.advisory_lock(self.root))["package"]
