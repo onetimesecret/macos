@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Darwin
 import os
 
@@ -8,17 +9,37 @@ final class MarkdownPreviewView: AskingTextView {
     /// The page this preview shows and asks.
     let page: UInt64
     private weak var coordinator: InkEditorView.Coordinator?
+    private let imageLoad: @MainActor (URL) async throws -> NSImage
     private let previewStorage: NSTextStorage
     private var seeded: PageModel.QuietRendering?
     private var seededDialect: PreviewDialect?
     private let links = PreviewLinks()
+    private var imageControlsReady = false
+    private var imageOwnership: AnyCancellable?
+    private var imageWindowLifecycle: AnyCancellable?
+    private var imageWindowIsClosing = false
+    private(set) lazy var imageControls = PreviewImageControls(preview: self, load: imageLoad)
+    var onImageLayoutChanged: (() -> Void)?
+
+    var isImagePresentationActive: Bool {
+        guard isSelectedPage, window != nil, !imageWindowIsClosing, let coordinator,
+              coordinator.model.owner == coordinator.surface,
+              coordinator.model.selectedPageID == page,
+              coordinator.model.tabs.contains(where: { $0.pageID == page }) else { return false }
+        return true
+    }
+
+    func authorizeImageLoad() -> Bool { isImagePresentationActive && mayReadOut }
 
     /// A click on a preview of a page the roll has not selected promotes it (ADR-0030).
     var onPromote: (() -> Void)?
 
     /// Only the selected page's preview is selectable and may take the keys (ADR-0030).
     var isSelectedPage = false {
-        didSet { isSelectable = isSelectedPage }
+        didSet {
+            isSelectable = isSelectedPage
+            if imageControlsReady, oldValue != isSelectedPage { imageControls.discard() }
+        }
     }
 
     /// Drag sessions this view began; the tests pin it at none.
@@ -27,6 +48,8 @@ final class MarkdownPreviewView: AskingTextView {
     init(page: UInt64, coordinator: InkEditorView.Coordinator?) {
         self.page = page
         self.coordinator = coordinator
+        if let coordinator { imageLoad = coordinator.model.previewImageLoad }
+        else { imageLoad = { _ in throw PreviewImageLoadError.invalidURL } }
         let storage = NSTextStorage()
         previewStorage = storage
         let manager = NSLayoutManager()
@@ -60,6 +83,11 @@ final class MarkdownPreviewView: AskingTextView {
         TextOffers.offerUngatedReaders(false, on: self)
         links.preview = self
         delegate = links
+        imageControlsReady = true
+        imageOwnership = coordinator?.model.$owner.dropFirst().sink { [weak self] owner in
+            guard let self, owner != self.coordinator?.surface else { return }
+            Task { @MainActor [weak self] in self?.imageControls.discard() }
+        }
     }
 
     @available(*, unavailable)
@@ -113,14 +141,19 @@ final class MarkdownPreviewView: AskingTextView {
     func shownSelection() -> [[CompanionClient.ShownRun]] {
         selectedRanges.map(\.rangeValue).filter { $0.length > 0 }.map { range in
             var runs: [CompanionClient.ShownRun] = []
+            var ink: [String] = []
             let text = previewStorage.string as NSString
-            previewStorage.enumerateAttribute(.attachment, in: range) { value, run, _ in
-                guard let chip = value as? ChipAttachment else {
-                    if value == nil, run.length > 0 { runs.append(.ink(text.substring(with: run))) }
+            previewStorage.enumerateAttributes(in: range) { attributes, run, _ in
+                guard let chip = attributes[.attachment] as? ChipAttachment else {
+                    if attributes[.attachment] == nil, attributes[.previewImagePlaceholder] == nil, run.length > 0 {
+                        ink.append(text.substring(with: run))
+                    }
                     return
                 }
+                if !ink.isEmpty { runs.append(.ink(ink.joined())); ink.removeAll(keepingCapacity: true) }
                 for _ in 0..<run.length { runs.append(.chip(chip.info.chipId)) }
             }
+            if !ink.isEmpty { runs.append(.ink(ink.joined())) }
             return runs
         }
     }
@@ -214,12 +247,72 @@ final class MarkdownPreviewView: AskingTextView {
     @discardableResult
     func reseed(with rendering: PageModel.QuietRendering, dialect: PreviewDialect) -> String? {
         if rendering === seeded, dialect == seededDialect { return nil }
-        let previous = seeded == nil ? nil : previewStorage.string
+        let sameSource = dialect == seededDialect && seeded?.text.isEqual(to: rendering.text) == true
+        let reusesImageTemplate = sameSource && !imageControls.buttons.isEmpty
+        let previous = seeded == nil || reusesImageTemplate ? nil : previewStorage.string
         seeded = rendering
         seededDialect = dialect
-        previewStorage.setAttributedString(Self.render(rendering.text, dialect: dialect))
+        if reusesImageTemplate { return nil }
+        imageControls.seed(Self.render(rendering.text, dialect: dialect), preserveConsent: sameSource)
         needsDisplay = true
         return previous
+    }
+
+    override func layout() {
+        super.layout()
+        if imageControlsReady { imageControls.layout() }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let widthChanged = frame.width != newSize.width
+        super.setFrameSize(newSize)
+        if imageControlsReady, widthChanged { imageControls.resize() }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard imageControlsReady else { return }
+        imageWindowLifecycle = nil
+        imageWindowIsClosing = false
+        guard let window else { imageControls.discard(); return }
+        let names = [NSWindow.willCloseNotification, NSWindow.didBecomeKeyNotification,
+                     NSWindow.didChangeOcclusionStateNotification]
+        imageWindowLifecycle = Publishers.MergeMany(names.map {
+            NotificationCenter.default.publisher(for: $0)
+        }).sink { [weak self, weak window] notification in
+            guard let self, let window, notification.object as? NSWindow === window else { return }
+            if notification.name == NSWindow.willCloseNotification {
+                self.imageWindowIsClosing = true
+                self.imageControls.discard()
+            } else if window.isKeyWindow || window.occlusionState.contains(.visible) {
+                self.imageWindowIsClosing = false
+                self.imageControls.resize()
+            }
+        }
+        imageControls.resize()
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        let buttons = imageControlsReady ? imageControls.buttons : []
+        var children = (super.accessibilityChildren() ?? []).filter { child in
+            !buttons.contains(where: { $0.isHidden && (child as AnyObject) === $0 })
+        }
+        for button in buttons where !button.isHidden && !children.contains(where: { ($0 as AnyObject) === button }) {
+            children.append(button)
+        }
+        return children
+    }
+
+    override nonisolated func accessibilityHitTest(_ point: NSPoint) -> Any? {
+        guard Thread.isMainThread else { return super.accessibilityHitTest(point) }
+        let button: NSButton? = MainActor.assumeIsolated {
+            if imageControlsReady, let window {
+                let local = convert(window.convertPoint(fromScreen: point), from: nil)
+                if let button = imageControls.buttons.first(where: { !$0.isHidden && $0.frame.contains(local) }) { return button }
+            }
+            return nil
+        }
+        return button ?? super.accessibilityHitTest(point)
     }
 
     /// `dialect` selects the pinned parser that reads the page (`MarkdownParser`, plan R1) and how
@@ -240,10 +333,10 @@ final class MarkdownPreviewView: AskingTextView {
 extension NSAttributedString.Key {
     /// An image's alt text and objects in a rendered preview, valued by its `PreviewImageDescriptor`.
     static let previewImage = NSAttributedString.Key("CompanionKitPreviewImage")
+    static let previewImagePlaceholder = NSAttributedString.Key("CompanionKitPreviewImagePlaceholder")
 }
 
-/// An image in one rendering: its ordinal among that rendering's images, and its address as
-/// composed. Image loading is separate work in the Markdown preview design plan.
+/// An image's ordinal and composed address in one rendering.
 struct PreviewImageDescriptor: Hashable {
     let occurrence: Int
     let destination: PreviewAddress
@@ -729,8 +822,7 @@ private final class MarkdownPreviewRenderer {
         return nil
     }
 
-    /// An image as its alt text and objects in secondary ink, marked with its descriptor and
-    /// no link. Image loading is separate work in the Markdown preview design plan.
+    /// Alt text and objects remain ink beside the separate loading controls.
     private func inertImage(
         _ image: PreviewImage, attributes: [NSAttributedString.Key: Any]
     ) throws -> NSAttributedString {
@@ -746,6 +838,10 @@ private final class MarkdownPreviewRenderer {
             case .text(let text): result.append(NSAttributedString(string: text, attributes: alt))
             case .object(let identity): result.append(try object(identity))
             }
+        }
+        if result.length == 0 {
+            alt[.previewImagePlaceholder] = true
+            result.append(NSAttributedString(string: "\u{200B}", attributes: alt))
         }
         result.addAttribute(.previewImage, value: descriptor, range: NSRange(location: 0, length: result.length))
         return result

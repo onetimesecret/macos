@@ -809,6 +809,7 @@ final class DayStackView: NSView {
         for page in Array(previewRegions.keys)
         where !wantedPages.contains(page) || !model.markdownPreviewEnabled(for: page) {
             let outgoing = previewRegions.removeValue(forKey: page)
+            outgoing?.imageControls.discard()
             if window?.firstResponder === outgoing {
                 editor?.isHidden = false
                 if let editor { coordinator.updateEditability(of: editor, to: !readOnly) }
@@ -932,6 +933,12 @@ final class DayStackView: NSView {
     /// its page as a click on a quiet page does (ADR-0030).
     private func previewRegion(for page: UInt64, selected: Bool) -> MarkdownPreviewView {
         let region = previewRegions[page] ?? MarkdownPreviewView(page: page, coordinator: coordinator)
+        if region.frame.width == 0 {
+            region.setFrameSize(NSSize(width: clipWidth, height: 1))
+        }
+        region.onImageLayoutChanged = { [weak self] in
+            Task { @MainActor [weak self] in self?.relayout() }
+        }
         region.onPromote = { [weak self] in
             guard let self, self.model.owner == self.coordinator.surface,
                   let tab = self.model.tabs.first(where: { $0.pageID == page }),
