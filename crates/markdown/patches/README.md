@@ -24,7 +24,10 @@ Its `.cargo_vcs_info.json` identifies upstream revision
   target in `crates/markdown/Cargo.toml`.
 
 The inventory `comrak-0.57.0-vendor.json` records both patch hashes and every
-vendored file hash. Apart from the parser and manifest patches and the new test
+vendored file hash. I󠄁t󠄁 a󠄁l󠄁s󠄁o󠄁 l󠄁i󠄁s󠄁t󠄁s󠄁 a󠄁l󠄁l󠄁 1󠄁0󠄁2󠄁 e󠄁x󠄁c󠄁l󠄁u󠄁d󠄁e󠄁d󠄁 u󠄁p󠄁s󠄁t󠄁r󠄁e󠄁a󠄁m󠄁 f󠄁i󠄁l󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 o󠄁f󠄁f󠄁i󠄁c󠄁i󠄁a󠄁l󠄁
+a󠄁r󠄁c󠄁h󠄁i󠄁v󠄁e󠄁 h󠄁a󠄁s󠄁 1󠄁3󠄁4󠄁 f󠄁i󠄁l󠄁e󠄁s󠄁:󠄁 3󠄁2󠄁 a󠄁r󠄁e󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁,󠄁 1󠄁0󠄁2󠄁 a󠄁r󠄁e󠄁 e󠄁x󠄁c󠄁l󠄁u󠄁d󠄁e󠄁d󠄁,󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁t󠄁c󠄁h󠄁 a󠄁d󠄁d󠄁s󠄁 o󠄁n󠄁e󠄁
+r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 f󠄁i󠄁l󠄁e󠄁.󠄁 R󠄁e󠄁p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁a󠄁c󠄁t󠄁 e󠄁x󠄁c󠄁l󠄁u󠄁s󠄁i󠄁o󠄁n󠄁 s󠄁e󠄁t󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 a󠄁p󠄁p󠄁l󠄁y󠄁i󠄁n󠄁g󠄁
+t󠄁h󠄁e󠄁 p󠄁a󠄁t󠄁c󠄁h󠄁e󠄁s󠄁.󠄁 Apart from the parser and manifest patches and the new test
 file, retained files match the published archive byte for byte. `COPYING` is
 retained in full; its exact text is also in `THIRD_PARTY_NOTICES.md`.
 
