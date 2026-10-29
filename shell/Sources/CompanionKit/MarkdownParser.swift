@@ -29,7 +29,7 @@ enum MarkdownParser {
         case .gfm: 1
         }
         let byteCount = text.utf8.count
-        let started = ProcessInfo.processInfo.systemUptime
+        let started = onTiming == nil ? 0 : ProcessInfo.processInfo.systemUptime
         let pointer = text.withCString { bytes in
             objects.withUnsafeBufferPointer { offsets in
                 companion_markdown_parse_json(
@@ -39,7 +39,7 @@ enum MarkdownParser {
                 )
             }
         }
-        let bridged = ProcessInfo.processInfo.systemUptime
+        let bridged = onTiming == nil ? 0 : ProcessInfo.processInfo.systemUptime
         defer {
             onTiming?(Timings(bridge: bridged - started, decode: ProcessInfo.processInfo.systemUptime - bridged))
         }

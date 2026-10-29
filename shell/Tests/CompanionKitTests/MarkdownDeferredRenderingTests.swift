@@ -5,7 +5,10 @@ import XCTest
 
 @MainActor
 final class MarkdownDeferredRenderingTests: XCTestCase {
-    private let source = String(repeating: "## Heading **bold**\n\n~~strike~~ [link](https://example.com)\n\n", count: 400)
+    private var source: String {
+        let block = "## Heading **bold**\n\n~~strike~~ [link](https://example.com)\n\n"
+        return String(repeating: block, count: MarkdownPreviewView.deferredRenderingThreshold / block.utf16.count + 1)
+    }
 
     func testLargePreviewYieldsAndOffersNoInterimText() async throws {
         let suite = "deferred-preview-\(UUID().uuidString)"
@@ -26,6 +29,7 @@ final class MarkdownDeferredRenderingTests: XCTestCase {
         }
         XCTAssertNil(view.reseed(with: rendering(source), dialect: .gfm))
         XCTAssertTrue(view.isRendering)
+        XCTAssertEqual(view.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont, InkStyle.baseFont)
         view.setSelectedRange(NSRange(location: 0, length: view.string.utf16.count))
         XCTAssertFalse(view.mayReadOut)
         XCTAssertTrue(view.shownSelection().isEmpty)

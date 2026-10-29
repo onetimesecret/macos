@@ -9,6 +9,16 @@ final class PreviewImageControlsTests: XCTestCase {
     private static let markdown = "![A small image](https://example.com/image.png)"
 
     @MainActor
+    private final class KeyLoopWindow: NSWindow {
+        private(set) var recalculations = 0
+
+        override func recalculateKeyViewLoop() {
+            recalculations += 1
+            super.recalculateKeyViewLoop()
+        }
+    }
+
+    @MainActor
     private struct Fixture {
         let model: PageModel
         let page: UInt64
@@ -40,7 +50,7 @@ final class PreviewImageControlsTests: XCTestCase {
         coordinator.surface = model.owner
         let scroll = DayScrollView.makeRoll(model: model, coordinator: coordinator, emptyHint: "hint")
         let frame = NSRect(x: 0, y: 0, width: 420, height: 320)
-        let window = NSWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false)
+        let window = KeyLoopWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = scroll
         scroll.frame = frame
@@ -956,6 +966,8 @@ final class PreviewImageControlsTests: XCTestCase {
 
 
     func testTabTraversalFollowsImageOrderAndReachesAnExternalControl() throws {
+        try XCTSkipUnless(NSApplication.shared.isFullKeyboardAccessEnabled,
+                          "Native Tab traversal requires enabled macOS keyboard navigation")
         let fixture = try fixture("![first](\(Self.address))\n\n![unavailable](http://example.com/a.png)\n\n![second](\(Self.address))\n\n![third](\(Self.address))")
         defer { fixture.window.close() }
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 400))
@@ -989,6 +1001,101 @@ final class PreviewImageControlsTests: XCTestCase {
             XCTAssertTrue(fixture.window.firstResponder === view)
         }
         XCTAssertTrue(fixture.loader.requests.isEmpty)
+    }
+
+
+    func testRestoringHiddenControlsRecalculatesKeyOrderWithUnchangedFrames() throws {
+        let fixture = try fixture("![first](\(Self.address))\n\n![second](\(Self.address))")
+        defer { fixture.window.close() }
+        let window = try XCTUnwrap(fixture.window as? KeyLoopWindow)
+        let preview = fixture.preview
+        let controls = preview.imageControls
+        controls.layout()
+        let storage = try XCTUnwrap(preview.textStorage)
+        let rendered = NSAttributedString(attributedString: storage)
+        let frames = controls.buttons.map(\.frame)
+        storage.setAttributedString(NSAttributedString(string: ""))
+        let beforeHiding = window.recalculations
+        controls.layout()
+        XCTAssertTrue(controls.buttons.allSatisfy(\.isHidden))
+        XCTAssertGreaterThan(window.recalculations, beforeHiding)
+        storage.setAttributedString(rendered)
+        let beforeRestoring = window.recalculations
+        controls.layout()
+        XCTAssertTrue(controls.buttons.allSatisfy { !$0.isHidden })
+        XCTAssertEqual(controls.buttons.map(\.frame), frames)
+        XCTAssertGreaterThan(window.recalculations, beforeRestoring)
+        XCTAssertTrue(fixture.loader.requests.isEmpty)
+    }
+
+    func testTabTraversesRestoredControlsWhenKeyboardNavigationIsEnabled() throws {
+        try XCTSkipUnless(NSApplication.shared.isFullKeyboardAccessEnabled,
+                          "Native Tab traversal requires enabled macOS keyboard navigation")
+        let fixture = try fixture("![first](\(Self.address))\n\n![second](\(Self.address))")
+        defer { fixture.window.close() }
+        let controls = fixture.preview.imageControls
+        controls.layout()
+        let storage = try XCTUnwrap(fixture.preview.textStorage)
+        let rendered = NSAttributedString(attributedString: storage)
+        storage.setAttributedString(NSAttributedString(string: ""))
+        controls.layout()
+        storage.setAttributedString(rendered)
+        controls.layout()
+        XCTAssertTrue(fixture.window.makeFirstResponder(fixture.preview))
+        for button in controls.buttons {
+            fixture.window.selectNextKeyView(nil)
+            XCTAssertTrue(fixture.window.firstResponder === button)
+        }
+        XCTAssertTrue(fixture.loader.requests.isEmpty)
+    }
+
+    func testTableControlMinimumWidthTracksTheActualButtonFont() async throws {
+        let fixture = try fixture("| Image | Other |\n| --- | --- |\n| ![image](\(Self.address)) | text |")
+        defer { fixture.window.close() }
+        let controls = fixture.preview.imageControls
+        let button = try XCTUnwrap(controls.buttons.first)
+        let storage = try XCTUnwrap(fixture.preview.textStorage)
+        let original = storage.string
+        func hasTable() -> Bool {
+            var result = false
+            storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
+                if let style = value as? NSParagraphStyle,
+                   style.textBlocks.contains(where: { $0 is NSTextTableBlock }) { result = true }
+            }
+            return result
+        }
+        XCTAssertTrue(hasTable())
+        button.font = .systemFont(ofSize: 24)
+        controls.resize()
+        try await eventually { !hasTable() }
+        button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        controls.resize()
+        try await eventually { hasTable() }
+        XCTAssertEqual(storage.string, original)
+        XCTAssertTrue(fixture.loader.requests.isEmpty)
+    }
+
+    func testRetinaImageSizingUsesRasterPixelsWhenImagePointSizeDiffers() async throws {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 240, pixelsHigh: 120, bitsPerSample: 8,
+            samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let image = NSImage(size: NSSize(width: 120, height: 60))
+        image.addRepresentation(bitmap)
+        image.size = NSSize(width: 120, height: 60)
+        XCTAssertEqual(PreviewImageControls.pictureBounds(image: image, room: 600, backingScale: 1).size,
+                       NSSize(width: 240, height: 120))
+        XCTAssertEqual(PreviewImageControls.pictureBounds(image: image, room: 600, backingScale: 2).size,
+                       NSSize(width: 120, height: 60))
+        let fixture = try fixture()
+        defer { fixture.window.close() }
+        fixture.loader.handler = { _ in image }
+        fixture.preview.imageControls.buttons[0].performClick(nil)
+        try await eventually { fixture.preview.imageControls.loadedImageCount == 1 }
+        let bounds = try XCTUnwrap(loadedPictureBounds(in: fixture.preview).first)
+        let scale = max(1, fixture.window.backingScaleFactor)
+        XCTAssertEqual(bounds.width, 240 / scale, accuracy: 0.01)
+        XCTAssertEqual(bounds.height, 120 / scale, accuracy: 0.01)
     }
 
     func testUnchangedResizeAndDiscardDoNotRewriteTheCompactButtonTitle() async throws {

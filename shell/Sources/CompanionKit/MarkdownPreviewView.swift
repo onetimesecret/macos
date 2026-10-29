@@ -6,6 +6,7 @@ import os
 /// A rendered page whose AppKit copy, link, reader and drag routes follow Law 0001's preview rows.
 @MainActor
 final class MarkdownPreviewView: AskingTextView {
+    static let deferredRenderingThreshold = 16_384
     /// The page this preview shows and asks.
     let page: UInt64
     private weak var coordinator: InkEditorView.Coordinator?
@@ -262,14 +263,17 @@ final class MarkdownPreviewView: AskingTextView {
         renderingTask = nil
         isRendering = false
         pendingPreviousText = nil
-        if rendering.text.length >= 16_384 {
+        if rendering.text.length >= Self.deferredRenderingThreshold {
             let renderer = MarkdownPreviewRenderer(
                 source: rendering.text, dialect: dialect, limits: CompositionLimits(),
                 nativeLimits: NativePreviewLimits(), onDiagnostic: nil)
             isRendering = true
             isSelectable = false
             pendingPreviousText = previous
-            imageControls.seed(NSAttributedString(string: CompanionL10n.string("Rendering preview…")), preserveConsent: false)
+            imageControls.seed(NSAttributedString(
+                string: CompanionL10n.string("Rendering preview…"),
+                attributes: [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]
+            ), preserveConsent: false)
             renderingTask = Task { @MainActor [weak self] in
                 guard let result = await renderer.renderCooperatively(), !Task.isCancelled,
                       let self, self.seeded === rendering, self.seededDialect == dialect else { return }
@@ -280,6 +284,7 @@ final class MarkdownPreviewView: AskingTextView {
                 self.renderingTask = nil
                 self.needsDisplay = true
                 self.onRenderingChanged?(previous)
+                NSAccessibility.post(element: self, notification: .valueChanged)
             }
             needsDisplay = true
             return nil
@@ -509,12 +514,9 @@ private final class MarkdownPreviewRenderer {
         do {
             let document = try MarkdownParser.parse(text, objects: offsets, dialect: dialect, limits: limits)
             for block in document.blocks { try renderBlock(block, context: Context()) }
-            try composer.finish()
-            guard shown.count == attachments.count else { throw RenderFailure.objectMissing }
-            return NSAttributedString(attributedString: output)
+            return try finishRendering()
         } catch {
-            Self.log(error)
-            return plainText()
+            return refused(error)
         }
     }
 
@@ -527,15 +529,23 @@ private final class MarkdownPreviewRenderer {
                 if index % 16 == 15 { await Task.yield() }
             }
             try Task.checkCancellation()
-            try composer.finish()
-            guard shown.count == attachments.count else { throw RenderFailure.objectMissing }
-            return NSAttributedString(attributedString: output)
+            return try finishRendering()
         } catch is CancellationError {
             return nil
         } catch {
-            Self.log(error)
-            return plainText()
+            return refused(error)
         }
+    }
+
+    private func finishRendering() throws -> NSAttributedString {
+        try composer.finish()
+        guard shown.count == attachments.count else { throw RenderFailure.objectMissing }
+        return NSAttributedString(attributedString: output)
+    }
+
+    private func refused(_ error: Error) -> NSAttributedString {
+        Self.log(error)
+        return plainText()
     }
 
     private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "preview")
