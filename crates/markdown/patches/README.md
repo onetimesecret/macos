@@ -116,3 +116,13 @@ Use a new destination directory for each preparation. Cargo may download the
 pinned registry package when it is not cached. The application dependency stays
 on the vendored source. This check matches published advisories for its upstream
 version; it does not analyze the local patch for new defects.
+
+## S󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁-󠄁s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 l󠄁i󠄁b󠄁r󠄁a󠄁r󠄁y󠄁 t󠄁e󠄁s󠄁t󠄁 r󠄁u󠄁n󠄁
+
+U󠄁p󠄁s󠄁t󠄁r󠄁e󠄁a󠄁m󠄁 t󠄁e󠄁s󠄁t󠄁 m󠄁o󠄁d󠄁u󠄁l󠄁e󠄁s󠄁 a󠄁r󠄁e󠄁 a󠄁b󠄁s󠄁e󠄁n󠄁t󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 s󠄁h󠄁i󠄁p󠄁p󠄁e󠄁d󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁t󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁r󠄁m󠄁a󠄁l󠄁 w󠄁o󠄁r󠄁k󠄁s󠄁p󠄁a󠄁c󠄁e󠄁
+u󠄁n󠄁i󠄁t󠄁-󠄁t󠄁e󠄁s󠄁t󠄁 t󠄁a󠄁r󠄁g󠄁e󠄁t󠄁s󠄁.󠄁 A󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 c󠄁o󠄁p󠄁y󠄁 o󠄁f󠄁 t󠄁h󠄁e󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁e󠄁d󠄁 f󠄁u󠄁l󠄁l󠄁 a󠄁r󠄁c󠄁h󠄁i󠄁v󠄁e󠄁,󠄁 w󠄁i󠄁t󠄁h󠄁
+o󠄁n󠄁l󠄁y󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 p󠄁a󠄁t󠄁c󠄁h󠄁,󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 a󠄁l󠄁l󠄁 5󠄁5󠄁6󠄁 l󠄁i󠄁b󠄁r󠄁a󠄁r󠄁y󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 u󠄁n󠄁d󠄁e󠄁r󠄁
+`cargo test --no-default-features --locked --lib`.󠄁 T󠄁h󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁e󠄁d󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 f󠄁i󠄁l󠄁e󠄁 m󠄁a󠄁t󠄁c󠄁h󠄁e󠄁s󠄁
+`vendor/comrak/src/parser/mod.rs` b󠄁y󠄁t󠄁e󠄁 f󠄁o󠄁r󠄁 b󠄁y󠄁t󠄁e󠄁.󠄁 O󠄁p󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁-󠄁f󠄁e󠄁a󠄁t󠄁u󠄁r󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁
+d󠄁o󠄁c󠄁t󠄁e󠄁s󠄁t󠄁s󠄁 a󠄁r󠄁e󠄁 n󠄁o󠄁t󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁e󠄁d󠄁 b󠄁y󠄁 t󠄁h󠄁a󠄁t󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁r󠄁p󠄁u󠄁s󠄁 a󠄁n󠄁d󠄁 f󠄁o󠄁u󠄁r󠄁
+d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁 A󠄁S󠄁T󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 n󠄁o󠄁r󠄁m󠄁a󠄁l󠄁 i󠄁n󠄁-󠄁r󠄁e󠄁p󠄁o󠄁s󠄁i󠄁t󠄁o󠄁r󠄁y󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁.󠄁
