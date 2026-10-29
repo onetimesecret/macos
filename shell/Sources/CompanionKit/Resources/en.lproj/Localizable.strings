@@ -6,6 +6,10 @@
 "preview.image.cancel_from" = "Cancel image from %@";
 "preview.image.unload_from" = "Unload image from %@";
 "preview.image.retry_from" = "Retry image from %@";
+"Load image" = "Load image";
+"Cancel image" = "Cancel image";
+"Unload image" = "Unload image";
+"Retry image" = "Retry image";
 
 /* Image control accessibility: action and destination, then image alt text. */
 "preview.image.accessibility" = "%1$@: %2$@";
