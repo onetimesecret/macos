@@ -308,7 +308,7 @@ final class MarkdownPreviewView: AskingTextView {
 
     private static func sameSource(_ left: NSAttributedString, _ right: NSAttributedString) -> Bool {
         guard left.length == right.length,
-              left.string.utf16.elementsEqual(right.string.utf16) else { return false }
+              (left.string as NSString).isEqual(to: right.string) else { return false }
         var offset = 0
         while offset < left.length {
             var leftRange = NSRange(), rightRange = NSRange()

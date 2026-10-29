@@ -171,13 +171,8 @@ final class MarkdownDeferredRenderingTests: XCTestCase {
         let view = try XCTUnwrap(stack.previewRegions[page])
         XCTAssertTrue(view.isRendering)
         let initialHeight = view.frame.height
-        let completed = expectation(description: "mounted preview remeasured")
-        let rollCompletion = view.onRenderingChanged
-        view.onRenderingChanged = { previous in
-            rollCompletion?(previous)
-            completed.fulfill()
-        }
-        await fulfillment(of: [completed], timeout: 10)
+        let pending = try XCTUnwrap(view.renderingTask)
+        await pending.value
         XCTAssertFalse(view.isRendering)
         XCTAssertGreaterThan(view.frame.height, initialHeight + 1_000)
         XCTAssertGreaterThan(stack.frame.height, initialHeight + 1_000)
