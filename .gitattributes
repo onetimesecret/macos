@@ -1,2 +1,3 @@
 crates/markdown/src/tests/*.json text eol=lf
 crates/markdown/tests/*.json -text
+crates/markdown/patches/*.patch -whitespace
