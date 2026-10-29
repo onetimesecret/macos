@@ -351,6 +351,13 @@ b5ef59c72b988dfc7c73ec58ec0dc50f95dd87d7f1f39f428902bc379cea8507
 Upstream: https://github.com/kivikakk/comrak
 Upstream revision recorded in the published package:
 a39f26a0b0f63db2cb5aaa172f0de5eeb51c8b6c
+S󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 i󠄁n󠄁 t󠄁h󠄁i󠄁s󠄁 r󠄁e󠄁p󠄁o󠄁s󠄁i󠄁t󠄁o󠄁r󠄁y󠄁:󠄁 v󠄁e󠄁n󠄁d󠄁o󠄁r󠄁/󠄁c󠄁o󠄁m󠄁r󠄁a󠄁k󠄁 (󠄁r󠄁u󠄁n󠄁t󠄁i󠄁m󠄁e󠄁 l󠄁i󠄁b󠄁r󠄁a󠄁r󠄁y󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁t󠄁)󠄁
+L󠄁o󠄁c󠄁a󠄁l󠄁 p󠄁a󠄁t󠄁c󠄁h󠄁e󠄁s󠄁:󠄁 c󠄁r󠄁a󠄁t󠄁e󠄁s󠄁/󠄁m󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁/󠄁p󠄁a󠄁t󠄁c󠄁h󠄁e󠄁s󠄁/󠄁c󠄁o󠄁m󠄁r󠄁a󠄁k󠄁-󠄁0󠄁.󠄁5󠄁7󠄁.󠄁0󠄁-󠄁r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁-󠄁s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁p󠄁o󠄁s󠄁.󠄁p󠄁a󠄁t󠄁c󠄁h󠄁
+a󠄁n󠄁d󠄁 c󠄁r󠄁a󠄁t󠄁e󠄁s󠄁/󠄁m󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁/󠄁p󠄁a󠄁t󠄁c󠄁h󠄁e󠄁s󠄁/󠄁c󠄁o󠄁m󠄁r󠄁a󠄁k󠄁-󠄁0󠄁.󠄁5󠄁7󠄁.󠄁0󠄁-󠄁r󠄁u󠄁n󠄁t󠄁i󠄁m󠄁e󠄁-󠄁m󠄁a󠄁n󠄁i󠄁f󠄁e󠄁s󠄁t󠄁.󠄁p󠄁a󠄁t󠄁c󠄁h󠄁
+T󠄁h󠄁e󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 p󠄁a󠄁t󠄁c󠄁h󠄁 c󠄁o󠄁r󠄁r󠄁e󠄁c󠄁t󠄁s󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 d󠄁e󠄁f󠄁i󠄁n󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁
+c󠄁l󠄁e󠄁a󠄁r󠄁s󠄁 a󠄁 r󠄁e󠄁j󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 n󠄁e󠄁x󠄁t󠄁-󠄁l󠄁i󠄁n󠄁e󠄁 t󠄁i󠄁t󠄁l󠄁e󠄁.󠄁 T󠄁h󠄁e󠄁 m󠄁a󠄁n󠄁i󠄁f󠄁e󠄁s󠄁t󠄁 p󠄁a󠄁t󠄁c󠄁h󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁s󠄁 u󠄁n󠄁u󠄁s󠄁e󠄁d󠄁 C󠄁L󠄁I󠄁,󠄁
+e󠄁x󠄁a󠄁m󠄁p󠄁l󠄁e󠄁,󠄁 b󠄁e󠄁n󠄁c󠄁h󠄁m󠄁a󠄁r󠄁k󠄁 a󠄁n󠄁d󠄁 u󠄁p󠄁s󠄁t󠄁r󠄁e󠄁a󠄁m󠄁 t󠄁e󠄁s󠄁t󠄁 t󠄁a󠄁r󠄁g󠄁e󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 d󠄁e󠄁v󠄁e󠄁l󠄁o󠄁p󠄁m󠄁e󠄁n󠄁t󠄁 d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁c󠄁i󠄁e󠄁s󠄁.󠄁
+R󠄁e󠄁p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 i󠄁n󠄁v󠄁e󠄁n󠄁t󠄁o󠄁r󠄁y󠄁:󠄁 s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁s󠄁/󠄁v󠄁e󠄁r󠄁i󠄁f󠄁y󠄁-󠄁v󠄁e󠄁n󠄁d󠄁o󠄁r󠄁e󠄁d󠄁-󠄁c󠄁o󠄁m󠄁r󠄁a󠄁k󠄁.󠄁p󠄁y󠄁 -󠄁-󠄁u󠄁p󠄁s󠄁t󠄁r󠄁e󠄁a󠄁m󠄁
 Published license expression: BSD-2-Clause
 License text reproduced here: COPYING, in full
 

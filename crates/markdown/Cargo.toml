@@ -14,7 +14,7 @@ workspace = true
 [dependencies]
 # Issue 332: one Rust parser for both dialects in place of the vendored
 # cmark and cmark-gfm. Default features pull in the CLI and syntect.
-comrak = { version = "0.57.0", default-features = false }
+comrak = { version = "=0.57.0", path = "../../vendor/comrak", default-features = false }
 serde = { workspace = true }
 zeroize = { workspace = true }
 
@@ -24,3 +24,7 @@ entities = "1.0.1"
 # SHA-256 of the copied spec corpus, as crates/ffi and crates/sync already use it.
 ring = "0.17"
 serde_json = { workspace = true }
+
+[[test]]
+name = "comrak_reference_sourcepos"
+path = "../../vendor/comrak/tests/reference_sourcepos.rs"

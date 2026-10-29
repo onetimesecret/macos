@@ -47,6 +47,8 @@ done
 
 echo "==> Verifying pinned Betlang package and model"
 scripts/verify-betlang.py
+echo "==> Verifying vendored comrak source and patches"
+scripts/verify-vendored-comrak.py
 
 if [[ "$IF_STALE" == 1 ]]; then
   # Rebuild only when the xcframework and explicit shape stamp exist, the
@@ -56,7 +58,7 @@ if [[ "$IF_STALE" == 1 ]]; then
     && ! THIRD_PARTY_NOTICES.md -nt "$XCF" \
     && ! rust-toolchain.toml -nt "$XCF" \
     && ! scripts/build-core.sh -nt "$XCF" \
-    && -z "$(find crates Cargo.toml Cargo.lock -type f \( -name '*.rs' -o -name 'Cargo.*' -o -name '*.h' \) -newer "$XCF" -print -quit)" ]] \
+    && -z "$(find crates vendor/comrak Cargo.toml Cargo.lock -type f \( -name '*.rs' -o -name 'Cargo.*' -o -name '*.h' \) -newer "$XCF" -print -quit)" ]] \
     && cmp -s THIRD_PARTY_NOTICES.md "$XCF/THIRD_PARTY_NOTICES.md"; then
     echo "==> $XCF is current ($SHAPE); skipping core build"
     exit 0

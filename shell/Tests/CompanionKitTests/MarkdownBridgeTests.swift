@@ -154,25 +154,25 @@ final class MarkdownBridgeTests: XCTestCase {
         }
     }
 
-    func testRepeatedReferenceRefusalRendersTheOriginalPageWithItsObjectOnce() throws {
+    func testRepeatedReferencesRenderTheirDefinitionObjectOnce() throws {
         let chip = ChipAttachment(info: ChipInfo(
             chipId: 1, kind: "text", excerpt: "test-face", sizeLabel: "small", concealed: false
         ))
         let source = NSMutableAttributedString(string: "[r]: /u")
         source.append(NSAttributedString(attachment: chip))
         source.append(NSAttributedString(string: "\n| a |\n| - |\n\n[x][r] [y][r]"))
-        XCTAssertThrowsError(try MarkdownParser.parse(source.string, objects: [7], dialect: .commonMark)) {
-            XCTAssertEqual($0 as? MarkdownParseError, .duplicateObject("0"))
-        }
+        let parsed = try MarkdownParser.parse(source.string, objects: [7], dialect: .commonMark)
+        XCTAssertEqual(parsed.atoms, [MarkdownAtom(identity: "0", offset: 7)])
+        XCTAssertEqual(parsed.blocks.first, .objects(["0"]))
         let rendered = MarkdownPreviewView.render(source, dialect: .commonMark)
-        XCTAssertEqual(rendered.string, source.string + "\n")
+        XCTAssertEqual(rendered.string, "\u{FFFC}\n| a | | - |\nx y\n")
         var found: [NSTextAttachment] = []
         rendered.enumerateAttribute(.attachment, in: NSRange(location: 0, length: rendered.length)) { value, _, _ in
             if let attachment = value as? NSTextAttachment { found.append(attachment) }
         }
         XCTAssertEqual(found.count, 1)
         XCTAssertTrue(found.first === chip)
-        XCTAssertNil(rendered.attribute(.link, at: 7, effectiveRange: nil))
+        XCTAssertNil(rendered.attribute(.link, at: 0, effectiveRange: nil))
     }
 
     func testNativeHTMLPreservesNonbreakingAndOtherSignificantSpaces() {

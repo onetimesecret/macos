@@ -68,7 +68,9 @@
                      return None;
 --- /dev/null
 +++ b/tests/reference_sourcepos.rs
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,79 @@
++//! Reference-definition positions and rejected next-line titles.
++
 +use comrak::nodes::NodeValue;
 +use comrak::{Arena, Options, parse_document};
 +

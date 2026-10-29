@@ -154,9 +154,7 @@ final class MarkdownParserTests: XCTestCase {
 
     // MARK: Objects the grammar hides
 
-    /// A definition's object stays at the definition, before or after the reference, and a
-    /// reference to it refuses the address with the stand-in; no object moves from later text.
-    func testDefinitionsAndKnownStockSourceRangesDecodeThroughFFI() throws {
+    func testDefinitionObjectPositionsDecodeThroughFFI() throws {
         for dialect in PreviewDialect.allCases {
             let before: [String?] = ["[r]: https://e.example/", nil, " \"t\"\n\n[link][r] then ", nil]
             XCTAssertEqual(try parse(before, dialect).blocks, [
@@ -174,19 +172,20 @@ final class MarkdownParserTests: XCTestCase {
                 .objects(["1"]),
             ], "\(dialect): after")
             XCTAssertEqual(try parse(["[r]: /u \"title ", nil, "\"\ntext ", nil, "\n\n[x][r]"], dialect).blocks, [
+                .objects(["0"]),
                 .paragraph([.text("text "), .object("1")]),
                 .paragraph([
                     .enterLink(destination: [.text("/u")], title: [.text("title \u{FFFC}")]),
-                    .text("x"), .leaveLink, .object("0"),
+                    .text("x"), .leaveLink,
                 ]),
-            ], "\(dialect): known stock-comrak source range, tracked in Rust definitions.rs")
+            ], "\(dialect): definition before the surviving paragraph")
             XCTAssertEqual(try parse(["[a", nil, "]: /u\n\nplain"], dialect).blocks, [
                 .objects(["0"]), .paragraph([.text("plain")]),
             ], "\(dialect): in a label")
             XCTAssertEqual(try parse(["[r]: /u", nil], dialect).blocks, [.objects(["0"])], "\(dialect): alone")
             XCTAssertEqual(try parse(["> [r]: /u", nil, "\n> text"], dialect).blocks, [
-                .quote([.paragraph([.text("text")]), .objects(["0"])]),
-            ], "\(dialect): known stock-comrak source range in a quote")
+                .quote([.objects(["0"]), .paragraph([.text("text")])]),
+            ], "\(dialect): definition before text inside a quote")
             let listed = try parse(["- a\n- [r]: /u", nil, "\n- b"], dialect)
             guard case .list(_, _, _, let items)? = listed.blocks.first else { return XCTFail("\(dialect): a list") }
             XCTAssertEqual(items.map(\.blocks), [

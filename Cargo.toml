@@ -9,6 +9,7 @@
 
 [workspace]
 resolver = "3"
+exclude = ["vendor/comrak"]
 members = [
   "crates/core",
   "crates/credentials",

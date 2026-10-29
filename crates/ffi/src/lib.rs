@@ -4453,10 +4453,29 @@ mod tests {
     }
 
     #[test]
-    fn markdown_parse_reports_duplicate_reference_objects_as_a_page_refusal() {
+    fn markdown_parse_keeps_a_definition_object_before_repeated_reference_uses() {
         let text = "[r]: /u\u{FFFC}\n| a |\n| - |\n\n[x][r] [y][r]";
         let json = unsafe { take_json(parse_markdown(text, COMMONMARK, Limits::default())) };
-        assert_eq!(json, r#"{"error":{"duplicateObject":{"_0":"0"}}}"#);
+        let document: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            document,
+            serde_json::json!({
+                "atoms": [{"identity": "0", "offset": 7}],
+                "blocks": [
+                    {"objects": {"_0": ["0"]}},
+                    {"paragraph": {"_0": [
+                        {"text": {"_0": "| a |"}}, {"softBreak": {}},
+                        {"text": {"_0": "| - |"}},
+                    ]}},
+                    {"paragraph": {"_0": [
+                        {"enterLink": {"destination": [{"text": {"_0": "/u\u{FFFC}"}}], "title": []}},
+                        {"text": {"_0": "x"}}, {"leaveLink": {}}, {"text": {"_0": " "}},
+                        {"enterLink": {"destination": [{"text": {"_0": "/u\u{FFFC}"}}], "title": []}},
+                        {"text": {"_0": "y"}}, {"leaveLink": {}},
+                    ]}},
+                ],
+            })
+        );
     }
 
     #[test]

@@ -1,3 +1,4 @@
 crates/markdown/src/tests/*.json text eol=lf
 crates/markdown/tests/*.json -text
-crates/markdown/patches/*.patch -whitespace
+crates/markdown/patches/*.patch -text -whitespace
+vendor/comrak/** -text -whitespace linguist-vendored
