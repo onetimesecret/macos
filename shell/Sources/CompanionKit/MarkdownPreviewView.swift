@@ -14,7 +14,8 @@ final class MarkdownPreviewView: AskingTextView {
     private let previewStorage: NSTextStorage
     private var seeded: PageModel.QuietRendering?
     private var seededDialect: PreviewDialect?
-    private var renderingTask: Task<Void, Never>?
+    private(set) var renderingTask: Task<Void, Never>?
+    private var pendingRenderingID: UUID?
     private(set) var isRendering = false
     private var pendingPreviousText: String?
     var onRenderingChanged: ((String?) -> Void)?
@@ -253,14 +254,17 @@ final class MarkdownPreviewView: AskingTextView {
     @discardableResult
     func reseed(with rendering: PageModel.QuietRendering, dialect: PreviewDialect) -> String? {
         if rendering === seeded, dialect == seededDialect { return nil }
-        let sameSource = dialect == seededDialect && seeded?.text.isEqual(to: rendering.text) == true
+        let sameSource = dialect == seededDialect && seeded.map {
+            Self.sameSource($0.text, rendering.text)
+        } == true
         let reusesImageTemplate = sameSource && !imageControls.buttons.isEmpty
         let previous = isRendering ? pendingPreviousText : (seeded == nil || reusesImageTemplate ? nil : previewStorage.string)
         seeded = rendering
         seededDialect = dialect
-        if reusesImageTemplate { return nil }
+        if reusesImageTemplate || (isRendering && sameSource) { return nil }
         renderingTask?.cancel()
         renderingTask = nil
+        pendingRenderingID = nil
         isRendering = false
         pendingPreviousText = nil
         if rendering.text.length >= Self.deferredRenderingThreshold {
@@ -268,6 +272,8 @@ final class MarkdownPreviewView: AskingTextView {
                 source: rendering.text, dialect: dialect, limits: CompositionLimits(),
                 nativeLimits: NativePreviewLimits(), onDiagnostic: nil)
             isRendering = true
+            let renderingID = UUID()
+            pendingRenderingID = renderingID
             isSelectable = false
             pendingPreviousText = previous
             imageControls.seed(NSAttributedString(
@@ -275,13 +281,16 @@ final class MarkdownPreviewView: AskingTextView {
                 attributes: [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]
             ), preserveConsent: false)
             renderingTask = Task { @MainActor [weak self] in
-                guard let result = await renderer.renderCooperatively(), !Task.isCancelled,
-                      let self, self.seeded === rendering, self.seededDialect == dialect else { return }
+                let result = await renderer.renderCooperatively()
+                guard let self, self.pendingRenderingID == renderingID else { return }
+                self.pendingRenderingID = nil
+                self.renderingTask = nil
                 self.isRendering = false
                 self.isSelectable = self.isSelectedPage
                 self.pendingPreviousText = nil
-                self.imageControls.seed(result, preserveConsent: false)
-                self.renderingTask = nil
+                self.imageControls.seed(
+                    !Task.isCancelled ? (result ?? renderer.plainText()) : renderer.plainText(),
+                    preserveConsent: false)
                 self.needsDisplay = true
                 self.onRenderingChanged?(previous)
                 NSAccessibility.post(element: self, notification: .valueChanged)
@@ -293,6 +302,26 @@ final class MarkdownPreviewView: AskingTextView {
         imageControls.seed(Self.render(rendering.text, dialect: dialect), preserveConsent: sameSource)
         needsDisplay = true
         return previous
+    }
+
+    private static func sameSource(_ left: NSAttributedString, _ right: NSAttributedString) -> Bool {
+        guard left.length == right.length,
+              left.string.utf16.elementsEqual(right.string.utf16) else { return false }
+        var offset = 0
+        while offset < left.length {
+            var leftRange = NSRange(), rightRange = NSRange()
+            var leftAttributes = left.attributes(at: offset, effectiveRange: &leftRange)
+            var rightAttributes = right.attributes(at: offset, effectiveRange: &rightRange)
+            if let leftChip = leftAttributes[.attachment] as? ChipAttachment,
+               let rightChip = rightAttributes[.attachment] as? ChipAttachment {
+                guard leftChip.info == rightChip.info else { return false }
+                leftAttributes.removeValue(forKey: .attachment)
+                rightAttributes.removeValue(forKey: .attachment)
+            }
+            guard NSDictionary(dictionary: leftAttributes).isEqual(to: rightAttributes) else { return false }
+            offset = min(NSMaxRange(leftRange), NSMaxRange(rightRange))
+        }
+        return true
     }
 
     deinit { renderingTask?.cancel() }
@@ -566,7 +595,7 @@ private final class MarkdownPreviewRenderer {
     }
 
     /// The page's text with LF line endings and its objects in place, one unstyled paragraph style.
-    private func plainText() -> NSAttributedString {
+    func plainText() -> NSAttributedString {
         let result = NSMutableAttributedString(string: text, attributes: baseAttributes)
         for (attachment, offset) in zip(attachments, offsets) {
             result.addAttribute(.attachment, value: attachment, range: NSRange(location: offset, length: 1))

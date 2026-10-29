@@ -49,13 +49,57 @@ final class MarkdownDeferredRenderingTests: XCTestCase {
         var callbacks = 0
         view.onRenderingChanged = { _ in callbacks += 1 }
         view.reseed(with: rendering(source), dialect: .gfm)
+        let pending = try XCTUnwrap(view.renderingTask)
         XCTAssertEqual(view.reseed(with: rendering("# New page"), dialect: .gfm), "Before\n")
         XCTAssertFalse(view.isRendering)
         XCTAssertEqual(view.string, "New page\n")
-        _ = try await MarkdownPreviewParsing.shared.parse("barrier", objects: [], dialect: .gfm, limits: CompositionLimits())
-        await Task.yield()
+        await pending.value
         XCTAssertEqual(view.string, "New page\n")
         XCTAssertEqual(callbacks, 0)
+    }
+
+    func testEqualReplacementReusesPendingWorkAndPublishesOnce() async throws {
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        var callbacks = 0
+        view.onRenderingChanged = { _ in callbacks += 1 }
+        view.reseed(with: rendering(source), dialect: .gfm)
+        let pending = try XCTUnwrap(view.renderingTask)
+        let replacement = rendering(source)
+        view.reseed(with: replacement, dialect: .gfm)
+        XCTAssertEqual(view.renderingTask, pending)
+        await pending.value
+        XCTAssertFalse(view.isRendering)
+        XCTAssertEqual(callbacks, 1)
+        XCTAssertEqual(view.string, MarkdownPreviewView.render(replacement.text).string)
+        view.reseed(with: replacement, dialect: .gfm)
+        XCTAssertNil(view.renderingTask)
+        XCTAssertEqual(callbacks, 1)
+    }
+
+    func testCancelledCurrentRenderingReleasesBusyStateWithCurrentSource() async throws {
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        view.isSelectedPage = true
+        view.reseed(with: rendering(source), dialect: .gfm)
+        let pending = try XCTUnwrap(view.renderingTask)
+        pending.cancel()
+        await pending.value
+        XCTAssertFalse(view.isRendering)
+        XCTAssertNil(view.renderingTask)
+        XCTAssertTrue(view.isSelectable)
+        XCTAssertEqual(view.string, source)
+    }
+
+    func testEqualLengthCanonicalUnicodeEditReplacesPendingSource() async throws {
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        view.reseed(with: rendering("\u{212b}\n" + source), dialect: .gfm)
+        let previous = try XCTUnwrap(view.renderingTask)
+        view.reseed(with: rendering("\u{00c5}\n" + source), dialect: .gfm)
+        let latest = try XCTUnwrap(view.renderingTask)
+        XCTAssertNotEqual(previous, latest)
+        await latest.value
+        await previous.value
+        XCTAssertFalse(view.isRendering)
+        XCTAssertEqual(view.string.utf16.first, 0x00c5)
     }
 
     func testDialectChangePublishesOnlyLatestLargeRendering() async throws {

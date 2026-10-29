@@ -582,6 +582,94 @@ final class PreviewImageControlsTests: XCTestCase {
         XCTAssertFalse(fragment.plainText.contains("SECRET"))
     }
 
+    private func fixtureWithSealedImageAlt() throws -> (Fixture, UInt64) {
+        let ink = "before ![image SECRET alt](\(Self.address)) after"
+        let fixture = try fixture(ink)
+        fixture.model.toggleMarkdownPreview(for: fixture.page)
+        fixture.update()
+        let editor = try XCTUnwrap(fixture.stack.editor)
+        let range = (ink as NSString).range(of: "SECRET")
+        editor.setSelectedRange(range)
+        fixture.coordinator.sealSelectionOrLine()
+        let chip = try XCTUnwrap(fixture.coordinator.chipAttachment(at: range.location)?.info.chipId)
+        fixture.model.toggleMarkdownPreview(for: fixture.page)
+        fixture.update()
+        let preview = try XCTUnwrap(fixture.stack.previewRegions[fixture.page])
+        let mounted = Fixture(model: fixture.model, page: fixture.page, window: fixture.window,
+                              scroll: fixture.scroll, stack: fixture.stack, coordinator: fixture.coordinator,
+                              preview: preview, loader: fixture.loader)
+        return (mounted, chip)
+    }
+
+    private func firstChip(in text: NSAttributedString) -> ChipAttachment? {
+        var result: ChipAttachment?
+        text.enumerateAttribute(.attachment, in: NSRange(location: 0, length: text.length)) { value, _, stop in
+            if let chip = value as? ChipAttachment { result = chip; stop.pointee = true }
+        }
+        return result
+    }
+
+    func testSealedImageAltRemintAndRepeatedResizeKeepTheLoadedImageAndReference() async throws {
+        let (fixture, chip) = try fixtureWithSealedImageAlt()
+        defer { fixture.window.close() }
+        let preview = fixture.preview
+        fixture.loader.handler = { _ in self.image() }
+        let button = try XCTUnwrap(preview.imageControls.buttons.first)
+        button.performClick(nil)
+        try await eventually { preview.imageControls.loadedImageCount == 1 }
+        let original = preview.string
+        let selected = (original as NSString).range(of: "after")
+        preview.setSelectedRange(selected)
+        for width: CGFloat in [320, 320, 600, 600, 320] {
+            fixture.window.setContentSize(NSSize(width: width, height: 400))
+            fixture.scroll.frame = NSRect(x: 0, y: 0, width: width, height: 400)
+            fixture.update()
+            fixture.update()
+            let before = try XCTUnwrap(firstChip(in: fixture.model.quietRendering(for: fixture.page).text))
+            fixture.model.invalidateQuietRendering(for: fixture.page)
+            let after = try XCTUnwrap(firstChip(in: fixture.model.quietRendering(for: fixture.page).text))
+            XCTAssertFalse(before === after)
+            XCTAssertEqual(before.info, after.info)
+            fixture.update()
+            await Task.yield()
+            XCTAssertEqual(preview.imageControls.loadedImageCount, 1)
+            XCTAssertTrue(preview.imageControls.buttons.first === button)
+            XCTAssertEqual(loadedPictureBounds(in: preview).count, 1)
+            XCTAssertEqual(fixture.loader.requests.count, 1)
+            XCTAssertEqual(preview.string, original)
+            XCTAssertEqual(preview.selectedRange(), selected)
+            preview.setSelectedRange(NSRange(location: 0, length: preview.string.utf16.count))
+            let copied = preview.shownSelection().flatMap { $0 }
+            XCTAssertEqual(copied.filter { if case .chip = $0 { true } else { false } }, [.chip(chip)])
+            let ink = copied.reduce(into: "") { if case .ink(let text) = $1 { $0 += text } }
+            XCTAssertEqual(ink, "before image  alt after\n")
+            preview.setSelectedRange(selected)
+        }
+    }
+
+    func testChangedSealedImageAltMetadataRefreshesThePreviewAndRequiresAnotherLoad() async throws {
+        let (fixture, chip) = try fixtureWithSealedImageAlt()
+        defer { fixture.window.close() }
+        let preview = fixture.preview
+        fixture.loader.handler = { _ in self.image() }
+        let button = try XCTUnwrap(preview.imageControls.buttons.first)
+        button.performClick(nil)
+        try await eventually { preview.imageControls.loadedImageCount == 1 }
+        XCTAssertTrue(fixture.model.setChipName("IMAGE_OBJECT", chip: chip, sheet: fixture.page))
+        fixture.update()
+        XCTAssertEqual(firstChip(in: try XCTUnwrap(preview.textStorage))?.info.name, "IMAGE_OBJECT")
+        XCTAssertEqual(preview.imageControls.loadedImageCount, 0)
+        XCTAssertEqual(fixture.loader.requests.count, 1)
+        let refreshed = try XCTUnwrap(preview.imageControls.buttons.first)
+        XCTAssertFalse(refreshed === button)
+        XCTAssertTrue(refreshed.title.hasPrefix("Load"))
+        refreshed.performClick(nil)
+        try await eventually { preview.imageControls.loadedImageCount == 1 }
+        XCTAssertEqual(fixture.loader.requests.count, 2)
+        preview.setSelectedRange(NSRange(location: 0, length: preview.string.utf16.count))
+        XCTAssertEqual(preview.shownSelection().flatMap { $0 }.filter { if case .chip = $0 { true } else { false } }, [.chip(chip)])
+    }
+
     func testLoadingUnloadingAndResizingKeepTheTextStreamAndSelectionStable() async throws {
         let fixture = try fixture("before " + Self.markdown + " after")
         defer { fixture.window.close() }
