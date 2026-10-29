@@ -62,8 +62,8 @@ jobs:
         with:
           manifest-path: target/comrak-advisories-${{ github.run_id }}-${{ github.run_attempt }}/Cargo.toml
           arguments: --locked
-          command: check advisories
-          command-arguments: --config deny.toml
+          command: check
+          command-arguments: --config deny.toml advisories
 
   platform:
     name: platform (macos)
