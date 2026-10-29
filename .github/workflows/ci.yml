@@ -54,16 +54,16 @@ jobs:
       - name: Test (test-util seams)
         run: cargo test -p companion-ffi --features test-util
       - name: cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2; cargo-deny 0.20.2
       - name: Prepare vendored comrak registry-origin advisory check
         run: ./scripts/verify-vendored-comrak.py --advisory-workspace target/comrak-advisories-${{ github.run_id }}-${{ github.run_attempt }}
       - name: cargo-deny (vendored comrak upstream version)
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2; cargo-deny 0.20.2
         with:
           manifest-path: target/comrak-advisories-${{ github.run_id }}-${{ github.run_attempt }}/Cargo.toml
-          arguments: --locked
+          arguments: --locked --config deny.toml
           command: check
-          command-arguments: --config deny.toml advisories
+          command-arguments: advisories
 
   platform:
     name: platform (macos)

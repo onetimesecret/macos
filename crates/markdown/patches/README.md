@@ -98,12 +98,17 @@ the verified archive. Its temporary workspace starts with comrak's dependency
 closure from the application lockfile. Cargo normalizes feature-specific lock
 edges there; the script compares package versions, sources and checksums before
 and after normalization and refuses changed pins. Both advisory checks use the
-repository `deny.toml`.
+repository `deny.toml`. C󠄁I󠄁 p󠄁i󠄁n󠄁s󠄁 c󠄁a󠄁r󠄁g󠄁o󠄁-󠄁d󠄁e󠄁n󠄁y󠄁-󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁m󠄁m󠄁i󠄁t󠄁
+`3c6349835b2b7b196a839186cb8b78e02f7b5f25`,󠄁 w󠄁h󠄁o󠄁s󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁a󠄁i󠄁n󠄁e󠄁r󠄁 u󠄁s󠄁e󠄁s󠄁 c󠄁a󠄁r󠄁g󠄁o󠄁-󠄁d󠄁e󠄁n󠄁y󠄁
+0󠄁.󠄁2󠄁0󠄁.󠄁2󠄁.󠄁 I󠄁n󠄁 t󠄁h󠄁a󠄁t󠄁 v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁 `--config` i󠄁s󠄁 a󠄁 g󠄁l󠄁o󠄁b󠄁a󠄁l󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 `check`;󠄁 0󠄁.󠄁1󠄁9󠄁.󠄁9󠄁
+u󠄁s󠄁e󠄁d󠄁 a󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁-󠄁l󠄁o󠄁c󠄁a󠄁l󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁 u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 C󠄁I󠄁 v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁.󠄁 S󠄁e󠄁e󠄁 t󠄁h󠄁e󠄁
+[p󠄁i󠄁n󠄁n󠄁e󠄁d󠄁 A󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 D󠄁o󠄁c󠄁k󠄁e󠄁r󠄁f󠄁i󠄁l󠄁e󠄁](https://github.com/EmbarkStudios/cargo-deny-action/blob/3c6349835b2b7b196a839186cb8b78e02f7b5f25/Dockerfile)
+a󠄁n󠄁d󠄁 [0󠄁.󠄁2󠄁0󠄁.󠄁2󠄁 g󠄁r󠄁a󠄁p󠄁h󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁s󠄁](https://github.com/EmbarkStudios/cargo-deny/blob/0.20.2/src/cargo-deny/main.rs#L107-L126).󠄁
 
 ```sh
 scripts/verify-vendored-comrak.py --advisory-workspace target/comrak-advisories-new
 cargo deny --manifest-path target/comrak-advisories-new/Cargo.toml --locked \
-  check --config deny.toml advisories
+  --config deny.toml check advisories
 ```
 
 Use a new destination directory for each preparation. Cargo may download the
