@@ -14,6 +14,7 @@ final class MarkdownPreviewView: AskingTextView {
     private let previewStorage: NSTextStorage
     private var seeded: PageModel.QuietRendering?
     private var seededDialect: PreviewDialect?
+    private var seededTypeface: InkStyle.Typeface?
     private(set) var renderingTask: Task<Void, Never>?
     private var pendingRenderingID: UUID?
     private(set) var isRendering = false
@@ -253,15 +254,16 @@ final class MarkdownPreviewView: AskingTextView {
 
     @discardableResult
     func reseed(with rendering: PageModel.QuietRendering, dialect: PreviewDialect) -> String? {
-        if rendering === seeded, dialect == seededDialect { return nil }
-        let sameSource = dialect == seededDialect && seeded.map {
+        let sameStyle = dialect == seededDialect && InkStyle.typeface == seededTypeface
+        if rendering === seeded, sameStyle { return nil }
+        let sameSource = sameStyle && seeded.map {
             Self.sameSource($0.text, rendering.text)
         } == true
-        let reusesImageTemplate = sameSource && !imageControls.buttons.isEmpty
-        let previous = isRendering ? pendingPreviousText : (seeded == nil || reusesImageTemplate ? nil : previewStorage.string)
+        let previous = isRendering ? pendingPreviousText : (seeded == nil || sameSource ? nil : previewStorage.string)
         seeded = rendering
         seededDialect = dialect
-        if reusesImageTemplate || (isRendering && sameSource) { return nil }
+        seededTypeface = InkStyle.typeface
+        if sameSource { return nil }
         renderingTask?.cancel()
         renderingTask = nil
         pendingRenderingID = nil

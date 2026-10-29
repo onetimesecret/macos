@@ -102,6 +102,24 @@ final class MarkdownDeferredRenderingTests: XCTestCase {
         XCTAssertEqual(view.string.utf16.first, 0x00c5)
     }
 
+    func testCompletedLargeSourceReusesEquivalentWrapperWithoutLoadingFlash() async throws {
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        view.isSelectedPage = true
+        view.reseed(with: rendering(source), dialect: .gfm)
+        await try XCTUnwrap(view.renderingTask).value
+        let storage = try XCTUnwrap(view.textStorage)
+        let output = NSAttributedString(attributedString: storage)
+        let selection = NSRange(location: 0, length: 7)
+        view.setSelectedRange(selection)
+        XCTAssertTrue(view.imageControls.buttons.isEmpty)
+        XCTAssertNil(view.reseed(with: rendering(source), dialect: .gfm))
+        XCTAssertFalse(view.isRendering)
+        XCTAssertNil(view.renderingTask)
+        XCTAssertTrue(view.isSelectable)
+        XCTAssertTrue(storage.isEqual(to: output))
+        XCTAssertEqual(view.selectedRange(), selection)
+    }
+
     func testDialectChangePublishesOnlyLatestLargeRendering() async throws {
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         view.reseed(with: rendering("# Before"), dialect: .gfm)
