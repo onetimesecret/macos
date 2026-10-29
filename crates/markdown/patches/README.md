@@ -15,7 +15,8 @@ Its `.cargo_vcs_info.json` identifies upstream revision
 - `comrak-0.57.0-reference-sourcepos.patch` advances surviving paragraph/heading
   source positions and their inline line-offset table after consuming reference
   definitions. It clears the title when a next-line title is rejected and the
-  scanner rewinds. It adds four direct AST regression tests.
+  scanner rewinds. T󠄁h󠄁i󠄁s󠄁 a󠄁l󠄁s󠄁o󠄁 c󠄁o󠄁r󠄁r󠄁e󠄁c󠄁t󠄁s󠄁 c󠄁o󠄁m󠄁r󠄁a󠄁k󠄁 l󠄁i󠄁n󠄁k󠄁-󠄁t󠄁i󠄁t󠄁l󠄁e󠄁/󠄁H󠄁T󠄁M󠄁L󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁a󠄁t󠄁
+  r󠄁e󠄁j󠄁e󠄁c󠄁t󠄁e󠄁d󠄁-󠄁t󠄁i󠄁t󠄁l󠄁e󠄁 c󠄁a󠄁s󠄁e󠄁.󠄁 It adds four direct AST regression tests.
 - `comrak-0.57.0-runtime-manifest.patch` removes unused CLI, example and benchmark
   targets and upstream development dependencies. Library unit tests and doctests
   are d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁,󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁c󠄁y󠄁-󠄁l󠄁o󠄁c󠄁a󠄁l󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁 i󠄁s󠄁 o󠄁m󠄁i󠄁t󠄁t󠄁e󠄁d󠄁;󠄁 t󠄁h󠄁e󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁

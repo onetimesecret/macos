@@ -25,9 +25,9 @@ p󠄁r󠄁o󠄁m󠄁i󠄁s󠄁e󠄁s󠄁.󠄁 P󠄁R󠄁 #󠄁3󠄁3󠄁7󠄁 r�
 
 ## E󠄁x󠄁e󠄁c󠄁u󠄁t󠄁e󠄁d󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁
 
-- L󠄁a󠄁t󠄁e󠄁s󠄁t󠄁 f󠄁u󠄁l󠄁l󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁:󠄁 **2󠄁,󠄁6󠄁2󠄁9󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁,󠄁 f󠄁i󠄁v󠄁e󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 s󠄁k󠄁i󠄁p󠄁p󠄁e󠄁d󠄁**,󠄁 w󠄁i󠄁t󠄁h󠄁 n󠄁o󠄁
-  f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁 (󠄁3󠄁9󠄁3󠄁 O󠄁n󠄁e󠄁t󠄁i󠄁m󠄁e󠄁P󠄁a󠄁d󠄁 a󠄁n󠄁d󠄁 2󠄁,󠄁2󠄁3󠄁6󠄁 C󠄁o󠄁m󠄁p󠄁a󠄁n󠄁i󠄁o󠄁n󠄁K󠄁i󠄁t󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁)󠄁.󠄁
-- A󠄁l󠄁l󠄁 4󠄁1󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁-󠄁c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁,󠄁 e󠄁i󠄁g󠄁h󠄁t󠄁 d󠄁e󠄁f󠄁e󠄁r󠄁r󠄁e󠄁d󠄁-󠄁r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 1󠄁8󠄁 l󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁
+- L󠄁a󠄁t󠄁e󠄁s󠄁t󠄁 f󠄁u󠄁l󠄁l󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁:󠄁 **2󠄁,󠄁6󠄁3󠄁1󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁,󠄁 f󠄁i󠄁v󠄁e󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 s󠄁k󠄁i󠄁p󠄁p󠄁e󠄁d󠄁**,󠄁 w󠄁i󠄁t󠄁h󠄁 n󠄁o󠄁
+  f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁 (󠄁3󠄁9󠄁3󠄁 O󠄁n󠄁e󠄁t󠄁i󠄁m󠄁e󠄁P󠄁a󠄁d󠄁 a󠄁n󠄁d󠄁 2󠄁,󠄁2󠄁3󠄁8󠄁 C󠄁o󠄁m󠄁p󠄁a󠄁n󠄁i󠄁o󠄁n󠄁K󠄁i󠄁t󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁)󠄁.󠄁
+- A󠄁l󠄁l󠄁 4󠄁1󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁-󠄁c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁,󠄁 n󠄁i󠄁n󠄁e󠄁 d󠄁e󠄁f󠄁e󠄁r󠄁r󠄁e󠄁d󠄁-󠄁r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 1󠄁8󠄁 l󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁
   f󠄁u󠄁l󠄁l󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁 o󠄁n󠄁 t󠄁h󠄁i󠄁s󠄁 k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁-󠄁n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁i󠄁o󠄁n󠄁-󠄁e󠄁n󠄁a󠄁b󠄁l󠄁e󠄁d󠄁 M󠄁a󠄁c󠄁.󠄁
 - N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 T󠄁a󠄁b󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁 s󠄁k󠄁i󠄁p󠄁 w󠄁h󠄁e󠄁n󠄁 m󠄁a󠄁c󠄁O󠄁S󠄁 k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁s󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁.󠄁
   V󠄁i󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁/󠄁r󠄁e󠄁c󠄁a󠄁l󠄁c󠄁u󠄁l󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 m󠄁e󠄁t󠄁a󠄁d󠄁a󠄁t󠄁a󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 r󠄁u󠄁n󠄁 i󠄁n󠄁 t󠄁h󠄁a󠄁t󠄁 c󠄁o󠄁n󠄁f󠄁i󠄁g󠄁u󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁
@@ -89,15 +89,15 @@ S󠄁e󠄁e󠄁 t󠄁h󠄁e󠄁 [v󠄁e󠄁n󠄁d󠄁o󠄁r󠄁 p󠄁r󠄁o󠄁v
 ## E󠄁x󠄁p󠄁a󠄁n󠄁d󠄁e󠄁d󠄁 e󠄁x󠄁e󠄁c󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁t󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 c󠄁o󠄁d󠄁e󠄁
 
 A󠄁l󠄁l󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 i󠄁n󠄁 t󠄁h󠄁i󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁 a󠄁r󠄁e󠄁 c󠄁o󠄁m󠄁m󠄁i󠄁t󠄁t󠄁e󠄁d󠄁 i󠄁n󠄁
-`2869caca9f75d86be9165a38f8d3031623561b8b`.󠄁 L󠄁a󠄁t󠄁e󠄁r󠄁 d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 C󠄁I󠄁
+`61ccb43a7238ee3d8deb58696c6f2a200b696321`.󠄁 L󠄁a󠄁t󠄁e󠄁r󠄁 d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 C󠄁I󠄁
 i󠄁n󠄁v󠄁o󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 d󠄁o󠄁 n󠄁o󠄁t󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁 t󠄁h󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁e󠄁d󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 b󠄁y󠄁t󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 U󠄁I󠄁 p󠄁r󠄁o󠄁b󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁s󠄁 t󠄁h󠄁a󠄁t󠄁 c󠄁l󠄁e󠄁a󠄁n󠄁
 c󠄁o󠄁m󠄁m󠄁i󠄁t󠄁 p󠄁l󠄁u󠄁s󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 a󠄁n󠄁d󠄁 l󠄁i󠄁n󠄁k󠄁e󠄁d󠄁-󠄁b󠄁i󠄁n󠄁a󠄁r󠄁y󠄁 h󠄁a󠄁s󠄁h󠄁e󠄁s󠄁;󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 d󠄁i󠄁r󠄁t󠄁y󠄁-󠄁s󠄁n󠄁a󠄁p󠄁s󠄁h󠄁o󠄁t󠄁 p󠄁r󠄁o󠄁b󠄁e󠄁s󠄁 a󠄁r󠄁e󠄁
 s󠄁u󠄁p󠄁e󠄁r󠄁s󠄁e󠄁d󠄁e󠄁d󠄁 b󠄁y󠄁 i󠄁t󠄁s󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 8󠄁6󠄁6󠄁-󠄁c󠄁h󠄁e󠄁c󠄁k󠄁 r󠄁u󠄁n󠄁.󠄁
 
 | C󠄁h󠄁e󠄁c󠄁k󠄁 | R󠄁e󠄁s󠄁u󠄁l󠄁t󠄁 a󠄁n󠄁d󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁 |
 | --- | --- |
-| F󠄁u󠄁l󠄁l󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 | 2󠄁,󠄁6󠄁2󠄁9󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁,󠄁 f󠄁i󠄁v󠄁e󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 s󠄁k󠄁i󠄁p󠄁s󠄁;󠄁 n󠄁o󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁.󠄁 |
-| S󠄁w󠄁i󠄁f󠄁t󠄁 T󠄁h󠄁r󠄁e󠄁a󠄁d󠄁S󠄁a󠄁n󠄁i󠄁t󠄁i󠄁z󠄁e󠄁r󠄁 | 2󠄁7󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁;󠄁 4󠄁0󠄁0󠄁 c󠄁o󠄁n󠄁c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁 r󠄁e󠄁a󠄁l󠄁 F󠄁F󠄁I󠄁 c󠄁a󠄁l󠄁l󠄁s󠄁 p󠄁l󠄁u󠄁s󠄁 d󠄁e󠄁f󠄁e󠄁r󠄁r󠄁e󠄁d󠄁-󠄁r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 l󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁.󠄁 L󠄁i󠄁n󠄁k󠄁e󠄁d󠄁 R󠄁u󠄁s󠄁t󠄁 s󠄁t󠄁a󠄁t󠄁i󠄁c󠄁 l󠄁i󠄁b󠄁r󠄁a󠄁r󠄁y󠄁 w󠄁a󠄁s󠄁 n󠄁o󠄁t󠄁 i󠄁n󠄁s󠄁t󠄁r󠄁u󠄁m󠄁e󠄁n󠄁t󠄁e󠄁d󠄁.󠄁 |
+| F󠄁u󠄁l󠄁l󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 | 2󠄁,󠄁6󠄁3󠄁1󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁,󠄁 f󠄁i󠄁v󠄁e󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 s󠄁k󠄁i󠄁p󠄁s󠄁;󠄁 n󠄁o󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁.󠄁 |
+| S󠄁w󠄁i󠄁f󠄁t󠄁 T󠄁h󠄁r󠄁e󠄁a󠄁d󠄁S󠄁a󠄁n󠄁i󠄁t󠄁i󠄁z󠄁e󠄁r󠄁 | 3󠄁0󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁;󠄁 4󠄁0󠄁0󠄁 c󠄁o󠄁n󠄁c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁 r󠄁e󠄁a󠄁l󠄁 F󠄁F󠄁I󠄁 c󠄁a󠄁l󠄁l󠄁s󠄁 p󠄁l󠄁u󠄁s󠄁 d󠄁e󠄁f󠄁e󠄁r󠄁r󠄁e󠄁d󠄁-󠄁r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 l󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁.󠄁 L󠄁i󠄁n󠄁k󠄁e󠄁d󠄁 R󠄁u󠄁s󠄁t󠄁 s󠄁t󠄁a󠄁t󠄁i󠄁c󠄁 l󠄁i󠄁b󠄁r󠄁a󠄁r󠄁y󠄁 w󠄁a󠄁s󠄁 n󠄁o󠄁t󠄁 i󠄁n󠄁s󠄁t󠄁r󠄁u󠄁m󠄁e󠄁n󠄁t󠄁e󠄁d󠄁.󠄁 |
 | R󠄁u󠄁s󠄁t󠄁 w󠄁o󠄁r󠄁k󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 w󠄁i󠄁t󠄁h󠄁 `test-util` | 1󠄁,󠄁3󠄁5󠄁6󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁,󠄁 t󠄁h󠄁r󠄁e󠄁e󠄁 m󠄁a󠄁n󠄁u󠄁a󠄁l󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁 s󠄁k󠄁i󠄁p󠄁s󠄁.󠄁 A󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 u󠄁n󠄁i󠄁q󠄁u󠄁e󠄁-󠄁p󠄁a󠄁s󠄁t󠄁e󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 a󠄁s󠄁s󠄁e󠄁r󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁a󠄁i󠄁l󠄁e󠄁d󠄁 o󠄁n󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁 r󠄁u󠄁n󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 a󠄁l󠄁o󠄁n󠄁e󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁 r󠄁e󠄁r󠄁u󠄁n󠄁;󠄁 i󠄁t󠄁s󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 i󠄁s󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 b󠄁y󠄁 t󠄁h󠄁i󠄁s󠄁 P󠄁R󠄁.󠄁 |
 | P󠄁y󠄁t󠄁h󠄁o󠄁n󠄁 s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁s󠄁 | 1󠄁5󠄁7󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁l󠄁l󠄁 1󠄁5󠄁 v󠄁e󠄁n󠄁d󠄁o󠄁r󠄁-󠄁v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁e󠄁r󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁.󠄁 I󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁 s󠄁a󠄁n󠄁d󠄁b󠄁o󠄁x󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁 i󠄁n󠄁v󠄁o󠄁l󠄁v󠄁e󠄁d󠄁 c󠄁o󠄁m󠄁p󠄁i󠄁l󠄁e󠄁r󠄁-󠄁c󠄁a󠄁c󠄁h󠄁e󠄁 w󠄁r󠄁i󠄁t󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 G󠄁i󠄁t󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 c󠄁o󠄁m󠄁m󠄁i󠄁t󠄁s󠄁;󠄁 t󠄁h󠄁e󠄁 p󠄁e󠄁r󠄁m󠄁i󠄁t󠄁t󠄁e󠄁d󠄁 r󠄁u󠄁n󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁.󠄁 |
 | V󠄁e󠄁n󠄁d󠄁o󠄁r󠄁 r󠄁e󠄁p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 | 1󠄁3󠄁4󠄁 o󠄁f󠄁f󠄁i󠄁c󠄁i󠄁a󠄁l󠄁 a󠄁r󠄁c󠄁h󠄁i󠄁v󠄁e󠄁 f󠄁i󠄁l󠄁e󠄁s󠄁 a󠄁c󠄁c󠄁o󠄁u󠄁n󠄁t󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁:󠄁 3󠄁2󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁,󠄁 1󠄁0󠄁2󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁 e󠄁x󠄁c󠄁l󠄁u󠄁d󠄁e󠄁d󠄁,󠄁 p󠄁l󠄁u󠄁s󠄁 o󠄁n󠄁e󠄁 p󠄁a󠄁t󠄁c󠄁h󠄁-󠄁a󠄁d󠄁d󠄁e󠄁d󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 f󠄁i󠄁l󠄁e󠄁.󠄁 B󠄁o󠄁t󠄁h󠄁 p󠄁a󠄁t󠄁c󠄁h󠄁e󠄁s󠄁 r󠄁e󠄁p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁 t󠄁h󠄁e󠄁 3󠄁3󠄁-󠄁f󠄁i󠄁l󠄁e󠄁 t󠄁r󠄁e󠄁e󠄁.󠄁 |
@@ -115,14 +115,14 @@ cargo test --workspace --locked --features test-util
 python3 -m unittest discover -s scripts/tests -v
 python3 scripts/verify-vendored-comrak.py --upstream
 PREVIEW_NETWORK_TESTS=1 swift test --skip-build --package-path shell --filter PreviewImageNetworkTests
-swift test --package-path shell --scratch-path /tmp/pr337-tsan-build --sanitize thread --filter 'MarkdownParserTests.testParsesOnManyThreadsEqualTheSameParsesInTurn|MarkdownDeferredRenderingTests|PreviewImageLoaderTests'
+swift test --package-path shell --scratch-path /tmp/pr337-tsan-build --sanitize thread --filter 'MarkdownParserTests.testParsesOnManyThreadsEqualTheSameParsesInTurn|MarkdownDeferredRenderingTests|MarkdownPreviewRenderingTests.testReseeding|PreviewImageLoaderTests'
 PREVIEW_PROFILE=1 PREVIEW_NATIVE_TABLE_PROFILE=1 swift test --skip-build --package-path shell --filter 'MarkdownIntegrationPerformanceTests.testOptInLargePreviewProfile|MarkdownPreviewRenderingTests.testOptInNativeTableRenderAndLayoutProfile'
 ```
 
 E󠄁x󠄁p󠄁a󠄁n󠄁d󠄁e󠄁d󠄁 l󠄁o󠄁g󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁r󠄁t󠄁i󠄁f󠄁a󠄁c󠄁t󠄁s󠄁:󠄁
 
-- `/tmp/pr337-expanded-swift-full.log`
-- `/tmp/pr337-expanded-tsan-final.log`
+- `/tmp/pr337-completed-reuse-swift-full.log`
+- `/tmp/pr337-completed-reuse-tsan.log`
 - `/tmp/pr337-expanded-rust-workspace-retry.log`
 - `/tmp/pr337-expanded-python-final.log`
 - `/tmp/pr337-expanded-real-network.log`
@@ -149,3 +149,18 @@ b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 `check`.󠄁 T󠄁h󠄁e󠄁 o󠄁f󠄁f󠄁i󠄁
 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁o󠄁r󠄁y󠄁,󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁e󠄁d󠄁 a󠄁g󠄁a󠄁i󠄁n󠄁s󠄁t󠄁 t󠄁h󠄁e󠄁 G󠄁i󠄁t󠄁H󠄁u󠄁b󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁 S󠄁H󠄁A󠄁-󠄁2󠄁5󠄁6󠄁,󠄁 a󠄁n󠄁d󠄁 u󠄁s󠄁e󠄁d󠄁 t󠄁o󠄁 r󠄁u󠄁n󠄁
 t󠄁h󠄁e󠄁 e󠄁x󠄁a󠄁c󠄁t󠄁 p󠄁i󠄁n󠄁n󠄁e󠄁d󠄁 A󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 e󠄁n󠄁t󠄁r󠄁y󠄁p󠄁o󠄁i󠄁n󠄁t󠄁/󠄁a󠄁r󠄁g󠄁u󠄁m󠄁e󠄁n󠄁t󠄁 g󠄁r󠄁o󠄁u󠄁p󠄁i󠄁n󠄁g󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁f󠄁u󠄁l󠄁l󠄁y󠄁.󠄁 I󠄁n󠄁s󠄁t󠄁a󠄁l󠄁l󠄁e󠄁d󠄁
 t󠄁o󠄁o󠄁l󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁.󠄁 E󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁:󠄁 `/tmp/pr337-cargo-deny-0.20.2/`.󠄁
+
+T󠄁h󠄁e󠄁 l󠄁a󠄁s󠄁t󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁i󠄁x󠄁 r󠄁e󠄁u󠄁s󠄁e󠄁s󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁d󠄁 e󠄁q󠄁u󠄁i󠄁v󠄁a󠄁l󠄁e󠄁n󠄁t󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁 o󠄁n󠄁 p󠄁a󠄁g󠄁e󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁
+i󠄁m󠄁a󠄁g󠄁e󠄁s󠄁,󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁i󠄁n󠄁g󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 a󠄁v󠄁o󠄁i󠄁d󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 f󠄁l󠄁a󠄁s󠄁h󠄁.󠄁 T󠄁y󠄁p󠄁e󠄁f󠄁a󠄁c󠄁e󠄁 i󠄁s󠄁 p󠄁a󠄁r󠄁t󠄁
+o󠄁f󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁 i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁d󠄁e󠄁-󠄁f󠄁a󠄁m󠄁i󠄁l󠄁y󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 p󠄁r󠄁o󠄁s󠄁e󠄁.󠄁
+T󠄁w󠄁o󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 b󠄁r󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 f󠄁u󠄁l󠄁l󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 t󠄁o󠄁t󠄁a󠄁l󠄁 t󠄁o󠄁 2󠄁,󠄁6󠄁3󠄁1󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁s󠄁/󠄁f󠄁i󠄁v󠄁e󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁
+s󠄁k󠄁i󠄁p󠄁s󠄁,󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 s󠄁a󠄁n󠄁i󠄁t󠄁i󠄁z󠄁e󠄁r󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁t󠄁 t󠄁o󠄁 3󠄁0󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 8󠄁6󠄁6󠄁-󠄁c󠄁h󠄁e󠄁c󠄁k󠄁 U󠄁I󠄁 m󠄁a󠄁t󠄁r󠄁i󠄁x󠄁
+w󠄁a󠄁s󠄁 r󠄁e󠄁r󠄁u󠄁n󠄁 o󠄁n󠄁 c󠄁l󠄁e󠄁a󠄁n󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁m󠄁m󠄁i󠄁t󠄁 `61ccb43a`;󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 h󠄁a󠄁s󠄁h󠄁e󠄁s󠄁 m󠄁a󠄁t󠄁c󠄁h󠄁.󠄁
+
+A󠄁 p󠄁r󠄁o󠄁c󠄁e󠄁s󠄁s󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁-󠄁m󠄁o󠄁d󠄁e󠄁 e󠄁x󠄁p󠄁e󠄁r󠄁i󠄁m󠄁e󠄁n󠄁t󠄁 u󠄁s󠄁e󠄁d󠄁 a󠄁r󠄁g󠄁u󠄁m󠄁e󠄁n󠄁t󠄁-󠄁d󠄁o󠄁m󠄁a󠄁i󠄁n󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁s󠄁 0󠄁 a󠄁n󠄁d󠄁 3󠄁.󠄁
+T󠄁h󠄁e󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁e󠄁d󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 `UserDefaults`,󠄁 b󠄁u󠄁t󠄁 A󠄁p󠄁p󠄁K󠄁i󠄁t󠄁 r󠄁e󠄁p󠄁o󠄁r󠄁t󠄁e󠄁d󠄁
+f󠄁u󠄁l󠄁l󠄁 k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁 t󠄁r󠄁u󠄁e󠄁 i󠄁n󠄁 b󠄁o󠄁t󠄁h󠄁 p󠄁r󠄁o󠄁c󠄁e󠄁s󠄁s󠄁e󠄁s󠄁 o󠄁n󠄁 t󠄁h󠄁i󠄁s󠄁 e󠄁n󠄁a󠄁b󠄁l󠄁e󠄁d󠄁-󠄁p󠄁r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 h󠄁o󠄁s󠄁t󠄁.󠄁
+T󠄁h󠄁a󠄁t󠄁 o󠄁v󠄁e󠄁r󠄁r󠄁i󠄁d󠄁e󠄁 i󠄁s󠄁 n󠄁o󠄁t󠄁 u󠄁s󠄁e󠄁d󠄁 t󠄁o󠄁 f󠄁o󠄁r󠄁c󠄁e󠄁 C󠄁I󠄁 t󠄁r󠄁a󠄁v󠄁e󠄁r󠄁s󠄁a󠄁l󠄁.󠄁 E󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁 i󠄁s󠄁 i󠄁n󠄁
+`/tmp/pr337-keyloop-profile/keyboard-zero.log` a󠄁n󠄁d󠄁 `keyboard-three.log`.󠄁
+A󠄁l󠄁l󠄁 s󠄁i󠄁x󠄁 C󠄁I󠄁 b󠄁u󠄁i󠄁l󠄁d󠄁/󠄁t󠄁e󠄁s󠄁t󠄁 j󠄁o󠄁b󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 o󠄁n󠄁 p󠄁r󠄁e󠄁c󠄁e󠄁d󠄁i󠄁n󠄁g󠄁 h󠄁e󠄁a󠄁d󠄁 `efcd15fe`;󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁-󠄁h󠄁e󠄁a󠄁d󠄁 C󠄁I󠄁
+a󠄁n󠄁d󠄁 C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 a󠄁r󠄁e󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁a󠄁t󠄁 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁.󠄁
