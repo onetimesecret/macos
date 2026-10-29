@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+import os
 
 @testable import CompanionKit
 
@@ -419,17 +420,14 @@ final class MarkdownParserTests: XCTestCase {
         let jobs = PreviewDialect.allCases.flatMap { dialect in pages.map { (dialect, $0) } }
         let serial = try jobs.map { try MarkdownParser.parse($0.1, dialect: $0.0) }
         let rounds = 40
-        let results = UnsafeMutableBufferPointer<MarkdownDocument?>.allocate(capacity: jobs.count * rounds)
-        results.initialize(repeating: nil)
-        defer {
-            results.deinitialize()
-            results.deallocate()
-        }
-        DispatchQueue.concurrentPerform(iterations: results.count) { index in
+        let count = jobs.count * rounds
+        let results = OSAllocatedUnfairLock(initialState: [MarkdownDocument?](repeating: nil, count: count))
+        DispatchQueue.concurrentPerform(iterations: count) { index in
             let job = jobs[index % jobs.count]
-            results[index] = try? MarkdownParser.parse(job.1, dialect: job.0)
+            let document = try? MarkdownParser.parse(job.1, dialect: job.0)
+            results.withLock { $0[index] = document }
         }
-        for (index, result) in results.enumerated() {
+        for (index, result) in results.withLock({ $0 }).enumerated() {
             XCTAssertEqual(result, serial[index % jobs.count], "\(jobs[index % jobs.count])")
         }
     }
