@@ -19,6 +19,7 @@ final class MarkdownPreviewView: AskingTextView {
     private var pendingRenderingID: UUID?
     private(set) var isRendering = false
     private var pendingPreviousText: String?
+    private var pendingSelectedRanges: [NSValue]?
     var onRenderingChanged: ((String?) -> Void)?
     private let links = PreviewLinks()
     private var imageControlsReady = false
@@ -260,6 +261,7 @@ final class MarkdownPreviewView: AskingTextView {
             Self.sameSource($0.text, rendering.text)
         } == true
         let previous = isRendering ? pendingPreviousText : (seeded == nil || sameSource ? nil : previewStorage.string)
+        let selection = pendingSelectedRanges ?? selectedRanges
         seeded = rendering
         seededDialect = dialect
         seededTypeface = InkStyle.typeface
@@ -269,6 +271,7 @@ final class MarkdownPreviewView: AskingTextView {
         pendingRenderingID = nil
         isRendering = false
         pendingPreviousText = nil
+        pendingSelectedRanges = nil
         if rendering.text.length >= Self.deferredRenderingThreshold {
             let renderer = MarkdownPreviewRenderer(
                 source: rendering.text, dialect: dialect, limits: CompositionLimits(),
@@ -278,6 +281,7 @@ final class MarkdownPreviewView: AskingTextView {
             pendingRenderingID = renderingID
             isSelectable = false
             pendingPreviousText = previous
+            pendingSelectedRanges = selection
             imageControls.seed(NSAttributedString(
                 string: CompanionL10n.string("Rendering preview…"),
                 attributes: [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]
@@ -290,11 +294,12 @@ final class MarkdownPreviewView: AskingTextView {
                 self.isRendering = false
                 self.isSelectable = self.isSelectedPage
                 self.pendingPreviousText = nil
+                self.pendingSelectedRanges = nil
                 if result == nil {
                     self.seededDialect = nil
                     self.seededTypeface = nil
                 }
-                self.imageControls.seed(result ?? renderer.plainText())
+                self.imageControls.seed(result ?? renderer.plainText(), selectedRanges: selection)
                 self.needsDisplay = true
                 self.onRenderingChanged?(previous)
                 NSAccessibility.post(element: self, notification: .valueChanged)
@@ -303,7 +308,7 @@ final class MarkdownPreviewView: AskingTextView {
             return nil
         }
         isSelectable = isSelectedPage
-        imageControls.seed(Self.render(rendering.text, dialect: dialect))
+        imageControls.seed(Self.render(rendering.text, dialect: dialect), selectedRanges: selection)
         needsDisplay = true
         return previous
     }

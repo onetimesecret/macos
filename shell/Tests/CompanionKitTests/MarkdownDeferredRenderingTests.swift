@@ -46,6 +46,7 @@ final class MarkdownDeferredRenderingTests: XCTestCase {
     func testShortReplacementRejectsPendingLargeCompletion() async throws {
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         view.reseed(with: rendering("# Before"), dialect: .gfm)
+        view.setSelectedRange(NSRange(location: 1, length: 3))
         var callbacks = 0
         view.onRenderingChanged = { _ in callbacks += 1 }
         view.reseed(with: rendering(source), dialect: .gfm)
@@ -54,8 +55,11 @@ final class MarkdownDeferredRenderingTests: XCTestCase {
         XCTAssertTrue(pending.isCancelled)
         XCTAssertFalse(view.isRendering)
         XCTAssertEqual(view.string, "New page\n")
+        let replacementSelection = NSRange(location: 2, length: 2)
+        view.setSelectedRange(replacementSelection)
         await pending.value
         XCTAssertEqual(view.string, "New page\n")
+        XCTAssertEqual(view.selectedRange(), replacementSelection)
         XCTAssertEqual(callbacks, 0)
     }
 
@@ -160,6 +164,57 @@ final class MarkdownDeferredRenderingTests: XCTestCase {
         XCTAssertTrue(view.isSelectable)
         XCTAssertTrue(storage.isEqual(to: output))
         XCTAssertEqual(view.selectedRange(), selection)
+    }
+
+    func testTypefaceChangesKeepDeepSelectionAcrossRepeatedDeferredReseeds() async throws {
+        let previousTypeface = InkStyle.typeface
+        defer { InkStyle.typeface = previousTypeface }
+        InkStyle.typeface = .init(family: "Helvetica", codeFamily: "Menlo", size: 13)
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        view.isSelectedPage = true
+        let original = rendering(source)
+        view.reseed(with: original, dialect: .gfm)
+        try await XCTUnwrap(view.renderingTask).value
+        let text = view.string
+        let selection = NSRange(location: text.utf16.count / 2, length: 40)
+        view.setSelectedRange(selection)
+        InkStyle.typeface = .init(family: "Helvetica", codeFamily: "Menlo", size: 22)
+        view.reseed(with: original, dialect: .gfm)
+        let superseded = try XCTUnwrap(view.renderingTask)
+        InkStyle.typeface = .init(family: "Helvetica", codeFamily: "Menlo", size: 17)
+        view.reseed(with: rendering(source), dialect: .gfm)
+        let latest = try XCTUnwrap(view.renderingTask)
+        view.reseed(with: rendering(source), dialect: .gfm)
+        XCTAssertEqual(view.renderingTask, latest)
+        await latest.value
+        await superseded.value
+        XCTAssertEqual(view.string, text)
+        XCTAssertEqual(view.selectedRange(), selection)
+        XCTAssertEqual(view.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
+                       MarkdownPreviewView.render(original.text).attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+    }
+
+    func testPendingReplacementClampsOriginalSelectionForSynchronousAndDeferredFinalText() async throws {
+        for deferredReplacement in [false, true] {
+            let view = MarkdownPreviewView(page: 1, coordinator: nil)
+            view.isSelectedPage = true
+            view.reseed(with: rendering(source + source), dialect: .gfm)
+            try await XCTUnwrap(view.renderingTask).value
+            let finalSource = deferredReplacement ? source : String(repeating: "word ", count: 2_000)
+            let finalLength = MarkdownPreviewView.render(NSAttributedString(string: finalSource)).length
+            view.setSelectedRange(NSRange(location: finalLength - 12, length: 40))
+            view.reseed(with: rendering(source + source + "\nintermediate"), dialect: .gfm)
+            let superseded = try XCTUnwrap(view.renderingTask)
+            view.reseed(with: rendering(finalSource), dialect: .gfm)
+            if deferredReplacement { try await XCTUnwrap(view.renderingTask).value }
+            else { XCTAssertNil(view.renderingTask) }
+            XCTAssertEqual(view.string.utf16.count, finalLength)
+            XCTAssertEqual(view.selectedRange(), NSRange(location: finalLength - 12, length: 12))
+            let currentSelection = NSRange(location: 2, length: 3)
+            view.setSelectedRange(currentSelection)
+            await superseded.value
+            XCTAssertEqual(view.selectedRange(), currentSelection)
+        }
     }
 
     func testDialectChangePublishesOnlyLatestLargeRendering() async throws {

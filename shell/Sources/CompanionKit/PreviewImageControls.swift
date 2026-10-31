@@ -140,7 +140,7 @@ final class PreviewImageControls {
         self.loadImage = load
     }
 
-    func seed(_ text: NSAttributedString) {
+    func seed(_ text: NSAttributedString, selectedRanges: [NSValue]? = nil) {
         var descriptors: [(PreviewImageDescriptor, NSRange)] = []
         text.enumerateAttribute(.previewImage, in: NSRange(location: 0, length: text.length)) { value, range, stop in
             guard let descriptor = value as? PreviewImageDescriptor else { return }
@@ -164,13 +164,13 @@ final class PreviewImageControls {
             preview?.addSubview(entry.button)
         }
         original = text
-        seedStorage()
+        seedStorage(selectedRanges: selectedRanges)
         present()
     }
 
-    private func seedStorage() {
+    private func seedStorage(selectedRanges: [NSValue]?) {
         guard let preview, let storage = preview.textStorage else { return }
-        let selection = preview.selectedRanges
+        let selection = selectedRanges ?? preview.selectedRanges
         let text = NSMutableAttributedString(attributedString: original)
         for entry in entries.reversed() {
             let control = NSTextAttachment()
