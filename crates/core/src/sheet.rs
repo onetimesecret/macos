@@ -62,7 +62,8 @@ impl ItemId {
     }
 
     /// Parse the 8-4-4-4-12 hex form, the inverse of `Display`.
-    pub(crate) fn parse(text: &str) -> Option<Self> {
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
         if text.len() != 36 {
             return None;
         }

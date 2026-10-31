@@ -197,6 +197,7 @@ pub(crate) fn inferred_intent(ops: &[EditOp]) -> EditIntent {
 /// shell persists it through [`crate::persist`].
 pub struct SheetStore<C: Clock> {
     pub(crate) clock: C,
+    pub(crate) continuous: crate::continuous::ContinuousHistory,
     /// The strip, in visible order: durable slots, each holding at most
     /// one page (ADR-0017).
     pub(crate) tabs: Vec<Tab>,
@@ -237,6 +238,7 @@ impl<C: Clock> SheetStore<C> {
     pub fn new(clock: C) -> Self {
         Self {
             clock,
+            continuous: crate::continuous::ContinuousHistory::default(),
             tabs: Vec::new(),
             ledger: VecDeque::new(),
             default_rung: Ttl::default(),
@@ -922,6 +924,15 @@ impl<C: Clock> SheetStore<C> {
     /// standing twice, or one of an ended identity, is taken out (ADR-0058
     /// points 2 and 8).
     pub fn undo(&mut self, id: SheetId) -> bool {
+        if self
+            .sheet(id)
+            .is_some_and(|sheet| sheet.document.continuous_token(true).is_some())
+        {
+            let Some(scope) = self.continuous_scope_for_step(id, true).map(str::to_owned) else {
+                return false;
+            };
+            return self.step_continuous(&scope, true).is_some();
+        }
         let Some(sheet) = self.sheet_mut(id) else {
             return false;
         };
@@ -936,6 +947,15 @@ impl<C: Clock> SheetStore<C> {
     /// Put back the step [`SheetStore::undo`] took, on the same terms.
     /// Returns whether anything was restored.
     pub fn redo(&mut self, id: SheetId) -> bool {
+        if self
+            .sheet(id)
+            .is_some_and(|sheet| sheet.document.continuous_token(false).is_some())
+        {
+            let Some(scope) = self.continuous_scope_for_step(id, false).map(str::to_owned) else {
+                return false;
+            };
+            return self.step_continuous(&scope, false).is_some();
+        }
         let Some(sheet) = self.sheet_mut(id) else {
             return false;
         };
@@ -950,6 +970,14 @@ impl<C: Clock> SheetStore<C> {
     /// Whether the page has a step waiting to be taken back.
     #[must_use]
     pub fn can_undo(&self, id: SheetId) -> bool {
+        if self
+            .sheet(id)
+            .is_some_and(|sheet| sheet.document.continuous_token(true).is_some())
+        {
+            return self
+                .continuous_scope_for_step(id, true)
+                .is_some_and(|scope| self.can_step_continuous(scope, true));
+        }
         self.sheet(id)
             .is_some_and(|sheet| sheet.document.can_undo())
     }
@@ -957,17 +985,31 @@ impl<C: Clock> SheetStore<C> {
     /// Whether the page has a step waiting to be restored.
     #[must_use]
     pub fn can_redo(&self, id: SheetId) -> bool {
+        if self
+            .sheet(id)
+            .is_some_and(|sheet| sheet.document.continuous_token(false).is_some())
+        {
+            return self
+                .continuous_scope_for_step(id, false)
+                .is_some_and(|scope| self.can_step_continuous(scope, false));
+        }
         self.sheet(id)
             .is_some_and(|sheet| sheet.document.can_redo())
     }
 
     /// Content-free action label for the next Undo menu item.
     pub fn undo_action_name(&self, id: SheetId) -> Option<&'static str> {
+        if !self.can_undo(id) {
+            return None;
+        }
         self.sheet(id)?.document.undo_action_name()
     }
 
     /// Content-free action label for the next Redo menu item.
     pub fn redo_action_name(&self, id: SheetId) -> Option<&'static str> {
+        if !self.can_redo(id) {
+            return None;
+        }
         self.sheet(id)?.document.redo_action_name()
     }
 
@@ -1343,7 +1385,7 @@ impl<C: Clock> SheetStore<C> {
 
     /// Take out each later standing of an identity, and each of an ended one
     /// this page has no record for, as local edits (ADR-0058 points 2 and 8).
-    fn take_out_standings(&mut self, id: SheetId) {
+    pub(crate) fn take_out_standings(&mut self, id: SheetId) {
         let Some(sheet) = self.sheet(id) else {
             return;
         };
@@ -2357,6 +2399,25 @@ fn sim_units(segments: &[Segment], extra: usize) -> Option<Zeroizing<Vec<SimUnit
         }
     }
     Some(units)
+}
+
+pub(crate) fn validate_edit_ops(sheet: &Sheet, ops: &[EditOp]) -> bool {
+    if ops.iter().any(EditOp::inks_sentinel) {
+        return false;
+    }
+    let Some(room) = ops.iter().try_fold(0usize, |room, op| {
+        room.checked_add(match op {
+            EditOp::Insert { text, .. } => text.encode_utf16().count(),
+            EditOp::InsertChip { .. } => 1,
+            EditOp::Delete { .. } => 0,
+        })
+    }) else {
+        return false;
+    };
+    let Some(mut sim) = sim_units(&sheet.segments, room) else {
+        return false;
+    };
+    ops.iter().all(|op| sim_admit(&mut sim, sheet, op))
 }
 
 /// Whether `at..at + len` lies in the body and splits no surrogate pair.

@@ -280,7 +280,7 @@ final class SealedNoteEditor: NSObject {
     /// closes it when the object or its page has gone.
     func follow() {
         guard let chip, let pageView else { return }
-        guard pageView.coordinator?.currentSheet == sheet,
+        guard pageView.coordinator?.displaysPage(sheet) == true,
               let index = pageView.chipIndex(ofChip: chip),
               let frame = pageView.chipFrame(at: index),
               let cell = pageView.chipCell(at: index),

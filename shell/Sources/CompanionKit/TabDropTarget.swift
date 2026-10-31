@@ -102,6 +102,11 @@ final class TabDropTarget: NSView {
     /// The cursor's answer, the page's own for each route: a page's drag moves or with
     /// ⌥ copies, a fragment copies, another app's drag copies into a seal.
     func operation(for sender: NSDraggingInfo) -> NSDragOperation {
+        if let target = continuousTarget,
+           (sender.draggingSource as? InkTextView)?.coordinator === target.coordinator,
+           target.coordinator.dragsPageSelection {
+            return target.coordinator.pageDragOperation(at: target.end, offered: sender.draggingSourceOperationMask)
+        }
         let mask = sender.draggingSourceOperationMask
         let (route, cargo) = classify(sender)
         switch route {
@@ -139,6 +144,23 @@ final class TabDropTarget: NSView {
         // Read before drop to seal touches the drag board, which would ask our provider.
         let (route, cargo) = classify(sender)
         let mask = sender.draggingSourceOperationMask
+        if let target = continuousTarget {
+            let source = sender.draggingSource as? InkTextView
+            if source?.coordinator === target.coordinator, target.coordinator.dragsPageSelection {
+                return target.coordinator.dropPageDrag(at: target.end, offered: mask, targetPage: page)
+            }
+            if case .fragment = route {
+                return target.coordinator.dropFragment(from: sender.draggingPasteboard, at: target.end,
+                    source: source, targetPage: page)
+            }
+            if case .seal = route {
+                guard target.coordinator.admitsDrop(from: source),
+                      model.sealDrag(onto: page, at: model.bodyLength(of: page)) != nil else { return false }
+                target.coordinator.continuousDocument?.refresh(force: true)
+                target.coordinator.settleRewrite(selecting: NSRange(location: target.end, length: 1))
+                return true
+            }
+        }
         switch route {
         case .refused, .ink:
             return false
@@ -203,5 +225,13 @@ final class TabDropTarget: NSView {
         InkEditorView.discardComposition(in: surface)
         coordinator.invalidateOrdinaryPasteMeasurement()
         return coordinator
+    }
+
+    private var continuousTarget: (coordinator: InkEditorView.Coordinator, end: Int)? {
+        guard takesDrops, let page, let editor = model.activeEditor as? InkTextView,
+              let coordinator = editor.coordinator,
+              let segment = coordinator.continuousDocument?.projection.segments.first(where: { $0.page.id == page })
+        else { return nil }
+        return (coordinator, NSMaxRange(segment.bodyRange))
     }
 }

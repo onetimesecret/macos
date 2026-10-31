@@ -224,6 +224,8 @@ pub(crate) struct SheetDocument {
     take_theirs_commit: Arc<Mutex<Option<i64>>>,
     /// Take theirs generation of the last popped item.
     popped_take_theirs: Arc<Mutex<Option<i64>>>,
+    pending_continuous: Arc<Mutex<Option<u64>>>,
+    popped_continuous: Arc<Mutex<Option<u64>>>,
     /// Writes left before one is refused, so a test can force a rollback.
     #[cfg(test)]
     fail_after: Cell<Option<usize>>,
@@ -265,6 +267,8 @@ impl SheetDocument {
             popped_edit_intent: binding.popped_edit_intent,
             take_theirs_commit: binding.take_theirs_commit,
             popped_take_theirs: binding.popped_take_theirs,
+            pending_continuous: binding.pending_continuous,
+            popped_continuous: binding.popped_continuous,
             #[cfg(test)]
             fail_after: Cell::new(None),
         }
@@ -302,6 +306,57 @@ impl SheetDocument {
         let _ = self.doc.revert_to(checkpoint);
         self.commit_now(None);
         self.forget_undo();
+    }
+
+    pub(crate) fn join_next(&self) -> Option<ItemId> {
+        let value = self
+            .doc
+            .get_map("surface")
+            .get("join_next")?
+            .into_value()
+            .ok()?;
+        let LoroValue::String(value) = value else {
+            return None;
+        };
+        ItemId::parse(&value)
+    }
+
+    pub(crate) fn set_join_next(&self, successor: Option<ItemId>) -> Result<(), InvalidRange> {
+        let map = self.doc.get_map("surface");
+        match successor {
+            Some(id) => map
+                .insert("join_next", id.to_string())
+                .map(|_| ())
+                .map_err(|_| InvalidRange),
+            None => map.delete("join_next").map_err(|_| InvalidRange),
+        }
+    }
+
+    pub(crate) fn commit_continuous(&mut self, token: u64, intent: EditIntent, merge: bool) {
+        self.finish_editing_group(None);
+        if merge {
+            self.separate_next_commit.set(false);
+            self.coalescing_intent.set(Some(intent));
+            self.undo.set_merge_interval(i64::MAX);
+        }
+        if let Ok(mut slot) = self.pending_continuous.lock() {
+            *slot = Some(token);
+        }
+        self.commit_edit(intent, None);
+        self.undo.set_merge_interval(self.merge_interval);
+        self.finish_editing_group(None);
+        if let Ok(mut slot) = self.pending_continuous.lock() {
+            *slot = None;
+        }
+    }
+
+    pub(crate) fn continuous_token(&self, back: bool) -> Option<u64> {
+        let value = if back {
+            self.undo.top_undo_value()
+        } else {
+            self.undo.top_redo_value()
+        }?;
+        continuous_token_from_value(&value)
     }
 
     /// Undo one step of this peer's own edits; returns whether anything moved.
@@ -516,6 +571,12 @@ impl SheetDocument {
     /// roster change, since sealing is one-way (D-30).
     pub(crate) fn forget_undo(&self) {
         self.undo.clear();
+        if let Ok(mut slot) = self.pending_continuous.lock() {
+            *slot = None;
+        }
+        if let Ok(mut slot) = self.popped_continuous.lock() {
+            *slot = None;
+        }
         self.set_caret(None);
         self.clear_popped_selection();
         self.separate_next_commit.set(false);
@@ -1000,6 +1061,9 @@ impl SheetDocument {
                 return;
             }
         }
+        if fresh.set_join_next(self.join_next()).is_err() {
+            return;
+        }
         fresh
             .doc
             .commit_with(CommitOptions::new().immediate_renew(true).timestamp(0));
@@ -1190,6 +1254,8 @@ struct UndoBinding {
     inverse_selection: Arc<Mutex<Option<StableSelection>>>,
     take_theirs_commit: Arc<Mutex<Option<i64>>>,
     popped_take_theirs: Arc<Mutex<Option<i64>>>,
+    pending_continuous: Arc<Mutex<Option<u64>>>,
+    popped_continuous: Arc<Mutex<Option<u64>>>,
 }
 
 fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
@@ -1201,6 +1267,10 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
     let take_theirs_source = Arc::clone(&take_theirs_commit);
     let popped_take_theirs = Arc::new(Mutex::new(None));
     let inverse_take_theirs_source = Arc::clone(&popped_take_theirs);
+    let pending_continuous = Arc::new(Mutex::new(None::<u64>));
+    let pending_continuous_source = Arc::clone(&pending_continuous);
+    let popped_continuous = Arc::new(Mutex::new(None::<u64>));
+    let inverse_continuous_source = Arc::clone(&popped_continuous);
     let pending_edit_selection = Arc::new(Mutex::new(None::<StableSelection>));
     let pending_edit_source = Arc::clone(&pending_edit_selection);
     let current_selection = Arc::new(Mutex::new(None::<StableSelection>));
@@ -1245,6 +1315,22 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
                 meta.set_value(LoroValue::String(intent.action_name().to_string().into()));
             }
         }
+        let continuous = if event.is_some() {
+            pending_continuous_source
+                .lock()
+                .ok()
+                .and_then(|mut slot| slot.take())
+        } else {
+            inverse_continuous_source.lock().ok().and_then(|slot| *slot)
+        };
+        if let Some(token) = continuous {
+            let name = edit_intent_from_value(&meta.value)
+                .unwrap_or(EditIntent::Replacement)
+                .action_name();
+            meta.set_value(LoroValue::String(
+                format!("continuous:{token}:{name}").into(),
+            ));
+        }
         let edit_selection = if event.is_some() {
             pending_edit_source
                 .lock()
@@ -1277,7 +1363,11 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
     let current_selection_sink = Arc::clone(&current_selection);
     let popped_edit_intent_sink = Arc::clone(&popped_edit_intent);
     let take_theirs_sink = Arc::clone(&popped_take_theirs);
+    let continuous_sink = Arc::clone(&popped_continuous);
     undo.set_on_pop(Some(Box::new(move |_kind, _span, meta| {
+        if let Ok(mut slot) = continuous_sink.lock() {
+            *slot = continuous_token_from_value(&meta.value);
+        }
         if let Ok(mut slot) = sink.lock() {
             *slot = meta.cursors.first().map(|cursor| cursor.pos.pos);
         }
@@ -1319,6 +1409,8 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
         inverse_selection,
         take_theirs_commit,
         popped_take_theirs,
+        pending_continuous,
+        popped_continuous,
     }
 }
 
@@ -1343,7 +1435,23 @@ fn edit_intent_from_value(value: &LoroValue) -> Option<EditIntent> {
     let LoroValue::String(value) = value else {
         return None;
     };
-    EditIntent::from_action_name(value)
+    let name = value
+        .strip_prefix("continuous:")
+        .and_then(|value| value.split_once(':'))
+        .map_or(value.as_ref(), |(_, name)| name);
+    EditIntent::from_action_name(name)
+}
+
+fn continuous_token_from_value(value: &LoroValue) -> Option<u64> {
+    let LoroValue::String(value) = value else {
+        return None;
+    };
+    value
+        .strip_prefix("continuous:")?
+        .split_once(':')?
+        .0
+        .parse()
+        .ok()
 }
 
 /// A chip identity from its mark value; `None` for any other shape.

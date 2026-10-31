@@ -270,7 +270,7 @@ public struct TimeUnitProjection: Equatable, Sendable {
     /// Pure, `nonisolated` and over value types, so the whole model can
     /// be argued in tests that build no window and touch no core.
     public nonisolated static func project(
-        tabs: [TabSummary], selectedPageID: UInt64?, unit: TimeUnit
+        tabs: [TabSummary], selectedPageID: UInt64?, unit: TimeUnit, includeEmptyPages: Bool = false
     ) -> TimeUnitProjection {
         var rows: [Int: [TabSummary]] = [:]
         // A summary that claims a page but names neither its id nor its
@@ -304,7 +304,7 @@ public struct TimeUnitProjection: Equatable, Sendable {
             // clock's page into today, so its page is on screen rather
             // than hidden behind an arithmetic nobody can see, which
             // leaves this reading as the one place it names: bucket 0.
-            let drawn = bucket >= 0 || holdsSelection || pages.contains(where: \.pageHasContent)
+            let drawn = includeEmptyPages || bucket >= 0 || holdsSelection || pages.contains(where: \.pageHasContent)
             guard drawn else {
                 hidden += pages.count
                 continue
