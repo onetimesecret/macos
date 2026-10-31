@@ -1770,6 +1770,10 @@ public class CompanionClient: @unchecked Sendable {
         }
     }
 
+    public static func concealLinkRecoverySeconds() -> UInt32 {
+        companion_conceal_link_recovery_seconds()
+    }
+
     public func canCopyConcealedLink(token: UInt64) -> Bool {
         companion_conceal_link_can_copy(handle, token)
     }

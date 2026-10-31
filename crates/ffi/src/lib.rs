@@ -2077,6 +2077,15 @@ pub extern "C" fn companion_clipboard_clear_seconds() -> u32 {
     CLIPBOARD_CLEAR_SECONDS
 }
 
+/// Availability interval for a completed link's copy-again session.
+pub const LINK_RECOVERY_SECONDS: u32 = 60;
+
+/// The link recovery access interval for the shell.
+#[unsafe(no_mangle)]
+pub extern "C" fn companion_conceal_link_recovery_seconds() -> u32 {
+    LINK_RECOVERY_SECONDS
+}
+
 impl Companion {
     fn cached_link(&mut self, token: u64, now: Instant) -> Option<&CachedConcealLink> {
         let valid = self.concealed_link.as_ref().is_some_and(|link| {
@@ -3245,7 +3254,7 @@ fn finish_conceal(
     guard.concealed_link = copy_token.map(|token| CachedConcealLink {
         bytes: link_bytes.clone(),
         token,
-        expires_at: Instant::now() + Duration::from_secs(u64::from(CLIPBOARD_CLEAR_SECONDS)),
+        expires_at: Instant::now() + Duration::from_secs(u64::from(LINK_RECOVERY_SECONDS)),
         target: sent,
     });
     if let Some(token) = copy_token {
@@ -6286,6 +6295,15 @@ mod tests {
     }
 
     #[test]
+    fn the_link_recovery_interval_is_its_own_core_constant() {
+        assert_eq!(
+            companion_conceal_link_recovery_seconds(),
+            LINK_RECOVERY_SECONDS
+        );
+        assert_eq!(companion_conceal_link_recovery_seconds(), 60);
+    }
+
+    #[test]
     fn a_second_egress_retires_the_first_receipt() {
         let handle = handle();
         unsafe {
@@ -7459,7 +7477,10 @@ mod tests {
             seed(handle, "copied in another application");
             assert!(companion_conceal_link_can_copy(handle, token));
             assert!(companion_conceal_link_copy(handle, token));
-            assert!(companion_conceal_link_remaining_ms(handle, token) <= 60_000);
+            assert!(
+                companion_conceal_link_remaining_ms(handle, token)
+                    <= u64::from(LINK_RECOVERY_SECONDS) * 1_000
+            );
             {
                 let guard = (&*handle).inner.lock().unwrap();
                 let item = guard.pasteboard.read().unwrap();

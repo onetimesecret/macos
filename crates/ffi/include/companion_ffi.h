@@ -1388,6 +1388,8 @@ char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
 char *companion_sheet_conceal(CompanionHandle *handle, uint64_t sheet,
                               const char *opts_json);
 
+/* Availability interval for a completed link's copy-again session. */
+uint32_t companion_conceal_link_recovery_seconds(void);
 /* Copy or forget a token-scoped link recovery session. */
 bool companion_conceal_link_can_copy(CompanionHandle *handle, uint64_t token);
 uint64_t companion_conceal_link_remaining_ms(CompanionHandle *handle, uint64_t token);
