@@ -192,6 +192,11 @@ one.
 
 ### The block
 
+Presentation revision: the [2026-10-31 checklist](../../plans/sealed-content-ux-2026-10-31.md)
+replaces the full-width block, hover handles and text copy zones with a compact
+object and explicit controls. The older visual description below is historical.
+
+
 Full measure, 8px radius, hairline border, padded 8 × 12. A tracked
 `SEALED CONTENT` label with a lock over the mechanical excerpt, and the
 size class right-aligned as metadata, never a count. The mechanical

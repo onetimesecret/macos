@@ -33,6 +33,13 @@ sources:
 
 Read [behaviour law conventions](README.md) before filing or changing a law.
 
+2026-10-31 presentation revision: the maintainer requested fixes for the sealed-content
+UX audit. The [implementation checklist](../plans/sealed-content-ux-2026-10-31.md)
+describes the replacement of text copy zones with explicit controls, the sealed
+variable-name field's valid focus-loss save, and the current menu wording. Those
+presentation details replace the older sealed-row descriptions below; the core
+object, excerpt, variable-name format and explicit-output rules are unchanged.
+
 ## The rule
 
 > A name is edited where it is shown, in its own seat; Return commits,
