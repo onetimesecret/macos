@@ -133,6 +133,14 @@ class VendoredComrakVerificationTests(unittest.TestCase):
         with self.assertRaisesRegex(VERIFY.VerificationError, "must use the vendored comrak"):
             VERIFY.verify_tree(self.root)
 
+    def test_registry_policy_probe_has_the_workspace_license(self):
+        destination = self.root / "policy-probe"
+        with mock.patch.object(VERIFY.subprocess, "run", return_value=mock.Mock(returncode=0, stderr="")):
+            VERIFY.prepare_advisories(self.root, destination)
+        manifest = tomllib.loads((destination / "Cargo.toml").read_text())
+        workspace = tomllib.loads((self.root / "Cargo.toml").read_text())["workspace"]
+        self.assertEqual(manifest["package"]["license"], workspace["package"]["license"])
+
 
 if __name__ == "__main__":
     unittest.main()

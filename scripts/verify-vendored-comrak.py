@@ -168,7 +168,7 @@ def prepare_advisories(root: Path, destination: Path) -> None:
     destination.mkdir(parents=True)
     (destination / "Cargo.toml").write_text(
         '[workspace]\n[package]\nname = "comrak-advisory-probe"\nversion = "0.0.0"\n'
-        'edition = "2024"\npublish = false\n[lib]\npath = "lib.rs"\n[dependencies]\n'
+        'edition = "2024"\nlicense = "MIT"\npublish = false\n[lib]\npath = "lib.rs"\n[dependencies]\n'
         f'comrak = {{ version = "={VERSION}", default-features = false }}\n'
     )
     (destination / "lib.rs").write_text("")
