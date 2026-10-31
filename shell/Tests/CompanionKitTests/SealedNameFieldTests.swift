@@ -17,7 +17,7 @@ final class SealedNameFieldTests: XCTestCase {
     }
 
     /// `ab <chip> cd` on a page of its own, the chip sealed from `SECRET`.
-    private func makePage() throws -> Page {
+    private func makePage(width: CGFloat = 520) throws -> Page {
         let suite = "companion-sealed-name-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
@@ -27,7 +27,7 @@ final class SealedNameFieldTests: XCTestCase {
         let sheet = try XCTUnwrap(model.selectedPageID)
         let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: sheet, coordinator: coordinator))
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 300))
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: 300))
         InkEditorView.seat(textView, in: scroll)
         textView.isEditable = true
         textView.insertText(
@@ -53,17 +53,78 @@ final class SealedNameFieldTests: XCTestCase {
         try XCTUnwrap(page.coordinator.nameEditor, "no field was opened")
     }
 
+    func testNamingHelpKeepsItsHintAndButtonsVisibleAtNarrowAndWideWidths() {
+        let helper = SealedNameHelpView()
+        for width in [CGFloat(244), 440] {
+            for message in ["", ChipRename.words(for: .outsideCharset)] {
+                helper.error.stringValue = message
+                helper.frame = NSRect(x: 0, y: 0, width: width, height: helper.preferredHeight(width: width))
+                helper.layout()
+                for view in [helper.hint, helper.save, helper.cancel] as [NSView] {
+                    XCTAssertTrue(helper.bounds.contains(view.frame), "a naming control extends beyond the helper")
+                }
+                XCTAssertGreaterThanOrEqual(helper.hint.frame.width, helper.hint.intrinsicContentSize.width)
+                XCTAssertFalse(helper.hint.frame.intersects(helper.save.frame))
+                XCTAssertFalse(helper.hint.frame.intersects(helper.cancel.frame))
+                if width == 244 {
+                    XCTAssertLessThanOrEqual(helper.hint.frame.maxY, helper.cancel.frame.minY)
+                } else {
+                    XCTAssertEqual(helper.hint.frame.midY, helper.cancel.frame.midY)
+                }
+            }
+        }
+    }
+
+    func testRenderNamingPreviewsWhenRequested() throws {
+        guard let directory = ProcessInfo.processInfo.environment["ONETIMEPAD_SEALED_PREVIEW_DIR"] else { return }
+        let output = URL(fileURLWithPath: directory, isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let original = InkStyle.typeface
+        defer { InkStyle.typeface = original }
+        for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            for width in [CGFloat(260), 680] {
+                let page = try makePage(width: width)
+                let window = NSWindow(
+                    contentRect: NSRect(x: 0, y: 0, width: width, height: 300),
+                    styleMask: [.titled], backing: .buffered, defer: false)
+                window.contentView = page.scroll
+                window.appearance = NSAppearance(named: appearance)
+                page.scroll.appearance = window.appearance
+                page.textView.appearance = window.appearance
+                page.textView.drawsBackground = true
+                page.textView.backgroundColor = .windowBackgroundColor
+                page.model.fontSize = 13
+                page.coordinator.applyTypeface(page.model.typeface)
+                page.textView.layoutManager?.ensureLayout(for: try XCTUnwrap(page.textView.textContainer))
+                page.coordinator.beginNaming(at: 3)
+                let editor = try field(page)
+                for error in [false, true] {
+                    editor.draft = error ? "my.key" : "API_KEY"
+                    if error { editor.commit() }
+                    page.scroll.layoutSubtreeIfNeeded()
+                    let capture = page.scroll.bounds
+                    let rep = try XCTUnwrap(page.scroll.bitmapImageRepForCachingDisplay(in: capture))
+                    page.scroll.cacheDisplay(in: capture, to: rep)
+                    let data = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+                    let name = "name-\(appearanceName)-\(Int(width))w-\(error ? "error" : "valid").png"
+                    try data.write(to: output.appendingPathComponent(name))
+                }
+                editor.keep(returningKeys: false)
+            }
+        }
+    }
+
     // MARK: Opening
 
-    /// *Name* opens the field in the name's seat on the current name,
-    /// with `NAME` as its placeholder, and the excerpt stays to its right.
-    func testTheFieldOpensInTheSeatOnTheNameWithTheExcerptToItsRight() throws {
+    /// Naming opens beside its item with an example, format help and visible endings.
+    func testTheFieldOpensWithItsVariableNameInstructionsAndActions() throws {
         let page = try makePage()
         page.coordinator.beginNaming(at: 3)
         let editor = try field(page)
         XCTAssertTrue(editor.isOpen)
         XCTAssertEqual(editor.draft, "", "an unnamed object's field opens on nothing")
-        XCTAssertEqual(editor.field.placeholderAttributedString?.string, "NAME")
+        XCTAssertEqual(editor.field.placeholderAttributedString?.string, "API_KEY")
+        XCTAssertEqual(editor.field.accessibilityLabel(), "Variable name")
         XCTAssertTrue(editor.field.superview === page.textView, "the field is not in the seat")
         let frame = try XCTUnwrap(page.textView.chipFrame(at: 3))
         let layout = SealedBlockCell.contentLayout(in: frame)
@@ -73,13 +134,12 @@ final class SealedNameFieldTests: XCTestCase {
             x: editor.field.frame.midX, y: editor.field.frame.midY)))
         let naming = try XCTUnwrap(page.textView.naming)
         XCTAssertEqual(naming.chip, page.chip)
-        let cell = try XCTUnwrap(page.textView.chipCell(at: 3))
-        let row = try XCTUnwrap(cell.namedRow(in: frame, editingWidth: naming.width))
-        XCTAssertEqual(
-            row.geometry.equals.minX, editor.field.frame.maxX + SealedNameEditor.textInset,
-            accuracy: 0.5, "the `=` does not follow the field")
-        XCTAssertEqual(row.value.string, cell.info.excerpt, "the excerpt left the row")
-        XCTAssertGreaterThanOrEqual(row.geometry.value.minX, row.geometry.equals.maxX)
+        XCTAssertTrue(editor.overlay.superview === page.scroll)
+        XCTAssertTrue(editor.helpView.title.stringValue.contains("Variable name"))
+        XCTAssertTrue(editor.helpView.help.stringValue.contains("64"))
+        XCTAssertEqual(editor.helpView.hint.stringValue, "Return saves · Esc cancels")
+        XCTAssertEqual(editor.helpView.save.title, "Save")
+        XCTAssertEqual(editor.helpView.cancel.title, "Cancel")
 
         editor.keep(returningKeys: false)
         XCTAssertTrue(page.model.setChipName("DB_PASSWORD", chip: page.chip, sheet: page.sheet))
@@ -87,56 +147,20 @@ final class SealedNameFieldTests: XCTestCase {
         XCTAssertEqual(editor.draft, "DB_PASSWORD", "a named object's field opens on its name")
     }
 
-    /// The menu's verb reads *Name* unnamed and *Rename* named, with no
-    /// ellipsis since both edit in place (ADR-0055), and both open the field.
+    /// Naming actions explain that the format is a variable name.
     func testTheMenusVerbOpensTheField() throws {
         let page = try makePage()
         let unnamed = try XCTUnwrap(page.coordinator.chipMenu(at: 3))
-        let verb = try XCTUnwrap(unnamed.items.first { $0.title == "Name" })
-        XCTAssertFalse(unnamed.items.contains { $0.title == "Rename" })
+        let verb = try XCTUnwrap(unnamed.items.first { $0.title == "Set Variable Name…" })
+        XCTAssertFalse(unnamed.items.contains { $0.title == "Edit Variable Name…" })
         _ = (verb.target as? NSObject)?.perform(verb.action, with: verb)
         XCTAssertEqual(page.coordinator.nameEditor?.isOpen, true)
         page.coordinator.keepNaming()
 
         XCTAssertTrue(page.model.setChipName("DB_PASSWORD", chip: page.chip, sheet: page.sheet))
         let named = try XCTUnwrap(page.coordinator.chipMenu(at: 3))
-        XCTAssertNotNil(named.items.first { $0.title == "Rename" })
-        XCTAssertFalse(named.items.contains { $0.title == "Name" })
-    }
-
-    /// The double click opens the field only where Law 0007's sealed opening row says:
-    /// a named row's name zone, or anywhere on an unnamed row.
-    func testADoubleClickOpensTheFieldOnlyWhereTheRuleSays() {
-        XCTAssertEqual(
-            InkTextView.chipClick(
-                named: true, zone: .name, inRow: true, clickCount: 2, modifierFlags: []),
-            .openName)
-        for zone in [SealedBlockLayout.Zone.value, .equals] {
-            XCTAssertEqual(
-                InkTextView.chipClick(
-                    named: true, zone: zone, inRow: true, clickCount: 2, modifierFlags: []),
-                .ignore, "a double click on a decrypted zone opened the field")
-        }
-        XCTAssertEqual(
-            InkTextView.chipClick(
-                named: true, zone: nil, inRow: true, clickCount: 2, modifierFlags: []),
-            .select, "a named row opened from outside its name zone")
-        XCTAssertEqual(
-            InkTextView.chipClick(
-                named: false, zone: nil, inRow: true, clickCount: 2, modifierFlags: []),
-            .openName)
-        XCTAssertEqual(
-            InkTextView.chipClick(
-                named: false, zone: nil, inRow: false, clickCount: 2, modifierFlags: []),
-            .select, "an unnamed block opened from its top row")
-        XCTAssertEqual(
-            InkTextView.chipClick(
-                named: false, zone: nil, inRow: true, clickCount: 3, modifierFlags: []),
-            .ignore)
-        XCTAssertEqual(
-            InkTextView.chipClick(
-                named: false, zone: nil, inRow: true, clickCount: 2, modifierFlags: .command),
-            .select)
+        XCTAssertNotNil(named.items.first { $0.title == "Edit Variable Name…" })
+        XCTAssertFalse(named.items.contains { $0.title == "Set Variable Name…" })
     }
 
     /// A page shown read only opens no field.
@@ -167,9 +191,8 @@ final class SealedNameFieldTests: XCTestCase {
         XCTAssertTrue(page.textView.chipCell(at: 3) === cell, "the page was restated")
     }
 
-    /// Escape, the keyboard leaving, and an untouched Return keep the
-    /// name; an empty Return clears it and the row is unnamed again.
-    func testEscapeFocusLossAndAnUntouchedReturnKeepAndAnEmptyReturnClears() throws {
+    /// Cancel keeps the old name; focus loss saves; empty saves remove it.
+    func testCancelKeepsWhileFocusLossAndReturnSave() throws {
         let page = try makePage()
         XCTAssertTrue(page.model.setChipName("DB_PASSWORD", chip: page.chip, sheet: page.sheet))
         page.coordinator.beginNaming(at: 3)
@@ -183,12 +206,12 @@ final class SealedNameFieldTests: XCTestCase {
         editor.draft = "OTHER"
         editor.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification))
         XCTAssertFalse(editor.isOpen)
-        XCTAssertEqual(coreName(page), "DB_PASSWORD", "a focus loss renamed")
+        XCTAssertEqual(coreName(page), "OTHER", "a valid focus-loss draft was discarded")
 
         page.coordinator.beginNaming(at: 3)
         editor.commit()
         XCTAssertFalse(editor.isOpen)
-        XCTAssertEqual(coreName(page), "DB_PASSWORD")
+        XCTAssertEqual(coreName(page), "OTHER")
 
         page.coordinator.beginNaming(at: 3)
         editor.draft = "   "
@@ -216,31 +239,30 @@ final class SealedNameFieldTests: XCTestCase {
 
     // MARK: Refusing
 
-    /// A draft outside the rule is said in the line under the page with
-    /// the field open; the line stays past the notice dwell and goes once
-    /// the draft becomes a name the core takes.
-    func testARefusalKeepsTheFieldAndTheLine() throws {
+    /// Invalid names stay open with local feedback, independent of the shared footer.
+    func testARefusalStaysBesideTheFieldAndUpdatesAsTheDraftChanges() throws {
         let page = try makePage()
         page.coordinator.beginNaming(at: 3)
         let editor = try field(page)
+        let originalNotice = page.model.notice
         editor.draft = "my.key"
         editor.commit()
 
         XCTAssertTrue(editor.isOpen, "a refusal shut the field")
         XCTAssertTrue(editor.rename.isRefusing)
-        XCTAssertEqual(page.model.notice, ChipRename.words(for: .outsideCharset))
+        XCTAssertEqual(editor.helpView.error.stringValue, ChipRename.words(for: .outsideCharset))
+        XCTAssertEqual(page.model.notice, originalNotice)
         XCTAssertNil(coreName(page))
         page.model.flash("a passing line")
         XCTAssertEqual(page.model.notice, "a passing line")
 
         editor.draft = String(repeating: "A", count: 65)
-        XCTAssertEqual(page.model.notice, "a passing line", "a new refusal cut the line in front")
-        waitUntil(page.model.$notice, description: "the line came back on the new refusal") {
-            $0 == ChipRename.words(for: .tooLong)
-        }
+        XCTAssertEqual(page.model.notice, "a passing line")
+        XCTAssertEqual(editor.helpView.error.stringValue, ChipRename.words(for: .tooLong))
         editor.draft = "MY_KEY"
         XCTAssertFalse(editor.rename.isRefusing)
-        XCTAssertNil(page.model.notice, "the line outlived its refusal")
+        XCTAssertEqual(editor.helpView.error.stringValue, "")
+        XCTAssertEqual(page.model.notice, "a passing line")
         editor.commit()
         XCTAssertFalse(editor.isOpen)
         XCTAssertEqual(coreName(page), "MY_KEY")
@@ -248,11 +270,46 @@ final class SealedNameFieldTests: XCTestCase {
 
     func testTheRefusalsWordsAreTheFieldsOwn() {
         XCTAssertEqual(
-            ChipRename.words(for: .tooLong), "Use 64 characters or fewer for the name.")
+            ChipRename.words(for: .tooLong), "Use 64 characters or fewer for the variable name.")
         XCTAssertEqual(
             ChipRename.words(for: .outsideCharset),
-            "Use the letters A to Z, digits and underscores for the name, and start it with a letter or an underscore."
+            "Use A–Z, a–z, digits and underscores, starting with a letter or underscore."
         )
+    }
+
+    func testAnInvalidFocusLossKeepsTheDraftOpenForCorrection() throws {
+        let page = try makePage()
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        editor.draft = "my.key"
+        editor.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification))
+        XCTAssertTrue(editor.isOpen)
+        XCTAssertEqual(editor.draft, "my.key")
+        XCTAssertFalse(editor.helpView.error.stringValue.isEmpty)
+        XCTAssertNil(coreName(page))
+        editor.draft = "MY_KEY"
+        editor.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification))
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertEqual(coreName(page), "MY_KEY")
+    }
+
+    func testTheVisibleSaveAndCancelButtonsEndTheEdit() throws {
+        let page = try makePage()
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        editor.draft = "API_KEY"
+        editor.helpView.save.performClick(nil)
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertEqual(coreName(page), "API_KEY")
+        XCTAssertNil(editor.overlay.superview)
+
+        page.coordinator.beginNaming(at: 3)
+        editor.draft = "OTHER_KEY"
+        editor.helpView.cancel.performClick(nil)
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertEqual(coreName(page), "API_KEY")
+        XCTAssertEqual(editor.field.stringValue, "")
+        XCTAssertNil(editor.overlay.superview)
     }
 
     // MARK: The write a name arms (core interface, The name)

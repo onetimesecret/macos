@@ -205,7 +205,7 @@ public struct PageStatusStack: View {
     /// The offer's button names the chord the keymap binds, as the
     /// strip's tooltip does; unbound, it names only the verb.
     static func sealItTitle(chord: Keystroke?) -> String {
-        Keystroke.chorded("Seal It", chord: chord)
+        Keystroke.chorded("Seal Clipboard", chord: chord)
     }
 
     @ObservedObject var model: PageModel
@@ -353,17 +353,24 @@ public struct PageStatusStack: View {
             // gesture from "secret in hand" to "chip with a TTL,
             // off the clipboard". Routed through the editor's own
             // sealed-paste path so the chip lands at the caret.
-            HStack(spacing: 8) {
-                Text("the clipboard holds content")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(Color.secondaryInk)
-                Button(Self.sealItTitle(chord: model.keymap.hintKeystroke(for: .clipboardSeal))) {
-                    model.performSealedPaste?()
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text("Clipboard content is ready to seal")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondaryInk)
+                    Button(Self.sealItTitle(chord: model.keymap.hintKeystroke(for: .clipboardSeal))) {
+                        model.performSealedPaste?()
+                    }
+                        .font(.caption)
+                        .controlSize(.small)
+                        .help(SealSelectionMenu.help)
+                        .accessibilityLabel(Text("Seal the clipboard's content onto this page"))
+                        .accessibilityHint(Text(SealSelectionMenu.help))
+                    Spacer()
                 }
-                    .font(.system(.caption, design: .monospaced))
-                    .controlSize(.small)
-                    .accessibilityLabel(Text("Seal the clipboard's content onto this page"))
-                Spacer()
+                Text(SealSelectionMenu.consequence + " Use Copy Decrypted Contents to make changes.")
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondaryInk)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 4)

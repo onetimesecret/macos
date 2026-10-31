@@ -868,7 +868,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
             XCTAssertGreaterThan(block.width, 0, "\(width)")
             XCTAssertLessThanOrEqual(block.width, container.size.width / 2, "\(width): the object overran its cell")
             XCTAssertGreaterThan(block.width, container.size.width / 4, "\(width): the object took no cell")
-            XCTAssertEqual(block.height, SealedBlockCell.blockHeight)
+            XCTAssertEqual(block.height, SealedBlockCell.preferredHeight)
             XCTAssertLessThanOrEqual(manager.usedRect(for: container).maxX, container.size.width + 1)
         }
 

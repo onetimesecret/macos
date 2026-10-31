@@ -8,12 +8,11 @@ struct ChipRename {
     /// The object whose name the field stands over, and its page; nil while shut.
     private(set) var chip: UInt64?
     private(set) var sheet: UInt64?
-    /// The refusal standing in the line under the page, if one is.
-    private var refusal = PageModel.HeldRefusal()
+    private(set) var error: String?
 
     var draft: String { field.draft }
     var isOpen: Bool { chip != nil }
-    var isRefusing: Bool { refusal.isStanding }
+    var isRefusing: Bool { error != nil }
 
     /// Opens on the object's name, or on nothing when it has none; a field
     /// open over another object keeps that one's name.
@@ -25,22 +24,19 @@ struct ChipRename {
         self.sheet = sheet
     }
 
-    /// A keystroke. A refusal already said is judged again, so the line
-    /// never describes a draft the field no longer holds.
+    /// Recheck a refused draft as it changes.
     mutating func edit(_ draft: String, in model: PageModel) {
         guard isOpen else { return }
         field.draft = draft
-        guard refusal.isStanding else { return }
+        guard error != nil else { return }
         if let refused = CompanionClient.chipNameRefusal(TabRename.name(from: draft)) {
-            refusal.say(Self.words(for: refused), in: model)
+            error = Self.words(for: refused)
         } else {
-            refusal.release(in: model)
+            error = nil
         }
     }
 
-    /// Return: an untouched draft keeps, a name the core's rule refuses is
-    /// said under the page with the field open, and any other names the
-    /// object. True when the field shut.
+    /// Save a valid change, leaving a refused draft open for correction.
     @discardableResult
     mutating func commit(in model: PageModel) -> Bool {
         guard let chip, let sheet, let opened = field.opened else { return true }
@@ -51,27 +47,33 @@ struct ChipRename {
             return true
         }
         if let refused = CompanionClient.chipNameRefusal(name) {
-            refusal.say(Self.words(for: refused), in: model)
+            error = Self.words(for: refused)
             return false
         }
-        // Past the rule, the core refuses only an object gone or past its page's deadline.
-        model.setChipName(name, chip: chip, sheet: sheet)
+        guard model.setChipName(name, chip: chip, sheet: sheet) else {
+            if !model.coreClient.chipStands(chip) {
+                shut(in: model)
+                return true
+            }
+            error = "This sealed item is no longer available."
+            return false
+        }
         shut(in: model)
         return true
     }
 
-    /// Escape, the keyboard leaving, or the object leaving the page: the
-    /// name stands as it was.
+    /// Cancel or close after the object leaves the page.
     mutating func keep(in model: PageModel) {
         guard isOpen else { return }
         shut(in: model)
     }
 
-    /// The line under the page for each of the core's refusals.
+    /// Validation beside the variable name field.
     nonisolated static func words(for refusal: ChipNameRefusal) -> String {
         switch refusal {
-        case .tooLong: CompanionL10n.string("chip.name.long")
-        case .outsideCharset: CompanionL10n.string("chip.name.charset")
+        case .tooLong: "Use 64 characters or fewer for the variable name."
+        case .outsideCharset:
+            "Use A–Z, a–z, digits and underscores, starting with a letter or underscore."
         }
     }
 
@@ -79,7 +81,7 @@ struct ChipRename {
         _ = field.end(committed: false)
         chip = nil
         sheet = nil
-        refusal.release(in: model)
+        error = nil
     }
 }
 
@@ -191,13 +193,93 @@ final class SealedNameField: NSTextField {
     }
 }
 
-/// Opens, places and ends the name field over one sealed block (Law 0007).
+final class SealedNameHelpView: NSView {
+    override var isFlipped: Bool { true }
+
+    let title = NSTextField(labelWithString: "Variable name · e.g. API_KEY")
+    let help = NSTextField(wrappingLabelWithString:
+        "Use a recognizable name for similar excerpts. 1–64 characters: A–Z, a–z, 0–9 and _. Start with a letter or _. Leave empty to remove the name.")
+    let error = NSTextField(wrappingLabelWithString: "")
+    let hint = NSTextField(labelWithString: "Return saves · Esc cancels")
+    let save = NSButton(title: "Save", target: nil, action: nil)
+    let cancel = NSButton(title: "Cancel", target: nil, action: nil)
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        title.font = .systemFont(ofSize: 12, weight: .semibold)
+        for label in [help, error, hint] {
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = .secondaryLabelColor
+        }
+        error.textColor = .systemRed
+        for button in [save, cancel] {
+            button.bezelStyle = .rounded
+            button.controlSize = .small
+            button.refusesFirstResponder = true
+        }
+        save.setAccessibilityHelp("Save the variable name. Return also saves.")
+        cancel.setAccessibilityHelp("Cancel the name edit. Escape also cancels.")
+        for view in [title, help, error, hint, save, cancel] as [NSView] { addSubview(view) }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("the variable name helper is created in code") }
+
+    func preferredHeight(width: CGFloat) -> CGFloat {
+        let textWidth = max(0, width - 20)
+        let helpHeight = textHeight(help, width: textWidth)
+        let errorHeight = error.stringValue.isEmpty ? 0 : textHeight(error, width: textWidth) + 6
+        let hintRow = separatesHint(width: width) ? CGFloat(20) : 0
+        return 10 + 16 + 6 + helpHeight + errorHeight + 8 + hintRow + 24 + 10
+    }
+
+    private func separatesHint(width: CGFloat) -> Bool {
+        width - 150 < hint.intrinsicContentSize.width
+    }
+
+    private func textHeight(_ label: NSTextField, width: CGFloat) -> CGFloat {
+        label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: 1000)).height ?? 16
+    }
+
+    override func layout() {
+        super.layout()
+        let width = max(0, bounds.width - 20)
+        title.frame = NSRect(x: 10, y: 10, width: width, height: 16)
+        help.frame = NSRect(x: 10, y: 32, width: width, height: textHeight(help, width: width))
+        error.isHidden = error.stringValue.isEmpty
+        error.frame = NSRect(
+            x: 10, y: help.frame.maxY + 6, width: width,
+            height: error.isHidden ? 0 : textHeight(error, width: width))
+        let y = (error.isHidden ? help.frame.maxY : error.frame.maxY) + 8
+        let separateHint = separatesHint(width: bounds.width)
+        let buttonY = y + (separateHint ? 20 : 0)
+        save.frame = NSRect(x: bounds.maxX - 66, y: buttonY, width: 56, height: 24)
+        cancel.frame = NSRect(x: save.frame.minX - 68, y: buttonY, width: 62, height: 24)
+        hint.frame = NSRect(
+            x: 10, y: separateHint ? y : y + 5,
+            width: separateHint ? width : max(0, cancel.frame.minX - 16), height: 14)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let outline = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+        NSColor.controlBackgroundColor.setFill()
+        outline.fill()
+        NSColor.separatorColor.setStroke()
+        outline.lineWidth = 1
+        outline.stroke()
+    }
+}
+
+/// The inline variable name and its anchored instructions and validation.
 @MainActor
 final class SealedNameEditor: NSObject, NSTextFieldDelegate {
     let model: PageModel
     weak var textView: InkTextView?
     private(set) var rename = ChipRename()
     let field = SealedNameField()
+    let overlay = NoteOverlayView()
+    let helpView = SealedNameHelpView()
+    private nonisolated(unsafe) var observers: [NSObjectProtocol] = []
     /// Room past the draft for the caret, and the field's inset before its text.
     static let caretRoom: CGFloat = 8
     static let textInset: CGFloat = 2
@@ -214,8 +296,19 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         field.cell?.wraps = false
         field.isHidden = true
         field.delegate = self
-        field.setAccessibilityLabel(CompanionL10n.string("chip.name.field"))
+        field.setAccessibilityLabel("Variable name")
+        field.setAccessibilityHelp("For example, API_KEY. Use A–Z, a–z, digits and underscores; start with a letter or underscore. Return saves; Escape cancels.")
         (field.cell as? SealedNameFieldCell)?.editor.owner = self
+        helpView.save.target = self
+        helpView.save.action = #selector(saveClicked(_:))
+        helpView.cancel.target = self
+        helpView.cancel.action = #selector(cancelClicked(_:))
+        overlay.autoresizingMask = [.width, .height]
+        overlay.addSubview(helpView)
+    }
+
+    deinit {
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
     }
 
     var isOpen: Bool { rename.isOpen }
@@ -238,13 +331,22 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
     func begin(chipAt index: Int, sheet: UInt64) {
         guard let textView, textView.isEditable, let face = textView.chipCell(at: index)?.info
         else { return }
+        if rename.isOpen, rename.chip != face.chipId {
+            commit(returningKeys: false)
+            guard !rename.isOpen else { return }
+        }
         rename.open(chip: face.chipId, sheet: sheet, name: face.name, in: model)
         field.font = InkStyle.chipNameFont
         field.placeholderAttributedString = NSAttributedString(
-            string: "NAME",
+            string: "API_KEY",
             attributes: [.font: InkStyle.chipNameFont, .foregroundColor: NSColor.placeholderTextColor])
         field.stringValue = rename.draft
         if field.superview !== textView { textView.addSubview(field) }
+        if let scroll = textView.enclosingScrollView, overlay.superview !== scroll {
+            overlay.frame = scroll.bounds
+            scroll.addSubview(overlay)
+            observe(scroll)
+        }
         // The page's menu actions must not answer for the draft (Law 0007, Drafting).
         field.nextResponder = textView.nextResponder
         field.isHidden = false
@@ -262,12 +364,15 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         }
     }
 
-    /// Return. A refused draft keeps the field and the keys.
-    func commit() {
+    /// Return, Save or a valid focus-loss edit commits the draft.
+    func commit(returningKeys: Bool = true) {
         guard rename.isOpen else { return }
         rename.edit(field.stringValue, in: model)
-        guard rename.commit(in: model) else { return }
-        close(returningKeys: true)
+        guard rename.commit(in: model) else {
+            follow()
+            return
+        }
+        close(returningKeys: returningKeys)
     }
 
     /// Escape, the keyboard leaving, or the object leaving the page.
@@ -294,11 +399,51 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         let midY = row?.equals.midY ?? (layout.bottomRowY + height / 2)
         field.frame = NSRect(
             x: layout.left - Self.textInset, y: midY - height / 2, width: width, height: height)
+        placeHelp(under: frame)
         textView.redrawChip(at: index)
     }
 
+    private func placeHelp(under block: NSRect) {
+        guard let textView else { return }
+        let previousError = helpView.error.stringValue
+        helpView.error.stringValue = rename.error ?? ""
+        if helpView.error.stringValue != previousError, !helpView.error.stringValue.isEmpty {
+            NSAccessibility.post(element: helpView.error, notification: .valueChanged)
+        }
+        field.setAccessibilityHelp(rename.error ?? "Return saves; Escape cancels. A–Z, a–z, digits and underscores; start with a letter or underscore.")
+        let block = textView.convert(block, to: overlay)
+        let room = overlay.bounds.insetBy(dx: 8, dy: 8)
+        let width = min(440, max(0, room.width))
+        let height = helpView.preferredHeight(width: width)
+        let below = room.maxY - block.maxY >= height + 4
+        let y = below ? block.maxY + 4 : max(room.minY, block.minY - height - 4)
+        helpView.frame = NSRect(
+            x: min(max(room.minX, block.minX), max(room.minX, room.maxX - width)),
+            y: y, width: width, height: height)
+        helpView.needsLayout = true
+    }
+
+    private func observe(_ scroll: NSScrollView) {
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        observers.removeAll()
+        scroll.contentView.postsBoundsChangedNotifications = true
+        let center = NotificationCenter.default
+        for (name, object) in [
+            (NSView.boundsDidChangeNotification, scroll.contentView as NSView),
+            (NSView.frameDidChangeNotification, scroll as NSView),
+        ] {
+            observers.append(center.addObserver(forName: name, object: object, queue: .main) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.follow() }
+            })
+        }
+    }
+
+    @objc private func saveClicked(_ sender: Any?) { commit() }
+    @objc private func cancelClicked(_ sender: Any?) { keep(returningKeys: true) }
+
     private func fieldWidth(room: CGFloat) -> CGFloat {
-        let text = field.stringValue.isEmpty ? "NAME" : field.stringValue
+        let text = field.stringValue.isEmpty ? "API_KEY" : field.stringValue
         let measured = NSAttributedString(
             string: text, attributes: [.font: InkStyle.chipNameFont]
         ).size().width
@@ -315,6 +460,10 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         let index = textView?.naming?.index
         textView?.naming = nil
         field.isHidden = true
+        overlay.removeFromSuperview()
+        helpView.error.stringValue = ""
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        observers.removeAll()
         if let index { textView?.redrawChip(at: index) }
         guard returningKeys, let textView else { return }
         textView.window?.makeFirstResponder(textView)
@@ -340,6 +489,6 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
     }
 
     func controlTextDidEndEditing(_ notification: Notification) {
-        keep(returningKeys: false)
+        commit(returningKeys: false)
     }
 }

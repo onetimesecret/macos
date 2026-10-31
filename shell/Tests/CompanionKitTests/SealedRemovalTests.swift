@@ -395,7 +395,7 @@ final class SealedRemovalTests: XCTestCase {
     func testTheMenusRemovalOffersTheSameUndo() throws {
         let page = try makePage()
         let menu = try XCTUnwrap(page.coordinator.chipMenu(at: 8))
-        let remove = try XCTUnwrap(menu.items.first { $0.title == "Remove Sealed Content" })
+        let remove = try XCTUnwrap(menu.items.first { $0.title == "Remove from Document" })
         _ = (remove.target as? NSObject)?.perform(remove.action, with: remove)
         XCTAssertEqual(chips(page), [page.chips[0]])
         XCTAssertEqual(page.model.noticeAction?.label, "Undo")

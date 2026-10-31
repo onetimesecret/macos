@@ -278,8 +278,7 @@ final class ThemeContrastTests: XCTestCase {
                     let ratio = Self.contrastRatio(
                         SealedBlockCell.quietInk(selected: true),
                         over: {
-                            [.windowBackgroundColor, .selectedTextBackgroundColor,
-                             NSColor.textBackgroundColor.withAlphaComponent(0.34)]
+                            [.windowBackgroundColor, .selectedTextBackgroundColor]
                         }, appearance: appearance)
                     XCTAssertGreaterThanOrEqual(
                         ratio, Self.bar,

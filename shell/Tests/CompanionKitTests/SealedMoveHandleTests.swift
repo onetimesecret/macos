@@ -3,9 +3,7 @@ import XCTest
 
 @testable import CompanionKit
 
-/// The move handle on a sealed block (Law 0001's move drag row; issue 255): its seat beside
-/// the decrypted drag handle, when the two are drawn, what a press on it starts, and how
-/// VoiceOver names each, driven against a mounted page in a window of the test's own.
+/// Sealed-object controls on a mounted page in an isolated window.
 @MainActor
 final class SealedMoveHandleTests: XCTestCase {
     private struct Page {
@@ -133,158 +131,84 @@ final class SealedMoveHandleTests: XCTestCase {
         model.coreClient.ledger().filter { $0.event == "sent" }.map(\.destination)
     }
 
-    // MARK: The seat
-
-    /// The move handle sits a gap before the decrypted handle on the same row, the two
-    /// never overlapping, and it is as wide as its glyph and the handles' inset each side.
-    func testTheMoveHandleSitsAGapBeforeTheDecryptedHandleWithoutOverlap() throws {
-        let words: CGFloat = 76
-        let label: CGFloat = 92
-        let glyph: CGFloat = 7
-        let frame = NSRect(x: 10, y: 10, width: 320, height: SealedBlockCell.blockHeight)
-        let metrics = SealedBlockLayout.metrics(containerWidth: frame.width)
-        let decrypted = try XCTUnwrap(
-            SealedBlockCell.decryptedDragRect(in: frame, wordsWidth: words, labelWidth: label))
-        let move = try XCTUnwrap(SealedBlockCell.moveHandleRect(
-            in: frame, glyphWidth: glyph, labelWidth: label, neighbourMinX: decrypted.minX))
-        XCTAssertEqual(move.maxX, decrypted.minX - metrics.handleGap)
-        XCTAssertEqual(move.minY, decrypted.minY)
-        XCTAssertEqual(move.height, decrypted.height)
-        XCTAssertEqual(move.width, glyph + metrics.handleInset * 2)
-        XCTAssertFalse(move.intersects(decrypted))
-        XCTAssertLessThan(move.minX, decrypted.minX, "the move handle is the inner one")
-
-        let leastDecrypted = metrics.horizontalPadding * 2 + metrics.lockSize
-            + metrics.lockToLabelGap + label + metrics.handleGap * 2 + words
-            + metrics.handleInset * 2 + metrics.actionsWidth
-        let leastBoth = leastDecrypted + metrics.handleGap + glyph + metrics.handleInset * 2
-        func moveHandle(at width: CGFloat) -> NSRect? {
-            let narrow = NSRect(x: 10, y: 10, width: width, height: frame.height)
-            let neighbour = SealedBlockCell.decryptedDragRect(
-                in: narrow, wordsWidth: words, labelWidth: label)
-            return SealedBlockCell.moveHandleRect(
-                in: narrow, glyphWidth: glyph, labelWidth: label,
-                neighbourMinX: (neighbour ?? SealedBlockCell.actionsRect(in: narrow)).minX)
-        }
-        XCTAssertNotNil(moveHandle(at: leastBoth))
-        XCTAssertNil(moveHandle(at: leastBoth - 1), "the move handle would meet the classification")
-        XCTAssertNotNil(
-            SealedBlockCell.decryptedDragRect(
-                in: NSRect(x: 10, y: 10, width: leastBoth - 1, height: frame.height),
-                wordsWidth: words, labelWidth: label),
-            "the decrypted handle still stands where the move handle has gone")
-    }
-
-    /// On a narrow block the move handle gives way first, and once the decrypted handle has
-    /// gone too the move handle does not come back into the seat it left (Law 0001, move drag row).
-    func testTheMoveHandleGivesWayBeforeTheDecryptedHandleAndNeverTakesItsSeat() {
+    func testMoveCopyAndMoreUseSeparateTargetsOnTheSecondaryRow() throws {
         let text = cell("text")
-        var moveOnly = 0
-        var decryptedOnly = 0
-        var both = 0
-        for width in stride(from: CGFloat(100), through: 480, by: 1) {
-            let frame = NSRect(x: 0, y: 0, width: width, height: SealedBlockCell.blockHeight)
-            let move = text.moveHandleRect(in: frame)
-            let decrypted = text.decryptedDragRect(in: frame)
-            switch (move, decrypted) {
-            case (.some, .none): moveOnly += 1
-            case (.none, .some): decryptedOnly += 1
-            case (.some, .some): both += 1
-            case (.none, .none): break
-            }
-        }
-        XCTAssertEqual(moveOnly, 0, "a move handle drawn with no decrypted handle beside it")
-        XCTAssertGreaterThan(decryptedOnly, 0, "no width lost the move handle alone")
-        XCTAssertGreaterThan(both, 0, "no width fit both")
+        let frame = NSRect(x: 10, y: 10, width: 320, height: 70)
+        let move = try XCTUnwrap(text.moveHandleRect(in: frame))
+        let copy = try XCTUnwrap(text.copyRect(in: frame))
+        let more = SealedBlockCell.actionsRect(in: frame)
+        XCTAssertEqual(move.maxX + 6, copy.minX)
+        XCTAssertEqual(copy.maxX + 6, more.minX)
+        XCTAssertEqual(move.size, NSSize(width: 24, height: 24))
+        XCTAssertEqual(copy.size, NSSize(width: SealedBlockLayout.copyWidth, height: 24))
+        for rect in [move, copy, more] { XCTAssertTrue(frame.contains(rect)) }
+        XCTAssertFalse(move.intersects(copy))
+        XCTAssertFalse(copy.intersects(more))
     }
 
-    /// A kind this build cannot drag decrypted has no decrypted handle, so its move handle
-    /// sits where that one would: a gap before the actions seat.
-    func testAKindWithNoDecryptedHandleSeatsTheMoveHandleBeforeTheActions() throws {
-        let frame = NSRect(x: 0, y: 0, width: 400, height: SealedBlockCell.blockHeight)
-        let metrics = SealedBlockLayout.metrics(containerWidth: frame.width)
+    func testNarrowObjectsKeepMoreAndCanStillMoveWithoutACopyControl() throws {
+        let text = cell("text")
+        let frame = NSRect(x: 0, y: 0, width: 90, height: 70)
+        XCTAssertNil(text.copyRect(in: frame))
+        XCTAssertNotNil(text.moveHandleRect(in: frame))
+        XCTAssertTrue(frame.contains(SealedBlockCell.actionsRect(in: frame)))
+        let tiny = NSRect(x: 0, y: 0, width: 30, height: 70)
+        XCTAssertTrue(tiny.contains(SealedBlockCell.actionsRect(in: tiny)))
+    }
+
+    func testUnavailableKindsStillOfferStructuralMove() throws {
+        let frame = NSRect(x: 0, y: 0, width: 320, height: 70)
         let file = cell("file")
-        XCTAssertNil(file.decryptedDragRect(in: frame))
-        XCTAssertNil(file.handleRect(.decrypted, in: frame))
-        let move = try XCTUnwrap(file.handleRect(.move, in: frame))
-        XCTAssertEqual(move, file.moveHandleRect(in: frame))
-        XCTAssertEqual(move.maxX, SealedBlockCell.actionsRect(in: frame).minX - metrics.handleGap)
+        XCTAssertNil(file.copyRect(in: frame))
+        let move = try XCTUnwrap(file.moveHandleRect(in: frame))
+        XCTAssertEqual(move.maxX + 6, SealedBlockCell.actionsRect(in: frame).minX)
     }
 
-    // MARK: When the handles are drawn
-
-    /// The move handle exists while the block is hovered or selected and not otherwise, and
-    /// its open hand goes with the decrypted handle's while a field holds the keys.
-    func testTheMoveHandleExistsOnHoverOrSelectionAndNotOtherwise() throws {
+    func testControlsAndCursorTargetsAreAvailableWithoutPriorHover() throws {
         let page = try mountPage(on: try makeModel())
         let textView = page.textView
-        let (move, decrypted, frame) = try handles(page)
-        XCTAssertFalse(textView.drawsHandles(at: object), "at rest")
-        XCTAssertEqual(textView.moveHandleCursorRects, [])
-
-        hover(page, at: NSPoint(x: frame.midX, y: frame.midY))
-        XCTAssertTrue(textView.drawsHandles(at: object), "hovered")
+        let (move, copy, frame) = try handles(page)
+        XCTAssertTrue(textView.drawsHandles(at: object))
         XCTAssertEqual(textView.moveHandleCursorRects, [move])
-        XCTAssertEqual(textView.decryptedDragCursorRects, [decrypted])
-        hover(page, at: NSPoint(x: frame.midX, y: frame.midY), holdsKeys: false)
-        XCTAssertFalse(textView.drawsHandles(at: object), "the hover left with the keys")
-        XCTAssertEqual(textView.moveHandleCursorRects, [])
-
+        XCTAssertEqual(textView.decryptedDragCursorRects, [copy])
+        hover(page, at: mid(frame))
         hover(page, at: nil)
-        textView.setSelectedRange(NSRange(location: 0, length: 2))
-        XCTAssertFalse(textView.drawsHandles(at: object), "ink is selected")
-        textView.setSelectedRange(NSRange(location: object, length: 0))
-        XCTAssertFalse(textView.drawsHandles(at: object), "a caret before the block")
-        textView.setSelectedRange(NSRange(location: object, length: 1))
-        XCTAssertTrue(textView.drawsHandles(at: object), "selected")
         XCTAssertEqual(textView.moveHandleCursorRects, [move])
-
+        textView.setSelectedRange(NSRange(location: object, length: 1))
+        XCTAssertEqual(textView.moveHandleCursorRects, [move])
         XCTAssertTrue(page.window.makeFirstResponder(page.field))
         drainMainQueue()
-        XCTAssertEqual(textView.moveHandleCursorRects, [], "under the field")
+        XCTAssertEqual(textView.moveHandleCursorRects, [])
         XCTAssertTrue(page.window.makeFirstResponder(textView))
-        textView.setSelectedRange(NSRange(location: object, length: 1))
-        XCTAssertEqual(textView.moveHandleCursorRects, [move], "the hand came back")
+        XCTAssertEqual(textView.moveHandleCursorRects, [move])
     }
 
-    /// Hovering and selecting a block draws its handles without moving its text or
-    /// changing its height, and the handles keep off the lock, the classification, the
-    /// actions seat and the bottom row (Law 0001, presentation invariants).
-    func testTheHandlesChangeNoLayout() throws {
+    func testHoverAndSelectionDoNotChangeObjectLayout() throws {
         let page = try mountPage(on: try makeModel())
         let textView = page.textView
         let container = try XCTUnwrap(textView.textContainer)
-        let layoutManager = try XCTUnwrap(textView.layoutManager)
+        let manager = try XCTUnwrap(textView.layoutManager)
         let cell = try XCTUnwrap(textView.chipCell(at: object))
+        let frame = try XCTUnwrap(textView.chipFrame(at: object))
+        let used = manager.usedRect(for: container)
+        let size = cell.cellSize()
         func draw() throws -> NSRect {
             let rep = try XCTUnwrap(textView.bitmapImageRepForCachingDisplay(in: textView.bounds))
             textView.cacheDisplay(in: textView.bounds, to: rep)
             return try XCTUnwrap(cell.lastDrawnFrame)
         }
-        let restingFrame = try XCTUnwrap(textView.chipFrame(at: object))
-        let restingUsed = layoutManager.usedRect(for: container)
-        let restingSize = cell.cellSize()
-        let restingDrawn = try draw()
-
-        hover(page, at: NSPoint(x: restingFrame.midX, y: restingFrame.midY))
-        XCTAssertTrue(textView.drawsHandles(at: object))
-        XCTAssertEqual(try draw(), restingDrawn, "hover moved the block")
+        let resting = try draw()
+        hover(page, at: mid(frame))
+        XCTAssertEqual(try draw(), resting)
         textView.setSelectedRange(NSRange(location: object, length: 1))
-        XCTAssertEqual(try draw(), restingDrawn, "selection moved the block")
-        XCTAssertEqual(textView.chipFrame(at: object), restingFrame)
-        XCTAssertEqual(layoutManager.usedRect(for: container), restingUsed)
-        XCTAssertEqual(cell.cellSize(), restingSize)
-        XCTAssertEqual(restingDrawn.height, SealedBlockCell.blockHeight, accuracy: 0.5)
-
-        let (move, decrypted, frame) = try handles(page)
-        let layout = SealedBlockCell.contentLayout(in: frame)
-        let labelEnd = layout.labelOrigin.x + layout.metrics.handleGap
-        for handle in [move, decrypted] {
-            XCTAssertFalse(handle.intersects(layout.lockRect))
-            XCTAssertGreaterThan(handle.minX, labelEnd, "a handle over the classification")
-            XCTAssertFalse(handle.intersects(SealedBlockCell.actionsRect(in: frame)))
-            XCTAssertLessThanOrEqual(handle.maxY, layout.rowBand.minY, "a handle in the bottom row")
-            XCTAssertTrue(frame.contains(handle))
+        XCTAssertEqual(try draw(), resting)
+        XCTAssertEqual(textView.chipFrame(at: object), frame)
+        XCTAssertEqual(manager.usedRect(for: container), used)
+        XCTAssertEqual(cell.cellSize(), size)
+        XCTAssertEqual(resting.height, cell.preferredBounds(available: frame.width).height, accuracy: 0.5)
+        let row = try XCTUnwrap(cell.namedRow(in: frame, editingWidth: 60))
+        for control in [try XCTUnwrap(cell.moveHandleRect(in: frame)), try XCTUnwrap(cell.copyRect(in: frame))] {
+            XCTAssertGreaterThanOrEqual(control.minY, row.geometry.name.maxY + 8)
         }
     }
 
@@ -439,83 +363,104 @@ final class SealedMoveHandleTests: XCTestCase {
             onHandle: false, handleShown: true, clickCount: 1, modifierFlags: []))
     }
 
-    // MARK: VoiceOver
-
-    /// VoiceOver finds one element per drawn handle, *Move* and *Drag decrypted*, each at its
-    /// handle's seat under the text view, the same object from one ask to the next; a block
-    /// at rest offers none.
-    func testVoiceOverNamesBothHandlesAtTheirSeats() throws {
-        let page = try mountPage(on: try makeModel())
-        let textView = page.textView
-        XCTAssertEqual(textView.handleAccessibilityElements, [], "at rest")
-        XCTAssertEqual(
-            SealedBlockCell.Handle.move.accessibilityLabel, CompanionL10n.string("chip.handle.move"))
-        XCTAssertEqual(
-            SealedBlockCell.Handle.decrypted.accessibilityLabel,
-            CompanionL10n.string("chip.handle.decrypted"))
-        XCTAssertEqual(SealedBlockCell.Handle.move.accessibilityLabel, "Move", "the key is unresolved")
-        XCTAssertEqual(SealedBlockCell.Handle.decrypted.accessibilityLabel, "Drag decrypted")
-
-        let (move, decrypted, frame) = try handles(page)
-        hover(page, at: NSPoint(x: frame.midX, y: frame.midY))
-        let elements = textView.handleAccessibilityElements
-        XCTAssertEqual(elements.map { $0.accessibilityLabel() }, ["Move", "Drag decrypted"])
-        XCTAssertEqual(
-            elements.map { $0.accessibilityFrame() },
-            [move, decrypted].map { onScreen($0, in: page) })
-        for element in elements {
-            XCTAssertEqual(element.accessibilityRole(), .handle)
-            XCTAssertTrue((element.accessibilityParent() as AnyObject?) === textView)
-        }
-        textView.handlesMayHaveMoved()
-        let again = textView.handleAccessibilityElements
-        XCTAssertEqual(again.count, 2)
-        for (first, second) in zip(elements, again) {
-            XCTAssertTrue(first === second, "a new element on every rebuild")
-        }
-        let children = try XCTUnwrap(textView.accessibilityChildren())
-        for element in elements {
-            XCTAssertTrue(children.contains { ($0 as AnyObject) === element })
-        }
-
-        hover(page, at: nil)
-        XCTAssertEqual(textView.handleAccessibilityElements, [], "the hover left")
-        textView.setSelectedRange(NSRange(location: object, length: 1))
-        XCTAssertEqual(
-            textView.handleAccessibilityElements.map { $0.accessibilityLabel() },
-            ["Move", "Drag decrypted"], "the selected block")
+    func testAPlainCopyControlClickCopiesOnceAndSelectsTheObject() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let (_, copy, _) = try handles(page)
+        var sessions = 0
+        page.textView.dragSessionWitness = { _, _ in sessions += 1 }
+        try press(page, at: mid(copy), then: try mouseEvent(.leftMouseUp, page, at: mid(copy)))
+        XCTAssertEqual(sessions, 0)
+        XCTAssertEqual(page.textView.selectedRange(), NSRange(location: object, length: 1))
+        XCTAssertNotNil(page.textView.copyBeat)
+        XCTAssertEqual(sent(model).count, 1)
     }
 
-    /// Each handle's element answers the screen frame of its seat, the one the VoiceOver
-    /// cursor box is drawn around. The text view is flipped, so a parent space frame taken
-    /// as drawn would put the box down the block instead of on the top row.
-    func testTheHandleElementsAnswerTheScreenFrameOfTheirSeats() throws {
+    func testAccessibilityButtonsHaveUsefulNamesAndRealPressActions() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let textView = page.textView
+        let (move, copy, frame) = try handles(page)
+        let more = SealedBlockCell.actionsRect(in: frame)
+        let elements = textView.handleAccessibilityElements
+        XCTAssertEqual(elements.map { $0.accessibilityLabel() },
+                       ["Select for Moving", "Copy Decrypted Contents", "Sealed Content Actions"])
+        XCTAssertEqual(elements.map { $0.accessibilityFrame() },
+                       [move, copy, more].map { onScreen($0, in: page) })
+        for element in elements {
+            XCTAssertEqual(element.accessibilityRole(), .button)
+            XCTAssertTrue((element.accessibilityParent() as AnyObject?) === textView)
+        }
+        XCTAssertTrue(elements[0].accessibilityPerformPress())
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: object, length: 1))
+        XCTAssertEqual(sent(model), [])
+        XCTAssertTrue(elements[1].accessibilityPerformPress())
+        XCTAssertEqual(sent(model).count, 1)
+        var presented: NSMenu?
+        page.coordinator.chipMenuPresenter = { menu, _, _ in presented = menu }
+        XCTAssertTrue(elements[2].accessibilityPerformPress())
+        XCTAssertTrue(try XCTUnwrap(presented).items.contains { $0.title == "Copy Decrypted Contents" })
+        hover(page, at: nil)
+        XCTAssertEqual(textView.handleAccessibilityElements.count, 3)
+        textView.handlesMayHaveMoved()
+        for (first, second) in zip(elements, textView.handleAccessibilityElements) {
+            XCTAssertTrue(first === second)
+        }
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        XCTAssertFalse(elements[1].accessibilityPerformPress())
+    }
+
+    func testAccessibilityFramesFollowTheirControlsWhenTheWindowMoves() throws {
         let page = try mountPage(on: try makeModel())
         page.window.setFrameOrigin(NSPoint(x: 300, y: 200))
         let textView = page.textView
-        XCTAssertTrue(textView.isFlipped)
-        XCTAssertEqual(
-            textView.accessibilityFrame(), onScreen(textView.bounds, in: page), "the parent")
-
-        let (move, decrypted, frame) = try handles(page)
-        hover(page, at: NSPoint(x: frame.midX, y: frame.midY))
+        let (move, copy, frame) = try handles(page)
+        let controls = [move, copy, SealedBlockCell.actionsRect(in: frame)]
         let elements = textView.handleAccessibilityElements
-        XCTAssertEqual(elements.count, 2)
-        for (element, seat) in zip(elements, [move, decrypted]) {
-            let expected = onScreen(seat, in: page)
-            let answered = element.accessibilityFrame()
-            XCTAssertEqual(answered.minX, expected.minX, accuracy: 0.5, "\(seat)")
-            XCTAssertEqual(answered.minY, expected.minY, accuracy: 0.5, "\(seat)")
-            XCTAssertEqual(answered.width, expected.width, accuracy: 0.5)
-            XCTAssertEqual(answered.height, expected.height, accuracy: 0.5)
-            XCTAssertGreaterThan(
-                answered.midY, onScreen(frame, in: page).midY,
-                "the box is on the bottom half of the block")
+        XCTAssertEqual(elements.count, 3)
+        for (element, rect) in zip(elements, controls) {
+            XCTAssertEqual(element.accessibilityFrame(), onScreen(rect, in: page))
         }
-
         page.window.setFrameOrigin(NSPoint(x: 120, y: 640))
-        XCTAssertEqual(
-            elements.map { $0.accessibilityFrame() },
-            [move, decrypted].map { onScreen($0, in: page) }, "the window moved")
+        XCTAssertEqual(elements.map { $0.accessibilityFrame() }, controls.map { onScreen($0, in: page) })
+    }
+
+    func testRenderSealedObjectPreviewsWhenRequested() throws {
+        guard let directory = ProcessInfo.processInfo.environment["ONETIMEPAD_SEALED_PREVIEW_DIR"] else { return }
+        let output = URL(fileURLWithPath: directory, isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let original = InkStyle.typeface
+        defer { InkStyle.typeface = original }
+        for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            for size in [13.0, 40.0] {
+                for width in [CGFloat(260), 680] {
+                    let model = try makeModel()
+                    model.fontSize = size
+                    let page = try mountPage(on: model, width: width)
+                    page.window.appearance = NSAppearance(named: appearance)
+                    page.textView.appearance = NSAppearance(named: appearance)
+                    page.textView.drawsBackground = true
+                    page.textView.backgroundColor = .windowBackgroundColor
+                    let cell = try XCTUnwrap(page.textView.chipCell(at: object))
+                    XCTAssertTrue(model.setChipName("API_KEY", chip: cell.info.chipId, sheet: page.sheet))
+                    XCTAssertTrue(model.applyNoteOps(
+                        chip: cell.info.chipId, json: #"[{"ins":{"at":0,"text":"Rotate monthly"}}]"#,
+                        intent: .typing, selection: nil))
+                    model.restateChipFace(cell.info.chipId, sheet: page.sheet)
+                    page.coordinator.applyTypeface(model.typeface)
+                    page.textView.layoutManager?.ensureLayout(for: try XCTUnwrap(page.textView.textContainer))
+                    for selected in [false, true] {
+                        page.textView.setSelectedRange(NSRange(location: selected ? object : 0, length: selected ? 1 : 0))
+                        let capture = NSRect(x: 0, y: 0, width: page.textView.bounds.width, height: 200)
+                        let rep = try XCTUnwrap(page.textView.bitmapImageRepForCachingDisplay(in: capture))
+                        page.textView.cacheDisplay(in: capture, to: rep)
+                        let data = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+                        let name = "\(appearanceName)-\(Int(size))pt-\(Int(width))w-\(selected ? "selected" : "resting").png"
+                        try data.write(to: output.appendingPathComponent(name))
+                    }
+                }
+            }
+        }
     }
 }

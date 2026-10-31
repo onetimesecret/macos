@@ -1,13 +1,7 @@
 import SwiftUI
 
-/// The conceal confirmation, inline and in place (docs/spec/04 — not
-/// a modal): destination, TTL starting at the link's own seven-day
-/// default (ADR-0011 section 5, never the page's remaining time per
-/// ADR-0026), optional passphrase and recipient, one confirming click.
-/// The network
-/// boundary is explicit: nothing leaves until Create Link. Failure
-/// is inline with retry; success says the link is on the clipboard and
-/// offers Burn Local Copy.
+/// Inline confirmation for a one-time link, its destination and expiry.
+/// Completion offers a bounded copy-again action and separate local deletion.
 public struct ConcealView: View {
     @ObservedObject var model: PageModel
     let draft: ConcealDraft
@@ -29,6 +23,13 @@ public struct ConcealView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
+            if let label = draft.targetLabel {
+                Text(label)
+                    .font(.system(.body, design: .monospaced))
+                    .lineLimit(2)
+                    .textSelection(.disabled)
+                    .accessibilityLabel(Text("Sharing: \(label)"))
+            }
             if let sealed = sealedItemsLine {
                 Text(sealed)
                     .font(.system(.caption2, design: .monospaced))
@@ -52,19 +53,31 @@ public struct ConcealView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "arrow.up.right")
-                .font(.system(size: 10, weight: .semibold))
-                .accessibilityHidden(true)
-            Text(title)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.primary)
-            Spacer()
-            Text(destination)
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(Color.secondaryInk)
-                .help(Self.destinationHelp)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                titleLabel.fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 8)
+                destinationLabel.fixedSize(horizontal: true, vertical: false)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                titleLabel
+                destinationLabel
+            }
         }
+    }
+
+    private var titleLabel: some View {
+        Label(title, systemImage: "arrow.up.right")
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var destinationLabel: some View {
+        Text(destination)
+            .font(.system(.caption2, design: .monospaced))
+            .foregroundStyle(Color.secondaryInk)
+            .help(Self.destinationHelp)
     }
 
     private var title: String {
@@ -130,6 +143,7 @@ public struct ConcealView: View {
                         .fixedSize()
                         Text(Self.ttlHelp)
                             .foregroundStyle(Color.secondaryInk)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 GridRow {
@@ -153,8 +167,8 @@ public struct ConcealView: View {
                     .foregroundStyle(Color.emberText)
                     .accessibilityLabel(Text(Self.failureLabel(error)))
             }
-            HStack(spacing: 8) {
-                if !isConfigured {
+            if !isConfigured {
+                HStack(spacing: 8) {
                     Text(Self.guestLine)
                         .font(.caption)
                         .foregroundStyle(Color.secondaryInk)
@@ -162,6 +176,8 @@ public struct ConcealView: View {
                         .buttonStyle(.link)
                         .font(.caption)
                 }
+            }
+            HStack(spacing: 8) {
                 Spacer()
                 if draft.inFlight {
                     ProgressView()
@@ -205,26 +221,61 @@ public struct ConcealView: View {
     }
 
     private var success: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle")
-                .foregroundStyle(Color.secondaryInk)
-                .accessibilityHidden(true)
-            Text("the link is on the clipboard — paste it where it needs to go")
-                .font(.system(.caption, design: .monospaced))
+        VStack(alignment: .leading, spacing: 8) {
+            Label(Self.successLine(canCopyLink: draft.canCopyLink), systemImage: "checkmark.circle")
+                .font(.caption)
                 .foregroundStyle(.primary)
-            Spacer()
-            Button("Burn Local Copy") { model.burnConcealedCopy() }
-                .controlSize(.small)
-                .help(burnHelp)
-            Button("Keep It") { model.dismissConceal() }
-                .controlSize(.small)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    copyLinkButton
+                    Spacer(minLength: 12)
+                    deleteLocalButton
+                    doneButton
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                VStack(alignment: .leading, spacing: 8) {
+                    copyLinkButton
+                    HStack(spacing: 8) {
+                        deleteLocalButton
+                        doneButton
+                    }
+                }
+            }
+            .controlSize(.small)
         }
     }
 
-    private var burnHelp: String {
-        switch draft.target {
-        case .chip: "the content travelled · remove the chip; its bytes are zeroized"
-        case .page: "the page travelled · close it; it rests in the ledger"
+    private var copyLinkButton: some View {
+        Button("Copy Link Again") { model.copyConcealedLink() }
+            .disabled(!draft.canCopyLink)
+            .help("available for \(CompanionClient.clipboardClearSeconds()) seconds after creation")
+    }
+
+    private var deleteLocalButton: some View {
+        Button(Self.deleteLabel(for: draft.target), role: .destructive) { model.burnConcealedCopy() }
+            .help(Self.deleteHelp(for: draft.target))
+    }
+
+    private var doneButton: some View {
+        Button("Done") { model.dismissConceal() }
+    }
+
+    nonisolated static func successLine(canCopyLink: Bool) -> String {
+        canCopyLink ? "link created and copied; copy it again below."
+            : "link created; copying it again is no longer available."
+    }
+
+    nonisolated static func deleteLabel(for target: ConcealDraft.Target) -> String {
+        switch target {
+        case .chip: "Delete Local Sealed Content"
+        case .page: "Discard Local Page"
+        }
+    }
+
+    nonisolated static func deleteHelp(for target: ConcealDraft.Target) -> String {
+        switch target {
+        case .chip: "delete this local sealed item; this cannot be undone"
+        case .page: "discard this page's contents; keep its timeline position"
         }
     }
 

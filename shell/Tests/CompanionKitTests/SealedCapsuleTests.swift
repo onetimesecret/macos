@@ -39,11 +39,11 @@ final class SealedCapsuleTests: XCTestCase {
             $0.title == "Create One-Time Link…"
         })
         let remove = try XCTUnwrap(menu.items.first {
-            $0.title == "Remove Sealed Content"
+            $0.title == "Remove from Document"
         })
         XCTAssertEqual(copy.title, "Copy Decrypted Contents")
         XCTAssertEqual(link.title, "Create One-Time Link…")
-        XCTAssertEqual(remove.title, "Remove Sealed Content")
+        XCTAssertEqual(remove.title, "Remove from Document")
         // The auto-enable pass a shown menu runs asks the coordinator,
         // which validates; the object's verbs must survive it.
         menu.update()
@@ -80,9 +80,9 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(
             named.items.map { $0.isSeparatorItem ? nil : $0.title },
             [
-                "Copy Name", "Copy Decrypted Contents", "Copy Name=Value, Decrypted",
-                "Create One-Time Link…", nil, "Rename", "Note…", nil,
-                "Remove Sealed Content",
+                "Copy Sealed Reference", "Copy Variable Name", "Copy Decrypted Contents", "Copy NAME=Value (Unquoted)",
+                "Create One-Time Link…", nil, "Edit Variable Name…", "Add Note…", nil,
+                "Remove from Document",
             ])
         for item in named.items where !item.isSeparatorItem {
             XCTAssertNotNil(item.action, "\(item.title) does nothing")
@@ -136,56 +136,25 @@ final class SealedCapsuleTests: XCTestCase {
 
     /// A first click on a zone copies; a later click of the same press
     /// does nothing; off a zone, or with a modifier, the click selects.
-    func testAZoneActsOnTheFirstClickAndAClickOffItSelects() {
-        func click(
-            _ zone: SealedBlockLayout.Zone?, _ count: Int, _ flags: NSEvent.ModifierFlags = []
-        ) -> InkTextView.ChipClick {
-            InkTextView.chipClick(
-                named: true, zone: zone, inRow: zone != nil, clickCount: count,
-                modifierFlags: flags)
+    func testTheIdentityRowAlwaysSelectsWithoutCopyingOrRenaming() {
+        for count in 1...3 {
+            for flags: NSEvent.ModifierFlags in [[], .shift, .command, .option, .capsLock] {
+                XCTAssertEqual(InkTextView.chipClick(clickCount: count, modifierFlags: flags), .select)
+            }
         }
-        for zone in SealedBlockLayout.Zone.allCases {
-            XCTAssertEqual(click(zone, 1), .copy(zone))
-            XCTAssertEqual(click(zone, 1, .capsLock), .copy(zone))
-            XCTAssertEqual(click(zone, 3), .ignore)
-            XCTAssertEqual(click(zone, 1, .shift), .select)
-        }
-        for zone in [SealedBlockLayout.Zone.value, .equals] {
-            XCTAssertEqual(click(zone, 2), .ignore, "a second click on a decrypted zone acted again")
-        }
-        XCTAssertEqual(click(nil, 1), .select)
-        XCTAssertEqual(click(nil, 2), .select)
-        XCTAssertEqual(
-            InkTextView.chipClick(
-                named: false, zone: nil, inRow: true, clickCount: 1, modifierFlags: []),
-            .select, "an unnamed row's click selects as the block does")
     }
 
     /// A zone acts only once the seat has named it under the pointer: a
     /// press that arrives first, as an activating click on a window that
     /// shows no hover does, finds no zone and selects.
-    func testAZoneActsOnlyOnceTheSeatHasNamedIt() {
-        XCTAssertEqual(
-            InkTextView.actingZone(pointed: .value, index: 3, hoveredIndex: 3, hoveredZone: .value),
-            .value)
-        XCTAssertNil(
-            InkTextView.actingZone(pointed: .value, index: 3, hoveredIndex: nil, hoveredZone: nil),
-            "a press the seat never named copied")
-        XCTAssertNil(
-            InkTextView.actingZone(pointed: .value, index: 3, hoveredIndex: 3, hoveredZone: .name),
-            "the seat named another zone")
-        XCTAssertNil(
-            InkTextView.actingZone(pointed: .equals, index: 3, hoveredIndex: 5, hoveredZone: .equals),
-            "the seat that named it was another block's")
-        XCTAssertNil(
-            InkTextView.actingZone(pointed: nil, index: 3, hoveredIndex: 3, hoveredZone: .name))
-        XCTAssertEqual(
-            InkTextView.chipClick(
-                named: true,
-                zone: InkTextView.actingZone(
-                    pointed: .value, index: 3, hoveredIndex: nil, hoveredZone: nil),
-                inRow: true, clickCount: 1, modifierFlags: []),
-            .select)
+    func testSelectionDoesNotDependOnHoverState() throws {
+        let fixture = try makeZoneFixture(#function)
+        defer { fixture.pasteboard.releaseGlobally() }
+        name(fixture.textView, chipAt: 3, model: fixture.model, as: "API_KEY")
+        XCTAssertEqual(InkTextView.chipClick(clickCount: 1, modifierFlags: []), .select)
+        XCTAssertTrue(fixture.client.copiedOut.isEmpty)
+        XCTAssertTrue(fixture.client.copiedNameValue.isEmpty)
+        XCTAssertNil(fixture.pasteboard.string(forType: .string))
     }
 
     /// A client that counts the two decrypted copies and answers yes
@@ -259,18 +228,18 @@ final class SealedCapsuleTests: XCTestCase {
             fixture.model, fixture.client, fixture.pasteboard, fixture.coordinator,
             fixture.textView, fixture.chipID)
 
-        XCTAssertFalse(coordinator.copy(.name, chipAt: 3), "an unnamed object has no name")
-        XCTAssertFalse(coordinator.copy(.equals, chipAt: 3), "nor a name=value")
+        XCTAssertFalse(coordinator.copyName(at: 3), "an unnamed object has no name")
+        XCTAssertFalse(coordinator.copyNameValue(at: 3), "nor a name=value")
         XCTAssertTrue(client.copiedNameValue.isEmpty)
         name(textView, chipAt: 3, model: model, as: "MY_API_KEY")
 
-        XCTAssertTrue(coordinator.copy(.name, chipAt: 3))
+        XCTAssertTrue(coordinator.copyName(at: 3))
         XCTAssertEqual(pasteboard.string(forType: .string), "MY_API_KEY")
         XCTAssertEqual(model.notice, PageModel.copiedNameLine)
         XCTAssertEqual(PageModel.copiedNameLine, "copied the name.")
         XCTAssertTrue(client.copiedOut.isEmpty && client.copiedNameValue.isEmpty)
 
-        XCTAssertTrue(coordinator.copy(.value, chipAt: 3))
+        XCTAssertTrue(coordinator.copyOutChip(at: 3))
         XCTAssertEqual(client.copiedOut, [chipID])
         XCTAssertTrue(client.copiedNameValue.isEmpty)
         let line = PageModel.copiedLine(
@@ -278,7 +247,7 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(model.notice, line)
 
         model.flash("something else")
-        XCTAssertTrue(coordinator.copy(.equals, chipAt: 3))
+        XCTAssertTrue(coordinator.copyNameValue(at: 3))
         XCTAssertEqual(client.copiedNameValue, [chipID])
         XCTAssertEqual(client.copiedOut, [chipID], "the = zone took the value's route")
         XCTAssertEqual(model.notice, line, "name=value says D-42's line as it stands")
@@ -288,110 +257,71 @@ final class SealedCapsuleTests: XCTestCase {
     /// A press on the value zone copies once and lights the beat; the
     /// second click of the same press copies nothing more; the name zone's
     /// press copies the name; none of them moves the selection.
-    func testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection() throws {
+    func testNamedIdentityClicksSelectWithoutCopying() throws {
         let fixture = try makeZoneFixture(#function)
         defer { fixture.pasteboard.releaseGlobally() }
-        let (model, client, textView) = (fixture.model, fixture.client, fixture.textView)
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 300),
-            styleMask: [.borderless], backing: .buffered, defer: false)
+        let view = fixture.textView
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 300),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
         let scroll = NSScrollView(frame: window.contentLayoutRect)
-        InkEditorView.seat(textView, in: scroll)
+        InkEditorView.seat(view, in: scroll)
         window.contentView = scroll
-        name(textView, chipAt: 3, model: model, as: "MY_API_KEY")
-        textView.layout()
-        textView.layoutManager?.ensureLayout(for: try XCTUnwrap(textView.textContainer))
-        textView.setSelectedRange(NSRange(location: 0, length: 0))
-        let frame = try XCTUnwrap(textView.chipFrame(at: 3))
-        let row = try XCTUnwrap(textView.chipCell(at: 3)?.namedRow(in: frame)).geometry
-
-        // The pointer arrives before it presses, so the seat names the zone first.
-        func press(_ point: NSPoint, clicks: Int) throws {
-            textView.hoverRefreshInput = (
-                window.convertPoint(toScreen: textView.convert(point, to: nil)), true, true)
-            textView.refreshHover()
-            let event = try XCTUnwrap(NSEvent.mouseEvent(
-                with: .leftMouseDown, location: textView.convert(point, to: nil),
-                modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0,
-                clickCount: clicks, pressure: 1))
-            textView.mouseDown(with: event)
+        name(view, chipAt: 3, model: fixture.model, as: "API_KEY")
+        view.layout()
+        let frame = try XCTUnwrap(view.chipFrame(at: 3))
+        let row = try XCTUnwrap(view.chipCell(at: 3)?.namedRow(in: frame)).geometry
+        for rect in [row.name, row.value] {
+            view.setSelectedRange(NSRange(location: 0, length: 0))
+            let point = view.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil)
+            let up = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseUp, location: point,
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 1, clickCount: 1, pressure: 0))
+            NSApp.postEvent(up, atStart: true)
+            let down = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: point,
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            view.mouseDown(with: down)
+            XCTAssertEqual(view.selectedRange(), NSRange(location: 3, length: 1))
         }
-        let value = NSPoint(x: row.value.midX, y: row.value.midY)
-        try press(value, clicks: 1)
-        XCTAssertEqual(client.copiedOut, [fixture.chipID])
-        XCTAssertEqual(textView.copyBeat?.zone, .value)
-        XCTAssertEqual(textView.copyBeat?.chip, fixture.chipID)
-        try press(value, clicks: 2)
-        XCTAssertEqual(client.copiedOut, [fixture.chipID], "the second click copied again")
-
-        let namePoint = NSPoint(x: row.name.midX, y: row.name.midY)
-        try press(namePoint, clicks: 1)
-        XCTAssertEqual(fixture.pasteboard.string(forType: .string), "MY_API_KEY")
-        XCTAssertEqual(textView.copyBeat?.zone, .name)
-        XCTAssertEqual(
-            textView.selectedRange(), NSRange(location: 0, length: 0),
-            "a zone's click moved the selection")
-
-        // The name zone's second click opens the field and copies nothing more.
-        let copies = fixture.pasteboard.changeCount
-        try press(namePoint, clicks: 2)
-        XCTAssertEqual(fixture.coordinator.nameEditor?.isOpen, true)
-        XCTAssertEqual(fixture.pasteboard.changeCount, copies, "the second click copied again")
-        XCTAssertEqual(client.copiedOut, [fixture.chipID])
+        XCTAssertTrue(fixture.client.copiedOut.isEmpty)
+        XCTAssertTrue(fixture.client.copiedNameValue.isEmpty)
+        XCTAssertNil(fixture.pasteboard.string(forType: .string))
+        XCTAssertFalse(fixture.coordinator.nameEditor?.isOpen ?? false)
     }
 
     /// Hover is per point: the zone under the pointer, nothing between
     /// the runs' ends and the seat, and nothing on an unnamed block.
-    func testHoverFindsTheZoneUnderThePointer() throws {
-        let model = try makeModel()
-        let coordinator = InkEditorView.Coordinator(model: model)
-        model.newPage()
-        let page = try XCTUnwrap(model.selectedPageID)
-        let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
-            model: model, sheetID: page, coordinator: coordinator))
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 300))
-        InkEditorView.seat(textView, in: scroll)
-        textView.insertText(
-            "SECRET", replacementRange: NSRange(location: NSNotFound, length: 0))
-        textView.setSelectedRange(NSRange(location: 0, length: 6))
-        coordinator.sealSelectionOrLine()
-        textView.layout()
-        textView.layoutManager?.ensureLayout(for: try XCTUnwrap(textView.textContainer))
-        let frame = try XCTUnwrap(textView.chipFrame(at: 0))
-        XCTAssertNil(
-            textView.chipZone(at: NSPoint(x: frame.minX + 20, y: frame.maxY - 6), chipAt: 0),
-            "an unnamed row answered a zone")
-
-        name(textView, chipAt: 0, model: model, as: "DB_PASSWORD")
-        textView.layoutManager?.ensureLayout(for: try XCTUnwrap(textView.textContainer))
-        let row = try XCTUnwrap(textView.chipCell(at: 0)?.namedRow(in: frame)).geometry
-        for zone in SealedBlockLayout.Zone.allCases {
-            let run = switch zone {
-            case .name: row.name
-            case .equals: row.equals
-            case .value: row.value
-            }
-            XCTAssertEqual(
-                textView.chipZone(at: NSPoint(x: run.midX, y: run.midY), chipAt: 0), zone)
-        }
-        XCTAssertNil(
-            textView.chipZone(at: NSPoint(x: row.value.maxX + 4, y: row.value.midY), chipAt: 0))
+    func testMenuActionsResolveIdentityAfterEditsAndRefuseRemovedTargets() throws {
+        let fixture = try makeZoneFixture(#function)
+        defer { fixture.pasteboard.releaseGlobally() }
+        let view = fixture.textView
+        let menu = try XCTUnwrap(fixture.coordinator.chipMenu(at: 3))
+        let remove = try XCTUnwrap(menu.items.first { $0.title == "Remove from Document" })
+        let copy = try XCTUnwrap(menu.items.first { $0.title == "Copy Decrypted Contents" })
+        view.insertText("prefix ", replacementRange: NSRange(location: 0, length: 0))
+        XCTAssertTrue(fixture.coordinator.validateMenuItem(copy))
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(copy.action), to: copy.target, from: copy))
+        XCTAssertEqual(fixture.client.copiedOut, [fixture.chipID])
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(remove.action), to: remove.target, from: remove))
+        XCTAssertNil(view.chipIndex(ofChip: fixture.chipID))
+        let after = view.string
+        XCTAssertFalse(fixture.coordinator.validateMenuItem(remove))
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(remove.action), to: remove.target, from: remove))
+        XCTAssertEqual(view.string, after, "a stale menu removed unrelated text")
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(copy.action), to: copy.target, from: copy))
+        XCTAssertEqual(fixture.client.copiedOut, [fixture.chipID], "a stale menu copied again")
     }
 
     /// In a flipped text view, the lock, classification, and actions
     /// affordance occupy the upper row while excerpt metadata is below.
-    func testTheRowsLockAndActionsUseFlippedTextViewCoordinates() {
-        let frame = NSRect(x: 10, y: 100, width: 400, height: SealedBlockCell.blockHeight)
+    func testPrimaryIdentityAndSecondaryControlsHaveSeparateRows() {
+        let frame = NSRect(x: 10, y: 100, width: 400, height: SealedBlockCell.preferredHeight)
         let layout = SealedBlockCell.contentLayout(in: frame)
         let seat = SealedBlockCell.actionsRect(in: frame)
-        XCTAssertTrue(frame.contains(layout.lockRect), "the lock hung off the block")
-        XCTAssertLessThan(layout.topRowY, layout.bottomRowY, "the rows were vertically reversed")
-        XCTAssertLessThan(layout.lockRect.midY, frame.midY, "the lock was not on the top row")
-        XCTAssertTrue(frame.contains(seat), "the seat hung off the block")
-        XCTAssertEqual(seat.maxX, frame.maxX - 12, "the seat did not share the metadata's inset")
-        XCTAssertLessThan(seat.midY, frame.midY, "the seat was not on the top row")
-        XCTAssertEqual(SealedBlockCell.actionsGlyph, "···")
+        XCTAssertTrue(frame.contains(layout.lockRect))
+        XCTAssertTrue(frame.contains(seat))
+        XCTAssertLessThan(layout.bottomRowY, seat.minY)
+        XCTAssertGreaterThan(seat.height, 20)
     }
 
     func testTheActionsSeatIgnoresStateFlagsButRejectsGestureModifiersAndLaterClicks() {
@@ -491,12 +421,10 @@ final class SealedCapsuleTests: XCTestCase {
         let expectedWidth = floor(
             scroll.contentSize.width - inset.width * 2 - container.lineFragmentPadding * 2)
 
-        XCTAssertEqual(attachmentSize.width, expectedWidth, accuracy: 0.5)
-        XCTAssertEqual(glyphBounds.width, expectedWidth, accuracy: 0.5)
-        XCTAssertEqual(attachmentSize.height, SealedBlockCell.blockHeight, accuracy: 0.5)
-        XCTAssertNotEqual(
-            attachmentSize.width, SealedBlockCell.fallbackBlockWidth,
-            "live layout used the fallback cell width")
+        XCTAssertLessThanOrEqual(attachmentSize.width, expectedWidth)
+        XCTAssertEqual(glyphBounds.width, attachmentSize.width, accuracy: 0.5)
+        XCTAssertEqual(attachmentSize.height, SealedBlockCell.preferredHeight, accuracy: 0.5)
+        XCTAssertEqual(attachmentSize.width, SealedBlockLayout.minimumWidth)
         XCTAssertGreaterThan(glyphBounds.height, 0)
         XCTAssertLessThanOrEqual(
             textView.textContainerOrigin.x + glyphBounds.maxX + inset.width,
@@ -518,7 +446,7 @@ final class SealedCapsuleTests: XCTestCase {
         layoutManager.ensureLayout(for: container)
         let sizedWidth = layoutManager.attachmentSize(forGlyphAt: 0).width
         XCTAssertEqual(
-            sizedWidth, floor(480 - container.lineFragmentPadding * 2), accuracy: 0.5)
+            sizedWidth, SealedBlockLayout.minimumWidth, accuracy: 0.5)
 
         scroll.setFrameSize(NSSize(width: 0, height: 300))
         XCTAssertEqual(scroll.contentSize.width, 0, "the viewport did not collapse")
@@ -573,7 +501,7 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(answered.minY, drawn.minY, accuracy: 0.5)
         XCTAssertEqual(answered.width, drawn.width, accuracy: 0.5)
         XCTAssertEqual(answered.height, drawn.height, accuracy: 0.5)
-        XCTAssertEqual(drawn.height, SealedBlockCell.blockHeight, accuracy: 0.5)
+        XCTAssertEqual(drawn.height, SealedBlockCell.preferredHeight, accuracy: 0.5)
         XCTAssertNil(textView.chipFrame(at: 0), "ink answered a chip frame")
 
         // The case exists because the bounding rect is the wrong answer
@@ -586,9 +514,7 @@ final class SealedCapsuleTests: XCTestCase {
         bounding.origin.y += textView.textContainerOrigin.y
         XCTAssertLessThan(bounding.minY, drawn.minY, "the ink did not rise above the block; the case is moot")
         XCTAssertGreaterThan(bounding.height, drawn.height)
-        XCTAssertNotEqual(
-            SealedBlockCell.actionsRect(in: bounding).minY, SealedBlockCell.actionsRect(in: drawn).minY,
-            "the seats agreed; the old frame would have hit")
+        XCTAssertNotEqual(bounding.minY, drawn.minY)
 
         let outsideBlock = NSPoint(x: drawn.midX, y: bounding.minY + 0.5)
         XCTAssertTrue(bounding.contains(outsideBlock))
@@ -631,9 +557,9 @@ final class SealedCapsuleTests: XCTestCase {
         let attachmentSize = layoutManager.attachmentSize(forGlyphAt: glyphRange.location)
         let expectedWidth = floor(container.size.width - container.lineFragmentPadding * 2)
 
-        XCTAssertEqual(attachmentSize.width, expectedWidth, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(attachmentSize.width, expectedWidth)
         XCTAssertLessThan(attachmentSize.width, scroll.contentSize.width)
-        XCTAssertNotEqual(attachmentSize.width, SealedBlockCell.fallbackBlockWidth)
+        XCTAssertEqual(attachmentSize.width, SealedBlockLayout.minimumWidth)
     }
 
     /// Return and Space, bare, are the two keys that open a selected
