@@ -456,11 +456,9 @@ impl<C: Clock> SheetStore<C> {
                 .iter()
                 .map(|(uuid, from, _)| (*uuid, *from, target))
                 .collect();
-            let recorded = self.record_continuous_moves(scope, &transitions);
-            debug_assert!(
-                recorded,
-                "a move's edited source and target belong to its group"
-            );
+            if !self.record_continuous_moves(scope, &transitions) {
+                self.clear_continuous_history(scope);
+            }
         }
         for (uuid, from, _) in moved {
             self.restated.insert(from);
@@ -1313,6 +1311,85 @@ mod tests {
             store.active_cut.as_ref().unwrap().envelope.as_slice(),
             original_cut.as_slice()
         );
+    }
+
+    #[test]
+    fn continuous_move_finishes_when_deadline_passes_before_history_registration() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        use std::time::Instant;
+
+        #[derive(Clone)]
+        struct DeadlineOnRead {
+            inner: ManualClock,
+            remaining_reads: Rc<Cell<u8>>,
+        }
+        impl Clock for DeadlineOnRead {
+            fn now(&self) -> Instant {
+                let remaining = self.remaining_reads.get();
+                if remaining > 0 {
+                    self.remaining_reads.set(remaining - 1);
+                    if remaining == 1 {
+                        self.inner.advance(Duration::from_secs(31 * 24 * 3600));
+                    }
+                }
+                self.inner.now()
+            }
+            fn wall_ms(&self) -> u64 {
+                self.inner.wall_ms()
+            }
+            fn local_offset_seconds(&self) -> i32 {
+                self.inner.local_offset_seconds()
+            }
+        }
+
+        let clock = DeadlineOnRead {
+            inner: ManualClock::new(),
+            remaining_reads: Rc::new(Cell::new(0)),
+        };
+        let mut store = SheetStore::new(clock.clone()).with_grace_snap(false);
+        let source = store.new_tab().1;
+        let target = store.new_tab().1;
+        let chip = store.seal_text(source, A).unwrap();
+        assert!(store.sync_document(source, vec![Segment::Chip(chip)]));
+        let uuid = store.sheet(source).unwrap().chips[0].uuid;
+        let edit = ContinuousEdit {
+            pages: [source, target]
+                .into_iter()
+                .map(|page| crate::continuous::ContinuousPageEdit {
+                    page_id: page,
+                    expected_uuid: store.sheet(page).unwrap().uuid(),
+                    expected_version: Some(store.sheet(page).unwrap().document.version()),
+                    ops: if page == source {
+                        vec![EditOp::Delete {
+                            pos_u16: 0,
+                            len_u16: 1,
+                        }]
+                    } else {
+                        vec![]
+                    },
+                    join_next: None,
+                })
+                .collect(),
+            intent: EditIntent::Replacement,
+            selection: selection(0, 1, 0, 0),
+        };
+        // Two admission reads and two settle reads precede move-history registration.
+        clock.remaining_reads.set(5);
+        let result = store.place_continuous_plan(
+            "pad",
+            &edit,
+            target,
+            vec![Planned::Reattach { uuid, from: source }],
+            Placed::default(),
+            true,
+        );
+        assert!(result.is_some());
+        assert_eq!(clock.remaining_reads.get(), 0);
+        assert!(store.sheet(source).unwrap().segments().is_empty());
+        assert_eq!(store.sheet(target).unwrap().chips[0].uuid, uuid);
+        assert!(store.continuous_scope_for_step(target, true).is_none());
+        assert!(!store.can_step_continuous("pad", true));
     }
 
     #[test]

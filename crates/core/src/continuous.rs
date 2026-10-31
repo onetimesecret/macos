@@ -701,6 +701,32 @@ mod tests {
     }
 
     #[test]
+    fn new_edits_remain_undoable_after_the_surface_scope_was_cleared() {
+        let (mut store, _, a, b) = setup();
+        assert!(store.apply_continuous("pad", &cross_edit(&store, a, b)));
+        let before = (text(&store, a), text(&store, b));
+        store.clear_continuous_history("pad");
+        assert!(store.apply_continuous("pad", &typing(&store, a, 3, "new")));
+        assert!(store.undo(a));
+        assert_eq!((text(&store, a), text(&store, b)), before);
+        assert!(!store.undo(a));
+        assert!(store.redo(a));
+        assert_eq!(text(&store, a), "al!new");
+        store.clear_continuous_history("pad");
+        assert!(store.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 6,
+                text: "local".into()
+            }]
+        ));
+        assert!(store.undo(a));
+        assert_eq!(text(&store, a), "al!new");
+        assert!(store.redo(a));
+        assert_eq!(text(&store, a), "al!newlocal");
+    }
+
+    #[test]
     fn adjacent_typing_coalesces_until_a_caret_move_or_pause() {
         let (mut store, clock, a, _) = setup();
         assert!(store.apply_continuous("pad", &typing(&store, a, 7, "a")));
