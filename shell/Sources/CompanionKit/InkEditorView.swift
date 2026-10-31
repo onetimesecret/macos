@@ -1354,6 +1354,13 @@ public struct InkEditorView: NSViewRepresentable {
                     kind: .selection
                 )
             }
+            if continuousDocument != nil, !structuralStyleNeedsRebuild,
+               lineKindsStamp == generation, lineKindsDocument == document,
+               !fenceRegions.contains(where: {
+                   selection.location >= $0.location && selection.location <= NSMaxRange($0)
+               }) {
+                return nil
+            }
             guard let fence = bareFenceTarget(at: selection.location, in: storage.string) else {
                 return nil
             }
@@ -8621,6 +8628,10 @@ public enum InkStyle {
         }
     }
 
+    private nonisolated static let markdownLinkExpression = try? NSRegularExpression(
+        pattern: #"\[([^\[\]]*)\]\((https?://[^()\s]+)\)"#)
+    private nonisolated static let bareLinkExpression = try? NSRegularExpression(pattern: #"https?://[^\s<>]+"#)
+
     /// The links a line of body ink carries, in document order:
     /// markdown `[text](url)` constructs first, then bare http(s) URLs
     /// that fall outside them. Deliberately conservative — only http
@@ -8636,9 +8647,7 @@ public enum InkStyle {
         // parens and the URL between them are syntax. The URL half
         // refuses parens and whitespace, which keeps the match from
         // swallowing prose after a stray `(`.
-        if let markdown = try? NSRegularExpression(
-            pattern: #"\[([^\[\]]*)\]\((https?://[^()\s]+)\)"#
-        ) {
+        if let markdown = markdownLinkExpression {
             markdown.enumerateMatches(in: line, range: full) { match, _, _ in
                 guard let match, match.numberOfRanges == 3 else { return }
                 let target = text.substring(with: match.range(at: 2))
@@ -8661,7 +8670,7 @@ public enum InkStyle {
         // The match runs to whitespace and is then walked back off
         // trailing punctuation, so `see https://example.com.` links the
         // URL and leaves the sentence its full stop.
-        if let bare = try? NSRegularExpression(pattern: #"https?://[^\s<>]+"#) {
+        if let bare = bareLinkExpression {
             bare.enumerateMatches(in: line, range: full) { match, _, _ in
                 guard let match,
                       !found.contains(where: {

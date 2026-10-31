@@ -235,6 +235,99 @@ final class ContinuousSurfaceLifecycleTests: XCTestCase {
         XCTAssertTrue(surface.canvas.checkpointLabels.first === label)
         XCTAssertNotEqual(label.stringValue, originalLabel)
     }
+
+    func testOptInContinuousTypingBenchmark() throws {
+        guard ProcessInfo.processInfo.environment["ONETIMEPAD_RUN_CONTINUOUS_BENCHMARK"] == "1" else {
+            throw XCTSkip("Set ONETIMEPAD_RUN_CONTINUOUS_BENCHMARK=1 for the isolated typing benchmark.")
+        }
+        let client = ContinuousBenchmarkFixtureClient()
+        let model = try model(client: client)
+        let content = String(repeating: "A line of ordinary checkpoint text.\n", count: 30)
+        for index in 0..<100 { _ = try seed("Checkpoint \(index)\n" + content, in: model) }
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let editor = surface.canvas.editor
+        let originalLength = editor.string.utf16.count
+        editor.setSelectedRange(NSRange(location: originalLength, length: 0))
+        update(surface, model: model)
+        client.snapshotReads = 0
+        var refreshMilliseconds: [Double] = []
+        for _ in 0..<5 {
+            let start = ProcessInfo.processInfo.systemUptime
+            surface.canvas.document.refresh()
+            refreshMilliseconds.append((ProcessInfo.processInfo.systemUptime - start) * 1_000)
+        }
+        let refreshReads = client.snapshotReads
+        client.snapshotReads = 0
+        var typingMilliseconds: [Double] = []
+        var insertionMilliseconds: [Double] = []
+        var geometryMilliseconds: [Double] = []
+        var surfaceUpdateMilliseconds: [Double] = []
+        for _ in 0..<10 {
+            let start = ProcessInfo.processInfo.systemUptime
+            editor.insertText("x", replacementRange: editor.selectedRange())
+            let inserted = ProcessInfo.processInfo.systemUptime
+            surface.canvas.measure()
+            let measured = ProcessInfo.processInfo.systemUptime
+            update(surface, model: model)
+            let finished = ProcessInfo.processInfo.systemUptime
+            insertionMilliseconds.append((inserted - start) * 1_000)
+            geometryMilliseconds.append((measured - inserted) * 1_000)
+            surfaceUpdateMilliseconds.append((finished - measured) * 1_000)
+            typingMilliseconds.append((finished - start) * 1_000)
+        }
+        XCTAssertEqual(editor.string.utf16.count, originalLength + 10)
+        let typingReads = client.snapshotReads
+        var restyleMilliseconds: [Double] = []
+        for _ in 0..<3 {
+            let start = ProcessInfo.processInfo.systemUptime
+            surface.coordinator.restyle()
+            restyleMilliseconds.append((ProcessInfo.processInfo.systemUptime - start) * 1_000)
+        }
+        model.previewRendering = .never
+        model.syntaxHighlightingEnabled = false
+        update(surface, model: model)
+        var plainTypingMilliseconds: [Double] = []
+        for _ in 0..<5 {
+            let start = ProcessInfo.processInfo.systemUptime
+            editor.insertText("x", replacementRange: editor.selectedRange())
+            update(surface, model: model)
+            plainTypingMilliseconds.append((ProcessInfo.processInfo.systemUptime - start) * 1_000)
+        }
+        var directEditMilliseconds: [Double] = []
+        for _ in 0..<5 {
+            let at = editor.string.utf16.count
+            let start = ProcessInfo.processInfo.systemUptime
+            XCTAssertTrue(surface.canvas.document.apply([.ins(at: at, text: "x")], intent: .typing,
+                selection: .init(before: NSRange(location: at, length: 0),
+                    after: NSRange(location: at + 1, length: 0))))
+            directEditMilliseconds.append((ProcessInfo.processInfo.systemUptime - start) * 1_000)
+        }
+        XCTAssertEqual(editor.string.utf16.count, originalLength + 20)
+        let result: [String: Any] = [
+            "pages": 100, "initialUTF16Length": originalLength,
+            "unchangedRefreshMilliseconds": refreshMilliseconds, "unchangedRefreshSnapshotReads": refreshReads,
+            "typingMilliseconds": typingMilliseconds, "typingSnapshotReads": typingReads,
+            "insertionMilliseconds": insertionMilliseconds, "geometryMilliseconds": geometryMilliseconds,
+            "surfaceUpdateMilliseconds": surfaceUpdateMilliseconds, "restyleMilliseconds": restyleMilliseconds,
+            "plainTypingMilliseconds": plainTypingMilliseconds, "directEditMilliseconds": directEditMilliseconds,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
+        print("CONTINUOUS_BENCHMARK " + String(decoding: data, as: UTF8.self))
+    }
+}
+
+private final class ContinuousBenchmarkFixtureClient: CompanionClient, @unchecked Sendable {
+    var snapshotReads = 0
+
+    init() {
+        super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: UUID().uuidString))
+    }
+
+    override func continuousSnapshot(sheet: UInt64) -> ContinuousPageSnapshot? {
+        snapshotReads += 1
+        return super.continuousSnapshot(sheet: sheet)
+    }
 }
 
 private final class ContinuousMetadataFixtureClient: CompanionClient, @unchecked Sendable {

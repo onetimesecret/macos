@@ -237,7 +237,6 @@ final class ContinuousPadCanvas: NSView {
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
         coordinator.applyPreviewRendering(model.previewRendering)
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
-        coordinator.refreshLanguageActionAvailability()
         model.scheduleEditStepsRefresh()
         measure()
         if let page = model.selectedPageID, page != selectedPage {

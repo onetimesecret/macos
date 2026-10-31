@@ -372,6 +372,35 @@ final class ContinuousPadViewTests: XCTestCase {
         XCTAssertEqual(surface.coordinator.sealableSelection(), local)
     }
 
+    func testLanguageAvailabilityUsesCurrentFenceClassificationAndIncludesOpenFenceEnd() throws {
+        let model = try model()
+        _ = try seed("first checkpoint", in: model)
+        _ = try seed("plain second checkpoint", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let editor = surface.canvas.editor
+        let storage = try XCTUnwrap(editor.textStorage)
+        editor.setSelectedRange(NSRange(location: storage.length, length: 0))
+        XCTAssertFalse(surface.coordinator.manualLanguageTargetAvailable)
+
+        storage.replaceCharacters(in: NSRange(location: storage.length, length: 0), with: "\n```\nlet value = 1")
+        editor.setSelectedRange(NSRange(location: storage.length, length: 0))
+        XCTAssertTrue(surface.coordinator.manualLanguageTargetAvailable)
+        editor.didChangeText()
+        XCTAssertTrue(surface.coordinator.manualLanguageTargetAvailable)
+
+        let opening = (editor.string as NSString).range(of: "```")
+        XCTAssertNotEqual(opening.location, NSNotFound)
+        storage.replaceCharacters(in: opening, with: "plain")
+        editor.setSelectedRange(NSRange(location: storage.length, length: 0))
+        XCTAssertFalse(surface.coordinator.manualLanguageTargetAvailable)
+        editor.didChangeText()
+        XCTAssertFalse(surface.coordinator.manualLanguageTargetAvailable)
+
+        editor.insertText("\n```\nvalue\n```\nafter", replacementRange: editor.selectedRange())
+        XCTAssertFalse(surface.coordinator.manualLanguageTargetAvailable)
+    }
+
     func testStaleCheckpointCannotSealIntoCurrentlySelectedPage() throws {
         let model = try model()
         model.pads.isEnabled = true
