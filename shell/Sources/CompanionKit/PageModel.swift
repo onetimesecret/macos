@@ -3412,7 +3412,15 @@ public final class PageModel: ObservableObject {
         fenceRenderingLanguages = fenceRenderingLanguages.filter { livePages.contains($0.key) }
         refreshContinuousDocuments()
         // A removal's Undo has nothing to step back once its page is gone.
-        if let stamp = removalStamp, !livePages.contains(stamp.sheet) { retireRemovalUndo() }
+        if let stamp = removalStamp {
+            switch stamp.document {
+            case .sheet(let sheet):
+                if !livePages.contains(sheet) { retireRemovalUndo() }
+            case .continuous:
+                if !removalUndoStands { retireRemovalUndo() }
+            case .note: retireRemovalUndo()
+            }
+        }
         selection = Self.reconciledSelection(current: selection, live: navigationTabs.map(\.id))
         // When pages are organized by day, a slot holding no page is not on
         // the rail at all, so a selection left on one would be pointing
@@ -6851,8 +6859,8 @@ public final class PageModel: ObservableObject {
     /// How many edits this model has sent the core for each document, from any surface.
     private var editGenerations: [InkDocument: UInt64] = [:]
 
-    /// The page and its count of edits just after a removal, while the line offers Undo.
-    private var removalStamp: (sheet: UInt64, generation: UInt64)?
+    /// The edited document and its generation when a removal offers Undo.
+    private var removalStamp: (document: InkDocument, generation: UInt64)?
 
     /// The count of edits sent for `document`, which only grows.
     private func editGeneration(_ document: InkDocument) -> UInt64 {
@@ -6862,7 +6870,11 @@ public final class PageModel: ObservableObject {
     /// Whether the removal is still the latest edit sent for its page.
     private var removalUndoStands: Bool {
         guard let stamp = removalStamp else { return false }
-        return stamp.generation == editGeneration(.sheet(stamp.sheet))
+        guard stamp.generation == editGeneration(stamp.document) else { return false }
+        if case .continuous(let scope) = stamp.document {
+            return client.continuousCanStep(scope: scope, back: true)
+        }
+        return true
     }
 
     /// Counts an edit sent for each of `documents`; one on a removal's page retires its Undo.
@@ -6873,10 +6885,15 @@ public final class PageModel: ObservableObject {
 
     /// After a removal on `sheet`: the line, with an Undo the model answers itself.
     func noteRemoval(sheet: UInt64) {
-        removalStamp = (sheet, editGeneration(.sheet(sheet)))
+        noteRemoval(document: .sheet(sheet))
+    }
+
+    func noteRemoval(document: InkDocument) {
+        if case .note = document { return }
+        removalStamp = (document, editGeneration(document))
         flash(
             Self.removedLine,
-            action: Self.offersRemovalUndo
+            action: Self.offersRemovalUndo && removalUndoStands
                 ? NoticeAction(label: "Undo") { [weak self] in self?.undoRemoval() } : nil
         )
     }
@@ -6886,7 +6903,15 @@ public final class PageModel: ObservableObject {
     private func undoRemoval() {
         guard removalUndoStands, let stamp = removalStamp else { return }
         // A surface showing the page takes the step, so it meets Coordinator.step's editability gate.
-        let shown = surface(showing: stamp.sheet)
+        let shown: InkTextView?
+        switch stamp.document {
+        case .sheet(let sheet): shown = surface(showing: sheet)
+        case .continuous:
+            shown = (activeEditor as? InkTextView).flatMap {
+                $0.coordinator?.document == stamp.document ? $0 : nil
+            }
+        case .note: return
+        }
         // With the page shown nowhere, the owner's editor or the key window's text view answers.
         let waits = (shown ?? activeEditor as? InkTextView).map { !$0.answersChords }
             ?? (NSApp?.keyWindow?.firstResponder is NSTextView)
@@ -6898,7 +6923,10 @@ public final class PageModel: ObservableObject {
         if let shown {
             shown.coordinator?.step(back: true)
         } else {
-            stepEdit(.sheet(stamp.sheet), back: true)
+            stepEdit(stamp.document, back: true)
+            if case .continuous(let scope) = stamp.document {
+                continuousDocuments[scope]?.suspend()
+            }
         }
     }
 
@@ -6910,7 +6938,12 @@ public final class PageModel: ObservableObject {
 
     /// A surface mounted `sheet`: a removal's Undo on any other page goes.
     func surfaceMounted(page sheet: UInt64) {
-        if let stamp = removalStamp, stamp.sheet != sheet { retireRemovalUndo() }
+        surfaceMounted(document: .sheet(sheet))
+    }
+
+    private func surfaceMounted(document: InkDocument) {
+        if case .note = document { return }
+        if let stamp = removalStamp, stamp.document != document { retireRemovalUndo() }
     }
 
     private func retireRemovalUndo() {
@@ -7901,6 +7934,9 @@ public final class PageModel: ObservableObject {
     /// A mount, or an update pass over one, announcing its editor.
     public func mountEditor(_ editor: NSTextView, from surface: PresentationOwner) {
         guard admits(.activeEditor, from: surface) else { return }
+        if let document = (editor as? InkTextView)?.coordinator?.document {
+            surfaceMounted(document: document)
+        }
         activeEditor = editor
     }
 

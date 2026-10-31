@@ -75,6 +75,65 @@ struct ContinuousDocumentProjection: Equatable, Sendable {
 
     var length: Int { segments.last.map { NSMaxRange($0.bodyRange) } ?? 0 }
 
+    func blockMetas(using metadata: (UInt64) -> [BlockInfo]) -> [BlockInfo] {
+        let text = self.text as NSString
+        var paragraphs: [NSRange] = []
+        var location = 0
+        while location < text.length {
+            let range = text.paragraphRange(for: NSRange(location: location, length: 0))
+            guard range.length > 0 else { break }
+            paragraphs.append(range)
+            location = NSMaxRange(range)
+        }
+        var result: [BlockInfo] = []
+        var paragraphIndex = 0
+        var covered = 0
+        for segment in segments {
+            let localText = segment.page.text as NSString
+            var localStart = 0
+            for meta in metadata(segment.page.id) {
+                guard localStart < localText.length else { break }
+                var localEnd = localStart
+                for _ in 0..<max(1, meta.paragraphs) {
+                    guard localEnd < localText.length else { break }
+                    localEnd = NSMaxRange(localText.paragraphRange(for: NSRange(location: localEnd, length: 0)))
+                }
+                let start = segment.bodyRange.location + localStart
+                let end = segment.bodyRange.location + localEnd
+                while paragraphIndex < paragraphs.count, NSMaxRange(paragraphs[paragraphIndex]) <= start {
+                    paragraphIndex += 1
+                }
+                let first = paragraphIndex
+                while paragraphIndex + 1 < paragraphs.count, paragraphs[paragraphIndex + 1].location < end {
+                    paragraphIndex += 1
+                }
+                let after = paragraphIndex + 1
+                if first < covered, let previous = result.popLast() {
+                    // Joined checkpoints can contribute to the same visible paragraph.
+                    result.append(BlockInfo(
+                        id: previous.id,
+                        createdS: [previous.createdS, meta.createdS].compactMap { $0 }.min(),
+                        modifiedS: [previous.modifiedS ?? previous.createdS, meta.modifiedS ?? meta.createdS]
+                            .compactMap { $0 }.max(),
+                        paragraphs: previous.paragraphs + max(0, after - covered)
+                    ))
+                } else {
+                    if first > covered {
+                        result.append(BlockInfo(id: "", createdS: nil, modifiedS: nil, paragraphs: first - covered))
+                    }
+                    result.append(BlockInfo(id: meta.id, createdS: meta.createdS, modifiedS: meta.modifiedS,
+                                            paragraphs: after - first))
+                }
+                covered = max(covered, after)
+                localStart = localEnd
+            }
+        }
+        if covered < paragraphs.count {
+            result.append(BlockInfo(id: "", createdS: nil, modifiedS: nil, paragraphs: paragraphs.count - covered))
+        }
+        return result
+    }
+
     // Shared offsets at a joined edge belong to the following page.
     func page(at index: Int) -> Segment? {
         let ranges = segments

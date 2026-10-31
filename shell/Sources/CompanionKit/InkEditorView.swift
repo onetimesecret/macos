@@ -1057,9 +1057,18 @@ public struct InkEditorView: NSViewRepresentable {
         /// The display only fence labels of the document under the surface.
         private func fenceLanguages() -> [Int: String] {
             switch document {
-            case .sheet(let sheet): model.fenceRenderingLanguages(for: sheet)
-            case .note, .continuous: noteFenceLanguages
-            case nil: [:]
+            case .sheet(let sheet): return model.fenceRenderingLanguages(for: sheet)
+            case .note: return noteFenceLanguages
+            case .continuous:
+                var languages: [Int: String] = [:]
+                for segment in continuousDocument?.projection.segments ?? [] {
+                    for (location, language) in model.fenceRenderingLanguages(for: segment.page.id)
+                    where location >= 0 && location < segment.bodyRange.length {
+                        languages[segment.bodyRange.location + location] = language
+                    }
+                }
+                return languages
+            case nil: return [:]
             }
         }
 
@@ -1067,7 +1076,11 @@ public struct InkEditorView: NSViewRepresentable {
             switch document {
             case .sheet(let sheet):
                 model.setFenceRenderingLanguage(language, sheet: sheet, at: paragraphLocation)
-            case .note, .continuous: noteFenceLanguages[paragraphLocation] = language
+            case .note: noteFenceLanguages[paragraphLocation] = language
+            case .continuous:
+                guard let segment = continuousDocument?.projection.page(at: paragraphLocation) else { return }
+                model.setFenceRenderingLanguage(language, sheet: segment.page.id,
+                    at: paragraphLocation - segment.bodyRange.location)
             case nil: break
             }
         }
@@ -1075,8 +1088,8 @@ public struct InkEditorView: NSViewRepresentable {
         private func clearFenceLanguages() {
             switch document {
             case .sheet(let sheet): model.clearFenceRenderingLanguages(for: sheet)
-            case .note, .continuous: noteFenceLanguages = [:]
-            case nil: break
+            case .note: noteFenceLanguages = [:]
+            case .continuous, nil: break
             }
         }
 
@@ -2757,7 +2770,10 @@ public struct InkEditorView: NSViewRepresentable {
                 return nil
             }
             model.selectContinuousPage(local.page)
-            guard model.sealTarget == local.page else { return nil }
+            guard model.sealTarget == local.page else {
+                model.flash("this checkpoint is no longer available")
+                return nil
+            }
             return local.range
         }
 
@@ -3036,6 +3052,10 @@ public struct InkEditorView: NSViewRepresentable {
         @discardableResult
         func copySelection() -> Bool {
             if let continuousDocument, let textView {
+                guard textView.selectedRanges.count == 1 else {
+                    model.flash(PageModel.severalStretchesLine)
+                    return false
+                }
                 let composition = continuousDocument.compose(textView.selectedRanges.map(\.rangeValue))
                 guard case .composed(let fragment) = composition else {
                     if let line = PageModel.refusalLine(for: composition, .copy) { model.flash(line) }
@@ -3076,7 +3096,10 @@ public struct InkEditorView: NSViewRepresentable {
         @discardableResult
         func cutSelection() -> PageModel.CutOutcome {
             if let continuousDocument, let textView, textView.isEditable {
-                guard textView.selectedRanges.count == 1 else { return .refused }
+                guard textView.selectedRanges.count == 1 else {
+                    model.flash(PageModel.severalStretchesCutLine)
+                    return .refused
+                }
                 InkEditorView.discardComposition(in: textView)
                 invalidateOrdinaryPasteMeasurement()
                 let result = continuousDocument.cut(textView.selectedRange())
@@ -3102,9 +3125,11 @@ public struct InkEditorView: NSViewRepresentable {
                 guard textView.answersChords, textView.selectedRanges.count == 1 else { return false }
                 InkEditorView.discardComposition(in: textView)
                 invalidateOrdinaryPasteMeasurement()
+                let replacesObject = rangesHoldObject(textView.selectedRanges.map(\.rangeValue))
                 guard let placed = continuousDocument.paste(textView.selectedRange(), from: nil, activeCut: true)
                 else { return false }
                 settleRewrite(selecting: NSRange(location: NSMaxRange(placed), length: 0))
+                if replacesObject { noteRemoval() }
                 return true
             }
             guard !writesNote, let textView, textView.isEditable,
@@ -3136,8 +3161,10 @@ public struct InkEditorView: NSViewRepresentable {
                 }
                 InkEditorView.discardComposition(in: textView)
                 invalidateOrdinaryPasteMeasurement()
+                let replacesObject = rangesHoldObject(textView.selectedRanges.map(\.rangeValue))
                 if let placed = continuousDocument.paste(textView.selectedRange(), from: model.ambientPasteboard) {
                     settleRewrite(selecting: NSRange(location: NSMaxRange(placed), length: 0))
+                    if replacesObject { noteRemoval() }
                 }
                 return true
             }
@@ -3849,9 +3876,10 @@ public struct InkEditorView: NSViewRepresentable {
         /// After an edit took an object: end its step, so Undo stands the object alone,
         /// and say so with the model's Undo beside the line (D-30).
         func noteRemoval() {
-            guard let document, case .sheet(let sheet) = document, let textView else { return }
+            guard let document, let textView else { return }
+            if case .note = document { return }
             model.finishEditingGroup(document, selection: textView.selectedRange())
-            model.noteRemoval(sheet: sheet)
+            model.noteRemoval(document: document)
         }
 
         // MARK: Markdown — styled, never rewritten
@@ -3931,6 +3959,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// paragraph, so there is nothing true to show
         /// (decisions.md item 15). A note's chip id is not a page id.
         private func blockMetas() -> [BlockInfo] {
+            if let continuousDocument { return continuousDocument.blockMetas }
             guard case .sheet(let sheet) = document, !sheet.isFileID else { return [] }
             return model.coreClient.blocks(sheet: sheet)
         }
@@ -4764,11 +4793,11 @@ public struct InkEditorView: NSViewRepresentable {
         /// binary rather than left standing in one.
         #if DEBUG
             func layOutBlockLabels(forMetas metas: [BlockInfo]) {
-                guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
+                guard let storage = textView?.textStorage else { return }
                 let (_, displays, _) = Self.applyMarkdownStyling(
                     to: storage, blockMetas: metas,
                     syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
-                    fenceRenderingLanguages: model.fenceRenderingLanguages(for: sheet)
+                    fenceRenderingLanguages: fenceLanguages()
                 )
                 blockDisplays = displays
                 updateBlockLabelViews()

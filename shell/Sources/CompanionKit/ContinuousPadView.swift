@@ -114,6 +114,7 @@ final class ContinuousPadCanvas: NSView {
         let created: UInt64?
     }
     private var measuredCheckpoints: [CheckpointMetadata] = []
+    private var measuredStampFormat: StreamNavigator.StampFormat?
     private var appliedWrap: Bool?
     private let geometryID = UUID()
     private var geometryRevision: UInt64 = 0
@@ -222,8 +223,9 @@ final class ContinuousPadCanvas: NSView {
         let checkpoints = model.navigationTabs.compactMap { tab in
             tab.pageID.map { CheckpointMetadata(page: $0, day: tab.pageDayOffset, created: tab.pageCreatedMs) }
         }
-        if measuredCheckpoints != checkpoints {
+        if measuredCheckpoints != checkpoints || measuredStampFormat != model.stampFormat {
             measuredCheckpoints = checkpoints
+            measuredStampFormat = model.stampFormat
             needsMeasurement = true
         }
         if measuredTypeface != model.typeface || measuredPreview != model.previewRendering
@@ -352,20 +354,27 @@ final class ContinuousPadCanvas: NSView {
         let summaries = Dictionary(uniqueKeysWithValues: model.navigationTabs.compactMap { tab in
             tab.pageID.map { ($0, tab) }
         })
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
+        let groups = Dictionary(grouping: Array(summaries.values)) {
+            TimeUnit.day.bucket(dayOffset: $0.pageDayOffset ?? 0)
+        }
+        var stamps: [UInt64: String] = [:]
+        for group in groups.values {
+            let readings = StreamNavigator.stamps(createdMs: group.map(\.pageCreatedMs), format: model.stampFormat)
+            for (summary, reading) in zip(group, readings) {
+                if let page = summary.pageID { stamps[page] = reading }
+            }
+        }
         var previousY: CGFloat?
         var usedLabels = 0
         for extent in extents {
-            guard let page = extent.page, let summary = summaries[page] else { continue }
+            guard let page = extent.page, summaries[page] != nil else { continue }
             if let previousY, abs(previousY - extent.top) < 1 {
                 checkpointLabels[usedLabels - 1].stringValue = "•••"
                 checkpointLabels[usedLabels - 1].setAccessibilityLabel("Checkpoints on this line")
                 continue
             }
-            let value = summary.pageCreatedMs.map {
-                formatter.string(from: Date(timeIntervalSince1970: Double($0) / 1_000))
-            } ?? "•"
+            let stamp = stamps[page] ?? ""
+            let value = stamp.isEmpty ? "•" : stamp
             let label: NSTextField
             if usedLabels < checkpointLabels.count { label = checkpointLabels[usedLabels] }
             else {

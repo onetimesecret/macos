@@ -7,6 +7,13 @@ final class ContinuousPadDocument {
     let storage = NSTextStorage()
     private(set) var projection = ContinuousDocumentProjection(pages: [])
     private var renderedChips: [ChipInfo] = []
+    private struct PageBlockMetadata {
+        let uuid: String
+        let version: [UInt8]?
+        let values: [BlockInfo]
+    }
+    private var pageBlockMetadata: [UInt64: PageBlockMetadata] = [:]
+    private(set) var blockMetas: [BlockInfo] = []
     private var localRefreshPages: Set<UInt64> = []
     private struct PageIdentity {
         let id: UInt64
@@ -28,11 +35,18 @@ final class ContinuousPadDocument {
 
     func suspend() {
         guard suspendedPages == nil else { return }
+        for container in storage.layoutManagers.flatMap(\.textContainers) {
+            if let editor = container.textView as? InkTextView {
+                InkEditorView.discardComposition(in: editor)
+            }
+        }
         suspendedPages = projection.pages.map { .init(id: $0.id, uuid: $0.uuid, version: $0.version) }
         suspendedAnchor = localSelection(savedSelection)
         model.applyingProjection { storage.setAttributedString(NSAttributedString(string: "")) }
         projection = .init(pages: [])
         renderedChips = []
+        pageBlockMetadata = [:]
+        blockMetas = []
     }
 
     @discardableResult
@@ -70,6 +84,11 @@ final class ContinuousPadDocument {
         }
         let resuming = suspendedPages != nil
         let anchor = suspendedAnchor ?? (reordered ? localSelection(savedSelection) : nil)
+        for page in next.pages {
+            if let previousVersion = oldVersions[page.id], previousVersion != page.version {
+                model.clearFenceRenderingLanguages(for: page.id)
+            }
+        }
         if (reordered || externalChange), !previous.isEmpty {
             model.coreClient.continuousClearHistory(scope: scope)
         }
@@ -77,6 +96,18 @@ final class ContinuousPadDocument {
         suspendedAnchor = nil
         projection = next
         renderedChips = chips
+        var nextBlockMetadata: [UInt64: PageBlockMetadata] = [:]
+        for page in next.pages {
+            if let cached = pageBlockMetadata[page.id], page.version != nil,
+               cached.uuid == page.uuid, cached.version == page.version {
+                nextBlockMetadata[page.id] = cached
+            } else {
+                nextBlockMetadata[page.id] = .init(uuid: page.uuid, version: page.version,
+                                                 values: model.coreClient.blocks(sheet: page.id))
+            }
+        }
+        pageBlockMetadata = nextBlockMetadata
+        blockMetas = next.blockMetas { pageBlockMetadata[$0]?.values ?? [] }
         let rebuilt = NSMutableAttributedString()
         for segment in next.segments {
             if let body = renderings[segment.page.id] { rebuilt.append(body) }
@@ -329,8 +360,10 @@ final class ContinuousPadDocument {
         var edits = plan.edits
         guard let index = edits.firstIndex(where: { $0.pageID == source }) else { return false }
         edits[index].join = .set(to.page.uuid)
+        let successor = from.page.joinedNextUUID == to.page.uuid
+            ? to.page.joinedNextUUID : from.page.joinedNextUUID
         edits.append(.init(pageID: destination, pageUUID: to.page.uuid, ops: [],
-            join: .set(from.page.joinedNextUUID.flatMap { uuid in
+            join: .set(successor.flatMap { uuid in
                 projection.pages.contains { $0.uuid == uuid } ? uuid : nil
             }), expectedVersion: to.page.version))
         let caret = NSRange(location: range.location, length: 0)

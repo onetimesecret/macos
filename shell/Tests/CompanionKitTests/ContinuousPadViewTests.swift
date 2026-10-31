@@ -77,6 +77,127 @@ final class ContinuousPadViewTests: XCTestCase {
         }.joined()
     }
 
+    private func metadataProjection(_ texts: [String], joined: Bool = false) -> ContinuousDocumentProjection {
+        .init(pages: texts.enumerated().map { index, text in
+            .init(id: UInt64(index + 1), uuid: "page-\(index + 1)", text: text,
+                  joinedNextUUID: joined && index + 1 < texts.count ? "page-\(index + 2)" : nil)
+        })
+    }
+
+    private func editedBlock(_ id: String, created: Int64, modified: Int64, paragraphs: Int = 1) -> BlockInfo {
+        .init(id: id, createdS: created, modifiedS: modified, paragraphs: paragraphs)
+    }
+
+    func testContinuousBlockMetadataOffsetsPastBlankSeparatorAndUnicode() throws {
+        let projection = metadataProjection(["😀first\n", "🦊second"])
+        let metas = projection.blockMetas { page in
+            [editedBlock("block-\(page)", created: Int64(page) * 1_000, modified: Int64(page) * 3_000)]
+        }
+        XCTAssertEqual(metas.map(\.paragraphs), [1, 1, 1])
+        XCTAssertEqual(metas.map(\.createdS), [1_000, nil, 2_000])
+        XCTAssertEqual(metas.map(\.modifiedS), [3_000, nil, 6_000])
+        let storage = NSTextStorage(string: projection.text)
+        let result = InkEditorView.Coordinator.applyMarkdownStyling(to: storage, blockMetas: metas,
+            syntaxHighlightingEnabled: false, fenceRenderingLanguages: [:])
+        XCTAssertEqual(result.displays.map(\.range), [
+            NSRange(location: 0, length: 8), NSRange(location: 9, length: 8),
+        ])
+        XCTAssertTrue(result.displays.allSatisfy { $0.compactText == "edited" })
+        XCTAssertTrue(result.displays.allSatisfy { $0.accessibilityText.contains("; edited ") })
+    }
+
+    func testContinuousJoinedParagraphCombinesStampsWithoutShiftingLaterBlock() {
+        let projection = metadataProjection(["first", "second\nthird"], joined: true)
+        let metas = projection.blockMetas { page in
+            page == 1 ? [editedBlock("first", created: 1_000, modified: 3_000)] : [
+                editedBlock("second", created: 2_000, modified: 4_000),
+                editedBlock("third", created: 5_000, modified: 6_000),
+            ]
+        }
+        XCTAssertEqual(metas.map(\.paragraphs), [1, 1])
+        XCTAssertEqual(metas.map(\.createdS), [1_000, 5_000])
+        XCTAssertEqual(metas.map(\.modifiedS), [4_000, 6_000])
+        let result = InkEditorView.Coordinator.applyMarkdownStyling(
+            to: NSTextStorage(string: projection.text), blockMetas: metas,
+            syntaxHighlightingEnabled: false, fenceRenderingLanguages: [:])
+        XCTAssertEqual(result.displays.map(\.logicalRange), [
+            NSRange(location: 0, length: 12), NSRange(location: 12, length: 5),
+        ])
+    }
+
+    func testContinuousJoinedMultilineBlockRetainsItsFullLogicalExtent() {
+        let projection = metadataProjection(["first\nsecond", "third\nlast"], joined: true)
+        let metas = projection.blockMetas { page in
+            page == 1 ? [editedBlock("paste", created: 1_000, modified: 3_000, paragraphs: 2)] : [
+                editedBlock("third", created: 2_000, modified: 4_000),
+                editedBlock("last", created: 5_000, modified: 6_000),
+            ]
+        }
+        XCTAssertEqual(metas.map(\.paragraphs), [2, 1])
+        XCTAssertEqual(metas.map(\.createdS), [1_000, 5_000])
+        XCTAssertEqual(metas.map(\.modifiedS), [4_000, 6_000])
+        let result = InkEditorView.Coordinator.applyMarkdownStyling(
+            to: NSTextStorage(string: projection.text), blockMetas: metas,
+            syntaxHighlightingEnabled: false, fenceRenderingLanguages: [:])
+        XCTAssertEqual(result.displays.map(\.logicalRange), [
+            NSRange(location: 0, length: 18), NSRange(location: 18, length: 4),
+        ])
+    }
+
+    func testContinuousEmptyCheckpointDoesNotConsumeAnotherPagesMetadata() {
+        for joined in [false, true] {
+            let projection = metadataProjection(["first", "", "third"], joined: joined)
+            let metas = projection.blockMetas { page in
+                [editedBlock("block-\(page)", created: Int64(page) * 1_000, modified: Int64(page) * 3_000)]
+            }
+            XCTAssertEqual(metas.map(\.paragraphs), joined ? [1] : [1, 1, 1])
+            XCTAssertEqual(metas.map(\.createdS), joined ? [1_000] : [1_000, nil, 3_000])
+            XCTAssertEqual(metas.map(\.modifiedS), joined ? [9_000] : [3_000, nil, 9_000])
+            let result = InkEditorView.Coordinator.applyMarkdownStyling(
+                to: NSTextStorage(string: projection.text), blockMetas: metas,
+                syntaxHighlightingEnabled: false, fenceRenderingLanguages: [:])
+            XCTAssertEqual(result.displays.map(\.range.location), joined ? [0] : [0, 7])
+        }
+    }
+
+    func testContinuousBlockMetadataReadsCoreAndExposesBothCheckpointAccessibilityLabels() throws {
+        let model = try model()
+        _ = try seed("first", in: model)
+        _ = try seed("second", in: model)
+        let surface = try mount(model)
+        let document = surface.canvas.document
+        XCTAssertEqual(document.blockMetas, document.projection.blockMetas {
+            model.coreClient.blocks(sheet: $0)
+        })
+        XCTAssertEqual(document.blockMetas.count, 2)
+        let textNavigationChild = NSView(frame: .zero)
+        surface.canvas.editor.setAccessibilityChildren([textNavigationChild])
+        let metas = document.projection.blockMetas { page in
+            [editedBlock("block-\(page)", created: 1_000, modified: 300_000)]
+        }
+        surface.coordinator.layOutBlockLabels(forMetas: metas)
+        XCTAssertEqual(surface.coordinator.blockLabelLayout.map(\.range.location), [0, 6])
+        let fields = surface.canvas.editor.subviews.compactMap { $0 as? BlockMetadataField }
+        XCTAssertEqual(fields.count, 2)
+        let children = surface.canvas.editor.accessibilityChildren() ?? []
+        XCTAssertTrue(children.contains { ($0 as AnyObject) === textNavigationChild })
+        for field in fields {
+            XCTAssertTrue(children.contains { ($0 as AnyObject) === field })
+            XCTAssertTrue(field.accessibilityLabel()?.hasPrefix("Created ") == true)
+            XCTAssertTrue(field.accessibilityLabel()?.contains("; edited ") == true)
+        }
+        let firstPage = try XCTUnwrap(document.projection.pages.first?.id)
+        XCTAssertTrue(model.coreClient.applyOps(sheet: firstPage,
+            json: #"[{"ins":{"at":0,"text":"prefix\n"}}]"#))
+        XCTAssertTrue(document.refresh())
+        XCTAssertEqual(document.blockMetas, document.projection.blockMetas {
+            model.coreClient.blocks(sheet: $0)
+        })
+        XCTAssertEqual(document.blockMetas.reduce(0) { $0 + $1.paragraphs }, 3)
+        unmount(surface)
+        XCTAssertTrue(document.blockMetas.isEmpty)
+    }
+
     func testOneStorageSupportsNativeSelectionAndMovementAcrossCheckpoint() throws {
         let model = try model()
         _ = try seed("first line", in: model)
@@ -419,6 +540,118 @@ final class ContinuousPadViewTests: XCTestCase {
         XCTAssertEqual(model.sealTarget, pages[1].id)
         surface.canvas.editor.sealSelectedContent(nil)
         for page in pages { XCTAssertEqual(body(page.id, in: model), page.text) }
+        XCTAssertEqual(model.notice, "this checkpoint is no longer available")
+    }
+
+    func testDiscontiguousCopyAndCutExplainRefusalWithoutChangingClipboardOrPages() throws {
+        let model = try model()
+        _ = try seed("first", in: model)
+        _ = try seed("second", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let editor = surface.canvas.editor
+        let segments = surface.canvas.document.projection.segments
+        let original = editor.string
+        let ranges = [NSRange(location: 0, length: 2),
+                      NSRange(location: segments[1].bodyRange.location + 1, length: 2)]
+        editor.selectedRanges = ranges.map { NSValue(range: $0) }
+        model.ambientPasteboard.clearContents()
+        XCTAssertTrue(model.ambientPasteboard.setString("previous clipboard", forType: .string))
+        let clipboardVersion = model.ambientPasteboard.changeCount
+        editor.copy(nil)
+        XCTAssertEqual(model.notice, PageModel.severalStretchesLine)
+        editor.cut(nil)
+        XCTAssertEqual(model.notice, PageModel.severalStretchesCutLine)
+        XCTAssertEqual(model.ambientPasteboard.changeCount, clipboardVersion)
+        XCTAssertEqual(model.ambientPasteboard.string(forType: .string), "previous clipboard")
+        XCTAssertEqual(editor.string, original)
+        XCTAssertEqual(editor.selectedRanges.map(\.rangeValue), ranges)
+        for segment in segments { XCTAssertEqual(body(segment.page.id, in: model), segment.page.text) }
+    }
+
+    func testResplittingIntoAnEmptyJoinedCheckpointPreservesItsFollowingJoin() throws {
+        let model = try model()
+        _ = try seed("abcdef", in: model)
+        _ = try seed("", in: model)
+        _ = try seed("third", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let document = surface.canvas.document
+        let editor = surface.canvas.editor
+        let pages = document.projection.pages
+        editor.setSelectedRange(NSRange(location: 6, length: 2))
+        editor.deleteBackward(nil)
+        XCTAssertEqual(editor.string, "abcdefthird")
+        XCTAssertTrue(document.splitCheckpoint(source: pages[0].id, at: 3, destination: pages[1].id))
+        XCTAssertEqual(body(pages[0].id, in: model), "abc")
+        XCTAssertEqual(body(pages[1].id, in: model), "def")
+        XCTAssertEqual(document.projection.pages[1].joinedNextUUID, pages[2].uuid)
+        editor.setSelectedRange(document.projection.segments[1].bodyRange)
+        editor.deleteBackward(nil)
+        XCTAssertEqual(editor.string, "abcthird")
+        XCTAssertTrue(document.splitCheckpoint(source: pages[0].id, at: 1, destination: pages[1].id))
+        XCTAssertEqual(body(pages[0].id, in: model), "a")
+        XCTAssertEqual(body(pages[1].id, in: model), "bc")
+        XCTAssertEqual(body(pages[2].id, in: model), "third")
+        XCTAssertEqual(editor.string, "abcthird")
+        XCTAssertEqual(document.projection.pages[0].joinedNextUUID, pages[1].uuid)
+        XCTAssertEqual(document.projection.pages[1].joinedNextUUID, pages[2].uuid)
+    }
+
+    func testContinuousFenceLanguageSurvivesRemountAndEarlierPageEdits() throws {
+        let model = try model()
+        model.syntaxHighlightingEnabled = true
+        model.previewRendering = .allPages
+        _ = try seed("intro", in: model)
+        _ = try seed("```\nlet value = 1\n```", in: model)
+        let first = try mount(model)
+        let pages = first.canvas.document.projection.pages
+        let fenceStart = first.canvas.document.projection.segments[1].bodyRange.location
+        first.canvas.editor.setSelectedRange(NSRange(location: fenceStart + 5, length: 0))
+        first.coordinator.applyManualLanguage("swift")
+        XCTAssertEqual(model.fenceRenderingLanguages(for: pages[1].id), [0: "swift"])
+        XCTAssertTrue(model.fenceRenderingLanguages(for: pages[0].id).isEmpty)
+        unmount(first)
+        let second = try mount(model)
+        defer { unmount(second) }
+        let editor = second.canvas.editor
+        func keywordColor() -> NSColor? {
+            let start = second.canvas.document.projection.segments[1].bodyRange.location
+            return editor.textStorage?.attribute(.foregroundColor, at: start + 4,
+                                                  effectiveRange: nil) as? NSColor
+        }
+        XCTAssertEqual(model.fenceRenderingLanguages(for: pages[1].id), [0: "swift"])
+        XCTAssertEqual(keywordColor(), InkStyle.tokenColor(.keyword))
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        editor.insertText("new\n", replacementRange: editor.selectedRange())
+        XCTAssertEqual(second.canvas.document.projection.segments[1].bodyRange.location, fenceStart + 4)
+        XCTAssertEqual(model.fenceRenderingLanguages(for: pages[1].id), [0: "swift"])
+        XCTAssertEqual(keywordColor(), InkStyle.tokenColor(.keyword))
+        let codeEnd = NSMaxRange(second.canvas.document.projection.segments[1].bodyRange)
+        editor.setSelectedRange(NSRange(location: codeEnd, length: 0))
+        editor.insertText("\n", replacementRange: editor.selectedRange())
+        XCTAssertTrue(model.fenceRenderingLanguages(for: pages[1].id).isEmpty)
+        XCTAssertNotEqual(keywordColor(), InkStyle.tokenColor(.keyword))
+    }
+
+    func testTypingAfterASealCanBeUndoneWithoutReversingTheSeal() throws {
+        let model = try model()
+        _ = try seed("first", in: model)
+        _ = try seed("second secret", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let editor = surface.canvas.editor
+        let second = surface.canvas.document.projection.segments[1]
+        editor.setSelectedRange(NSRange(location: second.bodyRange.location + 7, length: 6))
+        editor.sealSelectedContent(nil)
+        let sealedText = editor.string
+        XCTAssertEqual(body(second.page.id, in: model), "second \u{fffc}")
+        editor.setSelectedRange(NSRange(location: sealedText.utf16.count, length: 0))
+        editor.insertText(" after", replacementRange: editor.selectedRange())
+        XCTAssertEqual(editor.string, sealedText + " after")
+        editor.undo(nil)
+        XCTAssertEqual(editor.string, sealedText)
+        XCTAssertEqual(body(second.page.id, in: model), "second \u{fffc}")
     }
 
     func testTabDragAppendsToExplicitCheckpointAtJoinedBoundary() throws {

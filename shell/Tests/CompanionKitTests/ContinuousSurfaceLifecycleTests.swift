@@ -68,6 +68,99 @@ final class ContinuousSurfaceLifecycleTests: XCTestCase {
         ContinuousPadView.updateSurface(surface.scroll, model: model, readOnly: false, coordinator: surface.coordinator)
     }
 
+    private func body(_ page: UInt64, in model: PageModel) -> String {
+        model.coreClient.documentRuns(sheet: page).map { run in
+            switch run {
+            case .ink(let text): return text
+            case .chip: return "\u{fffc}"
+            }
+        }.joined()
+    }
+
+    private func sealedSurface() throws -> (model: PageModel, surface: Surface, chipOffset: Int) {
+        let model = try model()
+        let first = try seed("prefix suffix", in: model)
+        _ = try XCTUnwrap(model.coreClient.sealText(sheet: first, "fixture secret", at: 7, length: 0))
+        _ = try seed("other checkpoint", in: model)
+        let surface = try mount(model)
+        let segment = try XCTUnwrap(surface.canvas.document.projection.segments.first { $0.page.id == first })
+        return (model, surface, segment.bodyRange.location + 7)
+    }
+
+    func testContinuousChipRemovalOffersNoticeUndoForTheCompleteDocument() throws {
+        let fixture = try sealedSurface()
+        let model = fixture.model, surface = fixture.surface
+        defer { unmount(surface) }
+        let editor = surface.canvas.editor
+        let original = editor.string
+        editor.setSelectedRange(NSRange(location: fixture.chipOffset + 1, length: 0))
+        editor.deleteBackward(nil)
+        editor.deleteBackward(nil)
+        XCTAssertEqual(editor.string, original.replacingOccurrences(of: "\u{fffc}", with: ""))
+        XCTAssertEqual(model.notice, PageModel.removedLine)
+        XCTAssertEqual(model.noticeAction?.label, "Undo")
+        model.performNoticeAction()
+        XCTAssertEqual(editor.string, original)
+    }
+
+    func testEditingAnotherCheckpointRetiresTheContinuousRemovalNoticeUndo() throws {
+        let fixture = try sealedSurface()
+        let model = fixture.model, surface = fixture.surface
+        defer { unmount(surface) }
+        let editor = surface.canvas.editor
+        editor.setSelectedRange(NSRange(location: fixture.chipOffset, length: 1))
+        editor.deleteBackward(nil)
+        let staleUndo = try XCTUnwrap(model.noticeAction)
+        let next = try XCTUnwrap(surface.canvas.document.projection.segments.last)
+        editor.setSelectedRange(NSRange(location: NSMaxRange(next.bodyRange), length: 0))
+        editor.insertText("X", replacementRange: editor.selectedRange())
+        XCTAssertNil(model.noticeAction)
+        let edited = editor.string
+        staleUndo.perform()
+        XCTAssertEqual(editor.string, edited)
+        XCTAssertTrue(editor.string.hasSuffix("X"))
+    }
+
+    func testContinuousRemovalByReachEndsItsDeletionGroup() throws {
+        let fixture = try sealedSurface()
+        let model = fixture.model, surface = fixture.surface
+        defer { unmount(surface) }
+        let editor = surface.canvas.editor
+        let original = editor.string
+        editor.setSelectedRange(NSRange(location: fixture.chipOffset - 1, length: 0))
+        editor.deleteToEndOfParagraph(nil)
+        XCTAssertEqual(model.notice, PageModel.removedLine)
+        XCTAssertEqual(model.noticeAction?.label, "Undo")
+        let removed = editor.string
+        XCTAssertFalse(removed.contains("\u{fffc}"))
+        editor.deleteBackward(nil)
+        XCTAssertNotEqual(editor.string, removed)
+        XCTAssertNil(model.noticeAction)
+        editor.undo(nil)
+        XCTAssertEqual(editor.string, removed)
+        editor.undo(nil)
+        XCTAssertEqual(editor.string, original)
+    }
+
+    func testContinuousRemovalNoticeUndoSurvivesUnmountWithoutRetainingText() throws {
+        let fixture = try sealedSurface()
+        let model = fixture.model, surface = fixture.surface
+        let editor = surface.canvas.editor
+        let document = surface.canvas.document
+        let original = editor.string
+        editor.setSelectedRange(NSRange(location: fixture.chipOffset, length: 1))
+        editor.deleteBackward(nil)
+        XCTAssertEqual(model.noticeAction?.label, "Undo")
+        unmount(surface)
+        XCTAssertTrue(document.isSuspended)
+        model.performNoticeAction()
+        XCTAssertTrue(document.isSuspended)
+        XCTAssertEqual(document.storage.string, "")
+        let remounted = try mount(model)
+        defer { unmount(remounted) }
+        XCTAssertEqual(remounted.canvas.editor.string, original)
+    }
+
     func testReverseSortedCheckpointSplitUsesAdjacentNaturalDestination() throws {
         let model = try model()
         model.pads.isEnabled = true
@@ -236,6 +329,54 @@ final class ContinuousSurfaceLifecycleTests: XCTestCase {
         XCTAssertNotEqual(label.stringValue, originalLabel)
     }
 
+    func testCheckpointLabelsUseConfiguredStampFormatsAndDisambiguateCollisions() throws {
+        let client = ContinuousMetadataFixtureClient()
+        let model = try model(client: client)
+        let first = try seed("alpha", in: model)
+        let second = try seed("bravo", in: model)
+        client.createdOverrides = [first: 1_000, second: 2_000]
+        model.stampFormat = .init(short: "'checkpoint'", fine: "'seconds 'ss")
+        model.refresh()
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let labels = surface.canvas.checkpointLabels
+        XCTAssertEqual(labels.map(\.stringValue), ["seconds 01", "seconds 02"])
+        model.stampFormat = .init(short: "'stamp 'ss", fine: "HH:mm:ss")
+        update(surface, model: model)
+        XCTAssertEqual(surface.canvas.checkpointLabels.map(\.stringValue), ["stamp 01", "stamp 02"])
+        XCTAssertTrue(zip(labels, surface.canvas.checkpointLabels).allSatisfy { $0 === $1 })
+    }
+
+    func testPadSwitchSettlesMarkedTextBeforeSuspendingTheOldDocument() throws {
+        let model = try model()
+        model.pads.isEnabled = true
+        let scratchPage = try seed("scratch words", in: model)
+        let otherPad = try XCTUnwrap(model.createPad(named: "Other"))
+        let otherPage = try seed("other words", in: model)
+        model.activatePad(PadCatalog.scratchID)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let editor = surface.canvas.editor
+        let scratch = surface.canvas.document
+        let insertion = NSRange(location: 2, length: 0)
+        editor.setSelectedRange(insertion)
+        editor.setMarkedText("IME", selectedRange: NSRange(location: 3, length: 0), replacementRange: insertion)
+        XCTAssertTrue(editor.hasMarkedText())
+        model.activatePad(otherPad)
+        XCTAssertFalse(editor.hasMarkedText())
+        XCTAssertTrue(scratch.isSuspended)
+        XCTAssertEqual(scratch.storage.string, "")
+        update(surface, model: model)
+        XCTAssertEqual(editor.string, "other words")
+        editor.unmarkText()
+        XCTAssertEqual(body(otherPage, in: model), "other words")
+        XCTAssertEqual(body(scratchPage, in: model), "scIMEratch words")
+        model.activatePad(PadCatalog.scratchID)
+        update(surface, model: model)
+        XCTAssertEqual(editor.string, "scIMEratch words")
+        XCTAssertFalse(editor.hasMarkedText())
+    }
+
     func testOptInContinuousTypingBenchmark() throws {
         guard ProcessInfo.processInfo.environment["ONETIMEPAD_RUN_CONTINUOUS_BENCHMARK"] == "1" else {
             throw XCTSkip("Set ONETIMEPAD_RUN_CONTINUOUS_BENCHMARK=1 for the isolated typing benchmark.")
@@ -333,6 +474,7 @@ private final class ContinuousBenchmarkFixtureClient: CompanionClient, @unchecke
 private final class ContinuousMetadataFixtureClient: CompanionClient, @unchecked Sendable {
     var dayOffset = 0
     var createdDelta: UInt64 = 0
+    var createdOverrides: [UInt64: UInt64] = [:]
 
     init() {
         super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: UUID().uuidString))
@@ -346,7 +488,8 @@ private final class ContinuousMetadataFixtureClient: CompanionClient, @unchecked
                 spokenRemaining: tab.spokenRemaining, fractionRemaining: tab.fractionRemaining,
                 paused: tab.paused, holdToppedUp: tab.holdToppedUp, holdRemainingMs: tab.holdRemainingMs,
                 chipCount: tab.chipCount, lastHour: tab.lastHour, pageHasContent: tab.pageHasContent,
-                pageDayOffset: tab.hasPage ? dayOffset : nil, pageCreatedMs: tab.pageCreatedMs.map { $0 + createdDelta })
+                pageDayOffset: tab.hasPage ? dayOffset : nil,
+                pageCreatedMs: tab.pageID.flatMap { createdOverrides[$0] } ?? tab.pageCreatedMs.map { $0 + createdDelta })
         }
     }
 }
