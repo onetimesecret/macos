@@ -1342,7 +1342,7 @@ final class DayStackView: NSView {
         let duration = StreamNavigator.jumpDuration(
             reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         )
-        guard animated, duration > 0, window?.isVisible == true else {
+        guard animated, duration > 0, window?.isVisible == true, target != clip.bounds.origin else {
             moveClip(of: scroll, to: target, supersedingJump: true)
             // A deliberate move is the reader's place even out of a window, where `rollScrolled` ignores it.
             readingPlace = clipPlace
