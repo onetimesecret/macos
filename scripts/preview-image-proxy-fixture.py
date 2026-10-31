@@ -62,11 +62,13 @@ try:
                 context.load_cert_chain(folder / "cert.pem", folder / "key.pem")
                 report["phase"] = "untrusted TLS handshake"
                 try:
-                    with context.wrap_socket(connection, server_side=True) as tls:
-                        report["http_after_tls"] = bool(tls.recv(4_096))
-                except ssl.SSLError as error:
+                    tls = context.wrap_socket(connection, server_side=True)
+                except (ssl.SSLError, ConnectionResetError) as error:
                     report["tls_rejected"] = True
                     report["tls_error"] = str(error)
+                else:
+                    with tls:
+                        report["http_after_tls"] = bool(tls.recv(4_096))
             elif mode == "tunnel":
                 expected = "CONNECT raw.githubusercontent.com:443 HTTP/1.1\r\n"
                 if not report["connect"].startswith(expected):

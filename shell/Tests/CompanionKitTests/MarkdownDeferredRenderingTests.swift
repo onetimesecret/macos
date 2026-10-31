@@ -97,6 +97,40 @@ final class MarkdownDeferredRenderingTests: XCTestCase {
         XCTAssertEqual(callbacks, 1)
     }
 
+    func testCancelledRenderingCanRetryIdenticalAndEquivalentSources() async throws {
+        let original = rendering(source)
+        let expected = MarkdownPreviewView.render(original.text)
+        for sameWrapper in [true, false] {
+            let view = MarkdownPreviewView(page: 1, coordinator: nil)
+            view.isSelectedPage = true
+            view.reseed(with: original, dialect: .gfm)
+            let cancelled = try XCTUnwrap(view.renderingTask)
+            cancelled.cancel()
+            await cancelled.value
+            XCTAssertEqual(view.string, source)
+            var callbacks = 0
+            view.onRenderingChanged = { previous in
+                XCTAssertEqual(previous, self.source)
+                callbacks += 1
+            }
+            view.reseed(with: sameWrapper ? original : rendering(source), dialect: .gfm)
+            XCTAssertTrue(view.isRendering)
+            let retry = try XCTUnwrap(view.renderingTask)
+            XCTAssertNotEqual(retry, cancelled)
+            await retry.value
+            XCTAssertFalse(view.isRendering)
+            XCTAssertTrue(view.isSelectable)
+            XCTAssertEqual(view.string, expected.string)
+            XCTAssertEqual(view.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
+                           expected.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+            XCTAssertEqual(callbacks, 1)
+            view.reseed(with: original, dialect: .gfm)
+            view.reseed(with: rendering(source), dialect: .gfm)
+            XCTAssertNil(view.renderingTask)
+            XCTAssertEqual(callbacks, 1)
+        }
+    }
+
     func testEqualLengthCanonicalUnicodeEditReplacesPendingSource() async throws {
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         view.reseed(with: rendering("\u{212b}\n" + source), dialect: .gfm)

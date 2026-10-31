@@ -20,7 +20,7 @@
 /* Request policy and capacity help for the image controls. */
 "One HTTPS image request using system DNS and proxies. The hostname may reach a local network. No redirects, cookies, or saved credentials." = "One HTTPS image request using system DNS and proxies. The hostname may reach a local network. No redirects, cookies, or saved credentials.";
 "Unload or cancel another image first (four images at a time)." = "Unload or cancel another image first (four images at a time).";
-"Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local-name URLs and IP-literal URLs are unavailable." = "Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local-name URLs and IP-literal URLs are unavailable.";
+"Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local-name URLs, IP-literal URLs, and internationalized hostnames are unavailable." = "Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local-name URLs, IP-literal URLs, and internationalized hostnames are unavailable.";
 
 /* Markdown preview image request and decode errors. */
 "This image address is unavailable." = "This image address is unavailable.";

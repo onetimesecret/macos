@@ -290,6 +290,10 @@ final class MarkdownPreviewView: AskingTextView {
                 self.isRendering = false
                 self.isSelectable = self.isSelectedPage
                 self.pendingPreviousText = nil
+                if result == nil {
+                    self.seededDialect = nil
+                    self.seededTypeface = nil
+                }
                 self.imageControls.seed(result ?? renderer.plainText())
                 self.needsDisplay = true
                 self.onRenderingChanged?(previous)

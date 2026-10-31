@@ -36,7 +36,7 @@ enum PreviewImageRequestPolicy {
 
     static func refusal(for destination: PreviewAddress) -> String? {
         url(for: destination) == nil
-            ? CompanionL10n.string("Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local-name URLs and IP-literal URLs are unavailable.")
+            ? CompanionL10n.string("Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local-name URLs, IP-literal URLs, and internationalized hostnames are unavailable.")
             : nil
     }
 
