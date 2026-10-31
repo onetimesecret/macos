@@ -1145,6 +1145,49 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(roll.scroll.contentView.bounds.minY, returningPreview.frame.minY + expected.y, accuracy: 0.5)
     }
 
+    func testScrollingALoadingPreviewUpdatesItsOriginMarkerWithoutReplacingItsTextAnchor() async throws {
+        for moveOffTop in [false, true] {
+            let model = try makeModel()
+            model.pads.isEnabled = true
+            let source = String(repeating: "## Heading **bold**\n\n", count: 900)
+            let reading = try page(in: model, saying: source)
+            _ = try page(in: model, saying: longPage(lines: 80))
+            try select(reading, in: model)
+            model.toggleMarkdownPreview(for: reading)
+            let projection = TimeUnitProjection.project(
+                tabs: model.tabs.map { onDay($0, $0.pageID == reading ? 0 : -1) },
+                selectedPageID: reading, unit: .day)
+            let roll = try mountRoll(model: model)
+            roll.window.isReleasedWhenClosed = false
+            defer { roll.window.close() }
+            roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+            let preview = try XCTUnwrap(roll.stack.previewRegions[reading])
+            try await XCTUnwrap(preview.renderingTask).value
+            scroll(roll, to: NSPoint(x: 0, y: 1))
+            scroll(roll, to: .zero)
+            let place = try XCTUnwrap(roll.stack.readingPlace)
+            XCTAssertTrue(place.atTop)
+            let previous = preview.string
+            let prefix = (0..<20).map { "new paragraph \($0)" }.joined(separator: "\n\n") + "\n\n"
+            model.syncDocument(sheet: reading, runs: [.ink(prefix + source)])
+            roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+            let pending = try XCTUnwrap(preview.renderingTask)
+            if moveOffTop { scroll(roll, to: NSPoint(x: 0, y: preview.frame.minY + 3)) }
+            XCTAssertEqual(roll.stack.readingPlace?.atTop, !moveOffTop)
+            XCTAssertEqual(roll.stack.readingPlace?.anchor, place.anchor)
+            await pending.value
+            if moveOffTop {
+                let rebased = place.rebased(from: previous, to: preview.string)
+                let offset = try XCTUnwrap(rebased.anchor.offset(in: preview))
+                let expected = preview.frame.minY + offset.y
+                XCTAssertGreaterThan(expected, 0)
+                XCTAssertEqual(roll.scroll.contentView.bounds.minY, expected, accuracy: 0.5)
+            } else {
+                XCTAssertEqual(roll.scroll.contentView.bounds.minY, 0, accuracy: 0.5)
+            }
+        }
+    }
+
     /// The pump's own report is the only invalidation here, as it is when a peer writes.
     func testAPeersEditReachesAQuietDayAndThePageTheEditorLeft() throws {
         let model = try makeModel()

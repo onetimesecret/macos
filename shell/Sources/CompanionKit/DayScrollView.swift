@@ -558,7 +558,10 @@ final class DayStackView: NSView {
     @objc private func rollScrolled(_ notification: Notification) {
         positionViewportChrome()
         // Out of a window the clip reads nothing; the last place stays for `departingPlace`.
-        if !isLayingOut, window != nil { readingPlace = currentPlace }
+        if !isLayingOut, window != nil {
+            readingPlace = currentPlace
+            readingPlace?.atTop = (enclosingScrollView?.contentView.bounds.minY ?? 0) <= 0
+        }
         publishGeometry()
     }
 
