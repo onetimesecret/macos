@@ -5,6 +5,7 @@
 
 mod conceal;
 mod content_json;
+mod continuous;
 mod diagnostics;
 mod files;
 // Public on purpose, unlike its siblings: the sync session layer that

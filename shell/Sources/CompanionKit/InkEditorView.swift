@@ -559,6 +559,7 @@ public struct InkEditorView: NSViewRepresentable {
         weak var textView: InkTextView?
         /// The page or file under the editor, or nil on a note's surface,
         /// whose page only paths key on it (ADR-0044).
+        var continuousDocument: ContinuousPadDocument?
         var currentSheet: UInt64? {
             didSet {
                 if let currentSheet, let textView {
@@ -580,7 +581,13 @@ public struct InkEditorView: NSViewRepresentable {
         /// What the surface's ink edits: the open note, or the mounted page or file.
         var document: InkDocument? {
             if let noteChip { return .note(chip: noteChip) }
+            if let continuousDocument { return .continuous(continuousDocument.scope) }
             return currentSheet.map(InkDocument.sheet)
+        }
+
+        func displaysPage(_ page: UInt64?) -> Bool {
+            guard let page else { return false }
+            return currentSheet == page || continuousDocument?.projection.pages.contains(where: { $0.id == page }) == true
         }
 
         /// Whether this is a note's surface rather than the page's.
@@ -865,12 +872,19 @@ public struct InkEditorView: NSViewRepresentable {
 
         func parkEditor() {
             invalidateOrdinaryPasteMeasurement()
+            if let continuousDocument {
+                model.coreClient.continuousFinishGroup(scope: continuousDocument.scope)
+            }
+            continuousDocument = nil
             currentSheet = nil
             refreshLanguageActionAvailability()
         }
 
         public func textViewDidChangeSelection(_ notification: Notification) {
             abandonAutomaticConversionForEditorChange()
+            if let textView, !model.isApplyingProjection {
+                continuousDocument?.selectionChanged(textView.selectedRange())
+            }
             if !selectionChangeIsIncidental, let document, let textView {
                 model.finishEditingGroup(document, selection: textView.selectedRange())
             }
@@ -1036,13 +1050,15 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// The id a language detection request carries: the sheet's, or the
         /// note's chip; a surface only ever compares it with its own.
-        private var detectionKey: UInt64? { noteChip ?? currentSheet }
+        private var detectionKey: UInt64? {
+            noteChip ?? currentSheet ?? continuousDocument?.projection.pages.first?.id
+        }
 
         /// The display only fence labels of the document under the surface.
         private func fenceLanguages() -> [Int: String] {
             switch document {
             case .sheet(let sheet): model.fenceRenderingLanguages(for: sheet)
-            case .note: noteFenceLanguages
+            case .note, .continuous: noteFenceLanguages
             case nil: [:]
             }
         }
@@ -1051,7 +1067,7 @@ public struct InkEditorView: NSViewRepresentable {
             switch document {
             case .sheet(let sheet):
                 model.setFenceRenderingLanguage(language, sheet: sheet, at: paragraphLocation)
-            case .note: noteFenceLanguages[paragraphLocation] = language
+            case .note, .continuous: noteFenceLanguages[paragraphLocation] = language
             case nil: break
             }
         }
@@ -1059,7 +1075,7 @@ public struct InkEditorView: NSViewRepresentable {
         private func clearFenceLanguages() {
             switch document {
             case .sheet(let sheet): model.clearFenceRenderingLanguages(for: sheet)
-            case .note: noteFenceLanguages = [:]
+            case .note, .continuous: noteFenceLanguages = [:]
             case nil: break
             }
         }
@@ -1189,6 +1205,9 @@ public struct InkEditorView: NSViewRepresentable {
         /// keeps a refused seal from clearing the clipboard or flashing
         /// a line about a seal that did not happen.
         var sealsHere: Bool {
+            if continuousDocument != nil {
+                return textView?.isEditable == true && model.sealTarget != nil
+            }
             guard let textView, let sheet = currentSheet, !sheet.isFileID,
                   textView.isEditable, model.sealTarget != nil
             else { return false }
@@ -1203,7 +1222,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// selected); the menus name a selection and offer only that.
         func sealableSelection() -> NSRange? {
             guard let textView, let storage = textView.textStorage,
-                  let sheet = currentSheet, !sheet.isFileID,
+                  sealsHere,
                   textView.isEditable, !textView.hasMarkedText(),
                   model.sealTarget != nil
             else { return nil }
@@ -1729,7 +1748,8 @@ public struct InkEditorView: NSViewRepresentable {
         /// Editing is refused in the meantime, and re-gated by that
         /// same pass.
         func leavePage(_ textView: InkTextView, scrollView: NSScrollView?) {
-            guard currentSheet != nil, let outgoing = textView.textStorage else { return }
+            guard currentSheet != nil || continuousDocument != nil,
+                  let outgoing = textView.textStorage else { return }
             keepNaming()
             closeNote()
             InkEditorView.discardComposition(in: textView)
@@ -1773,6 +1793,11 @@ public struct InkEditorView: NSViewRepresentable {
         /// not shown the page at all and keeps the scroll it was handed
         /// rather than replacing it with the top of a view nobody saw.
         func saveViewState(textView: InkTextView, scrollView: NSScrollView?) {
+            if let continuousDocument {
+                continuousDocument.savedSelection = textView.selectedRange()
+                if let scrollView { continuousDocument.savedOffset = scrollView.contentView.bounds.origin }
+                return
+            }
             guard let sheet = currentSheet, textView.textStorage != nil else { return }
             model.viewStates.saveCaret(textView.selectedRange(), for: sheet)
             guard let scrollView, !scrollView.contentView.bounds.isEmpty,
@@ -2416,6 +2441,8 @@ public struct InkEditorView: NSViewRepresentable {
                     model.syncDocument(sheet: sheet, runs: Self.runs(of: storage))
                 case .note:
                     restateNoteNextTurn()
+                case .continuous:
+                    continuousDocument?.refresh(force: true)
                 }
                 return
             }
@@ -2514,8 +2541,9 @@ public struct InkEditorView: NSViewRepresentable {
         ) {
             guard !ops.isEmpty, let json = DocumentEditOp.wireJSON(ops) else { return }
             let intent = editIntentInFlight ?? Self.inferredIntent(for: ops)
-            let accepted = model.applyOps(
-                to: document, json: json, intent: intent, selection: selection)
+            let accepted = continuousDocument.map {
+                $0.apply(ops, intent: intent, selection: selection)
+            } ?? model.applyOps(to: document, json: json, intent: intent, selection: selection)
             // The model restates a refused page or file; a note is restated here.
             if !accepted, case .note = document { restateNoteNextTurn() }
             onEmit?(ops)
@@ -2662,7 +2690,7 @@ public struct InkEditorView: NSViewRepresentable {
                 model.flash(Self.alreadySealedLine)
                 return
             }
-            guard let chip = model.sealPasteboard(replacing: range) else { return }
+            guard let local = sealRange(range), let chip = model.sealPasteboard(replacing: local) else { return }
             placeChipFace(chip, replacing: range)
         }
 
@@ -2676,7 +2704,7 @@ public struct InkEditorView: NSViewRepresentable {
             // Same synchronicity as the sealed paste: nothing runs
             // between this capture and the core's replace.
             let range = NSRange(location: characterIndex, length: 0)
-            guard let chip = model.sealDrag(replacing: range) else { return false }
+            guard let local = sealRange(range), let chip = model.sealDrag(replacing: local) else { return false }
             placeChipFace(chip, replacing: range)
             return true
         }
@@ -2710,8 +2738,18 @@ public struct InkEditorView: NSViewRepresentable {
             // core-side, not by a shell edit. Synchronous on the main
             // actor end to end, so the caret cannot move mid-call and
             // the captured range stays true.
-            guard let chip = model.sealText(ink, replacing: range) else { return }
+            guard let local = sealRange(range), let chip = model.sealText(ink, replacing: local) else { return }
             placeChipFace(chip, replacing: range)
+        }
+
+        private func sealRange(_ range: NSRange) -> NSRange? {
+            guard let continuousDocument else { return range }
+            guard let local = continuousDocument.localSelection(range) else {
+                model.flash("select text within one checkpoint to seal it")
+                return nil
+            }
+            model.selectContinuousPage(local.page)
+            return local.range
         }
 
         /// Update the projection after a seal: the core already
@@ -2727,6 +2765,12 @@ public struct InkEditorView: NSViewRepresentable {
         /// visible at the moment it happens.
         private func placeChipFace(_ chip: ChipInfo, replacing range: NSRange) {
             guard let textView, let storage = textView.textStorage else { return }
+            if let continuousDocument {
+                continuousDocument.refresh(force: true)
+                restyle()
+                textView.setSelectedRange(Self.clamped(NSRange(location: range.location, length: 1), to: storage.length))
+                return
+            }
             model.applyingProjection {
                 if textView.shouldChangeText(in: range, replacementString: nil) {
                     storage.replaceCharacters(in: range, with: Self.chipString(chip))
@@ -2982,6 +3026,14 @@ public struct InkEditorView: NSViewRepresentable {
         /// Copy the page's selected ranges by the core's fragment (ADR-0045 point 2).
         @discardableResult
         func copySelection() -> Bool {
+            if let continuousDocument, let textView {
+                let composition = continuousDocument.compose(textView.selectedRanges.map(\.rangeValue))
+                guard case .composed(let fragment) = composition else {
+                    if let line = PageModel.refusalLine(for: composition, .copy) { model.flash(line) }
+                    return false
+                }
+                return fragment.write(to: model.ambientPasteboard)
+            }
             guard !writesNote, let textView, let sheet = currentSheet, !sheet.isFileID
             else { return false }
             let ranges = textView.selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
@@ -2991,6 +3043,9 @@ public struct InkEditorView: NSViewRepresentable {
         /// The page's selection as the copy composes it, for a service or another
         /// requester; nil on a note or a file, which AppKit writes.
         func composeSelection() -> PageModel.SelectionComposition? {
+            if let continuousDocument, let textView {
+                return continuousDocument.compose(textView.selectedRanges.map(\.rangeValue))
+            }
             guard !writesNote, let textView, let sheet = currentSheet, !sheet.isFileID
             else { return nil }
             let ranges = textView.selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
@@ -3000,6 +3055,10 @@ public struct InkEditorView: NSViewRepresentable {
         /// Whether AppKit may give out the text this surface shows, which no core route
         /// sees (Law 0001, expiry row): the note's page or the page is asked; a file always may.
         func givesOutShownText() -> Bool {
+            if let continuousDocument {
+                return !continuousDocument.projection.pages.isEmpty
+                    && continuousDocument.projection.pages.allSatisfy { model.givesOut(sheet: $0.id) }
+            }
             guard let sheet = writesNote ? noteHost?.sheet : currentSheet else { return !writesNote }
             return model.givesOut(sheet: sheet)
         }
@@ -3007,6 +3066,14 @@ public struct InkEditorView: NSViewRepresentable {
         /// Cut the page's selection through the core (ADR-0046 point 3).
         @discardableResult
         func cutSelection() -> PageModel.CutOutcome {
+            if let continuousDocument, let textView, textView.isEditable {
+                guard textView.selectedRanges.count == 1 else { return .refused }
+                InkEditorView.discardComposition(in: textView)
+                invalidateOrdinaryPasteMeasurement()
+                let result = continuousDocument.cut(textView.selectedRange())
+                if case .cut(let selecting) = result { settleRewrite(selecting: selecting) }
+                return result
+            }
             guard !writesNote, let textView, textView.isEditable,
                   let sheet = currentSheet, !sheet.isFileID
             else { return .refused }
@@ -3022,6 +3089,15 @@ public struct InkEditorView: NSViewRepresentable {
         /// aside while a name or note holds the keys (Law 0007, keys row).
         @discardableResult
         func placeActiveCut() -> Bool {
+            if let continuousDocument, let textView, textView.isEditable {
+                guard textView.answersChords, textView.selectedRanges.count == 1 else { return false }
+                InkEditorView.discardComposition(in: textView)
+                invalidateOrdinaryPasteMeasurement()
+                guard let placed = continuousDocument.paste(textView.selectedRange(), from: nil, activeCut: true)
+                else { return false }
+                settleRewrite(selecting: NSRange(location: NSMaxRange(placed), length: 0))
+                return true
+            }
             guard !writesNote, let textView, textView.isEditable,
                   let sheet = currentSheet, !sheet.isFileID
             else { return false }
@@ -3042,6 +3118,20 @@ public struct InkEditorView: NSViewRepresentable {
         /// Paste the board's fragment over the selection through the core (ADR-0045);
         /// false where AppKit's paste should run: no fragment, a note or a file.
         func pasteFragment() -> Bool {
+            if let continuousDocument, let textView,
+               SealedFragment.item(on: model.ambientPasteboard) != nil {
+                guard textView.isEditable else { return true }
+                guard textView.selectedRanges.count == 1 else {
+                    model.flash(PageModel.severalStretchesPasteLine)
+                    return true
+                }
+                InkEditorView.discardComposition(in: textView)
+                invalidateOrdinaryPasteMeasurement()
+                if let placed = continuousDocument.paste(textView.selectedRange(), from: model.ambientPasteboard) {
+                    settleRewrite(selecting: NSRange(location: NSMaxRange(placed), length: 0))
+                }
+                return true
+            }
             guard !writesNote, let textView, let sheet = currentSheet, !sheet.isFileID,
                   SealedFragment.item(on: model.ambientPasteboard) != nil
             else { return false }
@@ -3094,6 +3184,13 @@ public struct InkEditorView: NSViewRepresentable {
         /// another app reads only ink and placeholders (ADR-0045 point 2).
         func beginPageDrag() -> DragStart {
             pageDrag = nil
+            if let continuousDocument, let textView, let document {
+                guard textView.answersChords, textView.selectedRanges.count == 1,
+                      case .composed(let fragment) = continuousDocument.compose([textView.selectedRange()]),
+                      let item = fragment.pasteboardItem() else { return .refused }
+                pageDrag = PageDrag(range: textView.selectedRange(), document: document, generation: generation)
+                return .fragment(item)
+            }
             guard !writesNote, let textView, let storage = textView.textStorage,
                   let sheet = currentSheet, !sheet.isFileID, let document
             else { return .ordinary }
@@ -3131,6 +3228,9 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// The standing drag's page and range, for a destination sorting what it brings.
         var standingDragOnPage: (sheet: UInt64, range: NSRange)? {
+            if let drag = standingPageDrag, let local = continuousDocument?.localSelection(drag.range) {
+                return (local.page, local.range)
+            }
             guard let drag = standingPageDrag, case .sheet(let sheet) = drag.document else { return nil }
             return (sheet, drag.range)
         }
@@ -3148,6 +3248,15 @@ public struct InkEditorView: NSViewRepresentable {
         /// through the core as one step; stands aside while a field holds the keys.
         func dropPageDrag(at index: Int, offered mask: NSDragOperation) -> Bool {
             let operation = pageDragOperation(at: index, offered: mask)
+            if let continuousDocument, let drag = standingPageDrag, let textView,
+               operation != [], admitsDrop(from: textView) {
+                InkEditorView.discardComposition(in: textView)
+                invalidateOrdinaryPasteMeasurement()
+                guard let placed = continuousDocument.drag(drag.range, to: index, cloning: operation == .copy)
+                else { return false }
+                settleRewrite(selecting: placed)
+                return true
+            }
             guard operation != [], let drag = standingPageDrag, let textView,
                   let sheet = currentSheet, admitsDrop(from: textView)
             else { return false }
@@ -3162,6 +3271,7 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// Whether a fragment from another page or app can drop here: an editable page.
         var takesFragmentDrop: Bool {
+            if continuousDocument != nil { return textView?.isEditable == true }
             guard !writesNote, let textView, textView.isEditable, let sheet = currentSheet
             else { return false }
             return !sheet.isFileID
@@ -3179,6 +3289,14 @@ public struct InkEditorView: NSViewRepresentable {
         /// A fragment dragged from another page or app, dropped at `index`: pasted
         /// through the core as ⌘V pastes it, never sealed as its public text.
         func dropFragment(from board: NSPasteboard, at index: Int, source: NSView? = nil) -> Bool {
+            if let continuousDocument, let textView, takesFragmentDrop, admitsDrop(from: source) {
+                InkEditorView.discardComposition(in: textView)
+                invalidateOrdinaryPasteMeasurement()
+                guard let placed = continuousDocument.paste(NSRange(location: index, length: 0), from: board)
+                else { return false }
+                settleRewrite(selecting: placed)
+                return true
+            }
             guard takesFragmentDrop, let textView, let sheet = currentSheet,
                   admitsDrop(from: source)
             else { return false }
@@ -3297,7 +3415,8 @@ public struct InkEditorView: NSViewRepresentable {
         /// Copy the name of the chip at `index`, which is ambient ink of this page.
         @discardableResult
         func copyName(at index: Int) -> Bool {
-            guard let sheet = currentSheet, let name = chipAttachment(at: index)?.info.name
+            guard let sheet = continuousDocument?.projection.page(at: index)?.page.id ?? currentSheet,
+                  let name = chipAttachment(at: index)?.info.name
             else { return false }
             return model.copyChipName(name, onPage: sheet)
         }
@@ -3401,7 +3520,8 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// Opens the note of the block at `index`, on an editable page.
         func beginNote(at index: Int) {
-            guard let textView, textView.isEditable, let sheet = currentSheet, !sheet.isFileID
+            guard let textView, textView.isEditable,
+                  let sheet = continuousDocument?.projection.page(at: index)?.page.id ?? currentSheet, !sheet.isFileID
             else { return }
             keepNaming()
             let editor = noteEditor ?? SealedNoteEditor(model: model)
@@ -3516,7 +3636,9 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// Opens the name field over the block at `index`, on an editable page.
         func beginNaming(at index: Int) {
-            guard let textView, let sheet = currentSheet, !sheet.isFileID else { return }
+            guard let textView,
+                  let sheet = continuousDocument?.projection.page(at: index)?.page.id ?? currentSheet,
+                  !sheet.isFileID else { return }
             closeNote()
             let editor = nameEditor ?? SealedNameEditor(model: model)
             nameEditor = editor
@@ -6389,6 +6511,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     /// surface holds the keys (Law 0007, keys row); a note or a file copies as AppKit does.
     override func copy(_ sender: Any?) {
         guard answersChords else { return }
+        if coordinator?.continuousDocument != nil { coordinator?.copySelection(); return }
         guard let coordinator, !coordinator.writesNote,
               let sheet = coordinator.currentSheet, !sheet.isFileID
         else {
@@ -6421,6 +6544,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     /// a copy's fragment; a note, a file and ink stretches cut as AppKit does.
     override func cut(_ sender: Any?) {
         guard answersChords else { return }
+        if coordinator?.continuousDocument != nil { _ = coordinator?.cutSelection(); return }
         if let coordinator, !coordinator.writesNote,
            let sheet = coordinator.currentSheet, !sheet.isFileID,
            coordinator.cutSelection() != .inkStretches

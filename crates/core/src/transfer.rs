@@ -3,21 +3,24 @@
 //! cut, and how a reference resolves.
 
 use std::borrow::Cow;
+use std::collections::HashSet;
 
 use zeroize::Zeroizing;
 
 use crate::clock::Clock;
+use crate::continuous::ContinuousEdit;
 use crate::document::{EditIntent, EditSelection, InvalidRange, TextSelection};
 use crate::fragment::{Copied, CopyRefusal, Fragment, Node, ink_of, placeholder};
 use crate::ledger::{DestinationClass, LedgerEvent, SizeClass};
 use crate::metadata::NameVersion;
 use crate::note::Note;
 use crate::sheet::{ChipId, ItemId, SealedChip, Segment, Sheet, SheetId, judge_name};
-use crate::store::{SheetStore, range_in_body};
+use crate::store::{EditOp, SheetStore, range_in_body};
 
 /// The store's one active cut (ADR-0046 point 3).
+#[derive(Clone)]
 pub(crate) struct ActiveCut {
-    /// The page the cut came from, whose detached store holds its objects.
+    /// The anchor page whose persisted record contains the cut envelope.
     pub(crate) page: SheetId,
     /// The identity the cut's envelope names.
     pub(crate) token: ItemId,
@@ -28,14 +31,13 @@ pub(crate) struct ActiveCut {
 }
 
 impl ActiveCut {
-    /// The cut a page record carries, when its envelope names a cut whose
-    /// every object is detached on that page (core interface, At rest).
+    /// Read the anchor page's cut; store restore then validates all member sources.
     pub(crate) fn restored(sheet: &Sheet, envelope: &[u8]) -> Option<Self> {
         let fragment = Fragment::parse(envelope)?;
         let token = fragment.cut?;
         let members: Vec<ItemId> = fragment.references().map(|r| r.uuid).collect();
         let detached = |uuid: &ItemId| sheet.detached.iter().any(|chip| chip.uuid == *uuid);
-        (!members.is_empty() && members.iter().all(detached)).then(|| Self {
+        members.first().is_some_and(detached).then(|| Self {
             page: sheet.id,
             token,
             members,
@@ -70,6 +72,23 @@ pub struct Placed {
     /// Pages past their deadline the route swept before resolving
     /// (Law 0001, expiry row).
     pub pages_expired: u32,
+}
+
+/// One page range in a continuous selection; separators are projection newlines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FragmentSelection {
+    /// Runtime identifier of the selected page.
+    pub page: SheetId,
+    /// Stable identity observed when the selection was projected.
+    pub expected_uuid: ItemId,
+    /// Document version observed when the selection was projected.
+    pub expected_version: Option<Vec<u8>>,
+    /// Start offset in the page's UTF-16 text.
+    pub at_u16: u32,
+    /// Selected length in UTF-16 code units.
+    pub len_u16: u32,
+    /// Whether the selection includes the following projection newline.
+    pub separator_after: bool,
 }
 
 /// One resolved node, ready to stand in a body.
@@ -109,6 +128,367 @@ impl<C: Clock> SheetStore<C> {
         let (fragment, plain) = self.selected(id, at_u16, len_u16)?;
         let envelope = composed(&fragment)?;
         Ok(Copied { envelope, plain })
+    }
+
+    /// Compose an ordered selection across pages through the core (ADR-0045 point 1).
+    pub fn copy_fragments(&self, ranges: &[FragmentSelection]) -> Result<Copied, CopyRefusal> {
+        let (fragment, plain) = self.selected_fragments(ranges)?;
+        let envelope = composed(&fragment)?;
+        Ok(Copied { envelope, plain })
+    }
+
+    fn selected_fragments(
+        &self,
+        ranges: &[FragmentSelection],
+    ) -> Result<(Fragment, Zeroizing<String>), CopyRefusal> {
+        if ranges.is_empty() {
+            return Err(CopyRefusal::Refused);
+        }
+        let now = self.clock.now();
+        let mut seen = HashSet::new();
+        let selected = ranges
+            .iter()
+            .map(|range| {
+                let sheet = self.sheet(range.page).ok_or(CopyRefusal::Refused)?;
+                if !seen.insert(range.page)
+                    || sheet.uuid() != range.expected_uuid
+                    || sheet.is_due(now)
+                    || range
+                        .expected_version
+                        .as_ref()
+                        .is_some_and(|version| *version != sheet.document.version())
+                {
+                    return Err(CopyRefusal::Refused);
+                }
+                if range.len_u16 == 0 {
+                    return range_in_body(sheet.segments(), range.at_u16, 0)
+                        .then(|| {
+                            (
+                                Fragment {
+                                    cut: None,
+                                    nodes: Vec::new(),
+                                },
+                                Zeroizing::new(String::new()),
+                            )
+                        })
+                        .ok_or(CopyRefusal::Refused);
+                }
+                sheet
+                    .select(range.at_u16, range.len_u16)
+                    .ok_or(CopyRefusal::Refused)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut fragment = Fragment {
+            cut: None,
+            nodes: Vec::new(),
+        };
+        let mut plain = Zeroizing::new(String::new());
+        for (range, (part, text)) in ranges.iter().zip(selected) {
+            fragment.nodes.extend(part.nodes);
+            plain.push_str(&text);
+            if range.separator_after {
+                fragment.nodes.push(Node::Ink(Zeroizing::new("\n".into())));
+                plain.push('\n');
+            }
+        }
+        Ok((fragment, plain))
+    }
+
+    /// Compose the selected ranges, then delete them as one surface gesture.
+    pub fn cut_continuous(
+        &mut self,
+        scope: &str,
+        ranges: &[FragmentSelection],
+        edit: &ContinuousEdit,
+    ) -> Result<Copied, CopyRefusal> {
+        let (mut fragment, plain) = self.selected_fragments(ranges)?;
+        if !deletes_selection(edit, ranges) {
+            return Err(CopyRefusal::Refused);
+        }
+        let members: Vec<_> = fragment
+            .references()
+            .map(|reference| reference.uuid)
+            .collect();
+        let anchor = members.first().and_then(|uuid| {
+            self.sheets()
+                .find(|sheet| sheet.chips().any(|chip| chip.uuid == *uuid))
+                .map(Sheet::id)
+        });
+        fragment.cut = anchor.map(|_| ItemId::random());
+        let envelope = composed(&fragment)?;
+        let mut edit = edit.clone();
+        edit.intent = EditIntent::Cut;
+        if !self.apply_continuous(scope, &edit) {
+            return Err(CopyRefusal::Refused);
+        }
+        if let (Some(page), Some(token), Some(envelope)) = (anchor, fragment.cut, envelope.as_ref())
+        {
+            self.active_cut = Some(ActiveCut {
+                page,
+                token,
+                members,
+                envelope: envelope.clone(),
+            });
+            self.end_a_broken_cut();
+        }
+        Ok(Copied { envelope, plain })
+    }
+
+    /// Resolve and insert a fragment after the surface's deletion and join operations.
+    pub fn paste_continuous(
+        &mut self,
+        scope: &str,
+        edit: &ContinuousEdit,
+        target: SheetId,
+        at_u16: u32,
+        envelope: &[u8],
+        plain: Option<&str>,
+    ) -> Option<Placed> {
+        let (fragment, unreadable) = match Fragment::parse(envelope) {
+            Some(fragment) => (fragment, false),
+            None => (
+                Fragment {
+                    cut: None,
+                    nodes: vec![Node::Ink(ink_of(Cow::Borrowed(plain?))?)],
+                },
+                true,
+            ),
+        };
+        let mut placed = Placed {
+            location_u16: at_u16,
+            unreadable,
+            ..Placed::default()
+        };
+        let plan = self.resolve(&fragment, &mut placed);
+        self.place_continuous_plan(scope, edit, target, plan, placed, false)
+    }
+
+    /// Move or clone selected source ranges through one coordinated surface edit.
+    pub fn move_continuous(
+        &mut self,
+        scope: &str,
+        ranges: &[FragmentSelection],
+        edit: &ContinuousEdit,
+        target: SheetId,
+        at_u16: u32,
+        cloning: bool,
+    ) -> Option<Placed> {
+        let (fragment, _) = self.selected_fragments(ranges).ok()?;
+        if cloning {
+            if edit.pages.iter().any(|part| !part.ops.is_empty()) {
+                return None;
+            }
+        } else if !deletes_selection(edit, ranges) {
+            return None;
+        }
+        let mut placed = Placed {
+            location_u16: at_u16,
+            ..Placed::default()
+        };
+        let plan = if cloning {
+            self.resolve(&fragment, &mut placed)
+        } else {
+            let mut plan = Vec::new();
+            let mut seen = HashSet::new();
+            for node in &fragment.nodes {
+                match node {
+                    Node::Ink(text) => plan.push(Planned::Ink(text)),
+                    Node::Ref(reference) => {
+                        if !seen.insert(reference.uuid) {
+                            return None;
+                        }
+                        let source = ranges.iter().find_map(|range| {
+                            self.readable_sheet(range.page)?
+                                .chips
+                                .iter()
+                                .any(|chip| chip.uuid == reference.uuid)
+                                .then_some(range.page)
+                        })?;
+                        placed.reattached += 1;
+                        plan.push(Planned::Reattach {
+                            uuid: reference.uuid,
+                            from: source,
+                        });
+                    }
+                }
+            }
+            plan
+        };
+        self.place_continuous_plan(scope, edit, target, plan, placed, !cloning)
+    }
+
+    fn place_continuous_plan(
+        &mut self,
+        scope: &str,
+        edit: &ContinuousEdit,
+        target: SheetId,
+        plan: Vec<Planned<'_>>,
+        mut placed: Placed,
+        moving: bool,
+    ) -> Option<Placed> {
+        let at_u16 = placed.location_u16;
+        let mut edit = edit.clone();
+        if edit.pages.iter().any(|part| {
+            part.ops
+                .iter()
+                .any(|op| !matches!(op, EditOp::Delete { .. }))
+        }) {
+            return None;
+        }
+        let target_index = edit.pages.iter().position(|part| part.page_id == target)?;
+        let now = self.clock.now();
+        if edit.pages.iter().any(|part| {
+            self.sheet(part.page_id).is_none_or(|sheet| {
+                sheet.uuid() != part.expected_uuid
+                    || part
+                        .expected_version
+                        .as_ref()
+                        .is_some_and(|version| *version != sheet.document.version())
+                    || sheet.is_due(now)
+                    || !crate::store::validate_edit_ops(sheet, &part.ops)
+            })
+        }) {
+            return None;
+        }
+        let width: usize = plan.iter().map(Planned::width).sum();
+        placed.length_u16 = u32::try_from(width).ok()?;
+        if width == 0 {
+            return None;
+        }
+        at_u16.checked_add(placed.length_u16)?;
+        edit.selection.after.location_u16 = edit
+            .selection
+            .after
+            .location_u16
+            .checked_add(placed.length_u16)?;
+        edit.selection.after.length_u16 = 0;
+        edit.intent = if moving {
+            EditIntent::Replacement
+        } else {
+            EditIntent::Paste
+        };
+        let prior_cut = self.active_cut.clone();
+        let mut moved = Vec::new();
+        let mut clones = Vec::new();
+        let mut inserted = Vec::new();
+        let mut at = at_u16;
+        for item in plan {
+            let width = u32::try_from(item.width()).ok()?;
+            let op = match item {
+                Planned::Ink(text) => EditOp::Insert {
+                    pos_u16: at,
+                    text: text.into(),
+                },
+                Planned::Placeholder(text) => EditOp::Insert { pos_u16: at, text },
+                Planned::Clone(mut chip) => {
+                    let id = chip.id();
+                    chip.stood = true;
+                    inserted.push(chip.uuid);
+                    clones.extend(chip.local_len().map(|len| (chip.uuid, len)));
+                    self.sheet_mut(target)?.detached.push(*chip);
+                    EditOp::InsertChip {
+                        pos_u16: at,
+                        chip: id,
+                    }
+                }
+                Planned::Reattach { uuid, from } => {
+                    if from != target {
+                        let source = self.sheet_mut(from)?;
+                        let (chip, standing) = if let Some(index) =
+                            source.detached.iter().position(|chip| chip.uuid == uuid)
+                        {
+                            (source.detached.remove(index), false)
+                        } else if moving {
+                            let index = source.chips.iter().position(|chip| chip.uuid == uuid)?;
+                            (source.chips.remove(index), true)
+                        } else {
+                            return None;
+                        };
+                        self.sheet_mut(target)?.detached.push(chip);
+                        moved.push((uuid, from, standing));
+                    }
+                    let chip = self
+                        .sheet(target)?
+                        .detached
+                        .iter()
+                        .chain(&self.sheet(target)?.chips)
+                        .find(|chip| chip.uuid == uuid)?
+                        .id();
+                    EditOp::InsertChip { pos_u16: at, chip }
+                }
+            };
+            edit.pages[target_index].ops.push(op);
+            at += width;
+        }
+        let reset_pages: Vec<_> = moved
+            .iter()
+            .map(|(_, from, _)| *from)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        if !self.apply_continuous_resetting(scope, &edit, &reset_pages) {
+            self.sheet_mut(target)?
+                .detached
+                .retain(|chip| !inserted.contains(&chip.uuid));
+            let mut restored = Vec::new();
+            for (uuid, from, standing) in moved {
+                let destination = self.sheet_mut(target)?;
+                let index = destination
+                    .detached
+                    .iter()
+                    .position(|chip| chip.uuid == uuid)?;
+                let chip = destination.detached.remove(index);
+                if standing {
+                    self.sheet_mut(from)?.chips.push(chip);
+                } else {
+                    self.sheet_mut(from)?.detached.push(chip);
+                }
+                restored.push(from);
+            }
+            for from in restored {
+                self.settle_document(from);
+            }
+            self.active_cut = prior_cut;
+            return None;
+        }
+        if moving && !moved.is_empty() {
+            let transitions: Vec<_> = moved
+                .iter()
+                .map(|(uuid, from, _)| (*uuid, *from, target))
+                .collect();
+            let recorded = self.record_continuous_moves(scope, &transitions);
+            debug_assert!(
+                recorded,
+                "a move's edited source and target belong to its group"
+            );
+        }
+        for (uuid, from, _) in moved {
+            self.restated.insert(from);
+            self.drain_pending_metadata(target, uuid);
+            self.drain_pending_notes(target, uuid);
+            self.note_metadata(target, uuid);
+        }
+        for (uuid, _) in &clones {
+            self.note_metadata(target, *uuid);
+        }
+        self.record_clones(target, &clones);
+        if moving {
+            self.active_cut = prior_cut;
+        }
+        self.end_a_broken_cut();
+        Some(placed)
+    }
+
+    /// Place the current cut through the surface's coordinated edit path.
+    pub fn paste_active_cut_continuous(
+        &mut self,
+        scope: &str,
+        edit: &ContinuousEdit,
+        target: SheetId,
+        at_u16: u32,
+    ) -> Option<Placed> {
+        let envelope = self.active_cut.as_ref()?.envelope.clone();
+        self.paste_continuous(scope, edit, target, at_u16, &envelope, None)
     }
 
     /// Compose runs the shell shows of a page, a preview's rendered text and
@@ -317,23 +697,26 @@ impl<C: Clock> SheetStore<C> {
     #[must_use]
     pub fn active_cut(&self) -> Option<(SheetId, Vec<&SealedChip>)> {
         let cut = self.active_cut.as_ref()?;
-        let sheet = self.sheet(cut.page)?;
-        let objects = cut
+        let objects: Vec<_> = cut
             .members
             .iter()
-            .filter_map(|uuid| sheet.detached.iter().find(|chip| chip.uuid == *uuid))
+            .filter_map(|uuid| {
+                self.sheets()
+                    .flat_map(|sheet| sheet.detached.iter())
+                    .find(|chip| chip.uuid == *uuid)
+            })
             .collect();
-        Some((cut.page, objects))
+        (objects.len() == cut.members.len()).then_some((cut.page, objects))
     }
 
-    /// End the active cut once any of its objects is not detached on its page.
+    /// End the active cut when any member lacks a readable detached source.
     pub(crate) fn end_a_broken_cut(&mut self) {
         let broken = self.active_cut.as_ref().is_some_and(|cut| {
-            self.sheet(cut.page).is_none_or(|sheet| {
-                cut.members
-                    .iter()
-                    .any(|uuid| sheet.detached.iter().all(|chip| chip.uuid != *uuid))
-            })
+            self.sheet(cut.page).is_none()
+                || cut.members.iter().any(|uuid| {
+                    self.readable_sheets()
+                        .all(|sheet| sheet.detached.iter().all(|chip| chip.uuid != *uuid))
+                })
         });
         if broken {
             self.active_cut = None;
@@ -448,7 +831,7 @@ impl<C: Clock> SheetStore<C> {
             .active_cut
             .as_ref()
             .filter(|cut| fragment.cut == Some(cut.token))
-            .map(|cut| (cut.page, cut.members.clone()));
+            .map(|cut| cut.members.clone());
         let mut reattaching: Vec<ItemId> = Vec::new();
         let mut plan = Vec::with_capacity(fragment.nodes.len());
         for node in &fragment.nodes {
@@ -460,13 +843,17 @@ impl<C: Clock> SheetStore<C> {
                 Node::Ref(reference) => reference,
             };
             let uuid = reference.uuid;
-            if let Some((page, members)) = &cut
+            if let Some(members) = &cut
                 && members.contains(&uuid)
                 && !reattaching.contains(&uuid)
+                && let Some(page) = self
+                    .readable_sheets()
+                    .find(|sheet| sheet.detached.iter().any(|chip| chip.uuid == uuid))
+                    .map(Sheet::id)
             {
                 reattaching.push(uuid);
                 placed.reattached += 1;
-                plan.push(Planned::Reattach { uuid, from: *page });
+                plan.push(Planned::Reattach { uuid, from: page });
                 continue;
             }
             let id = ChipId(self.next_chip_id);
@@ -493,7 +880,20 @@ impl<C: Clock> SheetStore<C> {
                     plan.push(Planned::Placeholder(placeholder("unavailable")));
                     continue;
                 }
-                None => {}
+                None => {
+                    if self.sheets().any(|sheet| {
+                        sheet.is_due(self.clock.now())
+                            && sheet
+                                .chips
+                                .iter()
+                                .chain(&sheet.detached)
+                                .any(|chip| chip.uuid == uuid)
+                    }) {
+                        placed.expired += 1;
+                        plan.push(Planned::Placeholder(placeholder("expired")));
+                        continue;
+                    }
+                }
             }
             let word = match self.terminal_cause(uuid) {
                 Some(LedgerEvent::Expired) => {
@@ -593,6 +993,30 @@ fn stand(sheet: &mut Sheet, at: usize, plan: &[Planned<'_>]) -> Result<(), Inval
         pos += item.width();
     }
     Ok(())
+}
+
+fn deletes_selection(edit: &ContinuousEdit, ranges: &[FragmentSelection]) -> bool {
+    let mut remaining: Vec<_> = ranges.iter().filter(|range| range.len_u16 > 0).collect();
+    for part in &edit.pages {
+        for op in &part.ops {
+            let EditOp::Delete { pos_u16, len_u16 } = op else {
+                return false;
+            };
+            if *len_u16 == 0 {
+                continue;
+            }
+            let Some(index) = remaining.iter().position(|range| {
+                range.page == part.page_id
+                    && range.expected_uuid == part.expected_uuid
+                    && range.at_u16 == *pos_u16
+                    && range.len_u16 == *len_u16
+            }) else {
+                return false;
+            };
+            remaining.remove(index);
+        }
+    }
+    remaining.is_empty()
 }
 
 /// One structural edit of a body as one undo step
@@ -765,6 +1189,602 @@ mod tests {
             })
             .collect();
         store.copy_out_chip(chips[index]).unwrap().0.to_vec()
+    }
+
+    fn fragment_range(
+        store: &SheetStore<ManualClock>,
+        page: SheetId,
+        at_u16: u32,
+        len_u16: u32,
+        separator_after: bool,
+    ) -> FragmentSelection {
+        FragmentSelection {
+            page,
+            expected_uuid: store.sheet(page).unwrap().uuid(),
+            expected_version: Some(store.sheet(page).unwrap().document.version()),
+            at_u16,
+            len_u16,
+            separator_after,
+        }
+    }
+
+    fn surface_deletion(
+        store: &SheetStore<ManualClock>,
+        ranges: &[FragmentSelection],
+    ) -> ContinuousEdit {
+        ContinuousEdit {
+            pages: ranges
+                .iter()
+                .enumerate()
+                .map(|(index, range)| crate::continuous::ContinuousPageEdit {
+                    page_id: range.page,
+                    expected_uuid: store.sheet(range.page).unwrap().uuid(),
+                    expected_version: Some(store.sheet(range.page).unwrap().document.version()),
+                    ops: (range.len_u16 > 0)
+                        .then_some(EditOp::Delete {
+                            pos_u16: range.at_u16,
+                            len_u16: range.len_u16,
+                        })
+                        .into_iter()
+                        .collect(),
+                    join_next: range
+                        .separator_after
+                        .then(|| ranges.get(index + 1).map(|next| next.expected_uuid)),
+                })
+                .collect(),
+            intent: EditIntent::Cut,
+            selection: selection(
+                0,
+                ranges
+                    .iter()
+                    .map(|range| range.len_u16 + u32::from(range.separator_after))
+                    .sum(),
+                0,
+                0,
+            ),
+        }
+    }
+
+    #[test]
+    fn continuous_native_move_restores_ownership_on_undo_without_replacing_active_cut() {
+        let (mut store, _) = store();
+        let (clipboard_page, ..) = mixed(&mut store);
+        let original_cut = store
+            .cut_fragment(clipboard_page, 2, 1)
+            .unwrap()
+            .envelope
+            .unwrap();
+        let (first, first_chip, _) = mixed(&mut store);
+        name_and_note(&mut store, first_chip, "API_KEY", "rotate monthly");
+        let (second, ..) = mixed(&mut store);
+        let target = store.new_tab().1;
+        let originals: Vec<_> = standing(&store, first)
+            .into_iter()
+            .chain(standing(&store, second))
+            .collect();
+        let ranges = [
+            fragment_range(&store, first, 0, 8, true),
+            fragment_range(&store, second, 0, 8, false),
+        ];
+        let mut edit = surface_deletion(&store, &ranges);
+        edit.pages
+            .extend(surface_deletion(&store, &[fragment_range(&store, target, 0, 0, false)]).pages);
+        let placed = store
+            .move_continuous("pad", &ranges, &edit, target, 0, false)
+            .unwrap();
+        assert_eq!((placed.reattached, placed.cloned), (4, 0));
+        assert_eq!(standing(&store, target), originals);
+        assert_eq!(
+            store.copy_out_chip(first_chip).unwrap().0.as_slice(),
+            A.as_bytes()
+        );
+        assert_eq!(&**store.note_text(first_chip).unwrap(), "rotate monthly");
+        assert_eq!(body(&store, first), "");
+        assert_eq!(body(&store, second), "");
+        assert_eq!(
+            body(&store, target),
+            "ab\u{fffc}cd\u{fffc}ef\nab\u{fffc}cd\u{fffc}ef"
+        );
+        assert_eq!(
+            store.active_cut.as_ref().unwrap().envelope.as_slice(),
+            original_cut.as_slice()
+        );
+        assert!(store.step_continuous("pad", true).is_some());
+        assert_eq!(body(&store, first), "ab\u{fffc}cd\u{fffc}ef");
+        assert_eq!(body(&store, second), "ab\u{fffc}cd\u{fffc}ef");
+        assert!(body(&store, target).is_empty());
+        assert_eq!(standing(&store, first), originals[..2]);
+        assert_eq!(standing(&store, second), originals[2..]);
+        assert_eq!(
+            store.copy_out_chip(first_chip).unwrap().0.as_slice(),
+            A.as_bytes()
+        );
+        assert_eq!(&**store.note_text(first_chip).unwrap(), "rotate monthly");
+        assert!(store.step_continuous("pad", false).is_some());
+        assert_eq!(standing(&store, target), originals);
+        assert_eq!(
+            store.copy_out_chip(first_chip).unwrap().0.as_slice(),
+            A.as_bytes()
+        );
+        assert_eq!(&**store.note_text(first_chip).unwrap(), "rotate monthly");
+        assert!(body(&store, first).is_empty());
+        assert!(body(&store, second).is_empty());
+        assert_eq!(
+            store.active_cut.as_ref().unwrap().envelope.as_slice(),
+            original_cut.as_slice()
+        );
+    }
+
+    #[test]
+    fn continuous_native_move_within_one_page_and_clone_leave_source_identity_consistent() {
+        let (mut store, _) = store();
+        let (source, chip, _) = mixed(&mut store);
+        let uuid = uuid_of(&store, chip);
+        let ranges = [fragment_range(&store, source, 1, 3, false)];
+        let edit = surface_deletion(&store, &ranges);
+        let moved = store
+            .move_continuous("pad", &ranges, &edit, source, 5, false)
+            .unwrap();
+        assert_eq!(moved.reattached, 1);
+        assert_eq!(body(&store, source), "ad\u{fffc}efb\u{fffc}c");
+        assert!(store.step_continuous("pad", true).is_some());
+        assert_eq!(body(&store, source), "ab\u{fffc}cd\u{fffc}ef");
+        let ranges = [fragment_range(&store, source, 1, 3, false)];
+        let target = store.new_tab().1;
+        let edit = surface_deletion(&store, &[fragment_range(&store, target, 0, 0, false)]);
+        let copied = store
+            .move_continuous("pad", &ranges, &edit, target, 0, true)
+            .unwrap();
+        assert_eq!((copied.reattached, copied.cloned), (0, 1));
+        assert_eq!(body(&store, target), "b\u{fffc}c");
+        assert_ne!(standing(&store, target)[0], uuid);
+        assert_eq!(standing(&store, source)[0], uuid);
+        assert!(store.step_continuous("pad", true).is_some());
+        assert!(body(&store, target).is_empty());
+        assert_eq!(body(&store, source), "ab\u{fffc}cd\u{fffc}ef");
+    }
+
+    #[test]
+    fn continuous_native_move_history_refuses_a_missing_or_deleted_object() {
+        for burn in [false, true] {
+            let (mut store, _) = store();
+            let (source, chip, _) = mixed(&mut store);
+            let target = store.new_tab().1;
+            let ranges = [fragment_range(&store, source, 2, 1, false)];
+            let mut edit = surface_deletion(&store, &ranges);
+            edit.pages.extend(
+                surface_deletion(&store, &[fragment_range(&store, target, 0, 0, false)]).pages,
+            );
+            assert!(
+                store
+                    .move_continuous("pad", &ranges, &edit, target, 0, false)
+                    .is_some()
+            );
+            if burn {
+                assert!(store.delete_chip(chip));
+            } else {
+                store
+                    .sheet_mut(target)
+                    .unwrap()
+                    .chips
+                    .retain(|object| object.id() != chip);
+            }
+            let before = (body(&store, source), body(&store, target));
+            assert!(!store.can_step_continuous("pad", true));
+            assert!(store.step_continuous("pad", true).is_none());
+            assert_eq!((body(&store, source), body(&store, target)), before);
+        }
+    }
+
+    #[test]
+    fn continuous_native_move_refusal_and_write_failure_restore_standing_sources() {
+        let (mut store, _) = store();
+        let (first, ..) = mixed(&mut store);
+        let (second, ..) = mixed(&mut store);
+        let target = store.new_tab().1;
+        let ranges = [
+            fragment_range(&store, first, 0, 8, true),
+            fragment_range(&store, second, 0, 8, false),
+        ];
+        let mut edit = surface_deletion(&store, &ranges);
+        edit.pages
+            .extend(surface_deletion(&store, &[fragment_range(&store, target, 0, 0, false)]).pages);
+        let before = (standing(&store, first), standing(&store, second));
+        let mut invalid = edit.clone();
+        invalid.pages[1].ops.clear();
+        assert!(
+            store
+                .move_continuous("pad", &ranges, &invalid, target, 0, false)
+                .is_none()
+        );
+        assert!(
+            store
+                .move_continuous("pad", &ranges, &edit, target, 99, false)
+                .is_none()
+        );
+        store
+            .sheet_mut(second)
+            .unwrap()
+            .document
+            .fail_writes_after(0);
+        assert!(
+            store
+                .move_continuous("pad", &ranges, &edit, target, 0, false)
+                .is_none()
+        );
+        assert_eq!((standing(&store, first), standing(&store, second)), before);
+        assert_eq!(body(&store, first), "ab\u{fffc}cd\u{fffc}ef");
+        assert_eq!(body(&store, second), "ab\u{fffc}cd\u{fffc}ef");
+        assert!(body(&store, target).is_empty());
+        assert!(detached(&store, target).is_empty());
+        assert!(store.active_cut().is_none());
+    }
+
+    #[test]
+    fn continuous_cut_groups_sources_and_restores_the_active_cut_after_restart() {
+        let (mut store, clock) = store();
+        let (first, a, _) = mixed(&mut store);
+        let (second, b, _) = mixed(&mut store);
+        let uuids = [uuid_of(&store, a), uuid_of(&store, b)];
+        let ranges = [
+            fragment_range(&store, first, 2, 1, true),
+            fragment_range(&store, second, 2, 1, false),
+        ];
+        let edit = surface_deletion(&store, &ranges);
+        store.cut_continuous("pad", &ranges, &edit).unwrap();
+        assert_eq!(
+            store
+                .active_cut()
+                .unwrap()
+                .1
+                .iter()
+                .map(|chip| chip.uuid)
+                .collect::<Vec<_>>(),
+            uuids
+        );
+        assert!(store.step_continuous("pad", true).is_some());
+        assert!(store.active_cut().is_none());
+        assert_eq!(body(&store, first), "ab\u{fffc}cd\u{fffc}ef");
+        assert_eq!(body(&store, second), "ab\u{fffc}cd\u{fffc}ef");
+        assert!(store.step_continuous("pad", false).is_some());
+        assert_eq!(detached(&store, first), vec![uuids[0]]);
+        assert_eq!(detached(&store, second), vec![uuids[1]]);
+
+        assert!(store.step_continuous("pad", true).is_some());
+        let ranges = [
+            fragment_range(&store, first, 2, 1, true),
+            fragment_range(&store, second, 2, 1, false),
+        ];
+        let edit = surface_deletion(&store, &ranges);
+        store.cut_continuous("pad", &ranges, &edit).unwrap();
+        let snapshot = store.snapshot(1_000_000);
+        let mut revived = SheetStore::new(clock).with_grace_snap(false);
+        revived.restore(&snapshot, 1_000_000).unwrap();
+        assert_eq!(
+            revived
+                .active_cut()
+                .unwrap()
+                .1
+                .iter()
+                .map(|chip| chip.uuid)
+                .collect::<Vec<_>>(),
+            uuids
+        );
+        let destination = revived.new_tab().1;
+        let edits = surface_deletion(
+            &revived,
+            &[fragment_range(&revived, destination, 0, 0, false)],
+        );
+        let pasted = revived
+            .paste_active_cut_continuous("pad", &edits, destination, 0)
+            .unwrap();
+        assert_eq!(pasted.reattached, 2);
+        assert_eq!(standing(&revived, destination), uuids);
+        assert!(revived.step_continuous("pad", true).is_some());
+        assert!(standing(&revived, destination).is_empty());
+        assert!(revived.step_continuous("pad", false).is_some());
+        assert_eq!(standing(&revived, destination), uuids);
+    }
+
+    #[test]
+    fn continuous_paste_replaces_multiple_pages_and_undoes_clones_as_one_gesture() {
+        let (mut store, _) = store();
+        let (source, ..) = mixed(&mut store);
+        let copied = store.copy_fragment(source, 0, 8).unwrap();
+        let (first, ..) = mixed(&mut store);
+        let (second, ..) = mixed(&mut store);
+        let ranges = [
+            fragment_range(&store, first, 1, 7, true),
+            fragment_range(&store, second, 0, 3, false),
+        ];
+        let edit = surface_deletion(&store, &ranges);
+        let pasted = store
+            .paste_continuous("pad", &edit, first, 1, &copied.envelope.unwrap(), None)
+            .unwrap();
+        assert_eq!(pasted.cloned, 2);
+        assert_eq!(body(&store, first), "aab\u{fffc}cd\u{fffc}ef");
+        assert_eq!(body(&store, second), "cd\u{fffc}ef");
+        assert!(store.step_continuous("pad", true).is_some());
+        assert_eq!(body(&store, first), "ab\u{fffc}cd\u{fffc}ef");
+        assert_eq!(body(&store, second), "ab\u{fffc}cd\u{fffc}ef");
+        assert!(store.step_continuous("pad", false).is_some());
+        assert_eq!(body(&store, first), "aab\u{fffc}cd\u{fffc}ef");
+        assert_eq!(body(&store, second), "cd\u{fffc}ef");
+    }
+
+    #[test]
+    fn continuous_clipboard_refuses_invalid_edits_and_rolls_back_prepared_objects() {
+        let (mut store, _) = store();
+        let (first, ..) = mixed(&mut store);
+        let (second, ..) = mixed(&mut store);
+        let ranges = [
+            fragment_range(&store, first, 2, 1, true),
+            fragment_range(&store, second, 2, 1, false),
+        ];
+        let edit = surface_deletion(&store, &ranges);
+        let mut invalid = edit.clone();
+        invalid.pages[1].ops.clear();
+        assert_eq!(
+            store.cut_continuous("pad", &ranges, &invalid).err(),
+            Some(CopyRefusal::Refused)
+        );
+        let copied = store.copy_fragments(&ranges).unwrap();
+        let ledger_before = store.ledger().count();
+        let standing_before = (standing(&store, first), standing(&store, second));
+        store
+            .sheet_mut(second)
+            .unwrap()
+            .document
+            .fail_writes_after(0);
+        assert!(
+            store
+                .paste_continuous(
+                    "pad",
+                    &edit,
+                    first,
+                    2,
+                    copied.envelope.as_ref().unwrap(),
+                    None
+                )
+                .is_none()
+        );
+        assert_eq!(
+            (standing(&store, first), standing(&store, second)),
+            standing_before
+        );
+        assert!(detached(&store, first).is_empty());
+        assert!(detached(&store, second).is_empty());
+        assert_eq!(store.ledger().count(), ledger_before);
+        assert_eq!(body(&store, first), "ab\u{fffc}cd\u{fffc}ef");
+        assert_eq!(body(&store, second), "ab\u{fffc}cd\u{fffc}ef");
+        assert!(!store.can_step_continuous("pad", true));
+    }
+
+    #[test]
+    fn continuous_paste_keeps_new_history_when_a_moved_source_is_a_participant() {
+        let (mut store, _) = store();
+        let (source, chip, _) = mixed(&mut store);
+        let (target, ..) = mixed(&mut store);
+        let uuid = uuid_of(&store, chip);
+        store.cut_fragment(source, 2, 1).unwrap();
+        let ranges = [
+            fragment_range(&store, source, 1, 2, true),
+            fragment_range(&store, target, 0, 1, false),
+        ];
+        let edit = surface_deletion(&store, &ranges);
+        let pasted = store
+            .paste_active_cut_continuous("pad", &edit, target, 0)
+            .unwrap();
+        assert_eq!(pasted.reattached, 1);
+        assert_eq!(standing(&store, target)[0], uuid);
+        assert!(store.step_continuous("pad", true).is_some());
+        assert_eq!(body(&store, source), "abcd\u{fffc}ef");
+        assert_eq!(body(&store, target), "ab\u{fffc}cd\u{fffc}ef");
+        assert!(store.step_continuous("pad", false).is_some());
+        assert_eq!(standing(&store, target)[0], uuid);
+    }
+
+    #[test]
+    fn continuous_paste_invalid_offset_restores_staged_cut_objects_and_active_cut() {
+        let (mut store, _) = store();
+        let (source, chip, _) = mixed(&mut store);
+        let (target, ..) = mixed(&mut store);
+        let uuid = uuid_of(&store, chip);
+        store.cut_fragment(source, 2, 1).unwrap();
+        let ranges = [fragment_range(&store, target, 0, 2, false)];
+        let edit = surface_deletion(&store, &ranges);
+        assert!(
+            store
+                .paste_active_cut_continuous("pad", &edit, target, 99)
+                .is_none()
+        );
+        assert_eq!(store.active_cut().unwrap().1[0].uuid, uuid);
+        assert_eq!(detached(&store, source), vec![uuid]);
+        assert!(detached(&store, target).is_empty());
+        assert_eq!(body(&store, target), "ab\u{fffc}cd\u{fffc}ef");
+    }
+
+    #[test]
+    fn continuous_active_cut_paste_classifies_an_unswept_expired_source() {
+        let (mut store, clock) = store();
+        let (source, ..) = mixed(&mut store);
+        store.cut_fragment(source, 2, 1).unwrap();
+        clock.advance(HOUR);
+        let target = store.new_tab().1;
+        let edit = surface_deletion(&store, &[fragment_range(&store, target, 0, 0, false)]);
+        let pasted = store
+            .paste_active_cut_continuous("pad", &edit, target, 0)
+            .unwrap();
+        assert_eq!(
+            (pasted.expired, pasted.reattached, pasted.cloned),
+            (1, 0, 0)
+        );
+        assert_eq!(body(&store, target), "[sealed content · expired]");
+        assert!(store.active_cut().is_none());
+    }
+
+    #[test]
+    fn continuous_copy_composes_ink_and_objects_from_each_source_in_order() {
+        let (mut store, _) = store();
+        let (first, first_chip, _) = mixed(&mut store);
+        let (second, second_chip, _) = mixed(&mut store);
+        let ranges = [
+            fragment_range(&store, first, 1, 3, true),
+            fragment_range(&store, second, 0, 3, false),
+        ];
+        let copied = store.copy_fragments(&ranges).unwrap();
+        assert_eq!(
+            copied.plain.as_str(),
+            "b[sealed content · tiny]c\nab[sealed content · tiny]"
+        );
+        let envelope = copied.envelope.unwrap();
+        let parsed = Fragment::parse(&envelope).unwrap();
+        assert!(parsed.cut.is_none());
+        assert_eq!(
+            parsed
+                .references()
+                .map(|reference| reference.uuid)
+                .collect::<Vec<_>>(),
+            vec![uuid_of(&store, first_chip), uuid_of(&store, second_chip)]
+        );
+        assert!(!String::from_utf8_lossy(&envelope).contains(A));
+        let destination = store.new_tab().1;
+        let pasted = store
+            .paste_fragment(destination, 0, 0, &envelope, None)
+            .unwrap();
+        assert_eq!(pasted.cloned, 2);
+        assert_eq!(body(&store, destination), "b\u{fffc}c\nab\u{fffc}");
+        assert_eq!(body(&store, first), "ab\u{fffc}cd\u{fffc}ef");
+        assert_eq!(body(&store, second), "ab\u{fffc}cd\u{fffc}ef");
+    }
+
+    #[test]
+    fn continuous_copy_uses_utf16_ranges_and_explicit_separator_selection() {
+        let (mut store, _) = store();
+        let first = store.new_tab().1;
+        let second = store.new_tab().1;
+        assert!(store.sync_document(first, vec![Segment::Ink("a😀b".into())]));
+        assert!(store.sync_document(second, vec![Segment::Ink("tail".into())]));
+        let mut ranges = [
+            fragment_range(&store, first, 1, 2, false),
+            fragment_range(&store, second, 0, 4, false),
+        ];
+        let copied = store.copy_fragments(&ranges).unwrap();
+        assert_eq!(copied.plain.as_str(), "😀tail");
+        assert!(copied.envelope.is_none());
+        ranges[0].separator_after = true;
+        assert_eq!(
+            store.copy_fragments(&ranges).unwrap().plain.as_str(),
+            "😀\ntail"
+        );
+        ranges[0].len_u16 = 1;
+        assert_eq!(
+            store.copy_fragments(&ranges).err(),
+            Some(CopyRefusal::Refused)
+        );
+        let separator = fragment_range(&store, first, 4, 0, true);
+        assert_eq!(
+            store.copy_fragments(&[separator]).unwrap().plain.as_str(),
+            "\n"
+        );
+    }
+
+    #[test]
+    fn continuous_copy_refuses_the_whole_selection_for_an_invalid_final_member() {
+        let (mut store, _) = store();
+        let (first, ..) = mixed(&mut store);
+        let (second, ..) = mixed(&mut store);
+        let first_range = fragment_range(&store, first, 0, 8, true);
+        let second_range = fragment_range(&store, second, 0, 8, false);
+        for invalid in [
+            FragmentSelection {
+                page: SheetId::from_raw(u64::MAX),
+                ..second_range.clone()
+            },
+            FragmentSelection {
+                expected_uuid: ItemId::random(),
+                ..second_range.clone()
+            },
+            FragmentSelection {
+                len_u16: 9,
+                ..second_range
+            },
+            first_range.clone(),
+        ] {
+            assert_eq!(
+                store.copy_fragments(&[first_range.clone(), invalid]).err(),
+                Some(CopyRefusal::Refused)
+            );
+        }
+        assert_eq!(store.copy_fragments(&[]).err(), Some(CopyRefusal::Refused));
+        assert_eq!(body(&store, first), "ab\u{fffc}cd\u{fffc}ef");
+        assert_eq!(body(&store, second), "ab\u{fffc}cd\u{fffc}ef");
+    }
+
+    #[test]
+    fn continuous_copy_and_cut_refuse_same_length_replacement_after_projection() {
+        let (mut store, _) = store();
+        let (page, a, b) = mixed(&mut store);
+        let ranges = [fragment_range(&store, page, 0, 2, false)];
+        let edit = surface_deletion(&store, &ranges);
+        assert!(store.sync_document(
+            page,
+            vec![
+                Segment::Ink("xy".into()),
+                Segment::Chip(a),
+                Segment::Ink("cd".into()),
+                Segment::Chip(b),
+                Segment::Ink("ef".into()),
+            ]
+        ));
+        assert_eq!(
+            store.copy_fragments(&ranges).err(),
+            Some(CopyRefusal::Refused)
+        );
+        assert_eq!(
+            store.cut_continuous("pad", &ranges, &edit).err(),
+            Some(CopyRefusal::Refused)
+        );
+        assert_eq!(body(&store, page), "xy\u{fffc}cd\u{fffc}ef");
+        assert!(!store.can_step_continuous("pad", true));
+    }
+
+    #[test]
+    fn continuous_copy_refuses_a_due_source_before_sweep() {
+        let (mut store, clock) = store();
+        let (old, ..) = mixed(&mut store);
+        clock.advance(HOUR / 2);
+        let (recent, ..) = mixed(&mut store);
+        let ranges = [
+            fragment_range(&store, recent, 0, 2, true),
+            fragment_range(&store, old, 0, 2, false),
+        ];
+        clock.advance(HOUR / 2);
+        assert_eq!(
+            store.copy_fragments(&ranges).err(),
+            Some(CopyRefusal::Refused)
+        );
+        assert!(store.sheet(old).is_some());
+        assert!(store.copy_fragment(recent, 0, 2).is_ok());
+    }
+
+    #[test]
+    fn continuous_copy_applies_reference_cap_to_the_combined_envelope() {
+        let (mut store, _) = store();
+        let first_count = REFERENCE_CAP / 2;
+        let second_count = REFERENCE_CAP - first_count + 1;
+        let first = objects(&mut store, first_count);
+        let second = objects(&mut store, second_count);
+        let ranges = [
+            fragment_range(&store, first, 0, first_count as u32, true),
+            fragment_range(&store, second, 0, second_count as u32, false),
+        ];
+        assert!(store.copy_fragment(first, 0, first_count as u32).is_ok());
+        assert!(store.copy_fragment(second, 0, second_count as u32).is_ok());
+        assert_eq!(
+            store.copy_fragments(&ranges).err(),
+            Some(CopyRefusal::PastCap(EnvelopeCap::References))
+        );
     }
 
     impl<C: Clock> SheetStore<C> {

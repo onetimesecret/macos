@@ -143,6 +143,9 @@ public struct PageContentView: View {
                 InkEditorView(
                     model: model, sheetID: file.id, readOnly: readOnly || file.isHeld)
             }
+        } else if model.showsTimeUnits && !model.isPageExpanded
+            && model.navigationTabs.contains(where: { $0.pageID != nil }) {
+            ContinuousPadView(model: model, readOnly: readOnly)
         } else if model.showsTimeUnits {
             // The days, as one roll (issue #79). It answers for all
             // three of the cases below at once, the selected page is

@@ -281,7 +281,7 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
     /// and keeps the name when the object or its page has gone.
     func follow() {
         guard let chip = rename.chip, let textView else { return }
-        guard textView.coordinator?.currentSheet == rename.sheet,
+        guard textView.coordinator?.displaysPage(rename.sheet) == true,
               let index = textView.chipIndex(ofChip: chip),
               let frame = textView.chipFrame(at: index),
               let cell = textView.chipCell(at: index)

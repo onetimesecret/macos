@@ -562,6 +562,34 @@ char *companion_sheet_seal_from_drag(CompanionHandle *handle, uint64_t sheet,
 bool companion_sheet_apply_ops(CompanionHandle *handle, uint64_t sheet,
                                const char *json);
 
+char *companion_continuous_snapshot(CompanionHandle *handle, uint64_t page);
+bool companion_continuous_apply(CompanionHandle *handle, const char *scope,
+                                const char *json);
+void companion_continuous_clear_history(CompanionHandle *handle, const char *scope);
+void companion_continuous_finish_group(CompanionHandle *handle, const char *scope);
+bool companion_continuous_can_step(CompanionHandle *handle, const char *scope,
+                                   bool back);
+char *companion_continuous_scope_for_step(CompanionHandle *handle, uint64_t page,
+                                          bool back);
+char *companion_continuous_step(CompanionHandle *handle, const char *scope,
+                                bool back);
+char *companion_continuous_action_name(CompanionHandle *handle,
+                                       const char *scope, bool back);
+char *companion_sheet_join_next(CompanionHandle *handle, uint64_t page);
+char *companion_continuous_copy(CompanionHandle *handle, const char *json);
+char *companion_continuous_cut(CompanionHandle *handle, const char *scope,
+                               const char *ranges_json, const char *edit_json);
+char *companion_continuous_place_active_cut(CompanionHandle *handle,
+                                            const char *scope, const char *edit_json,
+                                            uint64_t target, uint32_t at_utf16);
+char *companion_continuous_move(CompanionHandle *handle, const char *scope,
+                                const char *ranges_json, const char *edit_json,
+                                uint64_t target, uint32_t at_utf16, bool cloning);
+char *companion_continuous_paste(CompanionHandle *handle, const char *scope,
+                                 const char *edit_json, uint64_t target,
+                                 uint32_t at_utf16, const uint8_t *envelope,
+                                 size_t envelope_len, const char *plain);
+
 /*
  * The same, for a batch that must begin its own undo step: an edit the
  * page made on the writer's behalf rather than at their dictation, such

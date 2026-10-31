@@ -3,6 +3,7 @@
 
 mod blocks;
 pub mod clock;
+pub mod continuous;
 // Every Loro call stays behind this module; the store speaks UTF-16 to it.
 mod document;
 pub mod file_persist;
@@ -55,5 +56,5 @@ pub use store::{EditOp, PayloadError, Refusal, RemoteRefusal, SheetStore};
 pub use sync::{
     CeremonyBallot, DeltaAdmission, ExpiryPolicy, HoldRegister, PageChannel, TerminalMarker,
 };
-pub use transfer::Placed;
+pub use transfer::{FragmentSelection, Placed};
 pub use ttl::{TTL_LADDER, Ttl};

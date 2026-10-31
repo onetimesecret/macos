@@ -27,6 +27,7 @@ public enum EditorEditIntent: UInt32, Sendable {
 public enum InkDocument: Hashable, Sendable {
     case sheet(UInt64)
     case note(chip: UInt64)
+    case continuous(String)
 }
 
 /// The TextKit selection on both sides of one editor action.
@@ -1191,6 +1192,7 @@ public final class PageModel: ObservableObject {
     /// sit there within reach of ⌘Z, the exact resurrection ADR-0009
     /// closed.
     private var storages: [UInt64: NSTextStorage] = [:]
+    private var continuousDocuments: [String: ContinuousPadDocument] = [:]
 
     /// Each page's caret and scroll, keyed and pruned with `storages`.
     ///
@@ -3095,6 +3097,51 @@ public final class PageModel: ObservableObject {
         guard pads.isEnabled else { return tabs }
         return tabs.filter { pads.owner(ofTabUUID: $0.uuid) == pads.activeID }
     }
+
+    func continuousPadDocument() -> ContinuousPadDocument {
+        let scope = pads.isEnabled ? pads.activeID.uuidString : "legacy"
+        if let document = continuousDocuments[scope] { return document }
+        let document = ContinuousPadDocument(model: self, scope: scope)
+        continuousDocuments[scope] = document
+        document.refresh()
+        if let segment = document.projection.segments.first(where: { $0.page.id == selectedPageID }) {
+            let local = viewStates.carets[segment.page.id] ?? NSRange(location: 0, length: 0)
+            document.savedSelection = NSRange(location: segment.bodyRange.location
+                + min(local.location, segment.bodyRange.length), length: 0)
+        }
+        return document
+    }
+
+    func continuousTabs(scope: String) -> [TabSummary] {
+        let pad = UUID(uuidString: scope)
+        let roster = pad.map { pad in tabs.filter { pads.owner(ofTabUUID: $0.uuid) == pad } } ?? tabs
+        let projection = TimeUnitProjection.project(tabs: roster, selectedPageID: nil,
+            unit: .day, includeEmptyPages: true)
+        let ordered = sortedPadProjection(projection, pad: pad, roster: roster).units.flatMap(\.tabIDs)
+        let byID = Dictionary(uniqueKeysWithValues: roster.map { ($0.id, $0) })
+        return ordered.compactMap { byID[$0] }
+    }
+
+    func selectContinuousPage(_ page: UInt64) {
+        guard let tab = navigationTabs.first(where: { $0.pageID == page }), selection != tab.id else { return }
+        selection = tab.id
+        if pads.isEnabled { pads.remember(tabUUID: tab.uuid, for: pads.activeID) }
+    }
+
+    func writeContinuousCut(_ fragment: SealedFragment) -> Bool {
+        writeCutFragment(fragment, ambientPasteboard)
+    }
+
+    func continuousDidEdit(pages: [UInt64], scope: String) {
+        countEdit(.continuous(scope))
+        for page in pages {
+            countEdit(.sheet(page))
+            restateStorage(sheet: page)
+            invalidateQuietRendering(for: page)
+        }
+        markDirty()
+        refresh()
+    }
     public var navigationFiles: [FileSummary] {
         guard pads.isEnabled else { return openFiles }
         return openFiles.filter { pads.owner(ofFile: $0.path) == pads.activeID }
@@ -3187,6 +3234,7 @@ public final class PageModel: ObservableObject {
         if showsTimeUnits {
             selection = Self.reconciledTimeSelection(current: selection, projection: timeUnits)
         }
+        for document in continuousDocuments.values { document.refresh() }
         selectedFile = navigationFiles.first {
             PadCatalog.normalizedPath($0.path) == pads.rememberedFile(for: pads.activeID)
         }?.id
@@ -3237,13 +3285,17 @@ public final class PageModel: ObservableObject {
             return owner(tab).uuidString + "/" + padDateKey(forDayBucket: offset, now: now, calendar: calendar)
         })
     }
-    private func sortedPadProjection(_ projection: TimeUnitProjection) -> TimeUnitProjection {
+    private func sortedPadProjection(_ projection: TimeUnitProjection,
+        pad requestedPad: UUID? = nil, roster requestedRoster: [TabSummary]? = nil
+    ) -> TimeUnitProjection {
         guard pads.isEnabled else { return projection }
+        let pad = requestedPad ?? pads.activeID
+        let roster = requestedRoster ?? navigationTabs
         let summaries = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
-        let dayDirection = pads.daySortDirection(for: pads.activeID)
-        let grouped = dayDirection == .natural ? projection.inNaturalOrder(tabs: navigationTabs) : projection
+        let dayDirection = pads.daySortDirection(for: pad)
+        let grouped = dayDirection == .natural ? projection.inNaturalOrder(tabs: roster) : projection
         var units = grouped.units.map { unit in
-            let direction = pads.checkpointSortDirection(for: pads.activeID, onDate: dateKey(forDayBucket: unit.bucket))
+            let direction = pads.checkpointSortDirection(for: pad, onDate: dateKey(forDayBucket: unit.bucket))
             let natural = Array(zip(unit.tabIDs, unit.pageIDs))
             let ordered = direction == .natural ? natural : natural.sorted { a, b in
                 let lhs = summaries[a.0]?.pageCreatedMs ?? 0, rhs = summaries[b.0]?.pageCreatedMs ?? 0
@@ -3335,6 +3387,7 @@ public final class PageModel: ObservableObject {
         // ink an expiry is supposed to take away.
         quietRenderings = quietRenderings.filter { livePages.contains($0.key) }
         fenceRenderingLanguages = fenceRenderingLanguages.filter { livePages.contains($0.key) }
+        for document in continuousDocuments.values { document.refresh() }
         // A removal's Undo has nothing to step back once its page is gone.
         if let stamp = removalStamp, !livePages.contains(stamp.sheet) { retireRemovalUndo() }
         selection = Self.reconciledSelection(current: selection, live: navigationTabs.map(\.id))
@@ -5678,13 +5731,15 @@ public final class PageModel: ObservableObject {
             }
         }
         let editor = (activeEditor as? InkTextView).flatMap { view in
-            view.coordinator?.currentSheet == source ? view : nil
+            let continuousPage = view.coordinator?.continuousDocument?.localSelection(view.selectedRange())?.page
+            return view.coordinator?.currentSheet == source || continuousPage == source ? view : nil
         }
         if editor?.hasMarkedText() == true {
             flash("finish composing text before inserting a checkpoint")
             return
         }
-        let caret = editor?.selectedRange() ?? viewStates.carets[source]
+        let localCaret = editor.flatMap { $0.coordinator?.continuousDocument?.localSelection($0.selectedRange())?.range }
+        let caret = localCaret ?? editor?.selectedRange() ?? viewStates.carets[source]
             ?? NSRange(location: sourceLength, length: 0)
         let splitAt = min(max(caret.location, 0), sourceLength)
         guard let created = mintTab() else { return }
@@ -5701,7 +5756,14 @@ public final class PageModel: ObservableObject {
             // for the whole page to move and leave an empty one behind.
             if splitAt > 0, splitAt < sourceLength {
                 let tail = NSRange(location: splitAt, length: sourceLength - splitAt)
-                guard dropRange(tail, sheet: source, onto: dest, at: 0) != nil else {
+                let moved: Bool
+                if let continuous = editor?.coordinator?.continuousDocument {
+                    refresh()
+                    moved = continuous.splitCheckpoint(source: source, at: splitAt, destination: dest)
+                } else {
+                    moved = dropRange(tail, sheet: source, onto: dest, at: 0) != nil
+                }
+                guard moved else {
                     _ = client.closeTab(id: created)
                     refresh()
                     flash("the checkpoint could not be inserted")
@@ -5710,7 +5772,9 @@ public final class PageModel: ObservableObject {
             } else {
                 refresh()
             }
-            editor?.setSelectedRange(NSRange(location: splitAt, length: 0))
+            if editor?.coordinator?.continuousDocument == nil {
+                editor?.setSelectedRange(NSRange(location: splitAt, length: 0))
+            }
             viewStates.saveCaret(NSRange(location: splitAt, length: 0), for: source)
             viewStates.saveCaret(NSRange(location: 0, length: 0), for: dest)
             if pads.isEnabled, padRosterDate != nil {
@@ -6934,6 +6998,8 @@ public final class PageModel: ObservableObject {
             applyOps(sheet: sheet, opsJSON: json, intent: intent, selection: selection)
         case .note(let chip):
             applyNoteOps(chip: chip, json: json, intent: intent, selection: selection)
+        case .continuous(let scope):
+            continuousDocuments[scope]?.apply(json: json, intent: intent, selection: selection) ?? false
         }
     }
 
@@ -6943,6 +7009,7 @@ public final class PageModel: ObservableObject {
         switch document {
         case .sheet(let sheet): back ? undoEdit(sheet: sheet) : redoEdit(sheet: sheet)
         case .note(let chip): stepNote(chip: chip, back: back)
+        case .continuous(let scope): continuousDocuments[scope]?.step(back: back) ?? .nothing
         }
     }
 
@@ -6950,6 +7017,7 @@ public final class PageModel: ObservableObject {
         switch document {
         case .sheet(let sheet): back ? canUndoEdit(sheet: sheet) : canRedoEdit(sheet: sheet)
         case .note(let chip): canStepNote(chip: chip, back: back)
+        case .continuous(let scope): client.continuousCanStep(scope: scope, back: back)
         }
     }
 
@@ -6957,6 +7025,7 @@ public final class PageModel: ObservableObject {
         switch document {
         case .sheet(let sheet): back ? undoActionName(sheet: sheet) : redoActionName(sheet: sheet)
         case .note(let chip): noteStepName(chip: chip, back: back)
+        case .continuous(let scope): client.continuousActionName(scope: scope, back: back)
         }
     }
 
@@ -6965,6 +7034,7 @@ public final class PageModel: ObservableObject {
         switch document {
         case .sheet(let sheet): finishEditingGroup(sheet: sheet, selection: selection)
         case .note(let chip): finishNoteEditingGroup(chip: chip)
+        case .continuous(let scope): client.continuousFinishGroup(scope: scope)
         }
     }
 
@@ -7019,6 +7089,7 @@ public final class PageModel: ObservableObject {
     @discardableResult
     public func undoEdit(sheet: UInt64) -> StepOutcome {
         if sheet.isFileID { return fileStep(sheet) { self.client.undoFile(sheet) } }
+        if let outcome = continuousPageStep(sheet: sheet, back: true) { return outcome }
         return step(sheet: sheet) { self.client.undo(sheet: sheet) }
     }
 
@@ -7026,7 +7097,23 @@ public final class PageModel: ObservableObject {
     @discardableResult
     public func redoEdit(sheet: UInt64) -> StepOutcome {
         if sheet.isFileID { return fileStep(sheet) { self.client.redoFile(sheet) } }
+        if let outcome = continuousPageStep(sheet: sheet, back: false) { return outcome }
         return step(sheet: sheet) { self.client.redo(sheet: sheet) }
+    }
+
+    private func continuousPageStep(sheet: UInt64, back: Bool) -> StepOutcome? {
+        guard let scope = client.continuousScopeForStep(sheet: sheet, back: back) else { return nil }
+        guard let document = continuousDocuments[scope] else { return .nothing }
+        let outcome = document.step(back: back)
+        guard outcome.applied else { return outcome }
+        restateStorage(sheet: sheet)
+        let selection = outcome.selection.flatMap { selection -> NSRange? in
+            guard let segment = document.projection.segments.first(where: { $0.page.id == sheet }) else { return nil }
+            let start = min(max(selection.location - segment.bodyRange.location, 0), segment.bodyRange.length)
+            let end = min(max(NSMaxRange(selection) - segment.bodyRange.location, start), segment.bodyRange.length)
+            return NSRange(location: start, length: end - start)
+        }
+        return StepOutcome(applied: true, selection: selection)
     }
 
     /// The file half of `step`, routed here rather than at the editor
@@ -7093,7 +7180,7 @@ public final class PageModel: ObservableObject {
     public func refreshEditSteps() {
         guard let editor = activeEditor as? InkTextView,
               editor.isEditable,
-              let sheet = editor.coordinator?.currentSheet
+              let document = editor.coordinator?.document
         else {
             editSteps.stand(canUndo: false, canRedo: false)
             return
@@ -7101,8 +7188,8 @@ public final class PageModel: ObservableObject {
         // Through the routed pair, not the client's page route: the id
         // under the editor is a file's whenever a file is showing.
         editSteps.stand(
-            canUndo: canUndoEdit(sheet: sheet),
-            canRedo: canRedoEdit(sheet: sheet)
+            canUndo: canStepEdit(document, back: true),
+            canRedo: canStepEdit(document, back: false)
         )
     }
 
@@ -7326,6 +7413,15 @@ public final class PageModel: ObservableObject {
     /// A page the core moved under the shell, read again into the storage that shows it.
     private func readAgain(_ page: UInt64) {
         invalidateQuietRendering(for: page)
+        if let shown = activeEditor as? InkTextView,
+           let document = shown.coordinator?.continuousDocument,
+           shown.coordinator?.displaysPage(page) == true {
+            document.refresh()
+            shown.coordinator?.restyle()
+            shown.coordinator?.noteEditor?.coordinator.refreshNoteFromCore()
+            restateStorage(sheet: page)
+            return
+        }
         if let shown = surface(showing: page) {
             mergeIntoShownStorage(sheet: page, shown: shown)
             restateChipFaces(onSheet: page)

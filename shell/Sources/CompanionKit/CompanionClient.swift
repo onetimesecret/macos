@@ -438,6 +438,36 @@ public struct StepOutcome: Codable, Hashable, Sendable {
     let selectionLengthUTF16: Int64
 }
 
+/// The pages and surface selection changed by a coordinated undo or redo.
+public struct ContinuousStepOutcome: Decodable, Sendable {
+    public let pages: [UInt64]
+    private let position: Position
+    public var selection: NSRange { NSRange(location: position.location, length: position.length) }
+
+    private struct Position: Decodable, Sendable {
+        let location: Int
+        let length: Int
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case pages
+        case position = "selection"
+    }
+}
+
+/// One atomic read of a page's projection data and source version.
+public struct ContinuousPageSnapshot: Decodable, Sendable {
+    public let uuid: String
+    public let version: [UInt8]
+    public let joinNext: String?
+    public let runs: [RestoredRun]
+
+    private enum CodingKeys: String, CodingKey {
+        case uuid, version, runs
+        case joinNext = "join_next"
+    }
+}
+
 /// The two emptiness answers, taken together in one call because they
 /// are one question asked twice (ADR-0017) and the shell derives
 /// neither.
@@ -1145,6 +1175,122 @@ public class CompanionClient: @unchecked Sendable {
     public func finishEditingGroup(sheet: UInt64, selection: NSRange? = nil) -> Bool {
         guard let wire = selectionWire(selection) else { return false }
         return companion_sheet_finish_editing_group(handle, sheet, wire.0, wire.1)
+    }
+
+    /// Apply a coordinated editing gesture using the surface planner's JSON.
+    @discardableResult
+    public func continuousApply(scope: String, json: String) -> Bool {
+        guard !scope.contains("\0"), !json.contains("\0") else { return false }
+        return scope.withCString { scope in
+            json.withCString { companion_continuous_apply(handle, scope, $0) }
+        }
+    }
+
+    public func continuousCanStep(scope: String, back: Bool) -> Bool {
+        guard !scope.contains("\0") else { return false }
+        return scope.withCString { companion_continuous_can_step(handle, $0, back) }
+    }
+
+    public func continuousFinishGroup(scope: String) {
+        guard !scope.contains("\0") else { return }
+        scope.withCString { companion_continuous_finish_group(handle, $0) }
+    }
+
+    public func continuousClearHistory(scope: String) {
+        guard !scope.contains("\0") else { return }
+        scope.withCString { companion_continuous_clear_history(handle, $0) }
+    }
+
+    @discardableResult
+    public func continuousStep(scope: String, back: Bool) -> ContinuousStepOutcome? {
+        guard !scope.contains("\0") else { return nil }
+        return scope.withCString {
+            decodeOwnedJSON(ContinuousStepOutcome.self, from: companion_continuous_step(handle, $0, back))
+        }
+    }
+
+    public func continuousActionName(scope: String, back: Bool) -> String? {
+        guard !scope.contains("\0") else { return nil }
+        return scope.withCString { ownedString(from: companion_continuous_action_name(handle, $0, back)) }
+    }
+
+    public func continuousScopeForStep(sheet: UInt64, back: Bool) -> String? {
+        ownedString(from: companion_continuous_scope_for_step(handle, sheet, back))
+    }
+
+    public func continuousJoinNext(sheet: UInt64) -> String? {
+        ownedString(from: companion_sheet_join_next(handle, sheet))
+    }
+
+    public func continuousSnapshot(sheet: UInt64) -> ContinuousPageSnapshot? {
+        decodeOwnedJSON(ContinuousPageSnapshot.self, from: companion_continuous_snapshot(handle, sheet))
+    }
+
+    public func continuousCopy(json: String) -> Result<SealedFragment, FragmentRefusal> {
+        guard !json.contains("\0") else { return .failure(.refused) }
+        return json.withCString { fragment(from: companion_continuous_copy(handle, $0)) }
+    }
+
+    public func continuousCut(
+        scope: String, rangesJSON: String, editJSON: String
+    ) -> Result<SealedFragment, FragmentRefusal> {
+        guard !scope.contains("\0"), !rangesJSON.contains("\0"), !editJSON.contains("\0")
+        else { return .failure(.refused) }
+        return scope.withCString { scope in
+            rangesJSON.withCString { ranges in
+                editJSON.withCString { fragment(from: companion_continuous_cut(handle, scope, ranges, $0)) }
+            }
+        }
+    }
+
+    @discardableResult
+    public func continuousPaste(
+        scope: String, json: String, sheet: UInt64, at: Int, envelope: Data, plainText: String?
+    ) -> PlacedFragment? {
+        guard !scope.contains("\0"), !json.contains("\0"), let offset = UInt32(exactly: at)
+        else { return nil }
+        let plain = plainText.flatMap { $0.contains("\0") ? nil : $0 }
+        return scope.withCString { scope in
+            json.withCString { json in
+                envelope.withUnsafeBytes { bytes in
+                    let base = bytes.bindMemory(to: UInt8.self).baseAddress
+                    let paste = { (text: UnsafePointer<CChar>?) in
+                        companion_continuous_paste(self.handle, scope, json, sheet, offset, base, bytes.count, text)
+                    }
+                    let result = plain.map { $0.withCString { paste($0) } } ?? paste(nil)
+                    return decodeOwnedJSON(PlacedFragment.self, from: result)
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    public func continuousPlaceActiveCut(scope: String, json: String, sheet: UInt64, at: Int) -> PlacedFragment? {
+        guard !scope.contains("\0"), !json.contains("\0"), let offset = UInt32(exactly: at)
+        else { return nil }
+        return scope.withCString { scope in
+            json.withCString {
+                decodeOwnedJSON(PlacedFragment.self,
+                    from: companion_continuous_place_active_cut(handle, scope, $0, sheet, offset))
+            }
+        }
+    }
+
+    @discardableResult
+    public func continuousMove(
+        scope: String, sourceRangesJSON: String, editJSON: String,
+        targetPage: UInt64, targetOffset: Int, cloning: Bool
+    ) -> PlacedFragment? {
+        guard !scope.contains("\0"), !sourceRangesJSON.contains("\0"), !editJSON.contains("\0"),
+              let offset = UInt32(exactly: targetOffset) else { return nil }
+        return scope.withCString { scope in
+            sourceRangesJSON.withCString { ranges in
+                editJSON.withCString {
+                    decodeOwnedJSON(PlacedFragment.self,
+                        from: companion_continuous_move(handle, scope, ranges, $0, targetPage, offset, cloning))
+                }
+            }
+        }
     }
 
     /// Push a whole document snapshot (JSON runs) to the core. The

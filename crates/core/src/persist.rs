@@ -156,10 +156,12 @@ impl<C: Clock> SheetStore<C> {
 
         let restored = tabs.iter().filter(|tab| tab.page.is_some()).count();
         self.tabs = tabs;
+        self.continuous = crate::continuous::ContinuousHistory::default();
         self.next_tab_id = next_tab_id;
         self.next_sheet_id = next_sheet_id;
         self.next_chip_id = chips.next_id;
         self.active_cut = active_cut;
+        self.end_a_broken_cut();
         // Page and chip ids are minted afresh, and nothing restored is a change.
         self.metadata_dirty.clear();
         self.restated.clear();
@@ -901,7 +903,7 @@ fn read_page(
         // Not persisted: no sync session survives a restart (issue #101).
         ceremony: CeremonyState::Immediate,
     };
-    // A cut whose objects are not all detached here restores as no cut.
+    // Read the anchor record; store restore checks detached members across pages.
     let cut = cut.and_then(|envelope| ActiveCut::restored(&sheet, envelope));
     Ok((sheet, cut))
 }
