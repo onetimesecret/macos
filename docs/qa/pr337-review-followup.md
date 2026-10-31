@@ -172,3 +172,21 @@ t󠄁e󠄁s󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 t󠄁w󠄁o󠄁 h󠄁a󠄁n󠄁d󠄁s�
 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 d󠄁i󠄁f󠄁f󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁 p󠄁a󠄁s󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 6󠄁9󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁s󠄁 p󠄁l󠄁u󠄁s󠄁 t󠄁h󠄁r󠄁e󠄁e󠄁 r󠄁e󠄁a󠄁l󠄁-󠄁n󠄁e󠄁t󠄁w󠄁o󠄁r󠄁k󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁s󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁c󠄁e󠄁d󠄁i󠄁n󠄁g󠄁
 b󠄁a󠄁t󠄁c󠄁h󠄁;󠄁 t󠄁h󠄁i󠄁s󠄁 b󠄁a󠄁t󠄁c󠄁h󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 o󠄁n󠄁l󠄁y󠄁 t󠄁e󠄁s󠄁t󠄁 s󠄁p󠄁e󠄁l󠄁l󠄁i󠄁n󠄁g󠄁 o󠄁n󠄁 t󠄁h󠄁e󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 s󠄁i󠄁d󠄁e󠄁.󠄁
+
+## U󠄁T󠄁F󠄁-󠄁8󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁-󠄁u󠄁p󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 o󠄁f󠄁 `15108076`
+
+[C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 r󠄁u󠄁n󠄁 4󠄁1󠄁1󠄁7󠄁0󠄁4󠄁5󠄁5󠄁5󠄁6󠄁9󠄁](https://github.com/onetimesecret/macos/actions/runs/41170455569)
+c󠄁o󠄁n󠄁f󠄁i󠄁r󠄁m󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁c󠄁e󠄁d󠄁i󠄁n󠄁g󠄁 f󠄁i󠄁x󠄁e󠄁s󠄁,󠄁 r󠄁e󠄁t󠄁r󠄁a󠄁c󠄁t󠄁e󠄁d󠄁 i󠄁t󠄁s󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁i󠄁n󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁p󠄁o󠄁r󠄁t󠄁e󠄁d󠄁
+n󠄁o󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁.󠄁 G󠄁r󠄁e󠄁p󠄁t󠄁i󠄁l󠄁e󠄁'󠄁s󠄁 f󠄁o󠄁u󠄁r󠄁t󠄁h󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 f󠄁o󠄁u󠄁n󠄁d󠄁 n󠄁o󠄁 n󠄁e󠄁w󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁a󠄁b󠄁l󠄁e󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁
+a󠄁t󠄁 t󠄁h󠄁a󠄁t󠄁 h󠄁e󠄁a󠄁d󠄁.󠄁 A󠄁l󠄁l󠄁 s󠄁i󠄁x󠄁 C󠄁I󠄁 j󠄁o󠄁b󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁.󠄁
+
+| I󠄁D󠄁 | D󠄁i󠄁s󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 |
+| --- | --- |
+| R󠄁8󠄁-󠄁0󠄁1󠄁 | L󠄁o󠄁c󠄁a󠄁l󠄁e󠄁-󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁 n󠄁o󠄁t󠄁i󠄁c󠄁e󠄁/󠄁m󠄁a󠄁n󠄁i󠄁f󠄁e󠄁s󠄁t󠄁 I󠄁/󠄁O󠄁:󠄁 u󠄁s󠄁e󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 U󠄁T󠄁F󠄁-󠄁8󠄁 f󠄁o󠄁r󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁e󠄁r󠄁/󠄁t󠄁e󠄁s󠄁t󠄁 t󠄁e󠄁x󠄁t󠄁 f󠄁i󠄁l󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 s󠄁u󠄁b󠄁p󠄁r󠄁o󠄁c󠄁e󠄁s󠄁s󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁.󠄁 A󠄁 r󠄁e󠄁a󠄁l󠄁 C󠄁L󠄁I󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁e󠄁d󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 L󠄁C󠄁_A󠄁L󠄁L󠄁=󠄁C󠄁,󠄁 P󠄁Y󠄁T󠄁H󠄁O󠄁N󠄁C󠄁O󠄁E󠄁R󠄁C󠄁E󠄁C󠄁L󠄁O󠄁C󠄁A󠄁L󠄁E󠄁=󠄁0󠄁 a󠄁n󠄁d󠄁 P󠄁Y󠄁T󠄁H󠄁O󠄁N󠄁U󠄁T󠄁F󠄁8󠄁=󠄁0󠄁,󠄁 r󠄁e󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 m󠄁a󠄁r󠄁k󠄁e󠄁d󠄁 n󠄁o󠄁t󠄁i󠄁c󠄁e󠄁.󠄁 |
+| R󠄁8󠄁-󠄁0󠄁2󠄁 | M󠄁i󠄁s󠄁s󠄁i󠄁n󠄁g󠄁 m󠄁e󠄁t󠄁a󠄁d󠄁a󠄁t󠄁a󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁:󠄁 m󠄁a󠄁i󠄁n󠄁 r󠄁e󠄁p󠄁o󠄁r󠄁t󠄁s󠄁 L󠄁o󠄁o󠄁k󠄁u󠄁p󠄁E󠄁r󠄁r󠄁o󠄁r󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 i󠄁t󠄁s󠄁 c󠄁o󠄁n󠄁c󠄁i󠄁s󠄁e󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁 p󠄁a󠄁t󠄁h󠄁.󠄁 A󠄁 m󠄁a󠄁l󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁 r󠄁o󠄁o󠄁t󠄁 m󠄁a󠄁n󠄁i󠄁f󠄁e󠄁s󠄁t󠄁 e󠄁x󠄁i󠄁t󠄁s󠄁 1󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 w󠄁o󠄁r󠄁k󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 m󠄁e󠄁s󠄁s󠄁a󠄁g󠄁e󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁 t󠄁r󠄁a󠄁c󠄁e󠄁b󠄁a󠄁c󠄁k󠄁.󠄁 B󠄁o󠄁t󠄁h󠄁 n󠄁e󠄁w󠄁 C󠄁L󠄁I󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 f󠄁a󠄁i󠄁l󠄁e󠄁d󠄁 a󠄁g󠄁a󠄁i󠄁n󠄁s󠄁t󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁c󠄁e󠄁d󠄁i󠄁n󠄁g󠄁 s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁.󠄁 |
+| R󠄁8󠄁-󠄁0󠄁3󠄁 | A󠄁l󠄁l󠄁e󠄁g󠄁e󠄁d󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁o󠄁u󠄁s󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 b󠄁u󠄁i󠄁l󠄁d󠄁 b󠄁r󠄁e󠄁a󠄁k󠄁:󠄁 n󠄁o󠄁t󠄁 r󠄁e󠄁p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁d󠄁.󠄁 E󠄁x󠄁a󠄁c󠄁t󠄁-󠄁h󠄁e󠄁a󠄁d󠄁 s󠄁h󠄁e󠄁l󠄁l󠄁 j󠄁o󠄁b󠄁 1󠄁2󠄁4󠄁4󠄁4󠄁4󠄁3󠄁5󠄁5󠄁9󠄁7󠄁6󠄁 o󠄁n󠄁 `0f8d377d` r󠄁e󠄁p󠄁o󠄁r󠄁t󠄁s󠄁 a󠄁 w󠄁a󠄁r󠄁n󠄁i󠄁n󠄁g󠄁 f󠄁o󠄁r󠄁 a󠄁w󠄁a󠄁i󠄁t󠄁-󠄁t󠄁r󠄁y󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 e󠄁x󠄁e󠄁c󠄁u󠄁t󠄁e󠄁s󠄁 2󠄁,󠄁6󠄁3󠄁7󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 1󠄁1󠄁 s󠄁k󠄁i󠄁p󠄁s󠄁 a󠄁n󠄁d󠄁 z󠄁e󠄁r󠄁o󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁.󠄁 A󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 6󠄁 t󠄁y󠄁p󠄁e󠄁-󠄁c󠄁h󠄁e󠄁c󠄁k󠄁 o󠄁f󠄁 t󠄁h󠄁a󠄁t󠄁 s󠄁p󠄁e󠄁l󠄁l󠄁i󠄁n󠄁g󠄁 e󠄁x󠄁i󠄁t󠄁s󠄁 0󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 s󠄁a󠄁m󠄁e󠄁 w󠄁a󠄁r󠄁n󠄁i󠄁n󠄁g󠄁.󠄁 T󠄁h󠄁e󠄁 s󠄁p󠄁e󠄁l󠄁l󠄁i󠄁n󠄁g󠄁 w󠄁a󠄁s󠄁 n󠄁o󠄁r󠄁m󠄁a󠄁l󠄁i󠄁z󠄁e󠄁d󠄁 i󠄁n󠄁 `15108076`;󠄁 t󠄁h󠄁e󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 t󠄁e󠄁s󠄁t󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁.󠄁 |
+| R󠄁8󠄁-󠄁0󠄁4󠄁 | D󠄁r󠄁a󠄁i󠄁n󠄁 a󠄁s󠄁s󠄁e󠄁r󠄁t󠄁i󠄁o󠄁n󠄁/󠄁c󠄁o󠄁m󠄁m󠄁e󠄁n󠄁t󠄁 a󠄁n󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁t󠄁e󠄁r󠄁 c󠄁a󠄁u󠄁t󠄁i󠄁o󠄁n󠄁s󠄁:󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁 d󠄁i󠄁s󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 R󠄁e󠄁v󠄁i󠄁e󠄁w󠄁e󠄁r󠄁s󠄁 i󠄁n󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁l󠄁y󠄁 t󠄁r󠄁a󠄁c󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁i󠄁r󠄁e󠄁d󠄁 l󠄁i󠄁n󠄁e󠄁/󠄁o󠄁f󠄁f󠄁s󠄁e󠄁t󠄁 i󠄁n󠄁v󠄁a󠄁r󠄁i󠄁a󠄁n󠄁t󠄁;󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁/󠄁p󠄁a󠄁t󠄁c󠄁h󠄁 b󠄁y󠄁t󠄁e󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁.󠄁 |
+
+A󠄁l󠄁l󠄁 1󠄁6󠄁9󠄁 s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 2󠄁5󠄁 v󠄁e󠄁n󠄁d󠄁o󠄁r󠄁-󠄁v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁e󠄁r󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁.󠄁 F󠄁i󠄁n󠄁a󠄁l󠄁-󠄁h󠄁e󠄁a󠄁d󠄁 C󠄁I󠄁
+a󠄁n󠄁d󠄁 u󠄁p󠄁d󠄁a󠄁t󠄁e󠄁d󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 a󠄁r󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁e󠄁d󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 p󠄁u󠄁s󠄁h󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁i󠄁s󠄁 s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁-󠄁o󠄁n󠄁l󠄁y󠄁
+f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁-󠄁u󠄁p󠄁;󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 i󠄁s󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 f󠄁r󠄁o󠄁m󠄁 `0f8d377d`.󠄁

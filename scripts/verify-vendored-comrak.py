@@ -47,7 +47,7 @@ def verify_notice_metadata(notices: str, vendor: Path) -> None:
     sections = re.findall(r"^=+\n(comrak[^\n]*)\n=+\n(.*?)(?=^=+\n|\Z)", visible, re.MULTILINE | re.DOTALL)
     require(len(sections) == 1, "comrak notice section is missing or duplicated")
     title, section = sections[0]
-    package = tomllib.loads((vendor / "Cargo.toml").read_text())["package"]
+    package = tomllib.loads((vendor / "Cargo.toml").read_text(encoding="utf-8"))["package"]
     require(title == f'comrak {package["version"]}', "comrak notice version differs")
     for label, pattern, expected in [
         ("package URL", r"^Package: ([^\n]+)$", f"https://crates.io/crates/comrak/{VERSION}"),
@@ -74,21 +74,21 @@ def verify_tree(root: Path) -> dict:
     notices = root / "THIRD_PARTY_NOTICES.md"
     require(notices.is_file() and (vendor / "COPYING").read_bytes() in notices.read_bytes(),
             "THIRD_PARTY_NOTICES.md must reproduce vendored comrak COPYING bytes exactly")
-    verify_notice_metadata(notices.read_text(), vendor)
+    verify_notice_metadata(notices.read_text(encoding="utf-8"), vendor)
     for name, expected in inventory["patches"].items():
         patch = root / "crates/markdown/patches" / name
         require(digest(patch.read_bytes()) == expected, f"patch changed: {name}")
 
-    manifest = tomllib.loads((root / "crates/markdown/Cargo.toml").read_text())
+    manifest = tomllib.loads((root / "crates/markdown/Cargo.toml").read_text(encoding="utf-8"))
     require(manifest["dependencies"]["comrak"] == {
         "version": f"={VERSION}", "path": "../../vendor/comrak", "default-features": False,
     }, "companion-markdown must use the vendored comrak with default features disabled")
     require(any(target.get("name") == "comrak_reference_sourcepos" and
                 target.get("path") == "../../vendor/comrak/tests/reference_sourcepos.rs"
                 for target in manifest.get("test", [])), "comrak regression test target is missing")
-    workspace = tomllib.loads((root / "Cargo.toml").read_text())["workspace"]
+    workspace = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
     require("vendor/comrak" in workspace.get("exclude", []), "vendor/comrak must be outside the workspace")
-    lock = tomllib.loads((root / "Cargo.lock").read_text())
+    lock = tomllib.loads((root / "Cargo.lock").read_text(encoding="utf-8"))
     packages = [package for package in lock["package"] if package["name"] == "comrak"]
     require(len(packages) == 1 and packages[0]["version"] == VERSION and
             "source" not in packages[0] and "checksum" not in packages[0],
@@ -141,7 +141,7 @@ def verify_upstream(root: Path, inventory: dict, archive: Path | None) -> None:
         for name in inventory["patches"]:
             completed = subprocess.run(
                 ["patch", "-p1", "-F", "0", "-t", "-i", str(root / "crates/markdown/patches" / name)],
-                cwd=rebuilt, capture_output=True, text=True, check=False,
+                cwd=rebuilt, capture_output=True, text=True, encoding="utf-8", check=False,
             )
             require(completed.returncode == 0, f"cannot apply {name}: {completed.stdout}{completed.stderr}")
         actual = {str(path.relative_to(rebuilt)) for path in rebuilt.rglob("*") if path.is_file()}
@@ -152,7 +152,7 @@ def verify_upstream(root: Path, inventory: dict, archive: Path | None) -> None:
 
 
 def advisory_lock(root: Path) -> str:
-    text = (root / "Cargo.lock").read_text()
+    text = (root / "Cargo.lock").read_text(encoding="utf-8")
     blocks = re.split(r"(?=^\[\[package\]\]$)", text, flags=re.MULTILINE)
     packages = [(tomllib.loads(block)["package"][0], block) for block in blocks[1:]]
     selected = {}
@@ -188,19 +188,19 @@ def prepare_advisories(root: Path, destination: Path) -> None:
     (destination / "Cargo.toml").write_text(
         '[workspace]\n[package]\nname = "comrak-advisory-probe"\nversion = "0.0.0"\n'
         'edition = "2024"\nlicense = "MIT"\npublish = false\n[lib]\npath = "lib.rs"\n[dependencies]\n'
-        f'comrak = {{ version = "={VERSION}", default-features = false }}\n'
+        f'comrak = {{ version = "={VERSION}", default-features = false }}\n', encoding="utf-8"
     )
-    (destination / "lib.rs").write_text("")
+    (destination / "lib.rs").write_text("", encoding="utf-8")
     projected = advisory_lock(root)
-    (destination / "Cargo.lock").write_text(projected)
+    (destination / "Cargo.lock").write_text(projected, encoding="utf-8")
     completed = subprocess.run(
         ["cargo", "metadata", "--manifest-path", str(destination / "Cargo.toml"), "--format-version", "1"],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, encoding="utf-8", check=False,
     )
     require(completed.returncode == 0, f"cannot normalize advisory workspace: {completed.stderr}")
     package_pins = lambda lock: {(package["name"], package["version"], package.get("source"), package.get("checksum"))
                                  for package in tomllib.loads(lock)["package"]}
-    require(package_pins((destination / "Cargo.lock").read_text()) == package_pins(projected),
+    require(package_pins((destination / "Cargo.lock").read_text(encoding="utf-8")) == package_pins(projected),
             "advisory workspace changed locked package versions or sources")
 
 
@@ -222,7 +222,7 @@ def main() -> int:
         print(f"comrak {VERSION}: {len(inventory['files'])} vendored files and both patches verified")
         if args.upstream or args.archive is not None:
             print(f"reproduced from crates.io archive SHA-256 {ARCHIVE_SHA256}")
-    except (VerificationError, OSError, ValueError, tarfile.TarError) as error:
+    except (VerificationError, OSError, ValueError, LookupError, tarfile.TarError) as error:
         print(f"comrak verification failed: {error}", file=sys.stderr)
         return 1
     return 0

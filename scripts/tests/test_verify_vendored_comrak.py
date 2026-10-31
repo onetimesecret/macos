@@ -7,6 +7,8 @@ import io
 import os
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 import tarfile
 import tomllib
@@ -36,6 +38,27 @@ class VendoredComrakVerificationTests(unittest.TestCase):
     def test_pinned_vendor_tree_passes(self):
         self.assertEqual(len(VERIFY.verify_tree(self.root)["files"]), 33)
 
+    def run_cli(self):
+        environment = dict(os.environ, LC_ALL="C", PYTHONCOERCECLOCALE="0", PYTHONUTF8="0")
+        return subprocess.run(
+            [sys.executable, str(REPOSITORY / "scripts/verify-vendored-comrak.py"), "--root", str(self.root)],
+            env=environment, capture_output=True, encoding="utf-8", timeout=15, check=False,
+        )
+
+    def test_cli_reads_marked_notices_under_ascii_locale(self):
+        self.assertIn("\U000E0101", (self.root / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8"))
+        completed = self.run_cli()
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("33 vendored files and both patches verified", completed.stdout)
+
+    def test_cli_reports_missing_workspace_field_without_traceback(self):
+        (self.root / "Cargo.toml").write_text('[package]\nname = "malformed-fixture"\n', encoding="utf-8")
+        completed = self.run_cli()
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("comrak verification failed:", completed.stderr)
+        self.assertIn("workspace", completed.stderr)
+        self.assertNotIn("Traceback", completed.stderr)
+
     def test_missing_license_notice_is_rejected(self):
         notices = self.root / "THIRD_PARTY_NOTICES.md"
         copying = (self.root / "vendor/comrak/COPYING").read_bytes()
@@ -56,9 +79,9 @@ class VendoredComrakVerificationTests(unittest.TestCase):
 
     def changed_notice_metadata(self, original, changed, message):
         notices = self.root / "THIRD_PARTY_NOTICES.md"
-        text = notices.read_text()
+        text = notices.read_text(encoding="utf-8")
         self.assertIn(original, text)
-        notices.write_text(text.replace(original, changed, 1) + "\n" + original + "\n")
+        notices.write_text(text.replace(original, changed, 1) + "\n" + original + "\n", encoding="utf-8")
         with self.assertRaisesRegex(VERIFY.VerificationError, message):
             VERIFY.verify_tree(self.root)
 
@@ -80,19 +103,19 @@ class VendoredComrakVerificationTests(unittest.TestCase):
 
     def test_notice_metadata_accepts_attribution_markers(self):
         notices = self.root / "THIRD_PARTY_NOTICES.md"
-        notices.write_text(notices.read_text().replace("comrak 0.57.0\n===", "c\U000E0101omrak 0.57.0\n===", 1)
+        notices.write_text(notices.read_text(encoding="utf-8").replace("comrak 0.57.0\n===", "c\U000E0101omrak 0.57.0\n===", 1)
                            .replace("Published license expression: BSD-2-Clause",
-                                    "Published license expression: B\U000E0101SD-2-Clause", 1))
+                                    "Published license expression: B\U000E0101SD-2-Clause", 1), encoding="utf-8")
         VERIFY.verify_tree(self.root)
 
     def test_source_change_is_rejected(self):
-        with (self.root / "vendor/comrak/src/parser/mod.rs").open("a") as source:
+        with (self.root / "vendor/comrak/src/parser/mod.rs").open("a", encoding="utf-8") as source:
             source.write("\n// modified\n")
         with self.assertRaisesRegex(VERIFY.VerificationError, "vendor file changed"):
             VERIFY.verify_tree(self.root)
 
     def test_extra_vendor_file_is_rejected(self):
-        (self.root / "vendor/comrak/extra.rs").write_text("fn extra() {}\n")
+        (self.root / "vendor/comrak/extra.rs").write_text("fn extra() {}\n", encoding="utf-8")
         with self.assertRaisesRegex(VERIFY.VerificationError, "vendor file list changed"):
             VERIFY.verify_tree(self.root)
 
@@ -110,7 +133,7 @@ class VendoredComrakVerificationTests(unittest.TestCase):
 
     def test_dependency_source_change_is_rejected(self):
         manifest = self.root / "crates/markdown/Cargo.toml"
-        manifest.write_text(manifest.read_text().replace("../../vendor/comrak", "../../other/comrak"))
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace("../../vendor/comrak", "../../other/comrak"), encoding="utf-8")
         with self.assertRaisesRegex(VERIFY.VerificationError, "must use the vendored comrak"):
             VERIFY.verify_tree(self.root)
 
@@ -169,7 +192,7 @@ class VendoredComrakVerificationTests(unittest.TestCase):
         self.assertEqual(comrak["version"], "0.57.0")
         self.assertEqual(comrak["source"], VERIFY.REGISTRY)
         self.assertEqual(comrak["checksum"], VERIFY.ARCHIVE_SHA256)
-        original = tomllib.loads((self.root / "Cargo.lock").read_text())["package"]
+        original = tomllib.loads((self.root / "Cargo.lock").read_text(encoding="utf-8"))["package"]
         originals = {(package["name"], package["version"]): package for package in original}
         for package in projected:
             if package["name"] not in {"comrak", "comrak-advisory-probe"}:
@@ -178,7 +201,7 @@ class VendoredComrakVerificationTests(unittest.TestCase):
 
     def test_changed_upstream_version_is_rejected_before_advisory_preparation(self):
         manifest = self.root / "crates/markdown/Cargo.toml"
-        manifest.write_text(manifest.read_text().replace('version = "=0.57.0"', 'version = "=0.58.0"'))
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace('version = "=0.57.0"', 'version = "=0.58.0"'), encoding="utf-8")
         with self.assertRaisesRegex(VERIFY.VerificationError, "must use the vendored comrak"):
             VERIFY.verify_tree(self.root)
 
@@ -186,8 +209,8 @@ class VendoredComrakVerificationTests(unittest.TestCase):
         destination = self.root / "policy-probe"
         with mock.patch.object(VERIFY.subprocess, "run", return_value=mock.Mock(returncode=0, stderr="")):
             VERIFY.prepare_advisories(self.root, destination)
-        manifest = tomllib.loads((destination / "Cargo.toml").read_text())
-        workspace = tomllib.loads((self.root / "Cargo.toml").read_text())["workspace"]
+        manifest = tomllib.loads((destination / "Cargo.toml").read_text(encoding="utf-8"))
+        workspace = tomllib.loads((self.root / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
         self.assertEqual(manifest["package"]["license"], workspace["package"]["license"])
 
 
