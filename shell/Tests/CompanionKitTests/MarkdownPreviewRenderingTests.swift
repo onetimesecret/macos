@@ -845,6 +845,39 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertEqual(heights[0], heights[2], accuracy: 1)
     }
 
+    func testSealedObjectsInPassivePreviewsShowStatusWithoutInteractiveControls() throws {
+        let suite = "sealed-passive-preview-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let model = isolatedModel(defaults: defaults)
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let view = MarkdownPreviewView(page: page, coordinator: coordinator)
+        view.isSelectedPage = true
+        let object = ChipAttachment(info: ChipInfo(
+            chipId: 7, kind: "text", excerpt: "test-face", sizeLabel: "small",
+            concealed: false, name: "API_KEY", hasNote: true))
+        let cell = try XCTUnwrap(object.attachmentCell as? SealedBlockCell)
+        view.reseed(with: PageModel.QuietRendering(
+            text: NSAttributedString(attachment: object), fenceRegions: []), dialect: .gfm)
+        view.setFrameSize(NSSize(width: 520, height: 200))
+        let manager = try XCTUnwrap(view.layoutManager)
+        manager.ensureLayout(for: try XCTUnwrap(view.textContainer))
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        XCTAssertNotNil(cell.lastDrawnFrame)
+        XCTAssertEqual(cell.lastDrawnShowsControls, false)
+        XCTAssertEqual(cell.lastDrawnSelected, false)
+        XCTAssertEqual(cell.lastDrawnStatus, "Sealed text · has note")
+        view.selectAll(nil)
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        XCTAssertEqual(cell.lastDrawnSelected, true)
+        XCTAssertEqual(cell.lastDrawnShowsControls, false)
+        XCTAssertEqual(cell.info.name, "API_KEY")
+        XCTAssertEqual(cell.info.excerpt, "test-face")
+    }
+
     /// An object in a cell of a multi column table takes the cell's width, not the
     /// preview's, at either width of the preview; the editor's own container keeps its
     /// measure, since its fragments are as wide as the container (`SealedBlockTests`).

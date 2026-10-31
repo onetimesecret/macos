@@ -342,26 +342,60 @@ final class SealedNameFieldTests: XCTestCase {
 
     // MARK: Keeping when the seat goes
 
-    /// The object leaving the page, the page leaving the editor, and the
-    /// page going read only all keep the name and shut the field.
-    func testTheObjectOrItsPageLeavingKeepsTheName() throws {
+    /// A removed object cancels its draft; a mounted page losing editability saves it.
+    func testRemovalCancelsWhileLosingEditabilitySavesTheName() throws {
         let page = try makePage()
         page.coordinator.beginNaming(at: 3)
         let editor = try field(page)
         editor.draft = "GONE"
         let storage = try XCTUnwrap(page.textView.textStorage)
         storage.deleteCharacters(in: NSRange(location: 3, length: 1))
-        page.coordinator.followNaming()
+        page.coordinator.finishNaming()
         XCTAssertFalse(editor.isOpen, "the field outlived its object")
         XCTAssertNil(page.textView.naming)
+        XCTAssertNil(coreName(page), "teardown named an object removed from the mounted document")
 
         let second = try makePage()
         second.coordinator.beginNaming(at: 3)
         let secondEditor = try field(second)
-        secondEditor.draft = "KEPT_NOT"
+        secondEditor.draft = "SAVED_NAME"
         second.coordinator.updateEditability(of: second.textView, to: false)
         XCTAssertFalse(secondEditor.isOpen)
-        XCTAssertNil(coreName(second))
+        XCTAssertEqual(coreName(second), "SAVED_NAME")
+        XCTAssertFalse(second.textView.isEditable)
+    }
+
+    func testLeavingThePageSavesAValidNameBeforeDetachingItsStorage() throws {
+        let page = try makePage()
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        editor.draft = "SAVED_NAME"
+        page.coordinator.leavePage(page.textView, scrollView: page.scroll)
+        XCTAssertEqual(coreName(page), "SAVED_NAME")
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertEqual(editor.field.stringValue, "")
+        XCTAssertNil(editor.overlay.superview)
+        XCTAssertEqual(page.textView.string, "")
+        XCTAssertFalse(page.textView.isEditable)
+    }
+
+    func testTeardownClosesInvalidDraftsWithoutChangingTheName() throws {
+        for leavePage in [false, true] {
+            let page = try makePage()
+            XCTAssertTrue(page.model.setChipName("API_KEY", chip: page.chip, sheet: page.sheet))
+            page.coordinator.beginNaming(at: 3)
+            let editor = try field(page)
+            editor.draft = "invalid.name"
+            if leavePage {
+                page.coordinator.leavePage(page.textView, scrollView: page.scroll)
+            } else {
+                page.coordinator.updateEditability(of: page.textView, to: false)
+            }
+            XCTAssertEqual(coreName(page), "API_KEY")
+            XCTAssertFalse(editor.isOpen)
+            XCTAssertEqual(editor.field.stringValue, "")
+            XCTAssertNil(editor.overlay.superview)
+        }
     }
 
     /// While the field holds the keys, the page's chords stand aside, so

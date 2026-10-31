@@ -863,7 +863,7 @@ public struct InkEditorView: NSViewRepresentable {
                 invalidateOrdinaryPasteMeasurement()
             }
             if !editable {
-                keepNaming()
+                finishNaming()
                 closeNote()
             }
             textView.isEditable = editable
@@ -1722,8 +1722,7 @@ public struct InkEditorView: NSViewRepresentable {
             // here, and this is the guard for one that did not.
             guard model.admits(.activeEditor, from: surface) else { return }
             invalidateOrdinaryPasteMeasurement()
-            nameEditor?.commit(returningKeys: false)
-            keepNaming()
+            finishNaming()
             closeNote()
             InkEditorView.discardComposition(in: textView)
             saveViewState(textView: textView, scrollView: scrollView)
@@ -1782,7 +1781,7 @@ public struct InkEditorView: NSViewRepresentable {
         func leavePage(_ textView: InkTextView, scrollView: NSScrollView?) {
             guard currentSheet != nil || continuousDocument != nil,
                   let outgoing = textView.textStorage else { return }
-            keepNaming()
+            finishNaming()
             closeNote()
             InkEditorView.discardComposition(in: textView)
             saveViewState(textView: textView, scrollView: scrollView)
@@ -3742,6 +3741,16 @@ public struct InkEditorView: NSViewRepresentable {
         /// Keeps the name a field stands over when its page goes from under it.
         func keepNaming() {
             nameEditor?.keep(returningKeys: nameEditor?.holdsKeys ?? false)
+        }
+
+        /// Save a valid draft before teardown, then close any remaining invalid draft.
+        func finishNaming() {
+            guard let editor = nameEditor, editor.isOpen else { return }
+            if let chip = editor.rename.chip, displaysPage(editor.rename.sheet),
+               textView?.chipIndex(ofChip: chip) != nil {
+                editor.commit(returningKeys: false)
+            }
+            editor.keep(returningKeys: false)
         }
 
         /// Stands an open name field over its object again after the page moved.
@@ -6104,11 +6113,16 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         #if DEBUG
         handlePressStarted?()
         #endif
-        while true {
-            guard let next = window.nextEvent(
+        func nextTrackedEvent() -> NSEvent? {
+            #if DEBUG
+            if let handlePressEventSource { return handlePressEventSource() }
+            #endif
+            return window.nextEvent(
                 matching: [.leftMouseDragged, .leftMouseUp],
                 until: Date(timeIntervalSinceNow: 0.1), inMode: .eventTracking, dequeue: true)
-            else {
+        }
+        while true {
+            guard let next = nextTrackedEvent() else {
                 if NSEvent.pressedMouseButtons & 1 == 0 { return }
                 continue
             }
@@ -6155,6 +6169,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         /// the items and the source without a pointer (ADR-0018 seam).
         var dragSessionWitness: (([NSDraggingItem], NSDraggingSource) -> Void)?
         var handlePressStarted: (() -> Void)?
+        var handlePressEventSource: (() -> NSEvent?)?
     #endif
 
     /// Every drag this view starts, the page's or the decrypted one, leaves through here.
@@ -7530,6 +7545,9 @@ final class SealedBlockCell: NSTextAttachmentCell {
     @MainActor var info: ChipInfo
     #if DEBUG
     @MainActor private(set) var lastDrawnFrame: NSRect?
+    @MainActor private(set) var lastDrawnShowsControls: Bool?
+    @MainActor private(set) var lastDrawnSelected: Bool?
+    @MainActor private(set) var lastDrawnStatus: String?
     #endif
 
     nonisolated static let blockHeight = SealedBlockLayout.height
@@ -7871,24 +7889,38 @@ final class SealedBlockCell: NSTextAttachmentCell {
                               reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) != nil
         } ?? false
         let naming = view?.naming.flatMap { $0.index == index && $0.chip == info.chipId ? $0.width : nil }
-        draw(frame: frame, drag: drag, selected: view?.selectedRange() == NSRange(location: index, length: 1),
-             editingWidth: naming, copied: copied)
+        let selected = !drag && (controlView as? NSTextView)?.selectedRanges.contains {
+            NSLocationInRange(index, $0.rangeValue)
+        } == true
+        draw(frame: frame, drag: drag, selected: selected,
+             editingWidth: naming, copied: copied, showsControls: view != nil && !drag)
     }
 
     override func draw(withFrame frame: NSRect, in controlView: NSView?) {
-        draw(frame: frame, drag: false, selected: false, editingWidth: nil, copied: false)
+        let view = controlView as? InkTextView
+        let drag = view?.drawsPageDragImage == true
+        draw(frame: frame, drag: drag, selected: false, editingWidth: nil, copied: false,
+             showsControls: view != nil && !drag)
     }
 
     @MainActor
-    private func statusString(selected: Bool) -> NSAttributedString {
+    private func statusString(selected: Bool, includesNote: Bool = false) -> NSAttributedString {
         let kind = info.kind == "image" ? "Sealed image" : "Sealed text"
-        return Self.seatString(info.available ? kind : "On another device", selected: selected)
+        let status = info.available ? kind : "On another device"
+        return Self.seatString(status + (includesNote && info.hasNote ? " · has note" : ""), selected: selected)
     }
 
     @MainActor
-    private func draw(frame: NSRect, drag: Bool, selected: Bool, editingWidth: CGFloat?, copied: Bool) {
+    private func draw(
+        frame: NSRect, drag: Bool, selected: Bool, editingWidth: CGFloat?, copied: Bool,
+        showsControls: Bool
+    ) {
+        let status = statusString(selected: selected, includesNote: !showsControls)
         #if DEBUG
         lastDrawnFrame = frame
+        lastDrawnShowsControls = showsControls
+        lastDrawnSelected = selected
+        lastDrawnStatus = status.string
         #endif
         let path = NSBezierPath(roundedRect: frame.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
         if !selected {
@@ -7899,7 +7931,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
         path.lineWidth = 1
         path.stroke()
         let layout = Self.contentLayout(in: frame)
-        let statusRoom = max(0, actionRowStart(in: frame) - layout.labelOrigin.x - 8)
+        let statusEnd = showsControls ? actionRowStart(in: frame) - 8 : frame.maxX - 12
+        let statusRoom = max(0, statusEnd - layout.labelOrigin.x)
         if statusRoom >= 30 {
             if let symbol = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil) {
                 let tinted = symbol.withSymbolConfiguration(
@@ -7907,18 +7940,19 @@ final class SealedBlockCell: NSTextAttachmentCell {
                 tinted.draw(in: layout.lockRect, from: .zero, operation: .sourceOver, fraction: 1,
                             respectFlipped: true, hints: nil)
             }
-            let status = statusString(selected: selected)
             let fitted = Self.fitted(status.string, attributes: status.attributes(at: 0, effectiveRange: nil), width: statusRoom)
             fitted.draw(at: layout.labelOrigin)
         }
-        if let doorway = doorwayRect(in: frame) {
-            Self.drawControl(Self.seatString(Self.doorwayWord, selected: selected), in: doorway, bordered: false)
+        if showsControls {
+            if let doorway = doorwayRect(in: frame) {
+                Self.drawControl(Self.seatString(Self.doorwayWord, selected: selected), in: doorway, bordered: false)
+            }
+            Self.drawControl(Self.seatString(Self.actionsGlyph, selected: selected), in: Self.actionsRect(in: frame), bordered: false)
+            if let copy = copyRect(in: frame) {
+                Self.drawControl(Self.seatString(copied ? Self.copiedWords : Self.decryptedDragWords, selected: selected), in: copy, bordered: true)
+            }
+            if let move = moveHandleRect(in: frame) { Self.drawMoveHandle(in: move, selected: selected) }
         }
-        Self.drawControl(Self.seatString(Self.actionsGlyph, selected: selected), in: Self.actionsRect(in: frame), bordered: false)
-        if let copy = copyRect(in: frame) {
-            Self.drawControl(Self.seatString(copied ? Self.copiedWords : Self.decryptedDragWords, selected: selected), in: copy, bordered: true)
-        }
-        if let move = moveHandleRect(in: frame) { Self.drawMoveHandle(in: move, selected: selected) }
         if let row = namedRow(in: frame, editingWidth: editingWidth, selected: selected) {
             row.name.draw(at: row.geometry.name.origin)
             if !drag {

@@ -3229,6 +3229,7 @@ public final class PageModel: ObservableObject {
         defer { isApplyingCatalogChange = false }
         updateApplicationContextObservation()
         if pads.isEnabled != lastPadsEnabled || (pads.isEnabled && pads.activeID != lastPadID) {
+            (activeEditor as? InkTextView)?.coordinator?.finishNaming()
             // The inline conceal offer belongs to the pad surface being left.
             // Dismissing it cannot cancel a request already confirmed in flight.
             concealDraft = nil

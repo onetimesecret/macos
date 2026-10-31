@@ -183,6 +183,20 @@ final class SealedMoveHandleTests: XCTestCase {
         XCTAssertEqual(textView.moveHandleCursorRects, [move])
     }
 
+    func testMixedSelectionDrawsTheSealedObjectWithSelectedForeground() throws {
+        let page = try mountPage(on: try makeModel())
+        let view = page.textView
+        let cell = try XCTUnwrap(view.chipCell(at: object))
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        XCTAssertEqual(cell.lastDrawnSelected, false)
+        view.selectAll(nil)
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        XCTAssertGreaterThan(view.selectedRange().length, 1)
+        XCTAssertEqual(cell.lastDrawnSelected, true)
+        XCTAssertEqual(cell.lastDrawnShowsControls, true)
+    }
+
     func testHoverAndSelectionDoNotChangeObjectLayout() throws {
         let page = try mountPage(on: try makeModel())
         let textView = page.textView

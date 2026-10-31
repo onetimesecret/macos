@@ -137,6 +137,90 @@ final class SealedUXIntegrationTests: XCTestCase {
         return window
     }
 
+    private func continuousSurface(_ model: PageModel) throws -> (
+        scroll: NSScrollView, canvas: ContinuousPadCanvas,
+        coordinator: InkEditorView.Coordinator, window: NSWindow
+    ) {
+        let coordinator = InkEditorView.Coordinator(model: model)
+        coordinator.surface = model.owner
+        let scroll = ContinuousPadView.makeSurface(model: model, coordinator: coordinator)
+        scroll.frame = NSRect(x: 0, y: 0, width: 900, height: 400)
+        let canvas = try XCTUnwrap(scroll.documentView as? ContinuousPadCanvas)
+        let window = host(scroll, editor: canvas.editor)
+        scroll.layoutSubtreeIfNeeded()
+        canvas.measure()
+        return (scroll, canvas, coordinator, window)
+    }
+
+    private func coreName(chip: UInt64, on page: UInt64, in model: PageModel) -> String? {
+        model.coreClient.documentRuns(sheet: page).compactMap { run in
+            if case .chip(let face) = run, face.chipId == chip { return face.name }
+            return nil
+        }.first
+    }
+
+    func testReplacingAContinuousDocumentSavesItsOpenVariableName() throws {
+        let model = try makeModel()
+        let page = try seed("ab SECRET cd", in: model)
+        let chip = try XCTUnwrap(model.coreClient.sealText(sheet: page, "SECRET", at: 3, length: 6))
+        let surface = try continuousSurface(model)
+        defer {
+            ContinuousPadView.dismantleNSView(surface.scroll, coordinator: surface.coordinator)
+            surface.window.close()
+        }
+        let segment = try XCTUnwrap(surface.canvas.document.projection.segments.first { $0.page.id == page })
+        surface.coordinator.beginNaming(at: segment.bodyRange.location + 3)
+        let field = try XCTUnwrap(surface.coordinator.nameEditor)
+        XCTAssertTrue(field.isOpen)
+        field.draft = "SAVED_NAME"
+
+        let incoming = ContinuousPadDocument(model: model, scope: "legacy")
+        incoming.refresh()
+        surface.canvas.update(document: incoming, readOnly: false)
+
+        XCTAssertEqual(coreName(chip: chip.chipId, on: page, in: model), "SAVED_NAME")
+        XCTAssertFalse(field.isOpen)
+        XCTAssertEqual(field.field.stringValue, "")
+        XCTAssertTrue(surface.canvas.document === incoming)
+        XCTAssertTrue(surface.canvas.editor.textStorage === incoming.storage)
+    }
+
+    func testPadActivationCreationAndRemovalSaveTheNameBeforeSuspendingTheDocument() throws {
+        enum Navigation: CaseIterable { case activate, create, remove }
+        for navigation in Navigation.allCases {
+            let model = try makeModel()
+            model.pads.isEnabled = true
+            let sourcePad = try XCTUnwrap(model.createPad(named: "Source"))
+            let page = try seed("ab SECRET cd", in: model)
+            let chip = try XCTUnwrap(model.coreClient.sealText(sheet: page, "SECRET", at: 3, length: 6))
+            let surface = try continuousSurface(model)
+            defer {
+                ContinuousPadView.dismantleNSView(surface.scroll, coordinator: surface.coordinator)
+                surface.window.close()
+            }
+            let outgoing = surface.canvas.document
+            let segment = try XCTUnwrap(outgoing.projection.segments.first { $0.page.id == page })
+            surface.coordinator.beginNaming(at: segment.bodyRange.location + 3)
+            let field = try XCTUnwrap(surface.coordinator.nameEditor)
+            XCTAssertTrue(field.isOpen)
+            field.draft = "SAVED_NAME"
+
+            switch navigation {
+            case .activate: model.activatePad(PadCatalog.scratchID)
+            case .create: XCTAssertNotNil(model.createPad(named: "Created"))
+            case .remove: XCTAssertTrue(model.removePad(sourcePad))
+            }
+
+            XCTAssertEqual(coreName(chip: chip.chipId, on: page, in: model), "SAVED_NAME", "\(navigation)")
+            XCTAssertFalse(field.isOpen, "the name edit survived pad navigation: \(navigation)")
+            XCTAssertEqual(field.field.stringValue, "")
+            ContinuousPadView.updateSurface(
+                surface.scroll, model: model, readOnly: false, coordinator: surface.coordinator)
+            XCTAssertFalse(surface.canvas.document === outgoing)
+            XCTAssertTrue(surface.canvas.editor.textStorage === surface.canvas.document.storage)
+        }
+    }
+
     func testCopyPressUsesTheSameObjectAfterTextShiftsItsIndex() throws {
         let model = try makeModel()
         let page = try seed("ab SECRET cd", in: model)
@@ -144,20 +228,26 @@ final class SealedUXIntegrationTests: XCTestCase {
         let surface = try standalone(model, page: page)
         let editor = surface.editor
         let window = host(surface.scroll, editor: editor)
-        defer { editor.handlePressStarted = nil; window.close() }
+        defer {
+            editor.handlePressStarted = nil
+            editor.handlePressEventSource = nil
+            window.close()
+        }
         let original = try measuredFrame(editor, at: 3)
         let button = try XCTUnwrap(editor.chipCell(at: 3)?.copyRect(in: original))
         let down = try mouseEvent(.leftMouseDown, at: NSPoint(x: button.midX, y: button.midY), in: editor)
         let prefix = "Moved prefix\n"
         var hookError: Error?
+        var release: NSEvent?
+        editor.handlePressEventSource = { release }
         editor.handlePressStarted = {
             do {
                 editor.insertText(prefix, replacementRange: NSRange(location: 0, length: 0))
                 let current = try XCTUnwrap(editor.chipIndex(ofChip: chip.chipId))
                 let moved = try self.measuredFrame(editor, at: current)
                 let copy = try XCTUnwrap(editor.chipCell(at: current)?.copyRect(in: moved))
-                window.postEvent(try self.mouseEvent(.leftMouseUp,
-                    at: NSPoint(x: copy.midX, y: copy.midY), in: editor), atStart: true)
+                release = try self.mouseEvent(.leftMouseUp,
+                    at: NSPoint(x: copy.midX, y: copy.midY), in: editor)
             } catch { hookError = error }
         }
         editor.mouseDown(with: down)
@@ -176,19 +266,25 @@ final class SealedUXIntegrationTests: XCTestCase {
         let surface = try standalone(model, page: page)
         let editor = surface.editor
         let window = host(surface.scroll, editor: editor)
-        defer { editor.handlePressStarted = nil; window.close() }
+        defer {
+            editor.handlePressStarted = nil
+            editor.handlePressEventSource = nil
+            window.close()
+        }
         let original = try measuredFrame(editor, at: 3)
         let button = try XCTUnwrap(editor.chipCell(at: 3)?.copyRect(in: original))
         let down = try mouseEvent(.leftMouseDown, at: NSPoint(x: button.midX, y: button.midY), in: editor)
         var hookError: Error?
+        var release: NSEvent?
+        editor.handlePressEventSource = { release }
         editor.handlePressStarted = {
             do {
                 editor.insertText("", replacementRange: NSRange(location: 3, length: 1))
                 let current = try XCTUnwrap(editor.chipIndex(ofChip: second.chipId))
                 let moved = try self.measuredFrame(editor, at: current)
                 let copy = try XCTUnwrap(editor.chipCell(at: current)?.copyRect(in: moved))
-                window.postEvent(try self.mouseEvent(.leftMouseUp,
-                    at: NSPoint(x: copy.midX, y: copy.midY), in: editor), atStart: true)
+                release = try self.mouseEvent(.leftMouseUp,
+                    at: NSPoint(x: copy.midX, y: copy.midY), in: editor)
             } catch { hookError = error }
         }
         editor.mouseDown(with: down)
