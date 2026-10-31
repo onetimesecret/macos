@@ -2237,16 +2237,15 @@ final class SealedFragmentEditorTests: XCTestCase {
         return NSPoint(x: rect.midX + view.textContainerOrigin.x, y: rect.midY + view.textContainerOrigin.y)
     }
 
-    /// The text menu a secondary click over `point` builds, on a base of `seeds` when given.
+    /// Seeds Open Link to exercise routing independently of AppKit's generated menu.
     private func textMenu(
         over point: NSPoint, in view: NSTextView, seeding seeds: [NSMenuItem] = []
     ) throws -> NSMenu {
         let kept = view.menu
-        if !seeds.isEmpty {
-            let base = NSMenu()
-            seeds.forEach(base.addItem)
-            view.menu = base
-        }
+        let base = NSMenu()
+        base.addItem(NSMenuItem(title: "Open Link", action: TextOffers.openLinkAction, keyEquivalent: ""))
+        seeds.forEach(base.addItem)
+        view.menu = base
         defer { view.menu = kept }
         let event = try XCTUnwrap(NSEvent.mouseEvent(
             with: .rightMouseDown, location: view.convert(point, to: nil), modifierFlags: [],
@@ -2269,7 +2268,8 @@ final class SealedFragmentEditorTests: XCTestCase {
 
     /// Chooses the menu's item sending `action`, as the menu would.
     private func choose(_ action: Selector, in menu: NSMenu) throws {
-        let item = try XCTUnwrap(menu.items.first { $0.action == action }, "no \(action) item")
+        let items = menu.items.map { "\($0.title): \(String(describing: $0.action))" }.joined(separator: ", ")
+        let item = try XCTUnwrap(menu.items.first { $0.action == action }, "no \(action) item; menu: \(items)")
         let target = try XCTUnwrap(item.target as? NSObject, "\(action) has no target")
         target.perform(action, with: item)
     }
