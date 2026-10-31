@@ -46,7 +46,7 @@ plaintext disclosure.
 | 3 | Classification outranks identity | Name and excerpt occupy the primary row; sentence-case classification is secondary. | Light/dark rendered fixtures. |
 | 4 | Mechanical URL/token excerpt is a poor identifier | Excerpt gets the primary row and no hover-text reservation; full permitted face is available to accessibility/help. Naming guidance explains identification. Existing excerpt policy remains. | Identity fitting and accessibility tests. |
 | 5 | Size and hidden hover reservation consume space | Size moves to object help/accessibility. No width is reserved for hover instructions. | Layout tests; rendered fixtures. |
-| 6 | Competing selection treatments | Native selection with matching selected foreground replaces orange border/halo. | Selected fixtures in both appearances. |
+| 6 | Competing selection treatments | Native selection with matching selected foreground replaces orange border/halo, including mixed selections and passive previews. | Selected fixtures in both appearances. |
 | 7 | Lock lacks selected contrast treatment | Lock and secondary text use the selected foreground when selected. | Selected fixtures; physical-display check remains manual. |
 | 8 | Fixed height clips large type | Height follows the selected font's line metrics across the supported 8–40pt range. | Font-range geometry tests and 40pt fixtures. |
 | 9 | Naming changes a click into copying | Identity text selects the object whether named or unnamed. | Click and copy-counter tests. |
@@ -60,7 +60,7 @@ plaintext disclosure.
 | 17 | Metadata seat changes meanings and hides note | Stable Note doorway; feedback appears on Copy decrypted as Copied. | Note/control geometry and copy tests. |
 | 18 | Generic Name actually means shell identifier | Set/Edit Variable Name, API_KEY example, format guidance and local errors. Existing identifier rule remains. | Naming validation and local-error tests. |
 | 19 | Raw assignment resembles shell formatting help | Copy NAME=Value (Unquoted), with help stating there are no quotes or escapes. Existing raw format remains. | Menu and core copy-route tests. |
-| 20 | Naming loses valid draft on blur | Valid blur saves; Save/Cancel and Return/Esc are visible. Invalid drafts stay open for correction. | Focus-loss, commit and cancel tests. |
+| 20 | Naming loses valid draft on blur | Valid blur, pad switches and editor handoffs save. Save/Cancel and Return/Esc are visible. Invalid blur drafts stay open; explicit teardown closes them. | Focus-loss, commit and cancel tests. |
 | 21 | Name refusal appears far away | Error stays beside the field and is exposed through accessibility help. | Local-error tests. |
 | 22 | No direct contents editor and unclear commitment | One-way sealing remains explicit: visible pre-seal explanation, menu/help, and copy/edit/seal replacement instructions. No silent unseal or new contents editor. | Selection-menu and clipboard-offer tests; existing seal tests. |
 | 23 | Incomplete accessibility identity/actions | Summary includes the permitted excerpt and note presence; visible Move/Copy/More/Note controls expose actionable buttons with identity-based callbacks. | AX labels, frames, stable elements and actual press tests. VoiceOver hand check remains. |
@@ -68,7 +68,7 @@ plaintext disclosure.
 | 25 | Stale clipboard success and no recovery | Past-tense success wording plus Copy Link Again. A core-only recovery buffer uses a unique token and a fixed initial recovery deadline; the shell receives availability, never the URL text. | FFI and Swift recovery, expiry, supersession and repeated-receipt tests. |
 | 26 | Remove and burn wording is inconsistent | Remove from Document is distinct from Delete Local Sealed Content / Discard Local Page. Done replaces Keep It; help describes the actual action. | Menu/removal and sharing tests. |
 | 27 | Open menu targets stale character position | Every menu action captures object identity, resolves its current position at execution, and refuses a missing target. Copy presses also re-resolve after tracking. | Edit-while-menu-open and removed-target tests. |
-| 28 | Independent custom systems disagree | Shared control geometry drives drawing, hit-testing, cursor regions and AX. Removed zone, hover-copy and pill machinery; naming/note editors use the same object rectangles. | Focused regression suite, source review and rendered fixtures. |
+| 28 | Independent custom systems disagree | Shared control geometry drives drawing, hit-testing, cursor regions and AX. Passive previews and drag images omit editor controls. Removed zone, hover-copy and pill machinery; naming/note editors use the same object rectangles. | Focused regression suite, source review and rendered fixtures. |
 
 ## Link recovery implementation
 
@@ -83,7 +83,7 @@ These are implementation observations to verify, not independent guarantees.
 
 ## Verification record
 
-- `scripts/test-shell.sh`: 393 app tests and 2,311 CompanionKit tests executed,
+- `scripts/test-shell.sh`: 393 app tests and 2,317 CompanionKit tests executed,
   7 existing skips, 0 failures. The full run included the optional rendering tests.
 - `cargo test -p companion-ffi -- --test-threads=1 --skip drop_to_seal_reads_the_drag_board_core_side`:
   401 passed, 1 existing ignored test, 1 excluded shared-system-drag-pasteboard test.
@@ -98,7 +98,12 @@ These are implementation observations to verify, not independent guarantees.
 - Independent source review found stale targeting during presses and auxiliary
   editor changes, plus inconsistent read-only control eligibility. Those paths
   were corrected; integration tests exercise shifted/removed targets, read-only
-  refusal, and live remeasurement in standalone/continuous projections.
+  refusal, and live remeasurement in standalone/continuous projections. A fresh
+  final review also found passive previews drawing inert controls and valid name
+  drafts cancelled during pad/ownership transitions; both have regression coverage.
+- The shifted-target tracking tests inject synthetic release events instead of
+  depending on the system event queue. Separate mouse-click/drag tests continue
+  to exercise native event delivery.
 
 Manual VoiceOver navigation/rotor and physical-display inspection remain
 unperformed. The accepted excerpt algorithm, ASCII variable-name rule, raw
