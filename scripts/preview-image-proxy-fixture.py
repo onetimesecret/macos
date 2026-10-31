@@ -19,7 +19,7 @@ exit_code = 0
 
 def publish(name, text):
     temporary = folder / (name + ".tmp")
-    temporary.write_text(text)
+    temporary.write_text(text, encoding="utf-8")
     temporary.replace(folder / name)
 
 

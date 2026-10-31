@@ -32,7 +32,7 @@ class PreviewImageProxyFixtureTests(unittest.TestCase):
                  mock.patch("ssl.SSLContext", return_value=context), \
                  self.assertRaises(SystemExit) as exited:
                 runpy.run_path(str(FIXTURE), run_name="__main__")
-            return exited.exception.code, json.loads((folder / "report.json").read_text())
+            return exited.exception.code, json.loads((folder / "report.json").read_text(encoding="utf-8"))
 
     def test_tls_alerts_and_peer_aborts_report_no_http(self):
         for error in [ssl.SSLError("certificate refused"), ConnectionResetError("reset"),
