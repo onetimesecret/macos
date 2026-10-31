@@ -1,46 +1,42 @@
-# Sealed zones and the note: what the pointer and the raised card do
+# Sealed controls and the note: what the pointer and the raised card do
 
 **Applies to:** OnetimePad, the raised card and the editor window; a
-sealed object's bottom row and its note.
+sealed object's explicit controls and its note.
 **Raised by:** issues #244 and #246 on `feature/editing-seals`,
 2026-10-13.
-**Governs:** [Law 0001](../../law/0001-sealed-object.md), whose zone and
+**Governs:** [Law 0001](../../law/0001-sealed-object.md), whose control and
 note rows cite this procedure for what the runner cannot drive.
 **Owner:** delano.
 **Status:** open. Not yet run on hardware.
 
 ## Why by hand
 
-`SealedBlockTests`, `SealedCapsuleTests` and `SealedNoteTests` drive the
-zones' geometry, their clicks through `mouseDown`, the note's routes and
-its open and close routes against an offscreen window. They cannot see
-the pill follow a real pointer, the beat fade on a display, or what the
-raised card's outside click monitor and key handling do around a note
-that takes the keys in a real key window. The note is drawn inside the
-card's own window, so a press in it should never reach the monitor,
-which sees only presses in other apps; that is the claim to check.
+`SealedBlockTests`, `SealedCapsuleTests`, `SealedMoveHandleTests` and
+`SealedNoteTests` cover geometry, synthetic pointer actions and note routes.
+Hardware checks cover the appearance, VoiceOver navigation and real pointer
+behavior in a key window. The [2026-10-31 revision](../../spec/design/2026-1031-sealed-content-ux-revision.md)
+replaces the former text zones. These checks remain unperformed.
 
-Quit any running instance first (`swift build` re-signs in place and
-SIGKILLs a live one), then `scripts/dev.sh`.
+Use synthetic data in a dedicated fixture with a temporary state directory
+and an in-memory credential client. Automated fixtures use
+`PageModel.Seams(stateDirectory:client:)`; the test setup follows [AGENTS.md](../../../AGENTS.md).
 
 ## Checks
 
-- [ ] **Zones under the pointer.** Seal a line with ⌘↩, name it
-      `MY_API_KEY`, then move the pointer across the bottom row.
-      **Pass:** a pill sits under the name, under the whole line over
-      `=`, and under the excerpt, and the seat reads `copies the name`,
-      `copies name=value, decrypted` and `copies the value, decrypted`
-      in turn; nothing on the row moves. **Fail:** the row shifts, the
-      seat's words overrun the excerpt, or a pill lingers after the
-      pointer leaves.
-- [ ] **The beat.** Click the excerpt once. **Pass:** the excerpt's
-      pill wears ember for about a second while the seat reads
-      `copied`, then the row rests; with Reduce Motion on, the ember
-      comes and goes without a fade. The line under the page says what
-      was copied. **Fail:** the beat sticks, flickers, or lights
-      another block.
+- [ ] **Explicit controls under the pointer.** Seal a synthetic line and
+      choose Set Variable Name… to name it `MY_API_KEY`. Move the pointer
+      across the identity, Move, Copy decrypted and More. **Pass:** single
+      and repeated identity clicks select; the text has no copy zones. Copy
+      decrypted clicks once to copy, drags outward, and has help naming both
+      actions. More remains visible at narrow widths. **Fail:** a text click
+      copies, prior hover changes its meaning, or More has no visible target.
+- [ ] **Copy feedback and Note.** Add a note, then click Copy decrypted.
+      **Pass:** the control briefly reads Copied, the Note action remains
+      visible, and feedback returns to rest, including with Reduce Motion.
+      **Fail:** feedback obscures Note, overlaps identity, persists or
+      acknowledges another object.
 - [ ] **The note on the raised card.** Raise the card, open the
-      object's menu and choose *Note…*, then type a line and click
+      object's menu and choose *Add Note…*, then type a line and click
       inside the note twice. **Pass:** the note opens under the block
       with its arrow under the seat, the keys are in it, and the card
       stays raised through both clicks. **Fail:** a click in the note
@@ -84,23 +80,18 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       the page is unchanged. **Fail:** the note reads as plain text, the
       list does not continue, a plain click opens the link, or the paste
       lands on the page.
-- [ ] **VoiceOver reads the block inside the page.** Turn VoiceOver on
-      (⌘F5), put the caret in a page holding a sealed block named
-      `MY_API_KEY` and an unnamed one, and move the VoiceOver cursor
-      through the page's text with VO-Right and the arrow keys.
-      **Pass:** on each block VoiceOver says `sealed content`, then the
-      name where there is one, then the size class, as
-      `sealed content, MY_API_KEY, small`, and never the block's
-      plaintext or excerpt. **Fail:** VoiceOver says nothing on the
-      block, reads an attachment character, or reads its contents.
-- [ ] **A named image.** Copy an image in Preview and press ⇧⌘V on the
-      page, then choose the block's *Name*, type `LOGO` and press
-      Return, then move the pointer across `=` and
-      open the object's menu. **Pass:** the row reads `LOGO=` and the
-      image's excerpt, `=` shows no pill and the seat keeps its size
-      class, and the menu has *Copy Name* but no *Copy Name=Value,
-      Decrypted*. **Fail:** the seat offers name=value, or the menu
-      item is there.
+- [ ] **VoiceOver reads identity and explicit actions.** In the fixture,
+      navigate named and unnamed objects with VoiceOver and the arrow keys.
+      **Pass:** the summary identifies the name, existing excerpt, size and
+      note presence. Move/Copy/More/Note controls have useful names and their
+      press actions target that object after text is inserted before it.
+      **Fail:** controls are unnamed, target another object or read beyond the
+      permitted face.
+- [ ] **A named image.** Seal a synthetic image and choose Set Variable
+      Name… to enter `LOGO`. **Pass:** identity reads `LOGO · <excerpt>`;
+      clicking it selects; the menu offers Copy Variable Name and omits
+      Copy NAME=Value (Unquoted). **Fail:** the image offers assignment copy
+      or its identity text acts as a copy control.
 
 ## Results
 
@@ -109,13 +100,13 @@ stay: a re-run adds a row rather than replacing one that failed.
 
 | Date | Machine and macOS | Check | Pass or fail | Notes |
 |---|---|---|---|---|
-| | | zones under the pointer | | |
-| | | the beat | | record Reduce Motion on and off |
+| | | explicit controls under the pointer | | |
+| | | copy feedback and Note | | record Reduce Motion on and off |
 | | | the note on the raised card | | |
 | | | expand, contract, close | | |
 | | | the note's undo is its own | | |
 | | | scrolling and a narrow card | | |
 | | | a drop from another app | | |
 | | | the page's own surface in the note | | |
-| | | VoiceOver reads the block inside the page | | record the macOS version |
+| | | VoiceOver reads identity and explicit actions | | record the macOS version |
 | | | a named image | | |

@@ -1,10 +1,10 @@
 ---
 id: 2026-0915-ui-ux-decisions
 title: UI/UX decisions for the background surface
-status: accepted     # draft → accepted → superseded
+status: superseded   # draft → accepted → superseded
 dated: 2026-09-15
 supersedes: docs/spec/design/2026-0914-ui-ux-decisions.md; docs/design-brief.md (Tokens and parameters)
-superseded-by: docs/adr/0060-shared-pad-timeline-navigation.md, on fixed newest-first day ordering in Timeline only
+superseded-by: docs/spec/design/2026-1031-sealed-content-ux-revision.md
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface)
 sources:
@@ -191,11 +191,6 @@ There is no reveal affordance at any privilege, so no label may imply
 one.
 
 ### The block
-
-Presentation revision: the [2026-10-31 checklist](../../plans/sealed-content-ux-2026-10-31.md)
-replaces the full-width block, hover handles and text copy zones with a compact
-object and explicit controls. The older visual description below is historical.
-
 
 Full measure, 8px radius, hairline border, padded 8 × 12. A tracked
 `SEALED CONTENT` label with a lock over the mechanical excerpt, and the

@@ -1,10 +1,10 @@
 ---
 id: 2026-0916-clipboard-clear-interval
 title: The general-pasteboard clear interval
-status: accepted     # draft → accepted → superseded
+status: superseded   # draft → accepted → superseded
 dated: 2026-09-16
 supersedes: docs/spec/design/2026-0915-stream-navigator.md
-superseded-by:
+superseded-by: docs/spec/design/2026-1031-sealed-content-ux-revision.md
 reviewed: 2026-09-16
 surfaces: OnetimePad (general-pasteboard egress)
 sources:

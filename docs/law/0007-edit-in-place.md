@@ -4,13 +4,16 @@ title: Edit in place
 status: accepted     # draft → accepted → superseded
 dated: 2026-10-13
 governs: A name is edited where it is shown, in its own seat; Return commits, Escape keeps, and nothing asks.
-decisions: D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; the rows the 2026-10-14 drafts withdrawn amendment names, none numbered, ratified by the maintainer 2026-10-16 (ADR-0042, which they cite and which was accepted the same day, is under sources, not here); ADR-0055 point 2
+decisions: 2026-1031-sealed-content-ux-revision (sealed interface revision); D-14 and D-46 (docs/spec/design/2026-0915-ui-ux-decisions.md and docs/spec/design/2026-0916-rail-redundancy.md); the maintainer's instruction of 2026-10-13, quoted below; the rows the 2026-10-14 drafts withdrawn amendment names, none numbered, ratified by the maintainer 2026-10-16 (ADR-0042, which they cite and which was accepted the same day, is under sources, not here); ADR-0055 point 2
 consumed-by:
+  - docs/spec/design/2026-1031-sealed-content-ux-revision.md (the sealed interface revision)
   - docs/law/0001-sealed-object.md (the sealed object's name and note, 2026-10-13 amendment; its rows cite this law's keys row)
   - docs/adr/0042-a-sealed-name-is-a-shell-identifier.md (accepted; the sealed name's charset, and an empty draft clearing it)
   - docs/development/sealed-objects-core-interface.md (the name's routes and the keys holder's predicate)
   - docs/mockups/sealed-name-and-note.md (the drawn states; not authoritative)
 sources:
+  - the maintainer's 2026-10-31 instruction to address the 28-item sealed-content UX audit (quoted in the interface revision)
+  - docs/spec/design/2026-1031-sealed-content-ux-revision.md (presentation decisions; unchanged boundary decisions reference their immutable pre-task sources)
   - the maintainer's instruction in the 2026-10-13 design conversation (primary)
   - the drafts ADR-0042, ADR-0043, ADR-0044 and ADR-0046, written 2026-10-13 and withdrawn 2026-10-14 without ratification (the points this law left open, and the page's chords and Edit menu standing aside for any field holding the keys; their content now stands in the rows, in the accepted ADR-0042 and ADR-0043, and in the development note)
   - ADR-0042, proposed 2026-10-14 and accepted 2026-10-16 (the sealed name's charset)
@@ -22,7 +25,7 @@ sources:
   - shell/Sources/CompanionKit/TabStripView.swift (`beginRename`, `renameField`, `endRename`)
   - shell/Sources/CompanionKit/PadPickerView.swift (`PadRename`, the row's field; `PadNameDraft`; `PadCreateSheet`, the create sheet)
   - shell/Sources/CompanionKit/PadSettingsView.swift (the Pads tab of Settings; `PadSettingsRoutes`, its routes; the row's field and the refusal under it)
-  - shell/Sources/CompanionKit/PageModel.swift (`renameTab`, `renamePad`, `setChipName`, `holdNotice`, `releaseNotice`, `HeldRefusal`)
+  - shell/Sources/CompanionKit/PageModel.swift (`renameTab`, `renamePad`, `setChipName`)
   - shell/Sources/CompanionKit/InkEditorView.swift (`InkTextView.answersChords`, whether the page's chords and Edit menu actions are its own to answer)
   - shell/Sources/CompanionKit/SealedNameField.swift (`ChipRename`, the sealed name field's state; `SealedNameEditor`, its AppKit field)
   - docs/adr/0017-durable-tabs-expiring-pages.md (a tab's name outlives its pages)
@@ -33,12 +36,10 @@ sources:
 
 Read [behaviour law conventions](README.md) before filing or changing a law.
 
-2026-10-31 presentation revision: the maintainer requested fixes for the sealed-content
-UX audit. The [implementation checklist](../plans/sealed-content-ux-2026-10-31.md)
-describes the replacement of text copy zones with explicit controls, the sealed
-variable-name field's valid focus-loss save, and the current menu wording. Those
-presentation details replace the older sealed-row descriptions below; the core
-object, excerpt, variable-name format and explicit-output rules are unchanged.
+The [2026-10-31 interface record](../spec/design/2026-1031-sealed-content-ux-revision.md) states the
+presentation revision. The operative rows below incorporate that revision;
+the dated amendment records its scope. The implementation checklist is a
+verification aid, not authority for this law.
 
 ## The rule
 
@@ -48,8 +49,10 @@ object, excerpt, variable-name format and explicit-output rules are unchanged.
 The label becomes a field without moving. Whatever stood in the seat when
 the field opened (a typed name, a derived first line, a placeholder, a
 time) is the draft the field opens on, selected whole. Return hands the
-trimmed draft to the model; Escape, the keyboard going elsewhere and the
-slot being reassigned under the field all leave the name as it was. An
+trimmed draft to the model; Escape and the slot being reassigned under the field leave the name as it
+was. Focus loss also keeps page, tab and pad drafts. The sealed variable-name
+field is the scoped exception: a valid focus loss saves; an invalid draft
+stays open for correction, and explicit editor teardown closes it. An
 empty Return is a commit that clears the typed name and lets the default
 stand again; a seat with no default, a pad's, refuses it. No sheet, alert
 or panel is involved at any step. Where the seat shows a default beside
@@ -86,40 +89,33 @@ the first tenet (the app is furniture, never interrupts) forbids.
 
 ## Operation classes
 
-- **Opening**: a label becomes a field in its own seat, the draft is the
-  label's current text, selected whole, and the keyboard moves to it. The
-  ways in, per seat: a menu verb (*Rename Page*, *Rename Tab*, a pad row's
-  *Rename* in the Pads tab, *Name* or *Rename* on a sealed object); a single click where the
-  seat has no other click (the gutter's time, or the typed name that took
-  its seat); a double click where the
-  single click is taken (an unnamed sealed object's bottom row, whose
-  click selects; a named one's name zone, whose click copies the name).
-  Where the double click is already a gesture (the strip, where it holds
-  the clock) or is not offered (a pad's row in the Pads tab) only the
-  verb opens. A zone whose first click
-  copies plaintext ignores the clicks after it
-  ([Law 0001](0001-sealed-object.md)'s value and `=` zone rows).
-  Opening is not a mutation.
+- **Opening**: a label becomes a field in its own seat on its current text,
+  selected whole. Menu routes include Rename Page, Rename Tab, a pad row's
+  Rename, and a sealed object's Set/Edit Variable Name…. The gutter also opens
+  by clicking its time or typed name. Sealed identity text has no rename gesture;
+  its repeated clicks select. Opening is not a mutation.
 - **Drafting**: keystrokes change the field and nothing else. The draft is
   what the seat shows and what VoiceOver hears; a periodic pass that
   rewrites the label never writes over a draft. Nothing persists.
-- **Committing**: Return. The draft is trimmed and judged by `TabRename`:
+- **Committing**: Return; also Save and valid focus loss for a sealed variable
+  name. The draft is trimmed and judged by `TabRename`:
   equal to what the field opened on, it keeps; otherwise it renames. An
   empty draft renames to nothing, which clears the typed name and lets the
   default derive again (the page's first line, the placeholder stamp, the
   time, a sealed object's unnamed row). A pad has no default, so an empty
   pad name is refused instead. A commit is a mutation like any other and
   is not undoable through the field; the next rename is the undo.
-- **Keeping**: Escape; the keyboard leaving for anywhere else; the slot
-  under the field being reassigned. The seat shows what it showed before.
+- **Keeping**: Escape or Cancel; reassignment or removal of the source. Focus
+  loss keeps page, tab and pad drafts. A sealed field saves a valid draft before
+  pad navigation or editor handoff; teardown then closes any invalid remainder.
 - **Refusing**: a draft a seat cannot take (an empty pad name or one over
   80 characters, said under the pad's field in its row in
   `PadNameDraft.validationMessage`'s words; a sealed name outside its
   charset, 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*`, refused
   core-side per [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md),
   accepted)
-  is said beside the seat or in the line under the page, with the field
-  still open; it is never a dialog.
+  is said beside the field while it remains open. Sealed-name validation uses
+  the anchored helper rather than the shared footer; it is never a dialog.
 - **Showing**: a typed name is drawn in the seat; a default is drawn in
   the default's own shape. Where a default stands beside a name, the name
   takes the seat and the default follows it to the right.
@@ -138,7 +134,7 @@ without a test says what it is owed by.
 | Return over a changed draft | committing | the trimmed draft becomes the name | `TabRenameTests.swift` `testReturnOverANewNameRenames`, `testTheNameIsTrimmedBeforeItIsJudged` |
 | Return over an untouched draft | keeping | nothing changes; a default is never frozen into a typed name by a Return | `TabRenameTests.swift` `testReturnOverAnUntouchedDraftKeeps` |
 | Return over an empty draft | committing | the typed name is cleared and the default derives again; a pad, which has no default, refuses it (row below) | `TabRenameTests.swift` `testAnEmptyNameIsARenameNotACancel` |
-| Escape, or the keyboard leaving | keeping | the seat shows what it showed before | `TabRenameTests.swift` `testEscapeAndFocusLossKeepWhateverTheDraftSays` |
+| Escape over any name field, or focus loss over a page/tab/pad name | keeping | the seat shows what it showed before; sealed-name focus loss has its own row below | `TabRenameTests.swift` `testEscapeAndFocusLossKeepWhateverTheDraftSays`; `SealedNameFieldTests.swift` `testCancelKeepsWhileFocusLossAndReturnSave` |
 | any opening | opening | no modal session is entered on the way in or out | `ModalSessionTests.swift` `testRenameNeverRunsAModalSession` |
 | the draft while open | drafting | VoiceOver hears the draft, not the label it replaced | `DayScrollTests.swift` `testAHeaderAccessibilityLabelUsesTheVisibleRenameDraft` |
 | a chord or an Edit menu item while any seat's field holds the keys | drafting | it acts on the field or on nothing, never on the page: the page's chords, its Undo, Redo, seal and language items stand aside, and the menu greys the page's items until the field closes; any field holds the keys this way, the gutter's, the strip's, the sealed name's, the find bar's and a Settings field, in the page's window or in the key window over it, and so does a note's surface, which answers the page's chords and Edit menu only while it holds the keys itself; Choose Language goes to whoever holds the keys; the summon offer's seal button seals nothing and says why (the predicate, `InkTextView.answersChords`, is in the [core interface](../development/sealed-objects-core-interface.md)) | the gutter: `DayScrollTests.swift` `testTheGuttersFieldTakesThePagesChordsAndMenuAway`; the sealed name: `SealedNameFieldTests.swift` `testThePagesChordsStandAsideForTheField`, `testThePagesMenuActionsStandAsideForTheField`; any field in the page's window, the shape the strip's and the pad row's SwiftUI fields edit through: `KeyHolderTests.swift` `testAFieldHoldingTheKeysTakesThePagesChordsAndMenuAway`; the note holding the keys: `SealedNoteTests.swift` `testTheEditMenuActsOnTheNoteWhileItHoldsTheKeys`; Choose Language sent down the responder chain: `LanguageDetectionMenuTests.swift` `testAChoiceGoesDownTheChainOrToTheFile`; the offer's button under a field and under the note: `SealedFragmentEditorTests.swift` `testTheOffersButtonStandsAsideWhileAFieldOrTheNoteHoldsTheKeys`, on the raised card by hand in the [sealed fragment](../qa/verification-procedures/sealed-fragment.md) procedure; the strip's own field, owed: hand check (the pad row's field stands in the Settings window, where the page's chords and menu items do not reach), [rename in place](../qa/verification-procedures/rename-in-place.md) |
@@ -150,18 +146,23 @@ without a test says what it is owed by.
 | the strip's *Rename Tab* | opening | opens the field in the tab; double click stays the hold | `TabRenameTests.swift` `testTheFieldOpensOnTheCurrentTitle`, `testTheFieldsReturnKeepsAnUntouchedDraftAndRenamesAChangedOne`, `testTheFieldKeepsTheTitleOnEscapeAndEndsOnce`, over `TabRename.Field`, which the strip calls, and whose `end` takes no title but the one the field opened on; the SwiftUI field's focus and its selection on focus, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | a pad row's *Rename*, on its actions menu in the Pads tab of Settings | opening | opens the field in the pad's row, the only way in; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | `PadPickerTests.swift` `testReturnInTheRowRenamesThePadAndShutsTheField`, `testAnUntouchedReturnEscapeAndFocusLossKeepTheName`, `testRenameOpensTheFieldInTheRowAndRaisesNoSheet`, `testNewPadRaisesTheSheetAndKeepsAnOpenFieldsName`, `testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay`, over `PadRename` and `PadSettingsRoutes`; the menu item reaching that route, and the SwiftUI field's focus, selection and Escape, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | a pad name the catalog refuses, empty or over 80 characters | refusing | said under the field in the pad's row with the field still open, `pad.name.empty`'s words for an empty one; nothing is said under a page, which stands in another window | `PadPickerTests.swift` `testARefusalIsSaidUnderTheFieldWithTheFieldOpen`, `testANameTheCatalogRefusesIsSaidWithTheFieldOpen`; the SwiftUI field keeping its keys after Return over a refused draft, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
-| a sealed object's *Name*, *Rename*, or a double click on an unnamed row or a named row's name zone | opening | opens the field in the name's seat, placeholder `NAME`; the excerpt stays to its right; a double click on the value or `=` zone copies once and opens nothing | the core's setter: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`; `lib.rs` `chip_json_carries_the_name`; the field: `SealedNameFieldTests.swift` `testTheFieldOpensInTheSeatOnTheNameWithTheExcerptToItsRight`, `testTheMenusVerbOpensTheField`, `testADoubleClickOpensTheFieldOnlyWhereTheRuleSays`, `testAReadOnlyPageOpensNoField`, `testReturnNamesTheObjectAndRedrawsItsBlock`, `testEscapeFocusLossAndAnUntouchedReturnKeepAndAnEmptyReturnClears`, `testTheEndingsAreTabRenamesOutcomes`, `testTheObjectOrItsPageLeavingKeepsTheName`, `testThePagesChordsStandAsideForTheField`, `testThePagesMenuActionsStandAsideForTheField`, `testTheFieldTakesNoDropFromElsewhere`, `testAShutFieldKeepsNoDraft`; `SealedCapsuleTests.swift` `testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection` (the name zone's double click through `mouseDown`); the double click's timing and the keys in a real key window, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
-| a sealed name outside 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*` | refusing | the core refuses it and the name stays as it was; the line under the page says why, with the field still open | the core's refusal and its codes: `store.rs` `a_name_outside_the_charset_is_refused_and_an_empty_one_clears`; `lib.rs` `the_name_routes_judge_by_one_rule_and_fail_closed`; `SealedObjectSeamTests.swift` `testTheRefusalIsTheCoresRule`, `testANameRidesTheFaceAndABlankDraftClearsIt`; the field and its line: `SealedNameFieldTests.swift` `testARefusalKeepsTheFieldAndTheLine`, `testTheRefusalsWordsAreTheFieldsOwn`; `NoticeHoldTests.swift` (the held line); the field keeping the keys after Return over a refused draft, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
+| a sealed object's Set Variable Name… or Edit Variable Name… | opening | opens the inline field on its name, selected whole, with API_KEY as the example, format guidance and visible Save/Cancel and Return/Esc instructions; identity clicks do not open it | `SealedNameFieldTests.swift` `testTheFieldOpensWithItsVariableNameInstructionsAndActions`, `testTheMenusVerbOpensTheField`, `testAReadOnlyPageOpensNoField`, `testNamingHelpKeepsItsHintAndButtonsVisibleAtNarrowAndWideWidths`; `SealedCapsuleTests.swift` `testTheIdentityRowAlwaysSelectsWithoutCopyingOrRenaming` |
+| Return, Save or valid focus loss over a sealed variable-name draft | committing | saves the trimmed draft; an empty draft clears the name; Escape or Cancel discards the draft instead | `SealedNameFieldTests.swift` `testReturnNamesTheObjectAndRedrawsItsBlock`, `testCancelKeepsWhileFocusLossAndReturnSave`, `testTheVisibleSaveAndCancelButtonsEndTheEdit`, `testTheEndingsAreTabRenamesOutcomes` |
+| invalid focus loss over a sealed variable-name draft | refusing | retains the draft with local feedback so it can be corrected | `SealedNameFieldTests.swift` `testAnInvalidFocusLossKeepsTheDraftOpenForCorrection` |
+| pad navigation, editor handoff or loss of editability with a sealed field open | committing or keeping | saves a valid draft before storage detaches; closes an invalid remainder; does not rename a removed or expired source | `SealedNameFieldTests.swift` `testRemovalCancelsWhileLosingEditabilitySavesTheName`, `testLeavingThePageSavesAValidNameBeforeDetachingItsStorage`, `testTeardownClosesInvalidDraftsWithoutChangingTheName`; `SealedUXIntegrationTests.swift` `testReplacingAContinuousDocumentSavesItsOpenVariableName`, `testPadActivationCreationAndRemovalSaveTheNameBeforeSuspendingTheDocument`; expiry: `SealedNoteTests.swift` `testANoteEditStepOrNamePastItsPagesDeadlineSettlesWithTheExpiredLine` |
+| a sealed name outside 1 to 64 characters of `[A-Za-z_][A-Za-z0-9_]*` | refusing | applies the existing [ADR-0042](../adr/0042-a-sealed-name-is-a-shell-identifier.md) rule; keeps the name unchanged and shows the error beside the field, updating it as the draft changes | `SealedObjectSeamTests.swift` `testTheRefusalIsTheCoresRule`, `testANameRidesTheFaceAndABlankDraftClearsIt`; `SealedNameFieldTests.swift` `testARefusalStaysBesideTheFieldAndUpdatesAsTheDraftChanges`, `testTheRefusalsWordsAreTheFieldsOwn` |
 
 ## What the rule forbids
 
-- A sheet, alert, panel or popover whose purpose is to take a name.
+- A modal or separate window used only to ask for a name. The sealed field
+  may show anchored instructions, validation and controls in the existing window.
 - A field that moves the label, reflows its neighbours or hides the
   default the name sits beside. The one neighbour that moves is that
   default, which follows the draft to its right, as the gutter's time
   does while the user types.
 - A Return that freezes an untouched default into a typed name.
-- A focus loss that commits.
+- A focus loss that commits a page, tab or pad name; the sealed variable-name
+  exception is explicit in its contract rows.
 - A periodic pass that writes a label over an open draft.
 - A refusal that interrupts: validation is a line, never a dialog.
 - A name field with no keyboard route in: every seat has a menu verb, and
@@ -173,8 +174,9 @@ without a test says what it is owed by.
   face? (opening)
 - **Draft**: does the field open on the current text, selected whole, and
   does nothing else rewrite it while open? (drafting)
-- **Ending**: does Return commit through `TabRename`, and does everything
-  else keep? (committing, keeping)
+- **Ending**: does Return commit through `TabRename`, and do page/tab/pad
+  fields keep on focus loss, while sealed fields save a valid
+  focus-loss draft and keep Escape as cancellation? (committing, keeping)
 - **Default**: can an empty commit return the seat to its default, and
   does the default stay visible to the right of a typed name? (showing)
 - **Interruption**: does any step enter a modal session or ask a question
@@ -200,16 +202,16 @@ tests in the row for a click on the gutter's time and
 `StreamNavigatorTests.testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage`,
 `PadPickerTests` (the seven pad row tests in the rows above and
 `testAFieldMovedToAnotherRowOutlivesTheFocusLossOfTheOneItLeft`),
-`NoticeHoldTests`, `SealedNameFieldTests` (the sealed name's field, its
-endings and its refusal),
-`SealedCapsuleTests.testAPressOnAZoneCopiesOnceLightsTheBeatAndLeavesTheSelection`.
+`SealedNameFieldTests` (the sealed field, local validation, endings and
+editor teardown), `SealedUXIntegrationTests` (continuous documents and pad
+navigation), and `SealedCapsuleTests.testTheIdentityRowAlwaysSelectsWithoutCopyingOrRenaming`.
 App (`shell/Tests/OnetimePadTests`):
 `LanguageDetectionMenuTests.testAChoiceGoesDownTheChainOrToTheFile`.
 
 By hand: the [rename in place](../qa/verification-procedures/rename-in-place.md)
 procedure, for what the runner cannot drive: the SwiftUI fields' focus
 and selection, the pad row's Return and Escape, the gutter's field in
-a real key window, the sealed name's double click and keys, and the
+a real key window, the sealed field's explicit menu route and keys, and the
 page's chords and Edit menu standing aside for every field. It has not
 been run.
 
@@ -371,3 +373,15 @@ Owed: a first run of the rename in place procedure.
   slot rail's field among the key holders and the *Rename Tab* row
   names the strip as `TabRename.Field`'s one caller. No behaviour
   changes.
+
+- 2026-10-31: Sealed-field ending amendment, authorized by the maintainer's
+  instruction quoted in the [interface revision](../spec/design/2026-1031-sealed-content-ux-revision.md).
+  Set/Edit Variable Name… replaces the sealed name's text-click opening. Its
+  valid focus loss saves, as do pad switches and editor handoffs before teardown;
+  Escape and Cancel retain cancellation semantics. Invalid blur remains open
+  with an error beside the field; teardown closes an invalid remainder. Removed
+  and expired sources do not rename a replacement. The field includes format
+  guidance, Save/Cancel and Return/Esc instructions. These are scoped exceptions
+  for the sealed variable-name field; page, tab and pad name endings are unchanged.
+  Earlier amendment entries above describe the historical zone and held-footer
+  designs, rather than the interface after this amendment.

@@ -5,6 +5,9 @@ Status: implemented; automated verification and rendered-fixture review complete
 The user asked for a methodical response to the 28-item visual and source audit.
 This file records implementation choices and verification; it is not an
 independent security specification or evidence that these changes work.
+T󠄁h󠄁e󠄁 [d󠄁a󠄁t󠄁e󠄁d󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁](../spec/design/2026-1031-sealed-content-ux-revision.md)
+a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 a󠄁m󠄁e󠄁n󠄁d󠄁e󠄁d󠄁 l󠄁a󠄁w󠄁 r󠄁o󠄁w󠄁s󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁l󠄁i󠄁s󠄁t󠄁
+d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁 t󠄁h󠄁e󠄁m󠄁.󠄁
 
 ## Existing decisions and scope
 
@@ -72,21 +75,24 @@ plaintext disclosure.
 
 ## Link recovery implementation
 
-The FFI's current implementation keeps one `Zeroizing<Vec<u8>>` recovery buffer
+The FFI's implementation keeps one `Zeroizing<Vec<u8>>` recovery buffer
 for the latest completed link, identified by a core-generated token rather than
-a server receipt. The recovery deadline starts at completion and is not extended
-by a re-copy. The shell schedules expiry from the core's remaining duration and
-forgets the matching token when its draft closes. A newer completion replaces
+a server receipt. I󠄁t󠄁s󠄁 6󠄁0󠄁-󠄁s󠄁e󠄁c󠄁o󠄁n󠄁d󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁 d󠄁e󠄁a󠄁d󠄁l󠄁i󠄁n󠄁e󠄁 s󠄁t󠄁a󠄁r󠄁t󠄁s󠄁 a󠄁t󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 i󠄁s󠄁 n󠄁o󠄁t󠄁
+e󠄁x󠄁t󠄁e󠄁n󠄁d󠄁e󠄁d󠄁 b󠄁y󠄁 a󠄁 r󠄁e󠄁-󠄁c󠄁o󠄁p󠄁y󠄁.󠄁 T󠄁h󠄁e󠄁 s󠄁h󠄁e󠄁l󠄁l󠄁 s󠄁c󠄁h󠄁e󠄁d󠄁u󠄁l󠄁e󠄁s󠄁 a󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁a󠄁l󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁r󠄁e󠄁'󠄁s󠄁
+r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁i󠄁n󠄁g󠄁 d󠄁u󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 f󠄁o󠄁r󠄁g󠄁e󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁 m󠄁a󠄁t󠄁c󠄁h󠄁i󠄁n󠄁g󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁 w󠄁h󠄁e󠄁n󠄁 i󠄁t󠄁s󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 c󠄁l󠄁o󠄁s󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁
+b󠄁u󠄁f󠄁f󠄁e󠄁r󠄁 i󠄁s󠄁 d󠄁r󠄁o󠄁p󠄁p󠄁e󠄁d󠄁 o󠄁n󠄁 a󠄁n󠄁 e󠄁x󠄁p󠄁i󠄁r󠄁y󠄁 q󠄁u󠄁e󠄁r󠄁y󠄁,󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 f󠄁o󠄁r󠄁g󠄁e󠄁t󠄁/󠄁d󠄁r󠄁a󠄁f󠄁t󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁,󠄁
+s󠄁u󠄁p󠄁e󠄁r󠄁s󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 o󠄁r󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁e󠄁 d󠄁r󠄁o󠄁p󠄁;󠄁 r󠄁e󠄁a󠄁c󠄁h󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁 d󠄁e󠄁a󠄁d󠄁l󠄁i󠄁n󠄁e󠄁 a󠄁l󠄁o󠄁n󠄁e󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 e󠄁a󠄁g󠄁e󠄁r󠄁l󠄁y󠄁
+w󠄁i󠄁p󠄁e󠄁 i󠄁t󠄁.󠄁 A newer completion replaces
 the prior buffer; old requests cannot copy or forget the newer token. A re-copy
 uses the existing pasteboard writer and creates no additional network request.
 These are implementation observations to verify, not independent guarantees.
 
 ## Verification record
 
-- `scripts/test-shell.sh`: 393 app tests and 2,317 CompanionKit tests executed,
-  7 existing skips, 0 failures. The full run included the optional rendering tests.
+- `scripts/test-shell.sh`: 393 app tests and 2,327 CompanionKit tests executed,
+  7 existing skips, 0 failures. The full run set `ONETIMEPAD_SEALED_PREVIEW_DIR=/tmp/sealed-ux-preview` and included the optional rendering tests.
 - `cargo test -p companion-ffi -- --test-threads=1 --skip drop_to_seal_reads_the_drag_board_core_side`:
-  401 passed, 1 existing ignored test, 1 excluded shared-system-drag-pasteboard test.
+  402 passed, 1 existing ignored test, 1 excluded shared-system-drag-pasteboard test.
 - `cargo clippy -p companion-ffi --all-targets --features test-util -- -D warnings`:
   passed.
 - `cargo fmt --check`, `git diff --check`, and `scripts/lint-adrs.py docs/adr`:
@@ -102,8 +108,8 @@ These are implementation observations to verify, not independent guarantees.
   final review also found passive previews drawing inert controls and valid name
   drafts cancelled during pad/ownership transitions; both have regression coverage.
 - The shifted-target tracking tests inject synthetic release events instead of
-  depending on the system event queue. Separate mouse-click/drag tests continue
-  to exercise native event delivery.
+  depending on the system event queue. Separate mouse-click/drag tests dispatch `NSEvent` objects through the text
+  view and check the resulting selection, copy and drag routes.
 
 Manual VoiceOver navigation/rotor and physical-display inspection remain
 unperformed. The accepted excerpt algorithm, ASCII variable-name rule, raw
@@ -113,3 +119,38 @@ new contents-editing or general-purpose labeling features.
 Automated fixtures use temporary state and an in-memory credential client.
 Rendered examples contain synthetic values. No running personal app is launched,
 quit, reset or replaced for these checks.
+
+## Documentation review dispositions
+
+This ledger records the documentation review only; it does not establish
+security properties or replace the operative records.
+
+| ID | Material issue | Disposition and final location | Verification |
+| --- | --- | --- | --- |
+| DOC-01 | Law 0001 described text copy zones and old menu/handle behavior. | Addressed in its operative contract and presentation rows, with a dated 2026-10-31 amendment. | Current named test references checked against the source tree; local links checked. |
+| DOC-02 | Law 0007 contradicted sealed-field blur, refusal and teardown behavior. | Addressed in its operation classes and sealed-field rows; stale held-refusal source references removed. Older amendments remain history. | Current named test references checked against the source tree; local links checked. |
+| DOC-03 | A dated record was edited in place instead of superseded whole. | Addressed by the [dated successor](../spec/design/2026-1031-sealed-content-ux-revision.md), with immutable incorporation and scoped revisions. Earlier dated bodies remain unchanged. | Prior bodies compared with commit `367a65c6f4d051ffdc87ac8ebb43f154e9b97783`; status/successor fields checked. |
+| DOC-04 | The implementation plan was presented as authority and historical sharing copy remained ambiguous. | Addressed by direct successor links, operative law amendments and superseded status on the former records. Linked manual checks now exercise explicit controls. | Local link and scope review; manual checks remain unperformed. |
+| COPY-01 | Revised native labels and instructional guidance conflicted with D-15/ADR-0055. | Addressed by the successor's scoped copy-register decision and ADR-0055 amendment. | Labels compared with the revised source; ADR structural lint checked. |
+
+## Code-review followups
+
+The PR review also prompted these changes:
+
+- Localized variable-name guidance, sealed actions/status and sharing recovery.
+- Made the accessibility selection action say Select Sealed Content.
+- Separated the recovery access interval and its test seam from clipboard clearing;
+  corrected the buffer-retention description in F16.
+- Returned refused-name actions to the field and used neutral save-failure wording.
+- Removed inert controls from read-only editors, refreshed cursor/AX/drawing state
+  when editability changes, and returned typing focus after a saved owned draft.
+- Reused unused row measure, removed the dead height metric, named identity/status
+  rows directly, and cached measurements until the face or typeface changes.
+- Restored live-core size-class and TextKit proposal tests; optional render tests
+  explicitly skip when their output environment is absent. Gesture tests inject
+  their event sequence into the actual mouse handler for deterministic CI behavior.
+
+The visibility predicate remains an explicit shared guard for the current editor
+state. The note/name helper uses the existing page-overlay approach; the dated
+successor records that presentation choice. Actual VoiceOver and physical-pointer
+checks remain unperformed.
