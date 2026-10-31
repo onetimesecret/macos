@@ -67,7 +67,15 @@ def verify_tree(root: Path) -> dict:
     require(inventory["archive_url"] == ARCHIVE_URL, "archive URL changed")
     vendor = root / "vendor/comrak"
     require(not vendor.is_symlink(), "vendor root is a symlink")
-    paths = list(vendor.rglob("*"))
+    pinned_roots = {Path(relative).parts[0] for relative in inventory["files"]}
+    generated = {"target", "Cargo.lock"} - pinned_roots
+    paths = []
+    for path in vendor.iterdir():
+        if path.name in generated:
+            continue
+        paths.append(path)
+        if path.is_dir() and not path.is_symlink():
+            paths.extend(path.rglob("*"))
     require(not any(path.is_symlink() for path in paths), "vendor tree contains a symlink")
     actual = {str(path.relative_to(vendor)) for path in paths if path.is_file()}
     require(actual == set(inventory["files"]), "vendor file list changed")

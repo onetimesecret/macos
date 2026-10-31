@@ -125,6 +125,22 @@ class VendoredComrakVerificationTests(unittest.TestCase):
         with self.assertRaisesRegex(VERIFY.VerificationError, "vendor file list changed"):
             VERIFY.verify_tree(self.root)
 
+    def test_generated_cargo_artifacts_are_ignored(self):
+        vendor = self.root / "vendor/comrak"
+        artifacts = vendor / "target/debug"
+        artifacts.mkdir(parents=True)
+        (artifacts / "generated.rlib").write_bytes(b"build artifact")
+        (artifacts / "generated-link").symlink_to(artifacts / "generated.rlib")
+        (vendor / "Cargo.lock").write_text("# generated standalone lockfile\n", encoding="utf-8")
+        self.assertEqual(len(VERIFY.verify_tree(self.root)["files"]), 33)
+
+    def test_nested_target_directory_is_still_checked(self):
+        nested = self.root / "vendor/comrak/src/target"
+        nested.mkdir()
+        (nested / "unexpected.rs").write_text("fn unexpected() {}\n", encoding="utf-8")
+        with self.assertRaisesRegex(VERIFY.VerificationError, "vendor file list changed"):
+            VERIFY.verify_tree(self.root)
+
     def test_patch_change_is_rejected(self):
         patch = self.root / "crates/markdown/patches/comrak-0.57.0-reference-sourcepos.patch"
         patch.write_bytes(patch.read_bytes() + b"\n")
