@@ -1014,7 +1014,23 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertNil(rendered.attribute(.strikethroughStyle, at: 0, effectiveRange: nil))
     }
 
-    func testReseedingSkipsTheSameIdentityButRendersANewWrapper() throws {
+    func testReseedingSameIdentityRendersTypefaceChanges() throws {
+        let previous = InkStyle.typeface
+        defer { InkStyle.typeface = previous }
+        InkStyle.typeface = .init(family: "Helvetica", codeFamily: "Menlo", size: 13)
+        let view = MarkdownPreviewView(page: 1, coordinator: nil)
+        let source = PageModel.QuietRendering(text: NSAttributedString(string: "plain `code`"), fenceRegions: [])
+        view.reseed(with: source, dialect: .gfm)
+        XCTAssertEqual(try font("plain", in: XCTUnwrap(view.textStorage)).pointSize, 13)
+        InkStyle.typeface = .init(family: "Helvetica", codeFamily: "Menlo", size: 22)
+        XCTAssertEqual(view.reseed(with: source, dialect: .gfm), "plain code\n")
+        XCTAssertEqual(try font("plain", in: XCTUnwrap(view.textStorage)).pointSize, 22)
+        InkStyle.typeface = .init(family: "Helvetica", codeFamily: "Helvetica", size: 22)
+        XCTAssertEqual(view.reseed(with: source, dialect: .gfm), "plain code\n")
+        XCTAssertEqual(try font("code", in: XCTUnwrap(view.textStorage)).familyName, InkStyle.codeFont.familyName)
+    }
+
+    func testReseedingReusesEquivalentSourceAndRendersChangedText() throws {
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         let rendering = PageModel.QuietRendering(text: NSAttributedString(string: "**first**"), fenceRegions: [])
         XCTAssertNil(view.reseed(with: rendering, dialect: .gfm), "a first seeding replaced no text")
@@ -1025,8 +1041,8 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertNil(view.reseed(with: rendering, dialect: .gfm), "the same rendering replaced nothing")
         XCTAssertNotNil(storage.attribute(sentinel, at: 0, effectiveRange: nil))
         let replacement = PageModel.QuietRendering(text: rendering.text, fenceRegions: [])
-        XCTAssertEqual(view.reseed(with: replacement, dialect: .gfm), "first\n")
-        XCTAssertNil(storage.attribute(sentinel, at: 0, effectiveRange: nil))
+        XCTAssertNil(view.reseed(with: replacement, dialect: .gfm))
+        XCTAssertNotNil(storage.attribute(sentinel, at: 0, effectiveRange: nil))
         XCTAssertEqual(
             view.reseed(with: PageModel.QuietRendering(text: NSAttributedString(string: "# second"), fenceRegions: []), dialect: .gfm),
             "first\n")

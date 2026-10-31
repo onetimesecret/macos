@@ -62,16 +62,18 @@ p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 p󠄁r󠄁e�
 
 | C󠄁o󠄁n󠄁c󠄁e󠄁r󠄁n󠄁 | P󠄁R󠄁 D󠄁 c󠄁h󠄁o󠄁i󠄁c󠄁e󠄁 |
 | --- | --- |
-| D󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 | A󠄁b󠄁s󠄁o󠄁l󠄁u󠄁t󠄁e󠄁 H󠄁T󠄁T󠄁P󠄁S󠄁 U󠄁R󠄁L󠄁,󠄁 A󠄁S󠄁C󠄁I󠄁I󠄁 D󠄁N󠄁S󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁,󠄁 s󠄁t󠄁a󠄁n󠄁d󠄁a󠄁r󠄁d󠄁 H󠄁T󠄁T󠄁P󠄁S󠄁 p󠄁o󠄁r󠄁t󠄁;󠄁 n󠄁o󠄁 U󠄁R󠄁L󠄁 u󠄁s󠄁e󠄁r󠄁n󠄁a󠄁m󠄁e󠄁/󠄁p󠄁a󠄁s󠄁s󠄁w󠄁o󠄁r󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁e󠄁d󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁 i󠄁s󠄁 w󠄁r󠄁i󠄁t󠄁t󠄁e󠄁n󠄁 b󠄁a󠄁c󠄁k󠄁 i󠄁n󠄁 l󠄁o󠄁w󠄁e󠄁r󠄁c󠄁a󠄁s󠄁e󠄁.󠄁 F󠄁r󠄁a󠄁g󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 p󠄁o󠄁r󠄁t󠄁 4󠄁4󠄁3󠄁 a󠄁r󠄁e󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁.󠄁 I󠄁n󠄁t󠄁e󠄁r󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁i󠄁z󠄁e󠄁d󠄁 n󠄁a󠄁m󠄁e󠄁s󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 p󠄁u󠄁n󠄁y󠄁c󠄁o󠄁d󠄁e󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁,󠄁 a󠄁r󠄁e󠄁 u󠄁n󠄁a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁.󠄁 |
+| D󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 | A󠄁b󠄁s󠄁o󠄁l󠄁u󠄁t󠄁e󠄁 H󠄁T󠄁T󠄁P󠄁S󠄁 U󠄁R󠄁L󠄁,󠄁 A󠄁S󠄁C󠄁I󠄁I󠄁 D󠄁N󠄁S󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁,󠄁 s󠄁t󠄁a󠄁n󠄁d󠄁a󠄁r󠄁d󠄁 H󠄁T󠄁T󠄁P󠄁S󠄁 p󠄁o󠄁r󠄁t󠄁;󠄁 n󠄁o󠄁 U󠄁R󠄁L󠄁 u󠄁s󠄁e󠄁r󠄁n󠄁a󠄁m󠄁e󠄁/󠄁p󠄁a󠄁s󠄁s󠄁w󠄁o󠄁r󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 s󠄁c󠄁h󠄁e󠄁m󠄁e󠄁 a󠄁n󠄁d󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁e󠄁d󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁 i󠄁s󠄁 w󠄁r󠄁i󠄁t󠄁t󠄁e󠄁n󠄁 b󠄁a󠄁c󠄁k󠄁 i󠄁n󠄁 l󠄁o󠄁w󠄁e󠄁r󠄁c󠄁a󠄁s󠄁e󠄁.󠄁 F󠄁r󠄁a󠄁g󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 p󠄁o󠄁r󠄁t󠄁 4󠄁4󠄁3󠄁 a󠄁r󠄁e󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁.󠄁 I󠄁n󠄁t󠄁e󠄁r󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁i󠄁z󠄁e󠄁d󠄁 n󠄁a󠄁m󠄁e󠄁s󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 p󠄁u󠄁n󠄁y󠄁c󠄁o󠄁d󠄁e󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁,󠄁 a󠄁r󠄁e󠄁 u󠄁n󠄁a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁.󠄁 |
 | U󠄁n󠄁s󠄁u󠄁p󠄁p󠄁o󠄁r󠄁t󠄁e󠄁d󠄁 d󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 | R󠄁e󠄁l󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 p󠄁a󠄁t󠄁h󠄁s󠄁,󠄁 f󠄁i󠄁l󠄁e󠄁/󠄁d󠄁a󠄁t󠄁a󠄁/󠄁H󠄁T󠄁T󠄁P󠄁 U󠄁R󠄁L󠄁s󠄁,󠄁 I󠄁P󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁s󠄁,󠄁 s󠄁i󠄁n󠄁g󠄁l󠄁e󠄁-󠄁l󠄁a󠄁b󠄁e󠄁l󠄁 h󠄁o󠄁s󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁/󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁d󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁 s󠄁u󠄁f󠄁f󠄁i󠄁x󠄁e󠄁s󠄁 h󠄁a󠄁v󠄁e󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁.󠄁 |
 | C󠄁o󠄁n󠄁s󠄁e󠄁n󠄁t󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁 | O󠄁n󠄁e󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁e󠄁s󠄁 o󠄁n󠄁e󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 o󠄁c󠄁c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 a󠄁t󠄁 t󠄁h󠄁e󠄁 d󠄁i󠄁s󠄁p󠄁l󠄁a󠄁y󠄁e󠄁d󠄁 U󠄁R󠄁L󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁 U󠄁R󠄁L󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 i󠄁t󠄁s󠄁 q󠄁u󠄁e󠄁r󠄁y󠄁,󠄁 g󠄁o󠄁e󠄁s󠄁 t󠄁o󠄁 t󠄁h󠄁a󠄁t󠄁 s󠄁e󠄁r󠄁v󠄁e󠄁r󠄁.󠄁 |
 | R󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁 | G󠄁E󠄁T󠄁,󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 A󠄁c󠄁c󠄁e󠄁p󠄁t󠄁 h󠄁e󠄁a󠄁d󠄁e󠄁r󠄁,󠄁 n󠄁o󠄁 R󠄁e󠄁f󠄁e󠄁r󠄁e󠄁r󠄁;󠄁 U󠄁s󠄁e󠄁r󠄁-󠄁A󠄁g󠄁e󠄁n󠄁t󠄁 `OnetimePad-ImagePreview` a󠄁n󠄁d󠄁 A󠄁c󠄁c󠄁e󠄁p󠄁t󠄁-󠄁L󠄁a󠄁n󠄁g󠄁u󠄁a󠄁g󠄁e󠄁 `*`.󠄁 E󠄁p󠄁h󠄁e󠄁m󠄁e󠄁r󠄁a󠄁l󠄁 U󠄁R󠄁L󠄁S󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 w󠄁i󠄁t󠄁h󠄁 c󠄁o󠄁o󠄁k󠄁i󠄁e󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁i󠄁n󠄁g󠄁,󠄁 U󠄁R󠄁L󠄁 c󠄁a󠄁c󠄁h󠄁e󠄁 a󠄁n󠄁d󠄁 c󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁 s󠄁t󠄁o󠄁r󠄁a󠄁g󠄁e󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁.󠄁 N󠄁o󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 A󠄁P󠄁I󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁 o󠄁r󠄁 p󠄁a󠄁g󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁n󠄁t󠄁 i󠄁s󠄁 a󠄁d󠄁d󠄁e󠄁d󠄁.󠄁 |
 | R󠄁e󠄁d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁s󠄁 | R󠄁e󠄁f󠄁u󠄁s󠄁e󠄁d󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 s󠄁a󠄁m󠄁e󠄁 h󠄁o󠄁s󠄁t󠄁.󠄁 N󠄁o󠄁 s󠄁e󠄁c󠄁o󠄁n󠄁d󠄁 d󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁s󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁e󠄁d󠄁.󠄁 |
 | A󠄁u󠄁t󠄁h󠄁e󠄁n󠄁t󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 | C󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁 c󠄁h󠄁a󠄁l󠄁l󠄁e󠄁n󠄁g󠄁e󠄁s󠄁 a󠄁r󠄁e󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁d󠄁;󠄁 o󠄁r󠄁d󠄁i󠄁n󠄁a󠄁r󠄁y󠄁 p󠄁l󠄁a󠄁t󠄁f󠄁o󠄁r󠄁m󠄁 T󠄁L󠄁S󠄁 s󠄁e󠄁r󠄁v󠄁e󠄁r󠄁-󠄁t󠄁r󠄁u󠄁s󠄁t󠄁 e󠄁v󠄁a󠄁l󠄁u󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 e󠄁n󠄁a󠄁b󠄁l󠄁e󠄁d󠄁.󠄁 |
+| D󠄁N󠄁S󠄁 a󠄁n󠄁d󠄁 c󠄁o󠄁n󠄁n󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 p󠄁e󠄁e󠄁r󠄁 | T󠄁h󠄁e󠄁 s󠄁y󠄁s󠄁t󠄁e󠄁m󠄁 r󠄁e󠄁s󠄁o󠄁l󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 a󠄁p󠄁p󠄁r󠄁o󠄁v󠄁e󠄁d󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁.󠄁 P󠄁r󠄁i󠄁v󠄁a󠄁t󠄁e󠄁,󠄁 l󠄁o󠄁o󠄁p󠄁b󠄁a󠄁c󠄁k󠄁,󠄁 l󠄁i󠄁n󠄁k󠄁-󠄁l󠄁o󠄁c󠄁a󠄁l󠄁 a󠄁n󠄁d󠄁 s󠄁p󠄁l󠄁i󠄁t󠄁-󠄁h󠄁o󠄁r󠄁i󠄁z󠄁o󠄁n󠄁 a󠄁n󠄁s󠄁w󠄁e󠄁r󠄁s󠄁 a󠄁r󠄁e󠄁 p󠄁e󠄁r󠄁m󠄁i󠄁t󠄁t󠄁e󠄁d󠄁 w󠄁h󠄁e󠄁n󠄁 t󠄁h󠄁e󠄁 p󠄁l󠄁a󠄁t󠄁f󠄁o󠄁r󠄁m󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁'󠄁s󠄁 T󠄁L󠄁S󠄁 c󠄁e󠄁r󠄁t󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁e󠄁.󠄁 T󠄁h󠄁e󠄁r󠄁e󠄁 i󠄁s󠄁 n󠄁o󠄁 D󠄁N󠄁S󠄁 p󠄁r󠄁e󠄁f󠄁l󠄁i󠄁g󠄁h󠄁t󠄁 o󠄁r󠄁 c󠄁o󠄁n󠄁n󠄁e󠄁c󠄁t󠄁e󠄁d󠄁-󠄁p󠄁e󠄁e󠄁r󠄁 f󠄁i󠄁l󠄁t󠄁e󠄁r󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁'󠄁s󠄁 h󠄁e󠄁l󠄁p󠄁 d󠄁i󠄁s󠄁c󠄁l󠄁o󠄁s󠄁e󠄁s󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁-󠄁n󠄁e󠄁t󠄁w󠄁o󠄁r󠄁k󠄁 r󠄁o󠄁u󠄁t󠄁i󠄁n󠄁g󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 |
+| P󠄁r󠄁o󠄁x󠄁i󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁l󠄁a󠄁y󠄁s󠄁 | S󠄁y󠄁s󠄁t󠄁e󠄁m󠄁 r󠄁o󠄁u󠄁t󠄁i󠄁n󠄁g󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁n󠄁f󠄁i󠄁g󠄁u󠄁r󠄁e󠄁d󠄁 p󠄁r󠄁o󠄁x󠄁i󠄁e󠄁s󠄁,󠄁 i󠄁s󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 a󠄁p󠄁p󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 f󠄁o󠄁r󠄁c󠄁e󠄁 a󠄁 d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁 o󠄁r󠄁 s󠄁u󠄁p󠄁p󠄁l󠄁y󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁 c󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁s󠄁.󠄁 A󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁 c󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁 c󠄁h󠄁a󠄁l󠄁l󠄁e󠄁n󠄁g󠄁e󠄁 i󠄁s󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁d󠄁.󠄁 |
 | T󠄁r󠄁a󠄁n󠄁s󠄁f󠄁e󠄁r󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁s󠄁 | 1󠄁5󠄁 s󠄁e󠄁c󠄁o󠄁n󠄁d󠄁s󠄁;󠄁 5󠄁 M󠄁i󠄁B󠄁 m󠄁a󠄁x󠄁i󠄁m󠄁u󠄁m󠄁 a󠄁d󠄁v󠄁e󠄁r󠄁t󠄁i󠄁s󠄁e󠄁d󠄁 C󠄁o󠄁n󠄁t󠄁e󠄁n󠄁t󠄁-󠄁L󠄁e󠄁n󠄁g󠄁t󠄁h󠄁 a󠄁n󠄁d󠄁 m󠄁a󠄁x󠄁i󠄁m󠄁u󠄁m󠄁 d󠄁a󠄁t󠄁a󠄁 d󠄁e󠄁l󠄁i󠄁v󠄁e󠄁r󠄁e󠄁d󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁e󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁 C󠄁o󠄁n󠄁t󠄁e󠄁n󠄁t󠄁-󠄁L󠄁e󠄁n󠄁g󠄁t󠄁h󠄁.󠄁 E󠄁n󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁e󠄁 l󠄁e󠄁n󠄁g󠄁t󠄁h󠄁 a󠄁n󠄁d󠄁 d󠄁e󠄁l󠄁i󠄁v󠄁e󠄁r󠄁e󠄁d󠄁 d󠄁a󠄁t󠄁a󠄁 a󠄁r󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁e󠄁d󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁.󠄁 |
 | R󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁e󠄁 | H󠄁T󠄁T󠄁P󠄁 2󠄁0󠄁0󠄁 a󠄁n󠄁d󠄁 P󠄁N󠄁G󠄁,󠄁 J󠄁P󠄁E󠄁G󠄁 o󠄁r󠄁 G󠄁I󠄁F󠄁 M󠄁I󠄁M󠄁E󠄁 t󠄁y󠄁p󠄁e󠄁;󠄁 I󠄁m󠄁a󠄁g󠄁e󠄁I󠄁O󠄁 m󠄁u󠄁s󠄁t󠄁 a󠄁l󠄁s󠄁o󠄁 r󠄁e󠄁c󠄁o󠄁g󠄁n󠄁i󠄁z󠄁e󠄁 o󠄁n󠄁e󠄁 o󠄁f󠄁 t󠄁h󠄁o󠄁s󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁s󠄁.󠄁 |
 | D󠄁e󠄁c󠄁o󠄁d󠄁e󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁s󠄁 | M󠄁a󠄁x󠄁i󠄁m󠄁u󠄁m󠄁 s󠄁i󠄁d󠄁e󠄁 8󠄁1󠄁9󠄁2󠄁 p󠄁i󠄁x󠄁e󠄁l󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁r󠄁e󠄁a󠄁 1󠄁6󠄁 m󠄁i󠄁l󠄁l󠄁i󠄁o󠄁n󠄁 p󠄁i󠄁x󠄁e󠄁l󠄁s󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁i󠄁n󠄁g󠄁;󠄁 t󠄁h󠄁u󠄁m󠄁b󠄁n󠄁a󠄁i󠄁l󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁 a󠄁t󠄁 m󠄁o󠄁s󠄁t󠄁 1󠄁6󠄁0󠄁0󠄁 p󠄁i󠄁x󠄁e󠄁l󠄁s󠄁 p󠄁e󠄁r󠄁 s󠄁i󠄁d󠄁e󠄁.󠄁 A󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 s󠄁e󠄁r󠄁i󠄁a󠄁l󠄁 a󠄁c󠄁t󠄁o󠄁r󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁s󠄁 a󠄁w󠄁a󠄁y󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 m󠄁a󠄁i󠄁n󠄁 a󠄁c󠄁t󠄁o󠄁r󠄁.󠄁 A󠄁n󠄁 8󠄁-󠄁b󠄁i󠄁t󠄁 R󠄁G󠄁B󠄁A󠄁 f󠄁r󠄁a󠄁m󠄁e󠄁 o󠄁f󠄁 t󠄁h󠄁a󠄁t󠄁 a󠄁r󠄁e󠄁a󠄁 i󠄁s󠄁 a󠄁b󠄁o󠄁u󠄁t󠄁 6󠄁4󠄁 M󠄁B󠄁;󠄁 h󠄁i󠄁g󠄁h󠄁e󠄁r󠄁 b󠄁i󠄁t󠄁 d󠄁e󠄁p󠄁t󠄁h󠄁s󠄁 a󠄁n󠄁d󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁r󠄁 w󠄁o󠄁r󠄁k󠄁 b󠄁u󠄁f󠄁f󠄁e󠄁r󠄁s󠄁 c󠄁a󠄁n󠄁 u󠄁s󠄁e󠄁 m󠄁o󠄁r󠄁e󠄁.󠄁 G󠄁I󠄁F󠄁 u󠄁s󠄁e󠄁s󠄁 i󠄁t󠄁s󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁 f󠄁r󠄁a󠄁m󠄁e󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁n󠄁i󠄁m󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 |
-| D󠄁i󠄁s󠄁p󠄁l󠄁a󠄁y󠄁 | I󠄁m󠄁a󠄁g󠄁e󠄁 p󠄁i󠄁x󠄁e󠄁l󠄁 d󠄁i󠄁m󠄁e󠄁n󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁r󠄁e󠄁 t󠄁r󠄁e󠄁a󠄁t󠄁e󠄁d󠄁 a󠄁s󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 s󠄁c󠄁a󠄁l󠄁e󠄁d󠄁 d󠄁o󠄁w󠄁n󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 o󠄁r󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁-󠄁c󠄁e󠄁l󠄁l󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁 a󠄁n󠄁d󠄁 a󠄁t󠄁 m󠄁o󠄁s󠄁t󠄁 4󠄁0󠄁0󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁 t󠄁a󠄁l󠄁l󠄁.󠄁 |
+| D󠄁i󠄁s󠄁p󠄁l󠄁a󠄁y󠄁 | D󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 p󠄁i󠄁x󠄁e󠄁l󠄁 d󠄁i󠄁m󠄁e󠄁n󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁r󠄁e󠄁 d󠄁i󠄁v󠄁i󠄁d󠄁e󠄁d󠄁 b󠄁y󠄁 t󠄁h󠄁e󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 b󠄁a󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 s󠄁c󠄁a󠄁l󠄁e󠄁 (󠄁2󠄁4󠄁0󠄁 b󠄁y󠄁 1󠄁2󠄁0󠄁 p󠄁i󠄁x󠄁e󠄁l󠄁s󠄁 b󠄁e󠄁c󠄁o󠄁m󠄁e󠄁s󠄁 1󠄁2󠄁0󠄁 b󠄁y󠄁 6󠄁0󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁 o󠄁n󠄁 a󠄁 2󠄁x󠄁 d󠄁i󠄁s󠄁p󠄁l󠄁a󠄁y󠄁)󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 s󠄁c󠄁a󠄁l󠄁e󠄁d󠄁 d󠄁o󠄁w󠄁n󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 o󠄁r󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁-󠄁c󠄁e󠄁l󠄁l󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁 a󠄁n󠄁d󠄁 a󠄁t󠄁 m󠄁o󠄁s󠄁t󠄁 4󠄁0󠄁0󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁 t󠄁a󠄁l󠄁l󠄁.󠄁 B󠄁a󠄁c󠄁k󠄁i󠄁n󠄁g󠄁-󠄁s󠄁c󠄁a󠄁l󠄁e󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 r󠄁e󠄁m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁 t󠄁h󠄁e󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁.󠄁 |
 | C󠄁a󠄁c󠄁h󠄁e󠄁 | N󠄁o󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁i󠄁s󠄁k󠄁 c󠄁a󠄁c󠄁h󠄁e󠄁 o󠄁r󠄁 c󠄁r󠄁o󠄁s󠄁s󠄁-󠄁p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 c󠄁a󠄁c󠄁h󠄁e󠄁;󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 p󠄁i󠄁x󠄁e󠄁l󠄁s󠄁 b󠄁e󠄁l󠄁o󠄁n󠄁g󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 |
 | F󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁 | N󠄁o󠄁 a󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁i󠄁c󠄁 r󠄁e󠄁t󠄁r󠄁y󠄁,󠄁 r󠄁e󠄁d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁s󠄁,󠄁 a󠄁u󠄁t󠄁h󠄁e󠄁n󠄁t󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁r󠄁o󠄁m󠄁p󠄁t󠄁s󠄁 o󠄁r󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 b󠄁r󠄁o󠄁w󠄁s󠄁e󠄁r󠄁 o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁.󠄁 |
 
@@ -82,6 +84,41 @@ a󠄁n󠄁d󠄁 T󠄁L󠄁S󠄁 m󠄁e󠄁t󠄁a󠄁d󠄁a󠄁t󠄁a󠄁.󠄁 P�
 c󠄁h󠄁o󠄁i󠄁c󠄁e󠄁 a󠄁b󠄁o󠄁v󠄁e󠄁.󠄁 S󠄁V󠄁G󠄁,󠄁 W󠄁e󠄁b󠄁P󠄁,󠄁 P󠄁D󠄁F󠄁,󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 f󠄁i󠄁l󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁p󠄁o󠄁s󠄁i󠄁t󠄁o󠄁r󠄁y󠄁-󠄁r󠄁e󠄁l󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁s󠄁 a󠄁r󠄁e󠄁
 o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 t󠄁h󠄁i󠄁s󠄁 s󠄁l󠄁i󠄁c󠄁e󠄁.󠄁
 
+
+## R󠄁o󠄁u󠄁t󠄁i󠄁n󠄁g󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 P󠄁R󠄁 D󠄁
+
+T󠄁h󠄁i󠄁s󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁-󠄁u󠄁p󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁s󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 U󠄁R󠄁L󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 w󠄁i󠄁t󠄁h󠄁 s󠄁y󠄁s󠄁t󠄁e󠄁m󠄁 r󠄁o󠄁u󠄁t󠄁i󠄁n󠄁g󠄁,󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁
+t󠄁h󠄁a󠄁n󠄁 p󠄁u󠄁b󠄁l󠄁i󠄁c󠄁-󠄁a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 A󠄁 p󠄁a󠄁g󠄁e󠄁 m󠄁a󠄁y󠄁 n󠄁a󠄁m󠄁e󠄁 a󠄁 p󠄁u󠄁b󠄁l󠄁i󠄁c󠄁l󠄁y󠄁 s󠄁h󠄁a󠄁p󠄁e󠄁d󠄁
+h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁 w󠄁h󠄁o󠄁s󠄁e󠄁 s󠄁y󠄁s󠄁t󠄁e󠄁m󠄁 D󠄁N󠄁S󠄁 a󠄁n󠄁s󠄁w󠄁e󠄁r󠄁 i󠄁s󠄁 p󠄁r󠄁i󠄁v󠄁a󠄁t󠄁e󠄁 o󠄁r󠄁 l󠄁i󠄁n󠄁k󠄁-󠄁l󠄁o󠄁c󠄁a󠄁l󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 o󠄁n󠄁 a󠄁 V󠄁P󠄁N󠄁
+o󠄁r󠄁 a󠄁 s󠄁p󠄁l󠄁i󠄁t󠄁-󠄁h󠄁o󠄁r󠄁i󠄁z󠄁o󠄁n󠄁 n󠄁e󠄁t󠄁w󠄁o󠄁r󠄁k󠄁.󠄁 C󠄁l󠄁i󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 i󠄁t󠄁s󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁e󠄁s󠄁 t󠄁h󠄁a󠄁t󠄁 U󠄁R󠄁L󠄁 u󠄁n󠄁d󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁
+s󠄁a󠄁m󠄁e󠄁 T󠄁L󠄁S󠄁,󠄁 r󠄁e󠄁d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁,󠄁 a󠄁u󠄁t󠄁h󠄁e󠄁n󠄁t󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 t󠄁r󠄁a󠄁n󠄁s󠄁f󠄁e󠄁r󠄁 r󠄁e󠄁s󠄁t󠄁r󠄁i󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁b󠄁o󠄁v󠄁e󠄁.󠄁 A󠄁 b󠄁a󠄁r󠄁e󠄁
+p󠄁r󠄁i󠄁v󠄁a󠄁t󠄁e󠄁 I󠄁P󠄁 U󠄁R󠄁L󠄁 o󠄁r󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁-󠄁n󠄁a󠄁m󠄁e󠄁 U󠄁R󠄁L󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 u󠄁n󠄁a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁.󠄁 T󠄁h󠄁e󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁 r󠄁e󠄁s󠄁t󠄁r󠄁i󠄁c󠄁t󠄁i󠄁o󠄁n󠄁
+i󠄁s󠄁 a󠄁n󠄁 a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁-󠄁s󠄁y󠄁n󠄁t󠄁a󠄁x󠄁 r󠄁e󠄁s󠄁t󠄁r󠄁i󠄁c󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 n󠄁o󠄁t󠄁 a󠄁 n󠄁e󠄁t󠄁w󠄁o󠄁r󠄁k󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁.󠄁
+
+T󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁 d󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁i󠄁n󠄁g󠄁 s󠄁u󠄁m󠄁m󠄁a󠄁r󠄁y󠄁 a󠄁r󠄁e󠄁 a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁'󠄁s󠄁
+t󠄁o󠄁o󠄁l󠄁t󠄁i󠄁p󠄁 a󠄁n󠄁d󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 h󠄁e󠄁l󠄁p󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁:󠄁
+
+> O󠄁n󠄁e󠄁 H󠄁T󠄁T󠄁P󠄁S󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁 u󠄁s󠄁i󠄁n󠄁g󠄁 s󠄁y󠄁s󠄁t󠄁e󠄁m󠄁 D󠄁N󠄁S󠄁 a󠄁n󠄁d󠄁 p󠄁r󠄁o󠄁x󠄁i󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁 m󠄁a󠄁y󠄁 r󠄁e󠄁a󠄁c󠄁h󠄁 a󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 n󠄁e󠄁t󠄁w󠄁o󠄁r󠄁k󠄁.󠄁 N󠄁o󠄁 r󠄁e󠄁d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁s󠄁,󠄁 c󠄁o󠄁o󠄁k󠄁i󠄁e󠄁s󠄁,󠄁 o󠄁r󠄁 s󠄁a󠄁v󠄁e󠄁d󠄁 c󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁s󠄁.󠄁
+
+T󠄁h󠄁e󠄁 a󠄁l󠄁t󠄁e󠄁r󠄁n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁,󠄁 a󠄁 p󠄁u󠄁b󠄁l󠄁i󠄁c󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 c󠄁o󠄁n󠄁n󠄁e󠄁c󠄁t󠄁e󠄁d󠄁-󠄁p󠄁e󠄁e󠄁r󠄁 r󠄁u󠄁l󠄁e󠄁,󠄁 i󠄁s󠄁 o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 t󠄁h󠄁i󠄁s󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁a󠄁l󠄁.󠄁
+A󠄁 D󠄁N󠄁S󠄁 p󠄁r󠄁e󠄁f󠄁l󠄁i󠄁g󠄁h󠄁t󠄁 c󠄁o󠄁u󠄁l󠄁d󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁 a󠄁 d󠄁i󠄁f󠄁f󠄁e󠄁r󠄁e󠄁n󠄁t󠄁 a󠄁n󠄁s󠄁w󠄁e󠄁r󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁n󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁'󠄁s󠄁 a󠄁n󠄁s󠄁w󠄁e󠄁r󠄁,󠄁
+a󠄁n󠄁d󠄁 a󠄁n󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁-󠄁r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁e󠄁 m󠄁e󠄁t󠄁r󠄁i󠄁c󠄁 c󠄁a󠄁n󠄁n󠄁o󠄁t󠄁 r󠄁e󠄁t󠄁r󠄁a󠄁c󠄁t󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁.󠄁 A󠄁p󠄁p󠄁l󠄁e󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁s󠄁
+[`remoteAddress`](https://developer.apple.com/documentation/foundation/urlsessiontasktransactionmetrics/remoteaddress)
+e󠄁x󠄁a󠄁c󠄁t󠄁l󠄁y󠄁 a󠄁s󠄁 “󠄁T󠄁h󠄁e󠄁 I󠄁P󠄁 a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁 s󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 o󠄁f󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁m󠄁o󠄁t󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁n󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁.󠄁”󠄁
+I󠄁t󠄁s󠄁 [t󠄁a󠄁s󠄁k󠄁 m󠄁e󠄁t󠄁r󠄁i󠄁c󠄁s󠄁 d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁](https://developer.apple.com/documentation/foundation/urlsessiontasktransactionmetrics)
+s󠄁t󠄁a󠄁t󠄁e󠄁s󠄁 e󠄁x󠄁a󠄁c󠄁t󠄁l󠄁y󠄁:󠄁 “󠄁t󠄁h󠄁e󠄁 r󠄁e󠄁m󠄁o󠄁t󠄁e󠄁A󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁 p󠄁r󠄁o󠄁p󠄁e󠄁r󠄁t󠄁y󠄁 c󠄁o󠄁n󠄁t󠄁a󠄁i󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁 a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁 o󠄁f󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁,󠄁
+a󠄁n󠄁d󠄁 n󠄁o󠄁t󠄁 t󠄁h󠄁e󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁 s󠄁e󠄁r󠄁v󠄁e󠄁r󠄁.󠄁”󠄁 A󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁 p󠄁e󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁r󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 c󠄁a󠄁n󠄁n󠄁o󠄁t󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁 t󠄁h󠄁e󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁'󠄁s󠄁
+a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁 c󠄁l󠄁a󠄁s󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁s󠄁e󠄁 A󠄁P󠄁I󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 i󠄁n󠄁f󠄁o󠄁r󠄁m󠄁 t󠄁h󠄁i󠄁s󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁;󠄁
+t󠄁h󠄁e󠄁y󠄁 d󠄁o󠄁 n󠄁o󠄁t󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁 a󠄁n󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁r󠄁i󠄁v󠄁a󠄁c󠄁y󠄁 g󠄁u󠄁a󠄁r󠄁a󠄁n󠄁t󠄁e󠄁e󠄁.󠄁
+
+T󠄁h󠄁e󠄁 p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁n󠄁f󠄁i󠄁g󠄁u󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 l󠄁e󠄁a󠄁v󠄁e󠄁s󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 p󠄁l󠄁a󠄁t󠄁f󠄁o󠄁r󠄁m󠄁.󠄁 A󠄁p󠄁p󠄁l󠄁e󠄁'󠄁s󠄁
+[`connectionProxyDictionary` d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/connectionproxydictionary)
+s󠄁t󠄁a󠄁t󠄁e󠄁s󠄁 e󠄁x󠄁a󠄁c󠄁t󠄁l󠄁y󠄁:󠄁 “󠄁T󠄁h󠄁e󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁 i󠄁s󠄁 N󠄁U󠄁L󠄁L󠄁,󠄁 w󠄁h󠄁i󠄁c󠄁h󠄁 m󠄁e󠄁a󠄁n󠄁s󠄁 t󠄁h󠄁a󠄁t󠄁 t󠄁a󠄁s󠄁k󠄁s󠄁 u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁
+d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁 s󠄁y󠄁s󠄁t󠄁e󠄁m󠄁 s󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁.󠄁”󠄁 T󠄁h󠄁e󠄁 a󠄁p󠄁p󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 a󠄁d󠄁d󠄁 a󠄁 D󠄁N󠄁S󠄁 q󠄁u󠄁e󠄁r󠄁y󠄁,󠄁 l󠄁o󠄁g󠄁 p󠄁e󠄁e󠄁r󠄁 a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁e󠄁s󠄁,󠄁
+o󠄁r󠄁 a󠄁d󠄁d󠄁 a󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 a󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁.󠄁 F󠄁u󠄁t󠄁u󠄁r󠄁e󠄁 p󠄁u󠄁b󠄁l󠄁i󠄁c󠄁-󠄁o󠄁n󠄁l󠄁y󠄁
+b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 w󠄁o󠄁u󠄁l󠄁d󠄁 r󠄁e󠄁q󠄁u󠄁i󠄁r󠄁e󠄁 a󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁e󠄁d󠄁 t󠄁r󠄁a󠄁n󠄁s󠄁p󠄁o󠄁r󠄁t󠄁 t󠄁h󠄁a󠄁t󠄁 b󠄁i󠄁n󠄁d󠄁s󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
+t󠄁o󠄁 t󠄁h󠄁e󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁 c󠄁o󠄁n󠄁n󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 i󠄁t󠄁s󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁.󠄁
+
 ## Validation and remaining review
 
 D󠄁e󠄁t󠄁e󠄁r󠄁m󠄁i󠄁n󠄁i󠄁s󠄁t󠄁i󠄁c󠄁 l󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁c󠄁e󠄁p󠄁t󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 U󠄁R󠄁L󠄁P󠄁r󠄁o󠄁t󠄁o󠄁c󠄁o󠄁l󠄁.󠄁 M󠄁o󠄁u󠄁n󠄁t󠄁e󠄁d󠄁
@@ -91,7 +128,10 @@ c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁,󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁e�
 o󠄁r󠄁d󠄁e󠄁r󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 c󠄁o󠄁n󠄁t󠄁a󠄁c󠄁t󠄁i󠄁n󠄁g󠄁 e󠄁x󠄁t󠄁e󠄁r󠄁n󠄁a󠄁l󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 s󠄁e󠄁r󠄁v󠄁e󠄁r󠄁s󠄁.󠄁
 
 N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 b󠄁i󠄁t󠄁m󠄁a󠄁p󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 a󠄁s󠄁s󠄁e󠄁s󠄁s󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁 o󠄁n󠄁l󠄁y󠄁.󠄁 S󠄁p󠄁o󠄁k󠄁e󠄁n󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 a󠄁n󠄁n󠄁o󠄁u󠄁n󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁s󠄁,󠄁
-k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 w󠄁i󠄁t󠄁h󠄁 s󠄁y󠄁s󠄁t󠄁e󠄁m󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 s󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁,󠄁 r󠄁e󠄁a󠄁l󠄁 n󠄁e󠄁t󠄁w󠄁o󠄁r󠄁k󠄁/󠄁T󠄁L󠄁S󠄁
-b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 a󠄁n󠄁d󠄁 m󠄁i󠄁n󠄁i󠄁m󠄁u󠄁m󠄁-󠄁w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 n󠄁e󠄁e󠄁d󠄁 a󠄁 h󠄁u󠄁m󠄁a󠄁n󠄁 p󠄁a󠄁s󠄁s󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 t󠄁h󠄁e󠄁
-d󠄁r󠄁a󠄁f󠄁t󠄁 i󠄁s󠄁 r󠄁e󠄁a󠄁d󠄁y󠄁 t󠄁o󠄁 m󠄁e󠄁r󠄁g󠄁e󠄁.󠄁 A󠄁 p󠄁a󠄁s󠄁s󠄁i󠄁n󠄁g󠄁 a󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁e󠄁d󠄁 t󠄁e󠄁s󠄁t󠄁 i󠄁s󠄁 n󠄁o󠄁t󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁o󠄁s󠄁e󠄁
-u󠄁n󠄁p󠄁e󠄁r󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁.󠄁
+k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 w󠄁i󠄁t󠄁h󠄁 s󠄁y󠄁s󠄁t󠄁e󠄁m󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 s󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 a󠄁n󠄁d󠄁 m󠄁i󠄁n󠄁i󠄁m󠄁u󠄁m󠄁-󠄁w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁
+i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 n󠄁e󠄁e󠄁d󠄁 a󠄁 h󠄁u󠄁m󠄁a󠄁n󠄁 p󠄁a󠄁s󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 s󠄁o󠄁c󠄁k󠄁e󠄁t󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁d󠄁 i󠄁n󠄁
+[t󠄁h󠄁e󠄁 Q󠄁A󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁](../../qa/markdown-image-loading.md#routing-policy-follow-up)
+c󠄁o󠄁v󠄁e󠄁r󠄁s󠄁 a󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁f󠄁u󠄁l󠄁 p󠄁u󠄁b󠄁l󠄁i󠄁c󠄁 H󠄁T󠄁T󠄁P󠄁S󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 a󠄁 l󠄁o󠄁o󠄁p󠄁b󠄁a󠄁c󠄁k󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁,󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁
+c󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 a󠄁n󠄁d󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 u󠄁n󠄁t󠄁r󠄁u󠄁s󠄁t󠄁e󠄁d󠄁-󠄁c󠄁e󠄁r󠄁t󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁e󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁.󠄁 I󠄁t󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 c󠄁e󠄁r󠄁t󠄁i󠄁f󠄁y󠄁
+a󠄁 t󠄁r󠄁u󠄁s󠄁t󠄁e󠄁d󠄁 p󠄁r󠄁i󠄁v󠄁a󠄁t󠄁e󠄁-󠄁o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁 o󠄁r󠄁 s󠄁p󠄁l󠄁i󠄁t󠄁-󠄁h󠄁o󠄁r󠄁i󠄁z󠄁o󠄁n󠄁 d󠄁e󠄁p󠄁l󠄁o󠄁y󠄁m󠄁e󠄁n󠄁t󠄁.󠄁 A󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁e󠄁d󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 d󠄁o󠄁 n󠄁o󠄁t󠄁
+c󠄁e󠄁r󠄁t󠄁i󠄁f󠄁y󠄁 s󠄁p󠄁o󠄁k󠄁e󠄁n󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁.󠄁

@@ -1,5 +1,14 @@
 # Rust Markdown preview integration
 
+## F󠄁o󠄁l󠄁l󠄁o󠄁w󠄁-󠄁u󠄁p󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 P󠄁R󠄁 #󠄁3󠄁3󠄁6󠄁
+
+P󠄁R󠄁 #󠄁3󠄁3󠄁7󠄁 n󠄁o󠄁w󠄁 u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 u󠄁s󠄁e󠄁r󠄁-󠄁s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 v󠄁e󠄁n󠄁d󠄁o󠄁r󠄁e󠄁d󠄁 c󠄁o󠄁m󠄁r󠄁a󠄁k󠄁 R󠄁u󠄁s󠄁t󠄁 r󠄁u󠄁n󠄁t󠄁i󠄁m󠄁e󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁t󠄁.󠄁 A󠄁l󠄁l󠄁 f󠄁i󠄁v󠄁e󠄁
+s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁-󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 g󠄁o󠄁a󠄁l󠄁s󠄁 a󠄁r󠄁e󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁e󠄁;󠄁 d󠄁e󠄁f󠄁i󠄁n󠄁i󠄁t󠄁i󠄁o󠄁n󠄁/󠄁t󠄁i󠄁t󠄁l󠄁e󠄁/󠄁q󠄁u󠄁o󠄁t󠄁e󠄁 p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁p󠄁e󠄁a󠄁t󠄁e󠄁d󠄁
+r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁s󠄁 h󠄁a󠄁v󠄁e󠄁 c󠄁o󠄁r󠄁r󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 e󠄁x󠄁p󠄁e󠄁c󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 R󠄁u󠄁s󠄁t󠄁,󠄁 F󠄁F󠄁I󠄁,󠄁 a󠄁n󠄁d󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁.󠄁
+T󠄁h󠄁e󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 s󠄁t󠄁o󠄁c󠄁k󠄁-󠄁c󠄁o󠄁m󠄁r󠄁a󠄁k󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁 t󠄁h󠄁e󠄁 P󠄁R󠄁 B󠄁 b󠄁a󠄁s󠄁e󠄁l󠄁i󠄁n󠄁e󠄁,󠄁 n󠄁o󠄁t󠄁 t󠄁h󠄁e󠄁
+c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁-󠄁u󠄁p󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 S󠄁e󠄁e󠄁 t󠄁h󠄁e󠄁 [v󠄁e󠄁n󠄁d󠄁o󠄁r󠄁 g󠄁u󠄁i󠄁d󠄁e󠄁](../../crates/markdown/patches/README.md)
+a󠄁n󠄁d󠄁 [c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁](markdown-followup-validation.md).󠄁
+
 T󠄁h󠄁i󠄁s󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁s󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁b󠄁s󠄁e󠄁r󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁i󠄁n󠄁g󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 f󠄁o󠄁r󠄁 P󠄁R󠄁 B󠄁
 o󠄁f󠄁 [i󠄁s󠄁s󠄁u󠄁e󠄁 3󠄁3󠄁2󠄁](https://github.com/onetimesecret/macos/issues/332),󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁i󠄁n󠄁g󠄁
 [P󠄁R󠄁 3󠄁3󠄁3󠄁](https://github.com/onetimesecret/macos/pull/333).󠄁 I󠄁t󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁

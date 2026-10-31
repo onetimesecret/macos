@@ -37,6 +37,35 @@ extension NSAttributedString.Key {
 final class PreviewImageControls {
     static let maximumControls = 32
     static let maximumActiveImages = 4
+
+    private enum Action: CaseIterable {
+        case load, cancel, unload, retry, unavailable
+
+        var compactTitle: String {
+            let key: String
+            switch self {
+            case .load: key = "Load image"
+            case .cancel: key = "Cancel image"
+            case .unload: key = "Unload image"
+            case .retry: key = "Retry image"
+            case .unavailable: key = "Image unavailable"
+            }
+            return CompanionL10n.string(key)
+        }
+
+        func fullTitle(host: String) -> String {
+            let key: String
+            switch self {
+            case .load: key = "preview.image.load_from"
+            case .cancel: key = "preview.image.cancel_from"
+            case .unload: key = "preview.image.unload_from"
+            case .retry: key = "preview.image.retry_from"
+            case .unavailable: return compactTitle
+            }
+            return CompanionL10n.format(key, host)
+        }
+    }
+
     @MainActor
     private final class Entry {
         let descriptor: PreviewImageDescriptor
@@ -47,11 +76,19 @@ final class PreviewImageControls {
         let spokenAlt: String
         var controlRange = NSRange()
         var pictureRange = NSRange()
+        var presentationWidth: CGFloat = 340
         let button = PreviewImageButton()
         var task: Task<Void, Never>?
         var image: NSImage?
         var failure: String?
         var generation = UUID()
+
+        var action: Action {
+            guard approvedURL != nil else { return .unavailable }
+            if task != nil { return .cancel }
+            if image != nil { return .unload }
+            return failure == nil ? .load : .retry
+        }
 
         init(descriptor: PreviewImageDescriptor, range: NSRange, text: NSAttributedString) {
             self.descriptor = descriptor
@@ -81,9 +118,13 @@ final class PreviewImageControls {
     private weak var preview: MarkdownPreviewView?
     private var original = NSAttributedString(string: "")
     private var entries: [Entry] = []
+    private var tableParagraphs: [(range: NSRange, style: NSParagraphStyle)] = []
+    private var presentedLinearTables = Set<ObjectIdentifier>()
     private var presenting = false
     private var needsAnotherPresentation = false
     private var presentationScheduled = false
+    private var keyViewVisibilityChanged = false
+    private var compactWidthMeasurement: (font: NSFont, labels: [String], width: CGFloat)?
     private let loadImage: @MainActor (URL) async throws -> NSImage
 
     var buttons: [NSButton] { entries.map(\.button) }
@@ -99,42 +140,37 @@ final class PreviewImageControls {
         self.loadImage = load
     }
 
-    func seed(_ text: NSAttributedString, preserveConsent: Bool = false) {
+    func seed(_ text: NSAttributedString, selectedRanges: [NSValue]? = nil) {
         var descriptors: [(PreviewImageDescriptor, NSRange)] = []
         text.enumerateAttribute(.previewImage, in: NSRange(location: 0, length: text.length)) { value, range, stop in
             guard let descriptor = value as? PreviewImageDescriptor else { return }
             descriptors.append((descriptor, range))
             if descriptors.count == Self.maximumControls { stop.pointee = true }
         }
-        let sameImages = descriptors.count == entries.count && zip(descriptors, entries).allSatisfy {
-            $0.0.0 == $0.1.descriptor && $0.0.1 == $0.1.range
-        }
-        if !preserveConsent || original.string != text.string || !sameImages {
-            clearEntries()
-            for (descriptor, range) in descriptors {
-                let entry = Entry(descriptor: descriptor, range: range, text: text)
-                entry.button.preview = preview
-                entry.button.bezelStyle = .rounded
-                entry.button.controlSize = .small
-                entry.button.setAccessibilityRole(.button)
-                entry.button.setAccessibilityElement(true)
-                entry.button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-                entry.button.lineBreakMode = .byTruncatingHead
-                entry.button.target = self
-                entry.button.action = #selector(activate(_:))
-                entry.button.tag = entries.count
-                entries.append(entry)
-                preview?.addSubview(entry.button)
-            }
+        clearEntries()
+        for (descriptor, range) in descriptors {
+            let entry = Entry(descriptor: descriptor, range: range, text: text)
+            entry.button.preview = preview
+            entry.button.bezelStyle = .rounded
+            entry.button.controlSize = .small
+            entry.button.setAccessibilityRole(.button)
+            entry.button.setAccessibilityElement(true)
+            entry.button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            entry.button.lineBreakMode = .byTruncatingTail
+            entry.button.target = self
+            entry.button.action = #selector(activate(_:))
+            entry.button.tag = entries.count
+            entries.append(entry)
+            preview?.addSubview(entry.button)
         }
         original = text
-        seedStorage()
+        seedStorage(selectedRanges: selectedRanges)
         present()
     }
 
-    private func seedStorage() {
+    private func seedStorage(selectedRanges: [NSValue]?) {
         guard let preview, let storage = preview.textStorage else { return }
-        let selection = preview.selectedRanges
+        let selection = selectedRanges ?? preview.selectedRanges
         let text = NSMutableAttributedString(attributedString: original)
         for entry in entries.reversed() {
             let control = NSTextAttachment()
@@ -154,6 +190,15 @@ final class PreviewImageControls {
         for (index, entry) in entries.enumerated() {
             entry.controlRange = NSRange(location: NSMaxRange(entry.range) + index * 2, length: 1)
             entry.pictureRange = NSRange(location: entry.controlRange.location + 1, length: 1)
+        }
+        tableParagraphs.removeAll()
+        presentedLinearTables.removeAll()
+        original.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: original.length)) { value, range, _ in
+            guard let style = value as? NSParagraphStyle,
+                  style.textBlocks.contains(where: { $0 is NSTextTableBlock }) else { return }
+            let start = mappedOriginalIndex(range.location)
+            let end = mappedOriginalIndex(NSMaxRange(range))
+            tableParagraphs.append((NSRange(location: start, length: end - start), style))
         }
         storage.setAttributedString(text)
         let ranges = selection.map { value -> NSValue in
@@ -193,7 +238,7 @@ final class PreviewImageControls {
         let entry = entries[button.tag]
         guard entry.button === button, !button.isHidden,
               let storage = preview.textStorage, validRanges(entry, in: storage) else {
-            button.isHidden = true
+            setHidden(true, for: entry)
             return
         }
         if entry.task != nil || entry.image != nil {
@@ -274,27 +319,34 @@ final class PreviewImageControls {
         }
         let availableWidth = max(20, preview.bounds.width - preview.textContainerInset.width * 2 - 16)
         storage.beginEditing()
+        let linearTables = linearizedTables(availableWidth: availableWidth)
+        if linearTables != presentedLinearTables {
+            restoreParagraphs(in: storage, linearTables: linearTables)
+            presentedLinearTables = linearTables
+        }
         for entry in entries {
             guard validRanges(entry, in: storage) else {
-                entry.button.isHidden = true
+                setHidden(true, for: entry)
                 continue
             }
-            entry.button.isHidden = false
-            configure(entry)
+            setHidden(false, for: entry)
             let paragraph = original.attribute(.paragraphStyle, at: entry.range.location,
                                                effectiveRange: nil) as? NSParagraphStyle
             let cell = paragraph?.textBlocks.last as? NSTextTableBlock
-            let columns = max(1, cell?.table.numberOfColumns ?? 1)
-            let room = max(1, availableWidth / CGFloat(columns) - (paragraph?.headIndent ?? 0) - (cell == nil ? 0 : 14))
+            let linear = cell.map { linearTables.contains(ObjectIdentifier($0.table)) } ?? false
+            let columns = linear ? 1 : max(1, cell?.table.numberOfColumns ?? 1)
+            let room = max(1, availableWidth / CGFloat(columns) - (paragraph?.headIndent ?? 0) - (cell == nil || linear ? 0 : 14))
+            entry.presentationWidth = min(340, room)
+            configure(entry)
             let slot = NSTextAttachment()
-            slot.bounds = NSRect(x: 0, y: -6, width: min(340, room), height: 28)
+            slot.bounds = NSRect(x: 0, y: -6, width: entry.presentationWidth, height: 28)
             slot.attachmentCell = PreviewImageControlCell(size: slot.bounds.size)
             storage.addAttribute(.attachment, value: slot, range: entry.controlRange)
             let picture = NSTextAttachment()
             if let image = entry.image {
                 picture.image = image
-                let scale = min(1, min(room / max(1, image.size.width), 400 / max(1, image.size.height)))
-                picture.bounds = NSRect(x: 0, y: 0, width: image.size.width * scale, height: image.size.height * scale)
+                picture.bounds = Self.pictureBounds(image: image, room: room,
+                                                     backingScale: preview.window?.backingScaleFactor ?? 1)
                 storage.addAttribute(.previewLoadedImage, value: entry.descriptor.occurrence, range: entry.pictureRange)
             } else {
                 picture.bounds = .zero
@@ -306,6 +358,83 @@ final class PreviewImageControls {
         storage.endEditing()
         preview.needsLayout = true
         preview.needsDisplay = true
+    }
+
+    static func pictureBounds(image: NSImage, room: CGFloat, backingScale: CGFloat) -> NSRect {
+        let rasters = image.representations.compactMap { $0 as? NSBitmapImageRep }
+            .filter { $0.pixelsWide > 0 && $0.pixelsHigh > 0 }
+        if let raster = rasters.max(by: {
+            Double($0.pixelsWide) * Double($0.pixelsHigh) < Double($1.pixelsWide) * Double($1.pixelsHigh)
+        }) {
+            return pictureBounds(pixelSize: NSSize(width: raster.pixelsWide, height: raster.pixelsHigh),
+                                 room: room, backingScale: backingScale)
+        }
+        if !image.representations.isEmpty,
+           let raster = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return pictureBounds(pixelSize: NSSize(width: raster.width, height: raster.height),
+                                 room: room, backingScale: backingScale)
+        }
+        return fittedBounds(pointSize: image.size, room: room)
+    }
+
+    static func pictureBounds(pixelSize: NSSize, room: CGFloat, backingScale: CGFloat) -> NSRect {
+        let scale = max(1, backingScale)
+        return fittedBounds(pointSize: NSSize(width: pixelSize.width / scale, height: pixelSize.height / scale), room: room)
+    }
+
+    private static func fittedBounds(pointSize: NSSize, room: CGFloat) -> NSRect {
+        let fit = min(1, min(room / max(1, pointSize.width), 400 / max(1, pointSize.height)))
+        return NSRect(x: 0, y: 0, width: pointSize.width * fit, height: pointSize.height * fit)
+    }
+
+    private func minimumControlWidth(font: NSFont) -> CGFloat {
+        let labels = Action.allCases.map(\.compactTitle)
+        if let cached = compactWidthMeasurement, cached.font == font, cached.labels == labels { return cached.width }
+        let width = max(44, labels.map { ($0 as NSString).size(withAttributes: [.font: font]).width + 20 }.max() ?? 44)
+        compactWidthMeasurement = (font, labels, width)
+        return width
+    }
+
+    private func linearizedTables(availableWidth: CGFloat) -> Set<ObjectIdentifier> {
+        var result = Set<ObjectIdentifier>()
+        for entry in entries {
+            guard let style = original.attribute(.paragraphStyle, at: entry.range.location,
+                                                  effectiveRange: nil) as? NSParagraphStyle,
+                  let cell = style.textBlocks.last as? NSTextTableBlock else { continue }
+            let room = availableWidth / CGFloat(max(1, cell.table.numberOfColumns)) - style.headIndent - 14
+            let font = entry.button.font ?? .systemFont(ofSize: NSFont.smallSystemFontSize)
+            if room < minimumControlWidth(font: font) { result.insert(ObjectIdentifier(cell.table)) }
+        }
+        return result
+    }
+
+    private func mappedOriginalIndex(_ index: Int) -> Int {
+        index + entries.filter { NSMaxRange($0.range) <= index }.count * 2
+    }
+
+    private func restoreParagraphs(in storage: NSTextStorage, linearTables: Set<ObjectIdentifier>) {
+        func adjusted(_ style: NSParagraphStyle) -> NSParagraphStyle {
+            guard style.textBlocks.contains(where: {
+                guard let cell = $0 as? NSTextTableBlock else { return false }
+                return linearTables.contains(ObjectIdentifier(cell.table))
+            }), let copy = style.mutableCopy() as? NSMutableParagraphStyle else { return style }
+            copy.textBlocks = style.textBlocks.filter {
+                guard let cell = $0 as? NSTextTableBlock else { return true }
+                return !linearTables.contains(ObjectIdentifier(cell.table))
+            }
+            return copy
+        }
+        for paragraph in tableParagraphs where NSMaxRange(paragraph.range) <= storage.length {
+            storage.addAttribute(.paragraphStyle, value: adjusted(paragraph.style), range: paragraph.range)
+        }
+        for entry in entries {
+            guard validRanges(entry, in: storage),
+                  let style = original.attribute(.paragraphStyle, at: entry.range.location,
+                                                 effectiveRange: nil) as? NSParagraphStyle,
+                  style.textBlocks.contains(where: { $0 is NSTextTableBlock }) else { continue }
+            storage.addAttribute(.paragraphStyle, value: adjusted(style),
+                                 range: NSRange(location: entry.controlRange.location, length: 2))
+        }
     }
 
     private func schedulePresentation() {
@@ -320,24 +449,29 @@ final class PreviewImageControls {
 
     private func configure(_ entry: Entry) {
         let url = entry.approvedURL
-        let actionKey: String
-        if entry.task != nil { actionKey = "preview.image.cancel_from" }
-        else if entry.image != nil { actionKey = "preview.image.unload_from" }
-        else if entry.failure != nil { actionKey = "preview.image.retry_from" }
-        else { actionKey = "preview.image.load_from" }
-        entry.button.title = url == nil ? CompanionL10n.string("Image unavailable")
-            : CompanionL10n.format(actionKey, entry.host)
+        let action = entry.action
+        let fullTitle = action.fullTitle(host: entry.host)
+        let font = entry.button.font ?? NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        let needsCompact = action != .unavailable
+            && (fullTitle as NSString).size(withAttributes: [.font: font]).width + 20 > entry.presentationWidth
+        let visibleTitle = needsCompact ? action.compactTitle : fullTitle
+        if entry.button.title != visibleTitle { entry.button.title = visibleTitle }
         let hasReservation = entry.task != nil || entry.image != nil
         entry.button.isEnabled = url != nil && preview?.isImagePresentationActive == true
             && (hasReservation || activeImages < Self.maximumActiveImages)
-        let policy = CompanionL10n.string("One HTTPS image request. No redirects, cookies, or saved credentials.")
+        let policy = PreviewImageRequestPolicy.requestSummary
         let help = url.map { "\($0.absoluteString)\n\(policy)" }
             ?? entry.refusal ?? CompanionL10n.string("Image unavailable")
         let capacity = !hasReservation && activeImages >= Self.maximumActiveImages
             ? CompanionL10n.string("Unload or cancel another image first (four images at a time).") : nil
         entry.button.toolTip = [entry.failure, capacity, help].compactMap { $0 }.joined(separator: "\n")
-        entry.button.setAccessibilityLabel(CompanionL10n.format("preview.image.accessibility", entry.button.title, entry.spokenAlt))
+        let label = CompanionL10n.format("preview.image.accessibility", fullTitle, entry.spokenAlt)
+        let changed = entry.button.accessibilityLabel() != label
         entry.button.setAccessibilityHelp(entry.button.toolTip)
+        if changed {
+            entry.button.setAccessibilityLabel(label)
+            NSAccessibility.post(element: entry.button, notification: .titleChanged)
+        }
     }
 
     private func validRanges(_ entry: Entry, in storage: NSTextStorage) -> Bool {
@@ -354,19 +488,34 @@ final class PreviewImageControls {
                                  effectiveRange: nil) is NSTextAttachment
     }
 
+    private func setHidden(_ hidden: Bool, for entry: Entry) {
+        guard entry.button.isHidden != hidden else { return }
+        entry.button.isHidden = hidden
+        keyViewVisibilityChanged = true
+    }
+
     func layout() {
         guard let preview, let storage = preview.textStorage,
               let manager = preview.layoutManager, let container = preview.textContainer else { return }
         manager.ensureLayout(for: container)
+        var keyViewGeometryChanged = false
         for entry in entries {
             guard validRanges(entry, in: storage) else {
-                entry.button.isHidden = true
+                setHidden(true, for: entry)
                 continue
             }
-            entry.button.isHidden = false
+            setHidden(false, for: entry)
             let glyphs = manager.glyphRange(forCharacterRange: entry.controlRange, actualCharacterRange: nil)
             let bounds = manager.boundingRect(forGlyphRange: glyphs, in: container)
-            entry.button.frame = bounds.offsetBy(dx: preview.textContainerOrigin.x, dy: preview.textContainerOrigin.y)
+            let frame = bounds.offsetBy(dx: preview.textContainerOrigin.x, dy: preview.textContainerOrigin.y)
+            if entry.button.frame != frame {
+                entry.button.frame = frame
+                keyViewGeometryChanged = true
+            }
+        }
+        if (keyViewGeometryChanged || keyViewVisibilityChanged), let window = preview.window {
+            keyViewVisibilityChanged = false
+            window.recalculateKeyViewLoop()
         }
     }
 }

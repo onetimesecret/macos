@@ -30,6 +30,7 @@ jobs:
         run: |
           cargo fetch --locked
           ./scripts/verify-betlang.py
+          ./scripts/verify-vendored-comrak.py --upstream
           python3 -m unittest discover -s scripts/tests -v
       - name: Reproduce language threshold selection
         run: |
@@ -42,7 +43,7 @@ jobs:
           cmp /tmp/threshold-selection.json tools/language-eval/reports/2026-09-14/selection/threshold-selection.json
           cmp /tmp/threshold-selection.md tools/language-eval/reports/2026-09-14/selection/threshold-selection.md
       - name: Format
-        run: cargo fmt --all --check
+        run: cargo fmt --check
       - name: Clippy
         run: cargo clippy -p companion-core -p language-eval -p ots-client -p companion-credentials -p companion-ffi -p companion-markdown -p companion-sync -p companion-transport --all-targets -- -D warnings
       - name: Test
@@ -53,7 +54,17 @@ jobs:
       - name: Test (test-util seams)
         run: cargo test -p companion-ffi --features test-util
       - name: cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2; cargo-deny 0.20.2
+        with:
+          arguments: --all-features --locked
+      - name: Prepare vendored comrak registry-origin policy check
+        run: ./scripts/verify-vendored-comrak.py --advisory-workspace target/comrak-advisories-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: cargo-deny (vendored comrak upstream policy)
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2; cargo-deny 0.20.2
+        with:
+          manifest-path: target/comrak-advisories-${{ github.run_id }}-${{ github.run_attempt }}/Cargo.toml
+          arguments: --locked --config deny.toml
+          command: check
 
   platform:
     name: platform (macos)

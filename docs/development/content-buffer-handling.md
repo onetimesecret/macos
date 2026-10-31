@@ -327,10 +327,10 @@ companion-ffi` with and without `test-util`, and the focused Swift suites
 The full gate for this round is left to CI on the pushed branch.
 
 **Final gate at `fe03c8cb`:** all commands below passed after the Rust and Swift
-changes were committed:
+changes were c󠄁o󠄁m󠄁m󠄁i󠄁t󠄁t󠄁e󠄁d󠄁 (󠄁t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁t󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁 n󠄁o󠄁w󠄁 a󠄁v󠄁o󠄁i󠄁d󠄁s󠄁 t󠄁h󠄁e󠄁 v󠄁e󠄁n󠄁d󠄁o󠄁r󠄁e󠄁d󠄁 p󠄁a󠄁t󠄁h󠄁 d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁c󠄁y󠄁)󠄁:󠄁
 
 ```sh
-cargo fmt --all --check
+cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --quiet
 cargo test --workspace --features test-util --quiet

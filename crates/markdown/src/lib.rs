@@ -73,8 +73,7 @@ pub enum ParseError {
     /// The tree had a shape comrak never builds.
     #[serde(serialize_with = "empty")]
     ParserFailure,
-    /// The walk refused a second emission, including reference-definition cases where stock
-    /// comrak leaves definition lines inside a surviving paragraph's source range.
+    /// The walk encountered a second emission of the same object identity.
     #[serde(serialize_with = "unlabelled")]
     DuplicateObject(String),
 }

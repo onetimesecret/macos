@@ -2,6 +2,8 @@ tmp/*
 
 # Rust
 /target/
+/vendor/comrak/target/
+/vendor/comrak/Cargo.lock
 **/*.rs.bk
 __pycache__/
 /tools/language-eval/output/

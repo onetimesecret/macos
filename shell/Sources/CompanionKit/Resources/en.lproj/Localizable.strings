@@ -6,6 +6,10 @@
 "preview.image.cancel_from" = "Cancel image from %@";
 "preview.image.unload_from" = "Unload image from %@";
 "preview.image.retry_from" = "Retry image from %@";
+"Load image" = "Load image";
+"Cancel image" = "Cancel image";
+"Unload image" = "Unload image";
+"Retry image" = "Retry image";
 
 /* Image control accessibility: action and destination, then image alt text. */
 "preview.image.accessibility" = "%1$@: %2$@";
@@ -14,9 +18,9 @@
 "[sealed content]" = "[sealed content]";
 
 /* Request policy and capacity help for the image controls. */
-"One HTTPS image request. No redirects, cookies, or saved credentials." = "One HTTPS image request. No redirects, cookies, or saved credentials.";
+"One HTTPS image request using system DNS and proxies. The hostname may reach a local network. No redirects, cookies, or saved credentials." = "One HTTPS image request using system DNS and proxies. The hostname may reach a local network. No redirects, cookies, or saved credentials.";
 "Unload or cancel another image first (four images at a time)." = "Unload or cancel another image first (four images at a time).";
-"Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local names and IP addresses are unavailable." = "Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local names and IP addresses are unavailable.";
+"Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local-name URLs, IP-literal URLs, and internationalized hostnames are unavailable." = "Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local-name URLs, IP-literal URLs, and internationalized hostnames are unavailable.";
 
 /* Markdown preview image request and decode errors. */
 "This image address is unavailable." = "This image address is unavailable.";
@@ -135,3 +139,4 @@
 
 /* The page editor, as VoiceOver names it. */
 "editor.content" = "Editor content";
+"Rendering preview…" = "Rendering preview…";

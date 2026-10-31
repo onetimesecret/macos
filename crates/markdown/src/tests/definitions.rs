@@ -1,5 +1,4 @@
-//! comrak 0.57.0 leaves definition lines in a surviving paragraph's or setext heading's span and
-//! keeps a rewound title: ignored tests expect a fixed comrak, `comrak_0_57` tests pin today's.
+//! Reference definitions keep their sealed objects before the visible blocks that follow them.
 
 use super::*;
 
@@ -41,7 +40,6 @@ fn rewound(line: Vec<Event>) -> Vec<Block> {
 }
 
 #[test]
-#[ignore = "needs comrak sourcepos fix after reference definitions, issue 332"]
 fn a_paragraph_keeping_text_after_leading_definitions_leaves_them_their_objects() {
     for dialect in BOTH {
         assert_eq!(
@@ -79,66 +77,41 @@ fn a_paragraph_keeping_text_after_leading_definitions_leaves_them_their_objects(
 }
 
 #[test]
-fn comrak_0_57_keeps_definition_lines_in_a_paragraph_at_top_level() {
-    for dialect in BOTH {
+fn repeated_references_keep_definition_and_visible_objects_in_source_order() {
+    for labels in [vec!["x", "y"], vec!["x", "y", "z"]] {
+        let uses = labels
+            .iter()
+            .map(|label| format!("[{label}][r]"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut events = Vec::new();
+        for label in labels {
+            if !events.is_empty() {
+                events.push(text(" "));
+            }
+            events.extend(refused(label));
+        }
         assert_eq!(
-            blocks(TOP_PARAGRAPH, dialect),
+            blocks(
+                &format!("[r]: /u{{obj}}\n| a {{obj}} |\n| - |\n\n{uses}"),
+                Dialect::CommonMark,
+            ),
             [
-                paragraph(vec![text("text "), object(1)]),
+                objects(&[0]),
                 paragraph(vec![
-                    link("/u", "title \u{FFFC}"),
-                    text("x"),
-                    Event::LeaveLink,
-                    object(0),
+                    text("| a "),
+                    object(1),
+                    text(" |"),
+                    Event::SoftBreak,
+                    text("| - |"),
                 ]),
-            ],
-            "{dialect:?}"
-        );
-        let mut underline = vec![text("==="), Event::SoftBreak];
-        underline.extend(refused("r"));
-        underline.push(object(0));
-        assert_eq!(
-            blocks(TOP_UNDERLINE_ALONE, dialect),
-            [paragraph(underline)],
-            "{dialect:?}: an underline under definitions alone"
-        );
-    }
-    // The object reads as the first use's own, so the second use emits it again.
-    assert_eq!(
-        document(TOP_PARAGRAPH_USED_TWICE, Dialect::CommonMark),
-        Err(ParseError::DuplicateObject("0".into()))
-    );
-}
-
-#[test]
-fn comrak_0_57_refuses_reuse_of_a_misplaced_definition_object() {
-    let prefix = "[r]: /u{obj}\n| a {obj} |\n| - |\n\n";
-    let mut first = refused("x");
-    first.push(object(0));
-    assert_eq!(
-        blocks(&format!("{prefix}[x][r]"), Dialect::CommonMark),
-        [
-            paragraph(vec![
-                text("| a "),
-                object(1),
-                text(" |"),
-                Event::SoftBreak,
-                text("| - |"),
-            ]),
-            paragraph(first),
-        ]
-    );
-    for references in ["[x][r] [y][r]", "[x][r] [y][r] [z][r]"] {
-        assert_eq!(
-            document(&format!("{prefix}{references}"), Dialect::CommonMark),
-            Err(ParseError::DuplicateObject("0".into())),
-            "{references}"
+                paragraph(events),
+            ]
         );
     }
 }
 
 #[test]
-#[ignore = "needs comrak sourcepos fix after reference definitions, issue 332"]
 fn a_setext_heading_after_leading_definitions_leaves_them_their_objects() {
     for dialect in BOTH {
         assert_eq!(
@@ -150,20 +123,6 @@ fn a_setext_heading_after_leading_definitions_leaves_them_their_objects() {
 }
 
 #[test]
-fn comrak_0_57_keeps_definition_lines_in_a_setext_heading_at_top_level() {
-    for dialect in BOTH {
-        let mut use_ = refused("x");
-        use_.push(object(0));
-        assert_eq!(
-            blocks(TOP_SETEXT, dialect),
-            [heading(head()), paragraph(use_)],
-            "{dialect:?}"
-        );
-    }
-}
-
-#[test]
-#[ignore = "needs comrak sourcepos fix after reference definitions, issue 332"]
 fn in_a_block_quote_leading_definitions_keep_their_objects() {
     for dialect in BOTH {
         assert_eq!(
@@ -186,28 +145,6 @@ fn in_a_block_quote_leading_definitions_keep_their_objects() {
 }
 
 #[test]
-fn comrak_0_57_keeps_definition_lines_in_a_block_quotes_paragraph_or_heading() {
-    for dialect in BOTH {
-        assert_eq!(
-            blocks(QUOTE_PARAGRAPH, dialect),
-            [Block::Quote(vec![
-                paragraph(vec![text("text")]),
-                objects(&[0])
-            ])],
-            "{dialect:?}: a paragraph"
-        );
-        let mut use_ = refused("x");
-        use_.push(object(0));
-        assert_eq!(
-            blocks(QUOTE_SETEXT, dialect),
-            [Block::Quote(vec![heading(head())]), paragraph(use_)],
-            "{dialect:?}: a setext heading"
-        );
-    }
-}
-
-#[test]
-#[ignore = "needs comrak sourcepos fix after reference definitions, issue 332"]
 fn in_a_list_item_leading_definitions_keep_their_objects() {
     for dialect in BOTH {
         assert_eq!(
@@ -235,36 +172,8 @@ fn in_a_list_item_leading_definitions_keep_their_objects() {
     }
 }
 
-#[test]
-fn comrak_0_57_keeps_definition_lines_in_a_list_items_paragraph_or_heading() {
-    for dialect in BOTH {
-        let mut use_ = refused("x");
-        use_.push(object(0));
-        assert_eq!(
-            blocks(ITEM_PARAGRAPH, dialect),
-            [
-                bullets(
-                    true,
-                    vec![item(None, vec![paragraph(vec![text("text "), object(1)])])]
-                ),
-                paragraph(use_.clone()),
-            ],
-            "{dialect:?}: a paragraph"
-        );
-        assert_eq!(
-            blocks(ITEM_SETEXT, dialect),
-            [
-                bullets(true, vec![item(None, vec![heading(head())])]),
-                paragraph(use_),
-            ],
-            "{dialect:?}: a setext heading"
-        );
-    }
-}
-
 /// A title with text after it on its line is no title; the definition ends before it.
 #[test]
-#[ignore = "needs comrak sourcepos fix after reference definitions, issue 332"]
 fn a_rewound_title_is_no_part_of_the_definition() {
     for dialect in BOTH {
         assert_eq!(
@@ -289,31 +198,5 @@ fn a_rewound_title_is_no_part_of_the_definition() {
             ]),
             "{dialect:?}: a link in the title"
         );
-    }
-}
-
-#[test]
-fn comrak_0_57_keeps_a_rewound_title() {
-    for dialect in BOTH {
-        assert_eq!(
-            blocks(REWOUND, dialect),
-            [paragraph(vec![
-                text("\"t\" junk"),
-                Event::SoftBreak,
-                link("/\u{FFFC}", "t"),
-                text("a"),
-                Event::LeaveLink,
-                object(0),
-            ])],
-            "{dialect:?}"
-        );
-        // The title's object shows in the paragraph's text and again in the kept title.
-        for page in [REWOUND_OBJECT, REWOUND_LINK] {
-            assert_eq!(
-                document(page, dialect),
-                Err(ParseError::DuplicateObject("1".into())),
-                "{dialect:?}: {page:?}"
-            );
-        }
     }
 }

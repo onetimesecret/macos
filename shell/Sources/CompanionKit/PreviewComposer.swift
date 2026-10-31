@@ -69,7 +69,7 @@ struct PreviewComposition: Equatable {
 
 /// Input bounds the work, except GFM table cells, which pad short rows to the header's width; the
 /// other counts sit above what that input can produce in an ordinary page.
-struct CompositionLimits {
+struct CompositionLimits: Sendable {
     var maximumInputScalars = 1_000_000
     var maximumEvents = 4_000_000
     var maximumTokens = 1_000_000

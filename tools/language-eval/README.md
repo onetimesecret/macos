@@ -11,7 +11,7 @@ The corpus contains synthetic examples only. Do not add private data or user cli
 From the `macos` workspace root:
 
 ```sh
-cargo fmt --all -- --check
+cargo fmt --check
 cargo test -p language-eval
 cargo clippy -p language-eval --all-targets -- -D warnings
 cargo run --release -p language-eval -- evaluate \
