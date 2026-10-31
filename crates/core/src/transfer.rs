@@ -1458,6 +1458,14 @@ mod tests {
         let (mut store, _) = store();
         let (first, ..) = mixed(&mut store);
         let (second, ..) = mixed(&mut store);
+        assert!(store.apply_ops(
+            first,
+            &[EditOp::Insert {
+                pos_u16: 8,
+                text: "earlier".into(),
+            }]
+        ));
+        assert!(store.can_undo(first));
         let target = store.new_tab().1;
         let ranges = [
             fragment_range(&store, first, 0, 8, true),
@@ -1479,6 +1487,10 @@ mod tests {
                 .move_continuous("pad", &ranges, &edit, target, 99, false)
                 .is_none()
         );
+        assert!(
+            store.can_undo(first),
+            "admission refusals preserve prior undo"
+        );
         store
             .sheet_mut(second)
             .unwrap()
@@ -1490,8 +1502,12 @@ mod tests {
                 .is_none()
         );
         assert_eq!((standing(&store, first), standing(&store, second)), before);
-        assert_eq!(body(&store, first), "ab\u{fffc}cd\u{fffc}ef");
+        assert_eq!(body(&store, first), "ab\u{fffc}cd\u{fffc}efearlier");
         assert_eq!(body(&store, second), "ab\u{fffc}cd\u{fffc}ef");
+        assert!(
+            !store.can_undo(first),
+            "unexpected-write rollback resets history"
+        );
         assert!(body(&store, target).is_empty());
         assert!(detached(&store, target).is_empty());
         assert!(store.active_cut().is_none());
