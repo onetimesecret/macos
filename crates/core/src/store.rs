@@ -999,11 +999,17 @@ impl<C: Clock> SheetStore<C> {
 
     /// Content-free action label for the next Undo menu item.
     pub fn undo_action_name(&self, id: SheetId) -> Option<&'static str> {
+        if !self.can_undo(id) {
+            return None;
+        }
         self.sheet(id)?.document.undo_action_name()
     }
 
     /// Content-free action label for the next Redo menu item.
     pub fn redo_action_name(&self, id: SheetId) -> Option<&'static str> {
+        if !self.can_redo(id) {
+            return None;
+        }
         self.sheet(id)?.document.redo_action_name()
     }
 

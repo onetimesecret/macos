@@ -105,6 +105,35 @@ final class ContinuousDocumentProjectionTests: XCTestCase {
         XCTAssertEqual(source.text, "😀\nz")
     }
 
+    func testJoinedAndSeparatedUnicodeRangesMatchNativeTextReplacement() throws {
+        for joins in [[Int: String](), [1: "page-2", 2: "page-3"]] {
+            let source = projection(["a😀", "", "🦊e\u{301}", "z"], joins: joins)
+            let original = source.text as NSString
+            let units = Array(source.text.utf16)
+            let validOffsets = (0...units.count).filter { offset in
+                offset == 0 || offset == units.count ||
+                    !((0xD800...0xDBFF).contains(units[offset - 1]) && (0xDC00...0xDFFF).contains(units[offset]))
+            }
+            for start in validOffsets {
+                for end in validOffsets where end >= start {
+                    let range = NSRange(location: start, length: end - start)
+                    let result = try source.plan([.del(at: start, len: range.length), .ins(at: start, text: "🐈")])
+                    XCTAssertEqual(result.projection.text, original.replacingCharacters(in: range, with: "🐈"))
+                    XCTAssertEqual(result.projection.length, result.projection.text.utf16.count)
+                }
+            }
+        }
+    }
+
+    func testSurrogateSplitsOnLaterJoinedPageAreRejected() {
+        let source = projection(["a😀", "", "🦊z"], joins: [1: "page-2", 2: "page-3"])
+        for op in [DocumentEditOp.ins(at: 4, text: "x"), .del(at: 3, len: 1), .del(at: 1, len: 3)] {
+            XCTAssertThrowsError(try source.plan([op])) { error in
+                XCTAssertEqual(error as? Projection.PlanningError, .splitUnicodeScalar)
+            }
+        }
+    }
+
     func testEmptyProjectionRefusesNonemptyInsertionAndDuplicatePagesAreRejected() throws {
         XCTAssertEqual(try projection([]).plan([]).edits, [])
         XCTAssertThrowsError(try projection([]).plan([.ins(at: 0, text: "x")])) { error in

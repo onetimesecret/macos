@@ -4,7 +4,10 @@ struct ContinuousDocumentProjection: Equatable, Sendable {
     struct Page: Equatable, Sendable {
         let id: UInt64
         let uuid: String
-        var text: String
+        var text: String {
+            didSet { utf16Length = text.utf16.count }
+        }
+        private(set) var utf16Length: Int
         var joinedNextUUID: String?
         var version: [UInt8]?
 
@@ -12,6 +15,7 @@ struct ContinuousDocumentProjection: Equatable, Sendable {
             self.id = id
             self.uuid = uuid
             self.text = text
+            self.utf16Length = text.utf16.count
             self.joinedNextUUID = joinedNextUUID
             self.version = version
         }
@@ -49,11 +53,13 @@ struct ContinuousDocumentProjection: Equatable, Sendable {
     }
 
     let pages: [Page]
+    let segments: [Segment]
 
-    var segments: [Segment] {
+    init(pages: [Page]) {
+        self.pages = pages
         var offset = 0
-        return pages.enumerated().map { index, page in
-            let body = NSRange(location: offset, length: page.text.utf16.count)
+        segments = pages.enumerated().map { index, page in
+            let body = NSRange(location: offset, length: page.utf16Length)
             offset += body.length
             let next = index + 1
             let separates = pages.indices.contains(next) && page.joinedNextUUID != pages[next].uuid
@@ -93,7 +99,7 @@ struct ContinuousDocumentProjection: Equatable, Sendable {
             let projection = Self(pages: updated)
             switch operation {
             case .ins(let at, let text):
-                try Self.validate(NSRange(location: at, length: 0), in: projection.text)
+                try projection.validate(NSRange(location: at, length: 0))
                 let origin = replacementOrigin
                 replacementOrigin = nil
                 guard !text.isEmpty else { continue }
@@ -106,7 +112,7 @@ struct ContinuousDocumentProjection: Equatable, Sendable {
                     in: updated[destination.page].text, with: text)
                 edits[destination.page].ops.append(.ins(at: destination.offset, text: text))
             case .chip(let at, let id):
-                try Self.validate(NSRange(location: at, length: 0), in: projection.text)
+                try projection.validate(NSRange(location: at, length: 0))
                 let origin = replacementOrigin
                 replacementOrigin = nil
                 let destination: (page: Int, offset: Int) = try origin.flatMap {
@@ -119,7 +125,7 @@ struct ContinuousDocumentProjection: Equatable, Sendable {
                 edits[destination.page].ops.append(.chip(at: destination.offset, id: id))
             case .del(let at, let count):
                 let range = NSRange(location: at, length: count)
-                try Self.validate(range, in: projection.text)
+                try projection.validate(range)
                 replacementOrigin = nil
                 guard count > 0 else { continue }
                 let origin = try Self.destination(at: at, in: projection)
@@ -148,31 +154,33 @@ struct ContinuousDocumentProjection: Equatable, Sendable {
     }
 
     private static func destination(at index: Int, in projection: Self) throws -> (page: Int, offset: Int) {
-        guard let segment = projection.page(at: index),
-              let page = projection.pages.firstIndex(where: { $0.id == segment.page.id }) else {
+        guard let page = projection.segments.lastIndex(where: {
+            index >= $0.bodyRange.location && index <= NSMaxRange($0.bodyRange)
+        }) else {
             throw PlanningError.noPage
         }
-        return (page, index - segment.bodyRange.location)
+        return (page, index - projection.segments[page].bodyRange.location)
     }
 
-    private static func validate(_ range: NSRange, in text: String) throws {
-        let units = Array(text.utf16)
+    private func validate(_ range: NSRange) throws {
         guard range.location >= 0, range.length >= 0,
-              range.location <= units.count, range.length <= units.count - range.location else {
+              range.location <= length, range.length <= length - range.location else {
             throw PlanningError.invalidRange
         }
         for offset in [range.location, range.location + range.length] {
-            if offset > 0, offset < units.count,
-               (0xD800...0xDBFF).contains(units[offset - 1]),
-               (0xDC00...0xDFFF).contains(units[offset]) {
+            guard let segment = segments.first(where: {
+                offset > $0.bodyRange.location && offset < NSMaxRange($0.bodyRange)
+            }) else { continue }
+            let units = segment.page.text.utf16
+            let index = units.index(units.startIndex, offsetBy: offset - segment.bodyRange.location)
+            if (0xD800...0xDBFF).contains(units[units.index(before: index)]),
+               (0xDC00...0xDFFF).contains(units[index]) {
                 throw PlanningError.splitUnicodeScalar
             }
         }
     }
 
     private static func replacing(_ range: NSRange, in text: String, with replacement: String) -> String {
-        var units = Array(text.utf16)
-        units.replaceSubrange(range.location..<(range.location + range.length), with: replacement.utf16)
-        return String(decoding: units, as: UTF16.self)
+        (text as NSString).replacingCharacters(in: range, with: replacement)
     }
 }

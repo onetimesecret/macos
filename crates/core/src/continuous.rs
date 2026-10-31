@@ -666,9 +666,11 @@ mod tests {
         assert!(store.apply_continuous("pad", &cross_edit(&store, a, b)));
         let edited = (text(&store, a), text(&store, b));
         assert!(store.can_undo(a));
+        assert_eq!(store.undo_action_name(a), Some("Replace"));
         assert!(store.undo(a));
         assert_eq!((text(&store, a), text(&store, b)), original);
         assert!(store.can_redo(b));
+        assert_eq!(store.redo_action_name(b), Some("Replace"));
         assert!(store.redo(b));
         assert_eq!((text(&store, a), text(&store, b)), edited);
     }
@@ -680,9 +682,22 @@ mod tests {
         let edited = (text(&store, a), text(&store, b));
         store.clear_continuous_history("pad");
         assert!(!store.can_undo(a));
+        assert_eq!(store.undo_action_name(a), None);
         assert!(!store.undo(a));
         assert!(!store.undo(b));
         assert_eq!((text(&store, a), text(&store, b)), edited);
+    }
+
+    #[test]
+    fn page_redo_label_is_absent_after_its_continuous_scope_was_cleared() {
+        let (mut store, _, a, b) = setup();
+        assert!(store.apply_continuous("pad", &cross_edit(&store, a, b)));
+        assert!(store.undo(a));
+        store.clear_continuous_history("pad");
+        assert!(!store.can_redo(a));
+        assert_eq!(store.redo_action_name(a), None);
+        assert_eq!(store.redo_action_name(b), None);
+        assert!(!store.redo(a));
     }
 
     #[test]
