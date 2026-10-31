@@ -101,9 +101,9 @@ final class SealedBlockTests: XCTestCase {
 
     func testAccessibilityNamesAvailableIdentityAndNoteWithoutReadingAnotherValue() {
         XCTAssertEqual(SealedBlockCell(info: face(name: "TOKEN", note: true)).accessibilityLabel(),
-                       "Sealed content, TOKEN, sk-live-…9Qz, small, has note")
+                       "sealed content, TOKEN, sk-live-…9Qz, small, has note")
         let peer = SealedBlockCell(info: face(available: false))
-        XCTAssertEqual(peer.accessibilityLabel(), "Sealed content, text · value on another device, small")
+        XCTAssertEqual(peer.accessibilityLabel(), "sealed content, text · value on another device, small")
         XCTAssertFalse(peer.accessibilityLabel()?.contains("sk-live") ?? true)
     }
 
@@ -154,4 +154,82 @@ final class SealedBlockTests: XCTestCase {
         XCTAssertNil(SealedBlockCell.beatStrength(elapsed: 1, reduceMotion: false))
         XCTAssertEqual(SealedBlockCell.beatStrength(elapsed: 0, reduceMotion: true), 1)
     }
+
+    /// Records the proposal TextKit supplies during synchronous layout.
+    private final class ProposalRecorder: NSTextAttachmentCell {
+        nonisolated(unsafe) var proposedFragment: NSRect?
+        nonisolated(unsafe) var glyphPosition: NSPoint?
+
+        override nonisolated func cellFrame(
+            for textContainer: NSTextContainer,
+            proposedLineFragment lineFrag: NSRect,
+            glyphPosition position: NSPoint,
+            characterIndex charIndex: Int
+        ) -> NSRect {
+            proposedFragment = lineFrag
+            glyphPosition = position
+            return super.cellFrame(
+                for: textContainer,
+                proposedLineFragment: lineFrag,
+                glyphPosition: position,
+                characterIndex: charIndex
+            )
+        }
+    }
+
+    func testTextKitProposesAFragmentAsWideAsTheContainer() {
+        let padding: CGFloat = 5
+        let recorder = ProposalRecorder()
+        let probe = NSTextAttachment(data: nil, ofType: nil)
+        probe.attachmentCell = recorder
+        let storage = NSTextStorage(attributedString: NSAttributedString(string: "ab "))
+        storage.append(NSAttributedString(attachment: probe))
+        let layoutManager = NSLayoutManager()
+        storage.addLayoutManager(layoutManager)
+        let container = NSTextContainer(size: NSSize(width: 300, height: 1_000))
+        container.lineFragmentPadding = padding
+        layoutManager.addTextContainer(container)
+        layoutManager.ensureLayout(for: container)
+
+        XCTAssertEqual(recorder.proposedFragment?.minX, 0)
+        XCTAssertEqual(recorder.proposedFragment?.width, 300)
+        XCTAssertGreaterThanOrEqual(recorder.glyphPosition?.x ?? 0, padding)
+
+        let sealed = NSTextStorage(attributedString: NSAttributedString(string: "ab "))
+        sealed.append(NSAttributedString(attachment: ChipAttachment(info: face())))
+        let sealedLayout = NSLayoutManager()
+        sealed.addLayoutManager(sealedLayout)
+        let sealedContainer = NSTextContainer(size: NSSize(width: 300, height: 1_000))
+        sealedContainer.lineFragmentPadding = padding
+        sealedLayout.addTextContainer(sealedContainer)
+        sealedLayout.ensureLayout(for: sealedContainer)
+        let glyph = sealedLayout.glyphIndexForCharacter(at: 3)
+
+        XCTAssertEqual(sealedLayout.attachmentSize(forGlyphAt: glyph).width, 300 - padding * 2)
+        let block = sealedLayout.boundingRect(
+            forGlyphRange: NSRange(location: glyph, length: 1), in: sealedContainer)
+        XCTAssertLessThanOrEqual(block.maxX, 300 - padding, "the block overran the padding")
+    }
+
+    func testMetadataAcceptsCoreSizeClassesAndFailsClosedForUnknownValues() throws {
+        for byteLength in [1, 80, 2_048] {
+            let client = CompanionClient.ephemeral(
+                tag: "sealed-size-class-\(byteLength)-\(UUID().uuidString)")
+            client.newTab()
+            let pageID = try XCTUnwrap(client.tabs().first?.pageID)
+            let text = String(repeating: "x", count: byteLength)
+            let label = try XCTUnwrap(
+                client.sealText(sheet: pageID, text, at: 0, length: 0)?.sizeLabel)
+            XCTAssertEqual(SealedBlockCell.displayedSizeClass(label), label)
+        }
+        XCTAssertEqual(SealedBlockCell.displayedSizeClass("40 ch"), "size unknown")
+        XCTAssertEqual(SealedBlockCell.displayedSizeClass("future-class"), "size unknown")
+    }
+    func testShortValuesReturnUnusedMeasureToALongName() {
+        let widths = SealedBlockLayout.rowAllotment(
+            available: 100, name: 200, equals: 10, value: 5, nameFloor: 20)
+        XCTAssertEqual(widths.name, 85)
+        XCTAssertEqual(widths.value, 5)
+    }
+
 }

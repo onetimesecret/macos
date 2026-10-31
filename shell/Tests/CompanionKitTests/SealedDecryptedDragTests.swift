@@ -159,7 +159,7 @@ final class SealedDecryptedDragTests: XCTestCase {
         XCTAssertEqual(copy.width, SealedBlockLayout.copyWidth)
         XCTAssertEqual(copy.height, 24)
         XCTAssertEqual(cell.decryptedDragRect(in: frame), copy)
-        XCTAssertEqual(SealedBlockCell.decryptedDragWords, "Copy decrypted")
+        XCTAssertEqual(SealedBlockCell.decryptedDragWords, CompanionL10n.string("chip.control.copy"))
         let narrow = NSRect(x: 0, y: 0, width: 100, height: 70)
         XCTAssertNil(cell.copyRect(in: narrow))
         XCTAssertTrue(narrow.contains(SealedBlockCell.actionsRect(in: narrow)))

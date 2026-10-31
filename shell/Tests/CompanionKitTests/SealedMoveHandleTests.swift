@@ -116,7 +116,9 @@ final class SealedMoveHandleTests: XCTestCase {
 
     /// A press at `point` whose next event is `follow`, a lift or a move, through `mouseDown`.
     private func press(_ page: Page, at point: NSPoint, then follow: NSEvent) throws {
-        page.window.postEvent(follow, atStart: true)
+        var next: NSEvent? = follow
+        page.textView.handlePressEventSource = { defer { next = nil }; return next }
+        defer { page.textView.handlePressEventSource = nil }
         page.textView.mouseDown(with: try mouseEvent(.leftMouseDown, page, at: point))
     }
 
@@ -398,7 +400,7 @@ final class SealedMoveHandleTests: XCTestCase {
         let more = SealedBlockCell.actionsRect(in: frame)
         let elements = textView.handleAccessibilityElements
         XCTAssertEqual(elements.map { $0.accessibilityLabel() },
-                       ["Select for Moving", "Copy Decrypted Contents", "Sealed Content Actions"])
+                       ["Select Sealed Content", "Copy Decrypted Contents", "Sealed Content Actions"])
         XCTAssertEqual(elements.map { $0.accessibilityFrame() },
                        [move, copy, more].map { onScreen($0, in: page) })
         for element in elements {
@@ -441,7 +443,9 @@ final class SealedMoveHandleTests: XCTestCase {
     }
 
     func testRenderSealedObjectPreviewsWhenRequested() throws {
-        guard let directory = ProcessInfo.processInfo.environment["ONETIMEPAD_SEALED_PREVIEW_DIR"] else { return }
+        guard let directory = ProcessInfo.processInfo.environment["ONETIMEPAD_SEALED_PREVIEW_DIR"] else {
+            throw XCTSkip("set ONETIMEPAD_SEALED_PREVIEW_DIR to render synthetic sealed-object previews")
+        }
         let output = URL(fileURLWithPath: directory, isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let original = InkStyle.typeface
@@ -477,4 +481,16 @@ final class SealedMoveHandleTests: XCTestCase {
             }
         }
     }
+    func testReadOnlyEditorsRenderStatusWithoutActionControls() throws {
+        let page = try mountPage(on: try makeModel())
+        page.coordinator.updateEditability(of: page.textView, to: false)
+        let cell = try XCTUnwrap(page.textView.chipCell(at: object))
+        let bitmap = try XCTUnwrap(page.textView.bitmapImageRepForCachingDisplay(in: page.textView.bounds))
+        page.textView.cacheDisplay(in: page.textView.bounds, to: bitmap)
+        XCTAssertEqual(cell.lastDrawnShowsControls, false)
+        XCTAssertTrue(page.textView.handleAccessibilityElements.isEmpty)
+        XCTAssertTrue(page.textView.decryptedDragCursorRects.isEmpty)
+        XCTAssertTrue(page.textView.moveHandleCursorRects.isEmpty)
+    }
+
 }

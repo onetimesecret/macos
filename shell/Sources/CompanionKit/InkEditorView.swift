@@ -859,7 +859,8 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         func updateEditability(of textView: InkTextView, to editable: Bool) {
-            if textView.isEditable != editable {
+            let changed = textView.isEditable != editable
+            if changed {
                 invalidateOrdinaryPasteMeasurement()
             }
             if !editable {
@@ -867,6 +868,10 @@ public struct InkEditorView: NSViewRepresentable {
                 closeNote()
             }
             textView.isEditable = editable
+            if changed {
+                textView.needsDisplay = true
+                textView.handlesMayHaveMoved()
+            }
             refreshLanguageActionAvailability()
         }
 
@@ -2895,20 +2900,19 @@ public struct InkEditorView: NSViewRepresentable {
             case editNote
             case remove
 
-            /// Title case; no ellipsis on Name and Rename, which edit in
-            /// place, and one noun for the object (ADR-0055).
+            /// Platform menu labels for explicit sealed-object actions.
             var title: String {
                 switch self {
-                case .copyReference: "Copy Sealed Reference"
-                case .copyName: "Copy Variable Name"
-                case .copyDecrypted: "Copy Decrypted Contents"
-                case .copyNameValue: "Copy NAME=Value (Unquoted)"
-                case .createLink: "Create One-Time Link…"
-                case .name: "Set Variable Name…"
-                case .rename: "Edit Variable Name…"
-                case .note: "Add Note…"
-                case .editNote: "Edit Note…"
-                case .remove: "Remove from Document"
+                case .copyReference: CompanionL10n.string("chip.menu.copy_reference")
+                case .copyName: CompanionL10n.string("chip.menu.copy_name")
+                case .copyDecrypted: CompanionL10n.string("chip.menu.copy_decrypted")
+                case .copyNameValue: CompanionL10n.string("chip.menu.copy_name_value")
+                case .createLink: CompanionL10n.string("chip.menu.create_link")
+                case .name: CompanionL10n.string("chip.menu.name")
+                case .rename: CompanionL10n.string("chip.menu.rename")
+                case .note: CompanionL10n.string("chip.menu.note")
+                case .editNote: CompanionL10n.string("chip.menu.edit_note")
+                case .remove: CompanionL10n.string("chip.menu.remove")
                 }
             }
         }
@@ -3040,12 +3044,12 @@ public struct InkEditorView: NSViewRepresentable {
                 switch entry {
                 case .copyReference:
                     item.action = #selector(copyChipReference(_:))
-                    item.toolTip = "Copy this sealed object for use in OnetimePad; other apps receive a placeholder."
+                    item.toolTip = CompanionL10n.string("chip.menu.copy_reference.help")
                 case .copyName:
                     item.action = #selector(copyChipName(_:))
                 case .copyDecrypted:
                     item.action = #selector(copyOutChip(_:))
-                    item.toolTip = "Copy the decrypted contents. To change them, edit the copy and seal a replacement."
+                    item.toolTip = CompanionL10n.string("chip.menu.copy_decrypted.help")
                     // The chord beside the verb is the keymap's, the way
                     // every tooltip names its chord: a keymap that moved
                     // `chip::CopyDecrypted` moves this, and one that
@@ -3058,7 +3062,7 @@ public struct InkEditorView: NSViewRepresentable {
                     }
                 case .copyNameValue:
                     item.action = #selector(copyChipNameValue(_:))
-                    item.toolTip = "Copy the variable name, =, and decrypted value without quotes or escaping."
+                    item.toolTip = CompanionL10n.string("chip.menu.copy_name_value.help")
                 case .createLink:
                     item.action = #selector(concealChip(_:))
                 case .name, .rename:
@@ -3548,7 +3552,10 @@ public struct InkEditorView: NSViewRepresentable {
         func prepareChipAction() -> Bool {
             guard let textView, textView.isEditable else { return false }
             nameEditor?.commit(returningKeys: false)
-            guard nameEditor?.isOpen != true else { return false }
+            guard nameEditor?.isOpen != true else {
+                _ = nameEditor?.focusDraft()
+                return false
+            }
             closeNote()
             if let window = textView.window { _ = window.makeFirstResponder(textView) }
             return textView.answersChords
@@ -3606,8 +3613,11 @@ public struct InkEditorView: NSViewRepresentable {
             guard let textView, textView.isEditable,
                   let chip = chipAttachment(at: index)?.info.chipId else { return }
             nameEditor?.commit(returningKeys: false)
-            guard nameEditor?.isOpen != true,
-                  let current = textView.chipIndex(ofChip: chip),
+            guard nameEditor?.isOpen != true else {
+                _ = nameEditor?.focusDraft()
+                return
+            }
+            guard let current = textView.chipIndex(ofChip: chip),
                   let sheet = continuousDocument?.projection.page(at: current)?.page.id ?? currentSheet,
                   !sheet.isFileID else { return }
             let editor = noteEditor ?? SealedNoteEditor(model: model)
@@ -3727,7 +3737,10 @@ public struct InkEditorView: NSViewRepresentable {
             closeNote()
             if nameEditor?.rename.chip != chip {
                 nameEditor?.commit(returningKeys: false)
-                guard nameEditor?.isOpen != true else { return }
+                guard nameEditor?.isOpen != true else {
+                    _ = nameEditor?.focusDraft()
+                    return
+                }
             }
             guard let current = textView.chipIndex(ofChip: chip),
                   let sheet = continuousDocument?.projection.page(at: current)?.page.id ?? currentSheet,
@@ -3746,11 +3759,12 @@ public struct InkEditorView: NSViewRepresentable {
         /// Save a valid draft before teardown, then close any remaining invalid draft.
         func finishNaming() {
             guard let editor = nameEditor, editor.isOpen else { return }
+            let returningKeys = editor.holdsKeys
             if let chip = editor.rename.chip, displaysPage(editor.rename.sheet),
                textView?.chipIndex(ofChip: chip) != nil {
-                editor.commit(returningKeys: false)
+                editor.commit(returningKeys: returningKeys)
             }
-            editor.keep(returningKeys: false)
+            editor.keep(returningKeys: returningKeys)
         }
 
         /// Stands an open name field over its object again after the page moved.
@@ -5823,14 +5837,14 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         hoveredChipIndex = index
         toolTip = nil
         if let index, let point, let frame = chipFrame(at: index), let cell = chipCell(at: index) {
-            if cell.copyRect(in: frame)?.contains(point) == true {
-                toolTip = "Copy decrypted contents. Drag to copy into another app."
-            } else if SealedBlockCell.actionsRect(in: frame).contains(point) {
-                toolTip = "Sealed content actions"
-            } else if cell.moveHandleRect(in: frame)?.contains(point) == true {
-                toolTip = "Drag to move this sealed object. Option-drag to duplicate it."
-            } else if cell.doorwayRect(in: frame)?.contains(point) == true {
-                toolTip = "Edit note"
+            if isEditable, cell.copyRect(in: frame)?.contains(point) == true {
+                toolTip = CompanionL10n.string("chip.control.copy.help")
+            } else if isEditable, SealedBlockCell.actionsRect(in: frame).contains(point) {
+                toolTip = CompanionL10n.string("chip.control.actions.help")
+            } else if isEditable, cell.moveHandleRect(in: frame)?.contains(point) == true {
+                toolTip = CompanionL10n.string("chip.control.move.help")
+            } else if isEditable, cell.doorwayRect(in: frame)?.contains(point) == true {
+                toolTip = CompanionL10n.string("chip.control.note.help")
             } else {
                 toolTip = cell.accessibilityLabel()
             }
@@ -5843,10 +5857,10 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         applyHover(at: nil)
     }
 
-    func drawsHandles(at index: Int) -> Bool { chipCell(at: index) != nil }
+    func drawsHandles(at index: Int) -> Bool { isEditable && chipCell(at: index) != nil }
 
     private var blocksWithHandles: [Int] {
-        guard let storage = textStorage, let layoutManager, let textContainer else { return [] }
+        guard isEditable, let storage = textStorage, let layoutManager, let textContainer else { return [] }
         let local = visibleRect.offsetBy(dx: -textContainerOrigin.x, dy: -textContainerOrigin.y)
         let glyphs = layoutManager.glyphRange(forBoundingRect: local, in: textContainer)
         let range = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
@@ -5900,15 +5914,16 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     private(set) var handleAccessibilityElements: [NSAccessibilityElement] = []
 
     private func rebuildHandleElements() {
+        for element in handleElements.values { element.setAccessibilityEnabled(false) }
         var kept: [HandleElementKey: SealedActionElement] = [:]
         var elements: [NSAccessibilityElement] = []
         for index in blocksWithHandles {
             guard let frame = chipFrame(at: index), let cell = chipCell(at: index) else { continue }
             let actions: [(SealedAction, NSRect?, String)] = [
-                (.move, cell.moveHandleRect(in: frame), "Select for Moving"),
-                (.copy, cell.copyRect(in: frame), "Copy Decrypted Contents"),
-                (.more, SealedBlockCell.actionsRect(in: frame), "Sealed Content Actions"),
-                (.note, cell.doorwayRect(in: frame), "Edit Note"),
+                (.move, cell.moveHandleRect(in: frame), CompanionL10n.string("chip.handle.move")),
+                (.copy, cell.copyRect(in: frame), CompanionL10n.string("chip.handle.decrypted")),
+                (.more, SealedBlockCell.actionsRect(in: frame), CompanionL10n.string("chip.accessibility.actions")),
+                (.note, cell.doorwayRect(in: frame), CompanionL10n.string("chip.accessibility.note")),
             ]
             for (action, optionalRect, label) in actions {
                 guard let rect = optionalRect, !rect.isEmpty else { continue }
@@ -6030,6 +6045,10 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
             return
         }
         guard let coordinator, let index = coordinator.chipIndex(at: point, in: self) else {
+            super.mouseDown(with: event)
+            return
+        }
+        guard isEditable else {
             super.mouseDown(with: event)
             return
         }
@@ -7542,7 +7561,14 @@ final class ChipAttachment: NSTextAttachment {
 
 /// A compact embedded object with one identity row and one stable action row.
 final class SealedBlockCell: NSTextAttachmentCell {
-    @MainActor var info: ChipInfo
+    @MainActor var info: ChipInfo { didSet { measureCache = nil } }
+    private struct Measurement {
+        let typeface: InkStyle.Typeface
+        let value: String
+        let width: CGFloat
+        let height: CGFloat
+    }
+    @MainActor private var measureCache: Measurement?
     #if DEBUG
     @MainActor private(set) var lastDrawnFrame: NSRect?
     @MainActor private(set) var lastDrawnShowsControls: Bool?
@@ -7553,13 +7579,13 @@ final class SealedBlockCell: NSTextAttachmentCell {
     nonisolated static let blockHeight = SealedBlockLayout.height
     nonisolated static let fallbackBlockWidth = SealedBlockLayout.minimumWidth
     nonisolated static let effectivelyUnboundedWidth: CGFloat = 1_000_000
-    nonisolated static let classification = "Sealed content"
-    nonisolated static let unavailableWords = "value on another device"
-    nonisolated static let copiedWords = "Copied"
-    nonisolated static let doorwayWord = "Note"
+    nonisolated static var classification: String { CompanionL10n.string("chip.status.classification") }
+    nonisolated static var unavailableWords: String { CompanionL10n.string("chip.status.value_elsewhere") }
+    nonisolated static var copiedWords: String { CompanionL10n.string("chip.control.copied") }
+    nonisolated static var doorwayWord: String { CompanionL10n.string("chip.control.note") }
     nonisolated static let nameFloorCharacters = 4
     nonisolated static let actionsGlyph = "…"
-    nonisolated static let decryptedDragWords = "Copy decrypted"
+    nonisolated static var decryptedDragWords: String { CompanionL10n.string("chip.control.copy") }
     nonisolated static let moveHandleGlyph = "⠿"
 
     nonisolated static func blockBounds(width: CGFloat, height: CGFloat = blockHeight) -> NSRect {
@@ -7587,12 +7613,23 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     @MainActor
     func preferredBounds(available: CGFloat) -> NSRect {
-        let identity = NSAttributedString(
-            string: [info.name, Self.valueText(of: info)].compactMap { $0 }.joined(separator: " · "),
-            attributes: [.font: InkStyle.chipFont])
+        let value = Self.valueText(of: info)
+        let measured: Measurement
+        if let cached = measureCache, cached.typeface == InkStyle.typeface, cached.value == value {
+            measured = cached
+        } else {
+            let valueWidth = NSAttributedString(string: value, attributes: [.font: InkStyle.chipFont]).size().width
+            let nameWidth = info.name.map { name in
+                NSAttributedString(string: name, attributes: [.font: InkStyle.chipNameFont]).size().width
+                    + NSAttributedString(string: " · ", attributes: [.font: InkStyle.chipFont]).size().width
+            } ?? 0
+            measured = Measurement(typeface: InkStyle.typeface, value: value,
+                                   width: nameWidth + valueWidth, height: Self.preferredHeight)
+            measureCache = measured
+        }
         return Self.blockBounds(
-            width: SealedBlockLayout.preferredWidth(available: available, identityWidth: identity.size().width),
-            height: SealedBlockLayout.preferredHeight(identityLineHeight: Self.identityLineHeight))
+            width: SealedBlockLayout.preferredWidth(available: available, identityWidth: measured.width),
+            height: measured.height)
     }
 
     nonisolated static func valueText(of info: ChipInfo) -> String {
@@ -7702,15 +7739,15 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     override func accessibilityLabel() -> String? {
         [Self.classification, info.name, Self.valueText(of: info),
-         Self.displayedSizeClass(info.sizeLabel), info.hasNote ? "has note" : nil]
+         Self.displayedSizeClass(info.sizeLabel), info.hasNote ? CompanionL10n.string("chip.accessibility.note_presence") : nil]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
     struct ContentLayout {
         let metrics: SealedBlockLayout.Metrics
         let left: CGFloat
-        let topRowY: CGFloat
-        let bottomRowY: CGFloat
+        let statusRowY: CGFloat
+        let identityRowY: CGFloat
         let lockRect: NSRect
         let labelOrigin: NSPoint
         let metadataRight: CGFloat
@@ -7724,27 +7761,27 @@ final class SealedBlockCell: NSTextAttachmentCell {
         func namedRow(
             nameWidth: CGFloat, equalsWidth: CGFloat, valueWidth: CGFloat, height: CGFloat
         ) -> SealedBlockLayout.NamedRow {
-            let name = NSRect(x: left, y: bottomRowY, width: nameWidth, height: height)
-            let separator = NSRect(x: name.maxX, y: bottomRowY, width: equalsWidth, height: height)
-            let value = NSRect(x: separator.maxX, y: bottomRowY, width: valueWidth, height: height)
+            let name = NSRect(x: left, y: identityRowY, width: nameWidth, height: height)
+            let separator = NSRect(x: name.maxX, y: identityRowY, width: equalsWidth, height: height)
+            let value = NSRect(x: separator.maxX, y: identityRowY, width: valueWidth, height: height)
             return SealedBlockLayout.NamedRow(
                 name: name, equals: separator, value: value)
         }
 
         func excerptRect(metadataWidth: CGFloat, height: CGFloat) -> NSRect {
-            NSRect(x: left, y: bottomRowY,
+            NSRect(x: left, y: identityRowY,
                    width: max(0, metrics.width - 24 - metadataWidth), height: height)
         }
     }
 
-    // Legacy row property names are shared with the inline name editor.
+    // Geometry is shared by the cell and the inline name editor.
     nonisolated static func contentLayout(in frame: NSRect) -> ContentLayout {
         let metrics = SealedBlockLayout.metrics(containerWidth: frame.width)
         let left = frame.minX + metrics.horizontalPadding
         let actionY = actionsRect(in: frame).minY
         let lock = NSRect(x: left, y: actionY + 6, width: 11, height: 12)
         return ContentLayout(
-            metrics: metrics, left: left, topRowY: actionY + 4, bottomRowY: frame.minY + 8,
+            metrics: metrics, left: left, statusRowY: actionY + 4, identityRowY: frame.minY + 8,
             lockRect: lock, labelOrigin: NSPoint(x: lock.maxX + 5, y: actionY + 4),
             metadataRight: frame.maxX - 12, metadataY: actionY + 4,
             rowBand: NSRect(x: frame.minX, y: frame.minY, width: frame.width,
@@ -7893,21 +7930,22 @@ final class SealedBlockCell: NSTextAttachmentCell {
             NSLocationInRange(index, $0.rangeValue)
         } == true
         draw(frame: frame, drag: drag, selected: selected,
-             editingWidth: naming, copied: copied, showsControls: view != nil && !drag)
+             editingWidth: naming, copied: copied, showsControls: view?.isEditable == true && !drag)
     }
 
     override func draw(withFrame frame: NSRect, in controlView: NSView?) {
         let view = controlView as? InkTextView
         let drag = view?.drawsPageDragImage == true
         draw(frame: frame, drag: drag, selected: false, editingWidth: nil, copied: false,
-             showsControls: view != nil && !drag)
+             showsControls: view?.isEditable == true && !drag)
     }
 
     @MainActor
     private func statusString(selected: Bool, includesNote: Bool = false) -> NSAttributedString {
-        let kind = info.kind == "image" ? "Sealed image" : "Sealed text"
-        let status = info.available ? kind : "On another device"
-        return Self.seatString(status + (includesNote && info.hasNote ? " · has note" : ""), selected: selected)
+        let kind = CompanionL10n.string(info.kind == "image" ? "chip.status.image" : "chip.status.text")
+        let status = info.available ? kind : CompanionL10n.string("chip.status.elsewhere")
+        let text = includesNote && info.hasNote ? CompanionL10n.format("chip.status.has_note", status) : status
+        return Self.seatString(text, selected: selected)
     }
 
     @MainActor
@@ -7962,7 +8000,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
         } else if !drag {
             let attributes = Self.valueAttributes(available: info.available, selected: selected)
             Self.fitted(Self.valueText(of: info), attributes: attributes, width: max(0, frame.width - 24))
-                .draw(at: NSPoint(x: layout.left, y: layout.bottomRowY))
+                .draw(at: NSPoint(x: layout.left, y: layout.identityRowY))
         }
     }
 }

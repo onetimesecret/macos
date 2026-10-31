@@ -28,7 +28,7 @@ public struct ConcealView: View {
                     .font(.system(.body, design: .monospaced))
                     .lineLimit(2)
                     .textSelection(.disabled)
-                    .accessibilityLabel(Text("Sharing: \(label)"))
+                    .accessibilityLabel(Text(Self.sharingTargetLabel(label)))
             }
             if let sealed = sealedItemsLine {
                 Text(sealed)
@@ -246,9 +246,9 @@ public struct ConcealView: View {
     }
 
     private var copyLinkButton: some View {
-        Button("Copy Link Again") { model.copyConcealedLink() }
+        Button(CompanionL10n.string("sharing.recovery.copy")) { model.copyConcealedLink() }
             .disabled(!draft.canCopyLink)
-            .help("available for \(CompanionClient.clipboardClearSeconds()) seconds after creation")
+            .help(Self.recoveryHelp)
     }
 
     private var deleteLocalButton: some View {
@@ -257,25 +257,32 @@ public struct ConcealView: View {
     }
 
     private var doneButton: some View {
-        Button("Done") { model.dismissConceal() }
+        Button(CompanionL10n.string("sharing.recovery.done")) { model.dismissConceal() }
+    }
+
+    nonisolated static var recoveryHelp: String {
+        CompanionL10n.format("sharing.recovery.help", CompanionClient.concealLinkRecoverySeconds())
+    }
+
+    nonisolated static func sharingTargetLabel(_ label: String) -> String {
+        CompanionL10n.format("sharing.recovery.target", label)
     }
 
     nonisolated static func successLine(canCopyLink: Bool) -> String {
-        canCopyLink ? "link created and copied; copy it again below."
-            : "link created; copying it again is no longer available."
+        CompanionL10n.string(canCopyLink ? "sharing.recovery.success" : "sharing.recovery.unavailable")
     }
 
     nonisolated static func deleteLabel(for target: ConcealDraft.Target) -> String {
         switch target {
-        case .chip: "Delete Local Sealed Content"
-        case .page: "Discard Local Page"
+        case .chip: CompanionL10n.string("sharing.recovery.delete_chip")
+        case .page: CompanionL10n.string("sharing.recovery.discard_page")
         }
     }
 
     nonisolated static func deleteHelp(for target: ConcealDraft.Target) -> String {
         switch target {
-        case .chip: "delete this local sealed item; this cannot be undone"
-        case .page: "discard this page's contents; keep its timeline position"
+        case .chip: CompanionL10n.string("sharing.recovery.delete_chip.help")
+        case .page: CompanionL10n.string("sharing.recovery.discard_page.help")
         }
     }
 

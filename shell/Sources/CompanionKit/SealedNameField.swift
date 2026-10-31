@@ -55,7 +55,7 @@ struct ChipRename {
                 shut(in: model)
                 return true
             }
-            error = "This sealed item is no longer available."
+            error = CompanionL10n.string("chip.name.failed")
             return false
         }
         shut(in: model)
@@ -71,9 +71,8 @@ struct ChipRename {
     /// Validation beside the variable name field.
     nonisolated static func words(for refusal: ChipNameRefusal) -> String {
         switch refusal {
-        case .tooLong: "Use 64 characters or fewer for the variable name."
-        case .outsideCharset:
-            "Use A–Z, a–z, digits and underscores, starting with a letter or underscore."
+        case .tooLong: CompanionL10n.string("chip.name.long")
+        case .outsideCharset: CompanionL10n.string("chip.name.charset")
         }
     }
 
@@ -196,13 +195,12 @@ final class SealedNameField: NSTextField {
 final class SealedNameHelpView: NSView {
     override var isFlipped: Bool { true }
 
-    let title = NSTextField(labelWithString: "Variable name · e.g. API_KEY")
-    let help = NSTextField(wrappingLabelWithString:
-        "Use a recognizable name for similar excerpts. 1–64 characters: A–Z, a–z, 0–9 and _. Start with a letter or _. Leave empty to remove the name.")
+    let title = NSTextField(labelWithString: CompanionL10n.string("chip.name.title"))
+    let help = NSTextField(wrappingLabelWithString: CompanionL10n.string("chip.name.help"))
     let error = NSTextField(wrappingLabelWithString: "")
-    let hint = NSTextField(labelWithString: "Return saves · Esc cancels")
-    let save = NSButton(title: "Save", target: nil, action: nil)
-    let cancel = NSButton(title: "Cancel", target: nil, action: nil)
+    let hint = NSTextField(labelWithString: CompanionL10n.string("chip.name.hint"))
+    let save = NSButton(title: CompanionL10n.string("chip.name.save"), target: nil, action: nil)
+    let cancel = NSButton(title: CompanionL10n.string("chip.name.cancel"), target: nil, action: nil)
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -217,8 +215,8 @@ final class SealedNameHelpView: NSView {
             button.controlSize = .small
             button.refusesFirstResponder = true
         }
-        save.setAccessibilityHelp("Save the variable name. Return also saves.")
-        cancel.setAccessibilityHelp("Cancel the name edit. Escape also cancels.")
+        save.setAccessibilityHelp(CompanionL10n.string("chip.name.save.help"))
+        cancel.setAccessibilityHelp(CompanionL10n.string("chip.name.cancel.help"))
         for view in [title, help, error, hint, save, cancel] as [NSView] { addSubview(view) }
     }
 
@@ -296,8 +294,8 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         field.cell?.wraps = false
         field.isHidden = true
         field.delegate = self
-        field.setAccessibilityLabel("Variable name")
-        field.setAccessibilityHelp("For example, API_KEY. Use A–Z, a–z, digits and underscores; start with a letter or underscore. Return saves; Escape cancels.")
+        field.setAccessibilityLabel(CompanionL10n.string("chip.name.field"))
+        field.setAccessibilityHelp(CompanionL10n.string("chip.name.field.help"))
         (field.cell as? SealedNameFieldCell)?.editor.owner = self
         helpView.save.target = self
         helpView.save.action = #selector(saveClicked(_:))
@@ -375,7 +373,15 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         close(returningKeys: returningKeys)
     }
 
-    /// Escape, the keyboard leaving, or the object leaving the page.
+    @discardableResult
+    func focusDraft() -> Bool {
+        guard rename.isOpen else { return false }
+        follow()
+        guard rename.isOpen else { return false }
+        return field.window?.makeFirstResponder(field) ?? false
+    }
+
+    /// Escape or the object leaving the page.
     func keep(returningKeys: Bool) {
         guard rename.isOpen else { return }
         rename.keep(in: model)
@@ -395,8 +401,8 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         let width = fieldWidth(room: cell.nameFieldRoom(in: frame))
         textView.naming = InkTextView.Naming(index: index, chip: chip, width: width)
         let row = cell.namedRow(in: frame, editingWidth: width)?.geometry
-        let height = max(field.intrinsicContentSize.height, layout.metrics.pillHeight)
-        let midY = row?.equals.midY ?? (layout.bottomRowY + height / 2)
+        let height = field.intrinsicContentSize.height
+        let midY = row?.equals.midY ?? (layout.identityRowY + height / 2)
         field.frame = NSRect(
             x: layout.left - Self.textInset, y: midY - height / 2, width: width, height: height)
         placeHelp(under: frame)
@@ -410,7 +416,7 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         if helpView.error.stringValue != previousError, !helpView.error.stringValue.isEmpty {
             NSAccessibility.post(element: helpView.error, notification: .valueChanged)
         }
-        field.setAccessibilityHelp(rename.error ?? "Return saves; Escape cancels. A–Z, a–z, digits and underscores; start with a letter or underscore.")
+        field.setAccessibilityHelp(rename.error ?? CompanionL10n.string("chip.name.field.help"))
         let block = textView.convert(block, to: overlay)
         let room = overlay.bounds.insetBy(dx: 8, dy: 8)
         let width = min(440, max(0, room.width))

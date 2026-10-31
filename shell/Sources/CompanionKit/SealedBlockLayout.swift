@@ -39,7 +39,6 @@ enum SealedBlockLayout {
     struct Metrics: Equatable, Sendable {
         let width: CGFloat
         let horizontalPadding: CGFloat
-        let pillHeight: CGFloat
         let pillRadius: CGFloat
     }
 
@@ -58,11 +57,13 @@ enum SealedBlockLayout {
         let room = max(0, available)
         guard name + equals + value > room else { return (name, value) }
         let nameRoom = max(0, room - equals)
-        let nameWidth = min(name, nameRoom, max(nameFloor, nameRoom * 0.65))
+        let preferredName = min(name, nameRoom, max(nameFloor, nameRoom * 0.65))
+        let valueWidth = max(0, min(value, nameRoom - preferredName))
+        let nameWidth = min(name, max(0, nameRoom - valueWidth))
         return (nameWidth, max(0, min(value, nameRoom - nameWidth)))
     }
 
     static func metrics(containerWidth: CGFloat) -> Metrics {
-        Metrics(width: containerWidth, horizontalPadding: 12, pillHeight: 0, pillRadius: 4)
+        Metrics(width: containerWidth, horizontalPadding: 12, pillRadius: 4)
     }
 }

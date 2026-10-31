@@ -53,6 +53,44 @@ final class SealedNameFieldTests: XCTestCase {
         try XCTUnwrap(page.coordinator.nameEditor, "no field was opened")
     }
 
+    func testSealedNameAndActionLocalizationKeysResolve() {
+        let expected = [
+            "chip.name.field": "Variable name",
+            "chip.name.long": "use 64 characters or fewer for the variable name",
+            "chip.name.charset": "use A–Z, a–z, digits and underscores, starting with a letter or underscore",
+            "chip.name.title": "variable name · e.g. API_KEY",
+            "chip.name.hint": "Return saves · Esc cancels",
+            "chip.name.save": "Save",
+            "chip.name.cancel": "Cancel",
+            "chip.name.failed": "the variable name could not be saved; try again",
+            "chip.menu.copy_reference": "Copy Sealed Reference",
+            "chip.menu.copy_decrypted": "Copy Decrypted Contents",
+            "chip.control.copy": "Copy Decrypted",
+            "chip.handle.move": "Select Sealed Content",
+            "chip.handle.decrypted": "Copy Decrypted Contents",
+        ]
+        for (key, value) in expected {
+            XCTAssertEqual(CompanionL10n.string(key), value, "unresolved or stale key: \(key)")
+        }
+        for key in [
+            "chip.name.help", "chip.name.field.help", "chip.name.save.help", "chip.name.cancel.help",
+            "chip.menu.copy_name", "chip.menu.copy_name_value", "chip.menu.create_link", "chip.menu.name",
+            "chip.menu.rename", "chip.menu.note", "chip.menu.edit_note", "chip.menu.remove",
+            "chip.menu.copy_reference.help", "chip.menu.copy_decrypted.help", "chip.menu.copy_name_value.help",
+            "chip.control.copied", "chip.control.note", "chip.control.move.help", "chip.control.copy.help",
+            "chip.control.actions.help", "chip.control.note.help", "chip.status.classification",
+            "chip.status.text", "chip.status.image", "chip.status.elsewhere", "chip.status.has_note",
+            "chip.accessibility.actions", "chip.accessibility.note", "chip.accessibility.note_presence",
+        ] {
+            XCTAssertNotEqual(CompanionL10n.string(key), key)
+        }
+        XCTAssertEqual(CompanionL10n.format("chip.status.has_note", "sealed text"), "sealed text · has note")
+        let helper = SealedNameHelpView()
+        XCTAssertEqual(helper.help.stringValue, CompanionL10n.string("chip.name.help"))
+        XCTAssertEqual(helper.save.accessibilityHelp(), CompanionL10n.string("chip.name.save.help"))
+        XCTAssertEqual(helper.cancel.accessibilityHelp(), CompanionL10n.string("chip.name.cancel.help"))
+    }
+
     func testNamingHelpKeepsItsHintAndButtonsVisibleAtNarrowAndWideWidths() {
         let helper = SealedNameHelpView()
         for width in [CGFloat(244), 440] {
@@ -76,7 +114,9 @@ final class SealedNameFieldTests: XCTestCase {
     }
 
     func testRenderNamingPreviewsWhenRequested() throws {
-        guard let directory = ProcessInfo.processInfo.environment["ONETIMEPAD_SEALED_PREVIEW_DIR"] else { return }
+        guard let directory = ProcessInfo.processInfo.environment["ONETIMEPAD_SEALED_PREVIEW_DIR"] else {
+            throw XCTSkip("set ONETIMEPAD_SEALED_PREVIEW_DIR to render synthetic naming previews")
+        }
         let output = URL(fileURLWithPath: directory, isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let original = InkStyle.typeface
@@ -135,7 +175,7 @@ final class SealedNameFieldTests: XCTestCase {
         let naming = try XCTUnwrap(page.textView.naming)
         XCTAssertEqual(naming.chip, page.chip)
         XCTAssertTrue(editor.overlay.superview === page.scroll)
-        XCTAssertTrue(editor.helpView.title.stringValue.contains("Variable name"))
+        XCTAssertEqual(editor.helpView.title.stringValue, CompanionL10n.string("chip.name.title"))
         XCTAssertTrue(editor.helpView.help.stringValue.contains("64"))
         XCTAssertEqual(editor.helpView.hint.stringValue, "Return saves · Esc cancels")
         XCTAssertEqual(editor.helpView.save.title, "Save")
@@ -270,10 +310,10 @@ final class SealedNameFieldTests: XCTestCase {
 
     func testTheRefusalsWordsAreTheFieldsOwn() {
         XCTAssertEqual(
-            ChipRename.words(for: .tooLong), "Use 64 characters or fewer for the variable name.")
+            ChipRename.words(for: .tooLong), CompanionL10n.string("chip.name.long"))
         XCTAssertEqual(
             ChipRename.words(for: .outsideCharset),
-            "Use A–Z, a–z, digits and underscores, starting with a letter or underscore."
+            CompanionL10n.string("chip.name.charset")
         )
     }
 
@@ -291,6 +331,55 @@ final class SealedNameFieldTests: XCTestCase {
         editor.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification))
         XCTAssertFalse(editor.isOpen)
         XCTAssertEqual(coreName(page), "MY_KEY")
+    }
+
+    func testFocusingAnInvalidDraftRestoresItsFieldWithoutChangingIt() throws {
+        let page = try makePage()
+        let window = NSWindow(contentRect: page.scroll.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = page.scroll
+        defer { window.close() }
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        editor.draft = "my.key"
+        editor.commit()
+        XCTAssertTrue(window.makeFirstResponder(page.textView))
+        XCTAssertFalse(editor.holdsKeys)
+        XCTAssertTrue(editor.focusDraft())
+        XCTAssertTrue(editor.holdsKeys)
+        XCTAssertEqual(editor.draft, "my.key")
+        XCTAssertEqual(editor.rename.error, CompanionL10n.string("chip.name.charset"))
+        XCTAssertNil(coreName(page))
+    }
+
+    private final class NameRefusingClient: CompanionClient, @unchecked Sendable {
+        init(tag: String) { super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag)) }
+        override func setChipName(_ name: String, chip: UInt64) -> Bool { false }
+    }
+
+    func testANameWriteRefusalDoesNotCallAnExistingItemUnavailable() throws {
+        let suite = "sealed-name-refusal-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        addTeardownBlock {
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let client = NameRefusingClient(tag: suite)
+        XCTAssertTrue(client.useMemoryPasteboardForTests())
+        let model = PageModel(formFactor: .backdrop, defaults: defaults,
+            seams: .init(stateDirectory: directory, client: client, clearClipboardIfOurs: { false }))
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let chip = try XCTUnwrap(client.sealText(sheet: page, "synthetic value", at: 0, length: 0))
+        var rename = ChipRename()
+        rename.open(chip: chip.chipId, sheet: page, name: nil, in: model)
+        rename.edit("API_KEY", in: model)
+        XCTAssertFalse(rename.commit(in: model))
+        XCTAssertTrue(client.chipStands(chip.chipId))
+        XCTAssertTrue(rename.isOpen)
+        XCTAssertEqual(rename.draft, "API_KEY")
+        XCTAssertEqual(rename.error, CompanionL10n.string("chip.name.failed"))
     }
 
     func testTheVisibleSaveAndCancelButtonsEndTheEdit() throws {
@@ -521,4 +610,21 @@ final class SealedNameFieldTests: XCTestCase {
             "the page lost its own Undo once the field shut")
         XCTAssertTrue(page.model.languageActions.canPaste, "the menu did not come back to the page")
     }
+    func testFinishingAnOwnedDraftLeavesTheEditorsKeyboardUsable() throws {
+        let page = try makePage()
+        let window = NSWindow(contentRect: page.scroll.frame, styleMask: [.titled],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = page.scroll
+        defer { window.close() }
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        editor.draft = "SAVED_NAME"
+        XCTAssertTrue(editor.holdsKeys)
+        page.coordinator.finishNaming()
+        XCTAssertEqual(coreName(page), "SAVED_NAME")
+        XCTAssertTrue(window.firstResponder === page.textView)
+        XCTAssertTrue(page.textView.answersChords)
+    }
+
 }

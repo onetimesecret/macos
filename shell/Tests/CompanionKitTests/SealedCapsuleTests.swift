@@ -320,7 +320,7 @@ final class SealedCapsuleTests: XCTestCase {
         let seat = SealedBlockCell.actionsRect(in: frame)
         XCTAssertTrue(frame.contains(layout.lockRect))
         XCTAssertTrue(frame.contains(seat))
-        XCTAssertLessThan(layout.bottomRowY, seat.minY)
+        XCTAssertLessThan(layout.identityRowY, seat.minY)
         XCTAssertGreaterThan(seat.height, 20)
     }
 

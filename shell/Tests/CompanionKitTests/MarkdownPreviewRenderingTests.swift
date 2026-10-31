@@ -869,7 +869,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         XCTAssertNotNil(cell.lastDrawnFrame)
         XCTAssertEqual(cell.lastDrawnShowsControls, false)
         XCTAssertEqual(cell.lastDrawnSelected, false)
-        XCTAssertEqual(cell.lastDrawnStatus, "Sealed text · has note")
+        XCTAssertEqual(cell.lastDrawnStatus, "sealed text · has note")
         view.selectAll(nil)
         view.cacheDisplay(in: view.bounds, to: bitmap)
         XCTAssertEqual(cell.lastDrawnSelected, true)

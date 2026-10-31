@@ -1388,6 +1388,7 @@ public final class PageModel: ObservableObject {
     /// The clear-after-copy window a test shortened, or nil for the
     /// core's own interval (`CompanionClient.clipboardClearSeconds`).
     private let clipboardClearDebounce: TimeInterval?
+    private let concealLinkRecoveryDebounce: TimeInterval?
 
     /// The receipt-guarded clear itself. Shipping construction always
     /// delegates to the core; the seam lets timer and teardown behavior
@@ -1448,6 +1449,8 @@ public final class PageModel: ObservableObject {
         /// is never this one: that is always the core's constant, and
         /// only the timer's wait is shortened.
         let clipboardClearDebounce: TimeInterval?
+        /// A shorter wait for the link-recovery availability timer in tests.
+        let concealLinkRecoveryDebounce: TimeInterval?
         let clearClipboardIfOurs: (@Sendable () -> Bool)?
         /// What a declined presentation write does besides being
         /// declined and logged. Nil is the shipping answer, a debug
@@ -1480,6 +1483,7 @@ public final class PageModel: ObservableObject {
             keymapOverride: URL? = nil,
             fileLanguageDetection: LanguageDetectionService? = nil,
             clipboardClearDebounce: TimeInterval? = nil,
+            concealLinkRecoveryDebounce: TimeInterval? = nil,
             clearClipboardIfOurs: (@Sendable () -> Bool)? = nil,
             declinedPresentationWrite: (
                 @MainActor (PresentationField, PresentationOwner) -> Void
@@ -1498,6 +1502,7 @@ public final class PageModel: ObservableObject {
             self.keymapOverride = keymapOverride
             self.fileLanguageDetection = fileLanguageDetection
             self.clipboardClearDebounce = clipboardClearDebounce
+            self.concealLinkRecoveryDebounce = concealLinkRecoveryDebounce
             self.clearClipboardIfOurs = clearClipboardIfOurs
             self.declinedPresentationWrite = declinedPresentationWrite
             self.ambientPasteboard = ambientPasteboard
@@ -1585,6 +1590,7 @@ public final class PageModel: ObservableObject {
         saveDebounce = seams.saveDebounce ?? Self.saveDebounce
         saveRetryDebounce = seams.saveRetryDebounce ?? Self.saveRetryDebounce
         clipboardClearDebounce = seams.clipboardClearDebounce
+        concealLinkRecoveryDebounce = seams.concealLinkRecoveryDebounce
         declinedPresentationWrite = seams.declinedPresentationWrite
         ambientPasteboard = seams.ambientPasteboard ?? .general
         writeCutFragment = seams.writeCutFragment ?? { $0.write(to: $1) }
@@ -5698,28 +5704,6 @@ public final class PageModel: ObservableObject {
         heldGeneration = noticeGeneration
     }
 
-    /// A field's refusal in the line under the page (Law 0007, Refusing),
-    /// held once and given new words only when they change.
-    @MainActor
-    struct HeldRefusal {
-        private var hold: NoticeHold?
-        private var message: String?
-
-        var isStanding: Bool { hold != nil }
-
-        mutating func say(_ message: String, in model: PageModel) {
-            guard hold == nil || message != self.message else { return }
-            hold = model.holdNotice(message, replacing: hold)
-            self.message = message
-        }
-
-        mutating func release(in model: PageModel) {
-            if let hold { model.releaseNotice(hold) }
-            hold = nil
-            message = nil
-        }
-    }
-
     /// The notice's button was pressed: run it, and take the line down
     /// with it, since what it offered has been done.
     public func performNoticeAction() {
@@ -7751,7 +7735,7 @@ public final class PageModel: ObservableObject {
             concealDraft?.canCopyLink = false
             return
         }
-        let interval = min(clipboardClearDebounce ?? remaining, remaining)
+        let interval = min(concealLinkRecoveryDebounce ?? remaining, remaining)
         let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.concealDraft?.id == draftID else { return }
@@ -7773,7 +7757,7 @@ public final class PageModel: ObservableObject {
             flash(Self.linkCopiedLine)
         } else {
             concealDraft?.canCopyLink = false
-            flash("this link is no longer available to copy again.")
+            flash(CompanionL10n.string("sharing.recovery.copy_failed"))
         }
         return copied
     }
