@@ -1278,6 +1278,71 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(roll.stack.currentPlace?.anchor.x, 240)
     }
 
+    func testCrossAxisScrollingDoesNotOverwriteALoadingPreviewsCollapsedAxis() async throws {
+        for (collapseHeight, returnToOrigin) in [(true, false), (false, false), (true, true), (false, true)] {
+            let model = try makeModel()
+            model.wrapsLines = false
+            let source = (0..<1_200).map { "line \($0) **at a distinct reading position**" }.joined(separator: "\n\n")
+            let reading = try page(in: model, saying: source)
+            let following = longLine() + (collapseHeight ? "" : "\n" + longPage(lines: 80))
+            _ = try page(in: model, saying: following)
+            try select(reading, in: model)
+            model.toggleMarkdownPreview(for: reading)
+            let projection = TimeUnitProjection.project(
+                tabs: model.tabs.map { onDay($0, $0.pageID == reading ? 0 : -1) },
+                selectedPageID: reading, unit: .day)
+            let roll = try mountRoll(model: model)
+            roll.window.isReleasedWhenClosed = false
+            defer { roll.window.close() }
+            roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+            let preview = try XCTUnwrap(roll.stack.previewRegions[reading])
+            try await XCTUnwrap(preview.renderingTask).value
+            let target = "line 600 "
+            let index = (preview.string as NSString).range(of: target).location
+            let glyph = try glyphRect(in: preview, at: index)
+            scroll(roll, to: NSPoint(x: collapseHeight ? 0 : 240,
+                                    y: preview.frame.minY + glyph.minY + glyph.height / 4))
+            let place = try XCTUnwrap(roll.stack.readingPlace)
+            XCTAssertEqual(place.anchor.characterIndex, index)
+            XCTAssertFalse(place.atTop)
+
+            model.syncDocument(sheet: reading, runs: [.ink("new paragraph\n\n" + source)])
+            if !collapseHeight { model.wrapsLines = true }
+            roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+            let pending = try XCTUnwrap(preview.renderingTask)
+            let clip = roll.scroll.contentView
+            if collapseHeight {
+                XCTAssertEqual(roll.stack.frame.height, clip.bounds.height, accuracy: 0.5)
+                XCTAssertEqual(clip.bounds.minY, 0)
+                scroll(roll, to: NSPoint(x: 240, y: 0))
+                XCTAssertEqual(clip.bounds.minX, 240)
+            } else {
+                XCTAssertEqual(roll.stack.frame.width, clip.bounds.width, accuracy: 0.5)
+                XCTAssertEqual(clip.bounds.minX, 0)
+                let before = clip.bounds.minY
+                scroll(roll, to: NSPoint(x: 0, y: preview.frame.minY + 3))
+                XCTAssertNotEqual(clip.bounds.minY, before)
+            }
+            XCTAssertEqual(roll.stack.readingPlace?.anchor.characterIndex, index)
+            XCTAssertEqual(roll.stack.readingPlace?.anchor.x, 240)
+            XCTAssertEqual(roll.stack.readingPlace?.atTop, false)
+            if returnToOrigin { scroll(roll, to: .zero) }
+            let expectedX: CGFloat = returnToOrigin && collapseHeight ? 0 : 240
+            let expectedAtTop = returnToOrigin && !collapseHeight
+            XCTAssertEqual(roll.stack.readingPlace?.anchor.characterIndex, index)
+            XCTAssertEqual(roll.stack.readingPlace?.anchor.x, expectedX)
+            XCTAssertEqual(roll.stack.readingPlace?.atTop, expectedAtTop)
+            model.wrapsLines = false
+            roll.stack.relayout()
+            await pending.value
+            let moved = (preview.string as NSString).range(of: target).location
+            XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, expectedAtTop ? 0 : moved)
+            XCTAssertEqual(clip.bounds.minX, expectedX)
+            if expectedAtTop { XCTAssertEqual(clip.bounds.minY, 0) }
+            else { XCTAssertGreaterThan(clip.bounds.minY, 0) }
+        }
+    }
+
     /// The pump's own report is the only invalidation here, as it is when a peer writes.
     func testAPeersEditReachesAQuietDayAndThePageTheEditorLeft() throws {
         let model = try makeModel()

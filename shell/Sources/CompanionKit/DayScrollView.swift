@@ -558,10 +558,14 @@ final class DayStackView: NSView {
     @objc private func rollScrolled(_ notification: Notification) {
         positionViewportChrome()
         // Out of a window the clip reads nothing; the last place stays for `departingPlace`.
-        if !isLayingOut, window != nil {
+        if !isLayingOut, window != nil, let clip = enclosingScrollView?.contentView {
             readingPlace = currentPlace
-            readingPlace?.atTop = (enclosingScrollView?.contentView.bounds.minY ?? 0) <= 0
-            readingPlace?.anchor.x = enclosingScrollView?.contentView.bounds.minX ?? 0
+            if frame.height > clip.bounds.height {
+                readingPlace?.atTop = clip.bounds.minY <= 0
+            }
+            if frame.width > clip.bounds.width {
+                readingPlace?.anchor.x = clip.bounds.minX
+            }
         }
         publishGeometry()
     }
@@ -1453,12 +1457,13 @@ final class DayStackView: NSView {
     private var clipPlace: RollPlace? {
         guard let scroll = enclosingScrollView else { return nil }
         let origin = scroll.contentView.bounds.origin
-        guard origin.y > 0 || origin.x > 0 || model.pads.isEnabled,
-              let row = rows.first(where: { $0.page != nil && !$0.body.isHidden && $0.body.frame.maxY > origin.y }),
+        guard let row = rows.first(where: { $0.page != nil && !$0.body.isHidden && $0.body.frame.maxY > origin.y }),
               let page = row.page, let text = row.body as? NSTextView
         else { return nil }
-        if let preview = text as? MarkdownPreviewView, preview.isRendering {
-            if let place = readingPlace, place.page == page { return place }
+        let isRenderingPreview = (text as? MarkdownPreviewView)?.isRendering == true
+        if isRenderingPreview, let place = readingPlace, place.page == page { return place }
+        guard origin.y > 0 || origin.x > 0 || model.pads.isEnabled else { return nil }
+        if isRenderingPreview {
             return RollPlace(page: page, anchor: ScrollAnchor(characterIndex: 0, x: origin.x), reading: .preview,
                              atTop: origin.y <= 0)
         }
