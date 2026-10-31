@@ -1333,6 +1333,8 @@ final class DayStackView: NSView {
         let clip = scroll.contentView
         let floor = max(frame.height - clip.bounds.height, 0)
         let target = NSPoint(x: clip.bounds.origin.x, y: min(max(offset, 0), floor))
+        let destination = rows.first { $0.page != nil && !$0.body.isHidden && $0.body.frame.maxY > target.y }
+        if (destination?.body as? MarkdownPreviewView)?.isRendering == true { readingPlace = nil }
         let duration = StreamNavigator.jumpDuration(
             reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         )
@@ -1449,12 +1451,17 @@ final class DayStackView: NSView {
         let origin = scroll.contentView.bounds.origin
         guard origin.y > 0 || origin.x > 0 || model.pads.isEnabled,
               let row = rows.first(where: { $0.page != nil && !$0.body.isHidden && $0.body.frame.maxY > origin.y }),
-              let page = row.page, let text = row.body as? NSTextView,
-              let anchor = ScrollAnchor(
-                  topOf: text,
-                  clipOrigin: NSPoint(x: origin.x, y: origin.y - text.frame.minY)
-              )
+              let page = row.page, let text = row.body as? NSTextView
         else { return nil }
+        if let preview = text as? MarkdownPreviewView, preview.isRendering {
+            if let place = readingPlace, place.page == page { return place }
+            return RollPlace(page: page, anchor: ScrollAnchor(characterIndex: 0), reading: .preview,
+                             atTop: origin.y <= 0)
+        }
+        guard let anchor = ScrollAnchor(
+            topOf: text,
+            clipOrigin: NSPoint(x: origin.x, y: origin.y - text.frame.minY)
+        ) else { return nil }
         return RollPlace(
             page: page, anchor: anchor, reading: Self.reading(of: text),
             length: text.textStorage?.length ?? 0, atTop: origin.y <= 0)
