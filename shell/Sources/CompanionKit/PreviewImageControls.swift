@@ -140,33 +140,28 @@ final class PreviewImageControls {
         self.loadImage = load
     }
 
-    func seed(_ text: NSAttributedString, preserveConsent: Bool = false) {
+    func seed(_ text: NSAttributedString) {
         var descriptors: [(PreviewImageDescriptor, NSRange)] = []
         text.enumerateAttribute(.previewImage, in: NSRange(location: 0, length: text.length)) { value, range, stop in
             guard let descriptor = value as? PreviewImageDescriptor else { return }
             descriptors.append((descriptor, range))
             if descriptors.count == Self.maximumControls { stop.pointee = true }
         }
-        let sameImages = descriptors.count == entries.count && zip(descriptors, entries).allSatisfy {
-            $0.0.0 == $0.1.descriptor && $0.0.1 == $0.1.range
-        }
-        if !preserveConsent || original.string != text.string || !sameImages {
-            clearEntries()
-            for (descriptor, range) in descriptors {
-                let entry = Entry(descriptor: descriptor, range: range, text: text)
-                entry.button.preview = preview
-                entry.button.bezelStyle = .rounded
-                entry.button.controlSize = .small
-                entry.button.setAccessibilityRole(.button)
-                entry.button.setAccessibilityElement(true)
-                entry.button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-                entry.button.lineBreakMode = .byTruncatingTail
-                entry.button.target = self
-                entry.button.action = #selector(activate(_:))
-                entry.button.tag = entries.count
-                entries.append(entry)
-                preview?.addSubview(entry.button)
-            }
+        clearEntries()
+        for (descriptor, range) in descriptors {
+            let entry = Entry(descriptor: descriptor, range: range, text: text)
+            entry.button.preview = preview
+            entry.button.bezelStyle = .rounded
+            entry.button.controlSize = .small
+            entry.button.setAccessibilityRole(.button)
+            entry.button.setAccessibilityElement(true)
+            entry.button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            entry.button.lineBreakMode = .byTruncatingTail
+            entry.button.target = self
+            entry.button.action = #selector(activate(_:))
+            entry.button.tag = entries.count
+            entries.append(entry)
+            preview?.addSubview(entry.button)
         }
         original = text
         seedStorage()

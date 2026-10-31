@@ -738,18 +738,21 @@ final class PreviewImageControlsTests: XCTestCase {
         XCTAssertEqual(lineYInClip(), before, accuracy: 1)
     }
 
-    func testPreserveConsentRechecksDestinationsEvenWhenTheAltTextIsUnchanged() async throws {
+    func testSourceDestinationEditRequiresAnotherLoadWhenTheAltTextIsUnchanged() async throws {
         let fixture = try fixture()
         defer { fixture.window.close() }
         fixture.loader.handler = { _ in self.image() }
         let preview = fixture.preview
         preview.imageControls.buttons[0].performClick(nil)
         try await eventually { preview.imageControls.loadedImageCount == 1 }
-        let current = MarkdownPreviewView.render(NSAttributedString(string: Self.markdown))
-        let changed = MarkdownPreviewView.render(NSAttributedString(
-            string: "![A small image](https://other.example.org/new.png)"))
-        XCTAssertEqual(current.string, changed.string)
-        preview.imageControls.seed(changed, preserveConsent: true)
+        let original = preview.string
+        let button = preview.imageControls.buttons[0]
+        fixture.model.syncDocument(sheet: fixture.page, runs: [
+            .ink("![A small image](https://other.example.org/new.png)"),
+        ])
+        fixture.update()
+        XCTAssertEqual(preview.string, original)
+        XCTAssertFalse(preview.imageControls.buttons[0] === button)
         XCTAssertEqual(preview.imageControls.loadedImageCount, 0)
         XCTAssertTrue(preview.imageControls.buttons[0].title.hasPrefix("Load"))
         XCTAssertTrue(preview.imageControls.buttons[0].title.contains("other.example.org"))
@@ -759,17 +762,21 @@ final class PreviewImageControlsTests: XCTestCase {
         XCTAssertEqual(fixture.loader.requests.map(\.absoluteString), [Self.address, "https://other.example.org/new.png"])
     }
 
-    func testPreserveConsentRechecksImageRangesInAnUnchangedTextStream() async throws {
-        let fixture = try fixture("a![same](\(Self.address))same")
+    func testSourceImageRangeEditRequiresAnotherLoadInAnUnchangedTextStream() async throws {
+        let initialSource = "a![same](\(Self.address))same"
+        let changedSource = "asame![same](\(Self.address))"
+        XCTAssertEqual(MarkdownPreviewView.render(NSAttributedString(string: initialSource)).string,
+                       MarkdownPreviewView.render(NSAttributedString(string: changedSource)).string)
+        let fixture = try fixture(initialSource)
         defer { fixture.window.close() }
         fixture.loader.handler = { _ in self.image() }
         let preview = fixture.preview
         preview.imageControls.buttons[0].performClick(nil)
         try await eventually { preview.imageControls.loadedImageCount == 1 }
-        let first = MarkdownPreviewView.render(NSAttributedString(string: "a![same](\(Self.address))same"))
-        let moved = MarkdownPreviewView.render(NSAttributedString(string: "asame![same](\(Self.address))"))
-        XCTAssertEqual(first.string, moved.string)
-        preview.imageControls.seed(moved, preserveConsent: true)
+        let button = preview.imageControls.buttons[0]
+        fixture.model.syncDocument(sheet: fixture.page, runs: [.ink(changedSource)])
+        fixture.update()
+        XCTAssertFalse(preview.imageControls.buttons[0] === button)
         XCTAssertEqual(preview.imageControls.loadedImageCount, 0)
         XCTAssertTrue(preview.imageControls.buttons[0].title.hasPrefix("Load"))
         XCTAssertEqual(fixture.loader.requests.count, 1)

@@ -281,7 +281,7 @@ final class MarkdownPreviewView: AskingTextView {
             imageControls.seed(NSAttributedString(
                 string: CompanionL10n.string("Rendering preview…"),
                 attributes: [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]
-            ), preserveConsent: false)
+            ))
             renderingTask = Task { @MainActor [weak self] in
                 let result = await renderer.renderCooperatively()
                 guard let self, self.pendingRenderingID == renderingID else { return }
@@ -290,9 +290,7 @@ final class MarkdownPreviewView: AskingTextView {
                 self.isRendering = false
                 self.isSelectable = self.isSelectedPage
                 self.pendingPreviousText = nil
-                self.imageControls.seed(
-                    !Task.isCancelled ? (result ?? renderer.plainText()) : renderer.plainText(),
-                    preserveConsent: false)
+                self.imageControls.seed(result ?? renderer.plainText())
                 self.needsDisplay = true
                 self.onRenderingChanged?(previous)
                 NSAccessibility.post(element: self, notification: .valueChanged)
@@ -301,7 +299,7 @@ final class MarkdownPreviewView: AskingTextView {
             return nil
         }
         isSelectable = isSelectedPage
-        imageControls.seed(Self.render(rendering.text, dialect: dialect), preserveConsent: sameSource)
+        imageControls.seed(Self.render(rendering.text, dialect: dialect))
         needsDisplay = true
         return previous
     }

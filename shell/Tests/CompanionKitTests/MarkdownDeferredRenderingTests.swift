@@ -51,6 +51,7 @@ final class MarkdownDeferredRenderingTests: XCTestCase {
         view.reseed(with: rendering(source), dialect: .gfm)
         let pending = try XCTUnwrap(view.renderingTask)
         XCTAssertEqual(view.reseed(with: rendering("# New page"), dialect: .gfm), "Before\n")
+        XCTAssertTrue(pending.isCancelled)
         XCTAssertFalse(view.isRendering)
         XCTAssertEqual(view.string, "New page\n")
         await pending.value
@@ -79,6 +80,12 @@ final class MarkdownDeferredRenderingTests: XCTestCase {
     func testCancelledCurrentRenderingReleasesBusyStateWithCurrentSource() async throws {
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         view.isSelectedPage = true
+        view.reseed(with: rendering("# Before"), dialect: .gfm)
+        var callbacks = 0
+        view.onRenderingChanged = { previous in
+            XCTAssertEqual(previous, "Before\n")
+            callbacks += 1
+        }
         view.reseed(with: rendering(source), dialect: .gfm)
         let pending = try XCTUnwrap(view.renderingTask)
         pending.cancel()
@@ -87,6 +94,7 @@ final class MarkdownDeferredRenderingTests: XCTestCase {
         XCTAssertNil(view.renderingTask)
         XCTAssertTrue(view.isSelectable)
         XCTAssertEqual(view.string, source)
+        XCTAssertEqual(callbacks, 1)
     }
 
     func testEqualLengthCanonicalUnicodeEditReplacesPendingSource() async throws {

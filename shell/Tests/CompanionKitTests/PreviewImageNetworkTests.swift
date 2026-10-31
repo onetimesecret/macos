@@ -96,7 +96,7 @@ final class PreviewImageNetworkTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let logURL = folder.appendingPathComponent("fixture.log")
-        FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        try Data().write(to: logURL)
         let log = try FileHandle(forWritingTo: logURL)
         defer { try? log.close() }
         if mode == "untrustedTLS" {
