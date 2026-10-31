@@ -48,10 +48,12 @@ def verify_notice_metadata(notices: str, vendor: Path) -> None:
     require(len(sections) == 1, "comrak notice section is missing or duplicated")
     title, section = sections[0]
     package = tomllib.loads((vendor / "Cargo.toml").read_text(encoding="utf-8"))["package"]
+    revision = json.loads((vendor / ".cargo_vcs_info.json").read_text(encoding="utf-8"))["git"]["sha1"]
     require(title == f'comrak {package["version"]}', "comrak notice version differs")
     for label, pattern, expected in [
         ("package URL", r"^Package: ([^\n]+)$", f"https://crates.io/crates/comrak/{VERSION}"),
         ("archive checksum", r"^Registry package checksum SHA-256:\n([^\n]+)$", ARCHIVE_SHA256),
+        ("upstream revision", r"^Upstream revision recorded in the published package:\n([^\n]+)$", revision),
         ("license expression", r"^Published license expression: ([^\n]+)$", package["license"]),
     ]:
         require(re.findall(pattern, section, re.MULTILINE) == [expected], f"comrak notice {label} differs")

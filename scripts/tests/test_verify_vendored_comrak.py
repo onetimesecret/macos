@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -100,6 +101,11 @@ class VendoredComrakVerificationTests(unittest.TestCase):
     def test_changed_notice_license_expression_is_rejected(self):
         self.changed_notice_metadata("Published license expression: BSD-2-Clause",
                                      "Published license expression: MIT", "notice license expression differs")
+
+    def test_changed_notice_upstream_revision_is_rejected(self):
+        revision = json.loads((self.root / "vendor/comrak/.cargo_vcs_info.json").read_text(encoding="utf-8"))["git"]["sha1"]
+        label = "Upstream revision recorded in the published package:\n"
+        self.changed_notice_metadata(label + revision, label + "0" * 40, "notice upstream revision differs")
 
     def test_notice_metadata_accepts_attribution_markers(self):
         notices = self.root / "THIRD_PARTY_NOTICES.md"
