@@ -42,6 +42,21 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def verify_notice_metadata(notices: str, vendor: Path) -> None:
+    visible = re.sub(r"[\uFE00-\uFE0F\U000E0100-\U000E01EF]", "", notices)
+    sections = re.findall(r"^=+\n(comrak[^\n]*)\n=+\n(.*?)(?=^=+\n|\Z)", visible, re.MULTILINE | re.DOTALL)
+    require(len(sections) == 1, "comrak notice section is missing or duplicated")
+    title, section = sections[0]
+    package = tomllib.loads((vendor / "Cargo.toml").read_text())["package"]
+    require(title == f'comrak {package["version"]}', "comrak notice version differs")
+    for label, pattern, expected in [
+        ("package URL", r"^Package: ([^\n]+)$", f"https://crates.io/crates/comrak/{VERSION}"),
+        ("archive checksum", r"^Registry package checksum SHA-256:\n([^\n]+)$", ARCHIVE_SHA256),
+        ("license expression", r"^Published license expression: ([^\n]+)$", package["license"]),
+    ]:
+        require(re.findall(pattern, section, re.MULTILINE) == [expected], f"comrak notice {label} differs")
+
+
 def verify_tree(root: Path) -> dict:
     inventory_bytes = (root / INVENTORY).read_bytes()
     require(digest(inventory_bytes) == INVENTORY_SHA256, "vendor inventory changed")
@@ -59,6 +74,7 @@ def verify_tree(root: Path) -> dict:
     notices = root / "THIRD_PARTY_NOTICES.md"
     require(notices.is_file() and (vendor / "COPYING").read_bytes() in notices.read_bytes(),
             "THIRD_PARTY_NOTICES.md must reproduce vendored comrak COPYING bytes exactly")
+    verify_notice_metadata(notices.read_text(), vendor)
     for name, expected in inventory["patches"].items():
         patch = root / "crates/markdown/patches" / name
         require(digest(patch.read_bytes()) == expected, f"patch changed: {name}")

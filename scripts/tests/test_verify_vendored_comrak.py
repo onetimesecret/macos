@@ -54,6 +54,37 @@ class VendoredComrakVerificationTests(unittest.TestCase):
         with self.assertRaisesRegex(VERIFY.VerificationError, "COPYING bytes exactly"):
             VERIFY.verify_tree(self.root)
 
+    def changed_notice_metadata(self, original, changed, message):
+        notices = self.root / "THIRD_PARTY_NOTICES.md"
+        text = notices.read_text()
+        self.assertIn(original, text)
+        notices.write_text(text.replace(original, changed, 1) + "\n" + original + "\n")
+        with self.assertRaisesRegex(VERIFY.VerificationError, message):
+            VERIFY.verify_tree(self.root)
+
+    def test_changed_notice_version_is_rejected(self):
+        self.changed_notice_metadata("comrak 0.57.0\n===", "comrak 0.58.0\n===", "notice version differs")
+
+    def test_changed_notice_package_url_is_rejected(self):
+        self.changed_notice_metadata("Package: https://crates.io/crates/comrak/0.57.0",
+                                     "Package: https://crates.io/crates/comrak/0.58.0", "notice package URL differs")
+
+    def test_changed_notice_checksum_is_rejected(self):
+        self.changed_notice_metadata("Registry package checksum SHA-256:\n" + VERIFY.ARCHIVE_SHA256,
+                                     "Registry package checksum SHA-256:\n" + "0" * 64,
+                                     "notice archive checksum differs")
+
+    def test_changed_notice_license_expression_is_rejected(self):
+        self.changed_notice_metadata("Published license expression: BSD-2-Clause",
+                                     "Published license expression: MIT", "notice license expression differs")
+
+    def test_notice_metadata_accepts_attribution_markers(self):
+        notices = self.root / "THIRD_PARTY_NOTICES.md"
+        notices.write_text(notices.read_text().replace("comrak 0.57.0\n===", "c\U000E0101omrak 0.57.0\n===", 1)
+                           .replace("Published license expression: BSD-2-Clause",
+                                    "Published license expression: B\U000E0101SD-2-Clause", 1))
+        VERIFY.verify_tree(self.root)
+
     def test_source_change_is_rejected(self):
         with (self.root / "vendor/comrak/src/parser/mod.rs").open("a") as source:
             source.write("\n// modified\n")

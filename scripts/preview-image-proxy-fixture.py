@@ -63,7 +63,7 @@ try:
                 report["phase"] = "untrusted TLS handshake"
                 try:
                     tls = context.wrap_socket(connection, server_side=True)
-                except (ssl.SSLError, ConnectionResetError) as error:
+                except (ssl.SSLError, ConnectionError) as error:
                     report["tls_rejected"] = True
                     report["tls_error"] = str(error)
                 else:

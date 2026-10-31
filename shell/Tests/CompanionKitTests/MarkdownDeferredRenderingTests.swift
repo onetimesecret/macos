@@ -148,7 +148,7 @@ final class MarkdownDeferredRenderingTests: XCTestCase {
         let view = MarkdownPreviewView(page: 1, coordinator: nil)
         view.isSelectedPage = true
         view.reseed(with: rendering(source), dialect: .gfm)
-        await try XCTUnwrap(view.renderingTask).value
+        try await XCTUnwrap(view.renderingTask).value
         let storage = try XCTUnwrap(view.textStorage)
         let output = NSAttributedString(attributedString: storage)
         let selection = NSRange(location: 0, length: 7)
