@@ -28,13 +28,31 @@ class VendoredComrakVerificationTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         for directory in ["vendor/comrak", "crates/markdown/patches"]:
             shutil.copytree(REPOSITORY / directory, self.root / directory)
-        for relative in ["Cargo.toml", "Cargo.lock", "crates/markdown/Cargo.toml"]:
+        for relative in ["Cargo.toml", "Cargo.lock", "crates/markdown/Cargo.toml", "THIRD_PARTY_NOTICES.md"]:
             target = self.root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPOSITORY / relative, target)
 
     def test_pinned_vendor_tree_passes(self):
         self.assertEqual(len(VERIFY.verify_tree(self.root)["files"]), 33)
+
+    def test_missing_license_notice_is_rejected(self):
+        notices = self.root / "THIRD_PARTY_NOTICES.md"
+        copying = (self.root / "vendor/comrak/COPYING").read_bytes()
+        notices.write_bytes(notices.read_bytes().replace(copying, b""))
+        with self.assertRaisesRegex(VERIFY.VerificationError, "COPYING bytes exactly"):
+            VERIFY.verify_tree(self.root)
+        notices.unlink()
+        with self.assertRaisesRegex(VERIFY.VerificationError, "COPYING bytes exactly"):
+            VERIFY.verify_tree(self.root)
+
+    def test_changed_license_notice_is_rejected(self):
+        notices = self.root / "THIRD_PARTY_NOTICES.md"
+        copying = (self.root / "vendor/comrak/COPYING").read_bytes()
+        changed = copying.replace(b"All rights reserved.", b"All permissions reserved.", 1)
+        notices.write_bytes(notices.read_bytes().replace(copying, changed))
+        with self.assertRaisesRegex(VERIFY.VerificationError, "COPYING bytes exactly"):
+            VERIFY.verify_tree(self.root)
 
     def test_source_change_is_rejected(self):
         with (self.root / "vendor/comrak/src/parser/mod.rs").open("a") as source:

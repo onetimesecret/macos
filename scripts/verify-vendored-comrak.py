@@ -56,6 +56,9 @@ def verify_tree(root: Path) -> dict:
     require(actual == set(inventory["files"]), "vendor file list changed")
     for relative, expected in inventory["files"].items():
         require(digest((vendor / relative).read_bytes()) == expected, f"vendor file changed: {relative}")
+    notices = root / "THIRD_PARTY_NOTICES.md"
+    require(notices.is_file() and (vendor / "COPYING").read_bytes() in notices.read_bytes(),
+            "THIRD_PARTY_NOTICES.md must reproduce vendored comrak COPYING bytes exactly")
     for name, expected in inventory["patches"].items():
         patch = root / "crates/markdown/patches" / name
         require(digest(patch.read_bytes()) == expected, f"patch changed: {name}")
