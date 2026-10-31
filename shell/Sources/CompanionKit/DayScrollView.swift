@@ -561,6 +561,7 @@ final class DayStackView: NSView {
         if !isLayingOut, window != nil {
             readingPlace = currentPlace
             readingPlace?.atTop = (enclosingScrollView?.contentView.bounds.minY ?? 0) <= 0
+            readingPlace?.anchor.x = enclosingScrollView?.contentView.bounds.minX ?? 0
         }
         publishGeometry()
     }
@@ -1458,7 +1459,7 @@ final class DayStackView: NSView {
         else { return nil }
         if let preview = text as? MarkdownPreviewView, preview.isRendering {
             if let place = readingPlace, place.page == page { return place }
-            return RollPlace(page: page, anchor: ScrollAnchor(characterIndex: 0), reading: .preview,
+            return RollPlace(page: page, anchor: ScrollAnchor(characterIndex: 0, x: origin.x), reading: .preview,
                              atTop: origin.y <= 0)
         }
         guard let anchor = ScrollAnchor(

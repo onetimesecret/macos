@@ -1188,6 +1188,56 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    func testLoadingPreviewsCaptureHorizontalMovementAndKeepItThroughLayoutClamps() async throws {
+        for hasSavedPlace in [false, true] {
+            let model = try makeModel()
+            model.wrapsLines = false
+            let source = String(repeating: "## Heading **bold**\n\n", count: 900)
+            let reading = try page(in: model, saying: source)
+            _ = try page(in: model, saying: longLine())
+            try select(reading, in: model)
+            model.toggleMarkdownPreview(for: reading)
+            let projection = TimeUnitProjection.project(
+                tabs: model.tabs.map { onDay($0, $0.pageID == reading ? 0 : -1) },
+                selectedPageID: reading, unit: .day)
+            let roll = try mountRoll(model: model)
+            roll.window.isReleasedWhenClosed = false
+            defer { roll.window.close() }
+            roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+            let preview = try XCTUnwrap(roll.stack.previewRegions[reading])
+            var pending = try XCTUnwrap(preview.renderingTask)
+            if hasSavedPlace {
+                await pending.value
+                scroll(roll, to: NSPoint(x: 120, y: 0))
+                XCTAssertEqual(roll.stack.readingPlace?.anchor.x, 120)
+                model.syncDocument(sheet: reading, runs: [.ink("new paragraph\n\n" + source)])
+                roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+                pending = try XCTUnwrap(preview.renderingTask)
+            } else {
+                XCTAssertNil(roll.stack.readingPlace)
+                roll.scroll.contentView.postsBoundsChangedNotifications = false
+                scroll(roll, to: NSPoint(x: 120, y: 0))
+                XCTAssertEqual(roll.stack.currentPlace?.anchor.x, 120)
+                roll.scroll.contentView.postsBoundsChangedNotifications = true
+            }
+            XCTAssertTrue(preview.isRendering)
+            scroll(roll, to: NSPoint(x: 240, y: 0))
+            XCTAssertEqual(roll.scroll.contentView.bounds.minX, 240)
+            XCTAssertEqual(roll.stack.readingPlace?.anchor.x, 240)
+            model.wrapsLines = true
+            roll.stack.relayout()
+            XCTAssertEqual(roll.scroll.contentView.bounds.minX, 0)
+            XCTAssertEqual(roll.stack.readingPlace?.anchor.x, 240)
+            model.wrapsLines = false
+            roll.stack.relayout()
+            XCTAssertEqual(roll.scroll.contentView.bounds.minX, 240)
+            await pending.value
+            XCTAssertEqual(roll.stack.currentPlace?.anchor.x, 240)
+            XCTAssertEqual(roll.scroll.contentView.bounds.minX, 240)
+            XCTAssertEqual(roll.scroll.contentView.bounds.minY, 0)
+        }
+    }
+
     /// The pump's own report is the only invalidation here, as it is when a peer writes.
     func testAPeersEditReachesAQuietDayAndThePageTheEditorLeft() throws {
         let model = try makeModel()
