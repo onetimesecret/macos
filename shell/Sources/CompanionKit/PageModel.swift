@@ -3099,8 +3099,12 @@ public final class PageModel: ObservableObject {
     }
 
     func continuousPadDocument() -> ContinuousPadDocument {
+        pruneContinuousDocuments()
         let scope = pads.isEnabled ? pads.activeID.uuidString : "legacy"
-        if let document = continuousDocuments[scope] { return document }
+        if let document = continuousDocuments[scope] {
+            if document.isSuspended { document.refresh() }
+            return document
+        }
         let document = ContinuousPadDocument(model: self, scope: scope)
         continuousDocuments[scope] = document
         document.refresh()
@@ -3110,6 +3114,24 @@ public final class PageModel: ObservableObject {
                 + min(local.location, segment.bodyRange.length), length: 0)
         }
         return document
+    }
+
+    private func pruneContinuousDocuments() {
+        let valid = pads.isEnabled ? Set(pads.entries.map { $0.id.uuidString }) : ["legacy"]
+        for scope in Array(continuousDocuments.keys) where !valid.contains(scope) {
+            continuousDocuments.removeValue(forKey: scope)?.suspend()
+            client.continuousClearHistory(scope: scope)
+        }
+    }
+
+    private func refreshContinuousDocuments() {
+        pruneContinuousDocuments()
+        let mounted = (activeEditor as? InkTextView)?.coordinator?.continuousDocument
+        let scope = pads.isEnabled ? pads.activeID.uuidString : "legacy"
+        for document in continuousDocuments.values {
+            if document.isApplyingLocalEdit || (document === mounted && document.scope == scope) { document.refresh() }
+            else { document.suspend() }
+        }
     }
 
     func continuousTabs(scope: String) -> [TabSummary] {
@@ -3226,6 +3248,7 @@ public final class PageModel: ObservableObject {
             else { selection = Self.reconciledSelection(current: selection, live: tabs.map(\.id)) }
             if let pendingFile { selectedFile = pendingFile.id }
         }
+        pruneContinuousDocuments()
         objectWillChange.send()
     }
     private func restorePadSelection() {
@@ -3234,7 +3257,7 @@ public final class PageModel: ObservableObject {
         if showsTimeUnits {
             selection = Self.reconciledTimeSelection(current: selection, projection: timeUnits)
         }
-        for document in continuousDocuments.values { document.refresh() }
+        refreshContinuousDocuments()
         selectedFile = navigationFiles.first {
             PadCatalog.normalizedPath($0.path) == pads.rememberedFile(for: pads.activeID)
         }?.id
@@ -3387,7 +3410,7 @@ public final class PageModel: ObservableObject {
         // ink an expiry is supposed to take away.
         quietRenderings = quietRenderings.filter { livePages.contains($0.key) }
         fenceRenderingLanguages = fenceRenderingLanguages.filter { livePages.contains($0.key) }
-        for document in continuousDocuments.values { document.refresh() }
+        refreshContinuousDocuments()
         // A removal's Undo has nothing to step back once its page is gone.
         if let stamp = removalStamp, !livePages.contains(stamp.sheet) { retireRemovalUndo() }
         selection = Self.reconciledSelection(current: selection, live: navigationTabs.map(\.id))
@@ -5752,6 +5775,15 @@ public final class PageModel: ObservableObject {
                 flash("the checkpoint could not be inserted")
                 return
             }
+            if pads.isEnabled, padRosterDate != nil {
+                pads.setCheckpointSort(.natural, for: pads.activeID,
+                    onDate: dateKey(forDayBucket: 0))
+                if let sourceDay, sourceDay < 0 {
+                    pads.setDaySort(.natural, for: pads.activeID)
+                    pads.setCheckpointSort(.natural, for: pads.activeID,
+                        onDate: dateKey(forDayBucket: sourceDay))
+                }
+            }
             // A caret at the very start asks for a blank checkpoint, not
             // for the whole page to move and leave an empty one behind.
             if splitAt > 0, splitAt < sourceLength {
@@ -5777,15 +5809,6 @@ public final class PageModel: ObservableObject {
             }
             viewStates.saveCaret(NSRange(location: splitAt, length: 0), for: source)
             viewStates.saveCaret(NSRange(location: 0, length: 0), for: dest)
-            if pads.isEnabled, padRosterDate != nil {
-                pads.setCheckpointSort(.natural, for: pads.activeID,
-                    onDate: dateKey(forDayBucket: 0))
-                if let sourceDay, sourceDay < 0 {
-                    pads.setDaySort(.natural, for: pads.activeID)
-                    pads.setCheckpointSort(.natural, for: pads.activeID,
-                        onDate: dateKey(forDayBucket: sourceDay))
-                }
-            }
         }
         adoptCreatedTab(created)
     }
@@ -7104,6 +7127,9 @@ public final class PageModel: ObservableObject {
     private func continuousPageStep(sheet: UInt64, back: Bool) -> StepOutcome? {
         guard let scope = client.continuousScopeForStep(sheet: sheet, back: back) else { return nil }
         guard let document = continuousDocuments[scope] else { return .nothing }
+        defer {
+            if (activeEditor as? InkTextView)?.coordinator?.continuousDocument !== document { document.suspend() }
+        }
         let outcome = document.step(back: back)
         guard outcome.applied else { return outcome }
         restateStorage(sheet: sheet)

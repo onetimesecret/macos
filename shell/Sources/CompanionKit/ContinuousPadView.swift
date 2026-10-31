@@ -81,6 +81,9 @@ public struct ContinuousPadView: NSViewRepresentable {
         coordinator.invalidateOrdinaryPasteMeasurement()
         coordinator.leavePage(canvas.editor, scrollView: nil)
         coordinator.model.retireEditor(canvas.editor)
+        if (coordinator.model.activeEditor as? InkTextView)?.coordinator?.continuousDocument !== canvas.document {
+            canvas.document.suspend()
+        }
         canvas.stopObserving()
     }
 }
@@ -100,6 +103,17 @@ final class ContinuousPadCanvas: NSView {
     private var pendingOffset: NSPoint?
     private var pendingPlace: RollPlace?
     private var measuring = false
+    private var needsMeasurement = true
+    private var measuredViewport = NSSize.zero
+    private var measuredTypeface: InkStyle.Typeface?
+    private var measuredPreview: PreviewRenderingScope?
+    private var measuredSyntax: Bool?
+    private struct CheckpointMetadata: Equatable {
+        let page: UInt64
+        let day: Int?
+        let created: UInt64?
+    }
+    private var measuredCheckpoints: [CheckpointMetadata] = []
     private var appliedWrap: Bool?
     private let geometryID = UUID()
     private var geometryRevision: UInt64 = 0
@@ -135,6 +149,7 @@ final class ContinuousPadCanvas: NSView {
 
     private func bindDocument() {
         document.onChange = { [weak self] in
+            self?.needsMeasurement = true
             self?.needsLayout = true
             self?.needsDisplay = true
         }
@@ -165,7 +180,7 @@ final class ContinuousPadCanvas: NSView {
     }
 
     @objc private func editorResized(_ notification: Notification) {
-        if !measuring { needsLayout = true }
+        if !measuring { needsMeasurement = true; needsLayout = true }
     }
 
     override func layout() {
@@ -176,6 +191,7 @@ final class ContinuousPadCanvas: NSView {
     func update(document incoming: ContinuousPadDocument, readOnly: Bool) {
         if incoming !== document || editor.textStorage !== incoming.storage {
             savePosition()
+            let outgoing = document
             document.onChange = nil
             coordinator.keepNaming()
             coordinator.closeNote()
@@ -183,8 +199,10 @@ final class ContinuousPadCanvas: NSView {
             editor.textStorage?.delegate = nil
             InkEditorView.Coordinator.shedLayoutManagers(from: incoming.storage, keeping: editor.layoutManager)
             editor.layoutManager?.replaceTextStorage(incoming.storage)
+            if outgoing !== incoming { outgoing.suspend() }
             incoming.storage.delegate = coordinator
             document = incoming
+            needsMeasurement = true
             padID = model.pads.isEnabled ? model.pads.activeID : nil
             coordinator.continuousDocument = incoming
             coordinator.currentSheet = nil
@@ -200,7 +218,21 @@ final class ContinuousPadCanvas: NSView {
             coordinator.restyle()
         }
         coordinator.announce(editor)
-        coordinator.updateEditability(of: editor, to: !readOnly)
+        coordinator.updateEditability(of: editor, to: !readOnly && !document.projection.pages.isEmpty)
+        let checkpoints = model.navigationTabs.compactMap { tab in
+            tab.pageID.map { CheckpointMetadata(page: $0, day: tab.pageDayOffset, created: tab.pageCreatedMs) }
+        }
+        if measuredCheckpoints != checkpoints {
+            measuredCheckpoints = checkpoints
+            needsMeasurement = true
+        }
+        if measuredTypeface != model.typeface || measuredPreview != model.previewRendering
+            || measuredSyntax != model.syntaxHighlightingEnabled {
+            needsMeasurement = true
+            measuredTypeface = model.typeface
+            measuredPreview = model.previewRendering
+            measuredSyntax = model.syntaxHighlightingEnabled
+        }
         coordinator.applyTypeface(model.typeface)
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
         coordinator.applyPreviewRendering(model.previewRendering)
@@ -223,7 +255,7 @@ final class ContinuousPadCanvas: NSView {
     }
 
     func savePosition() {
-        guard editor.textStorage === document.storage else { return }
+        guard editor.textStorage === document.storage, !document.isSuspended else { return }
         document.savedSelection = editor.selectedRange()
         if let scroll = observedScroll { document.savedOffset = scroll.contentView.bounds.origin }
     }
@@ -232,9 +264,13 @@ final class ContinuousPadCanvas: NSView {
         guard !measuring, let scroll = observedScroll,
               let layout = editor.layoutManager, let container = editor.textContainer,
               scroll.contentSize.width > 0 else { return }
+        guard needsMeasurement || measuredViewport != scroll.contentSize || appliedWrap != model.wrapsLines
+            || pendingOffset != nil || pendingPlace != nil else { return }
         measuring = true
         defer { measuring = false }
         let viewport = scroll.contentSize
+        needsMeasurement = false
+        measuredViewport = viewport
         let width = max(1, viewport.width - Self.gutterWidth)
         let wraps = model.wrapsLines
         let reading = appliedWrap != nil && appliedWrap != wraps ? readingPlace : nil
@@ -314,33 +350,40 @@ final class ContinuousPadCanvas: NSView {
     }
 
     private func placeLabels() {
-        checkpointLabels.forEach { $0.removeFromSuperview() }
-        checkpointLabels.removeAll()
         let summaries = Dictionary(uniqueKeysWithValues: model.navigationTabs.compactMap { tab in
             tab.pageID.map { ($0, tab) }
         })
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         var previousY: CGFloat?
+        var usedLabels = 0
         for extent in extents {
             guard let page = extent.page, let summary = summaries[page] else { continue }
             if let previousY, abs(previousY - extent.top) < 1 {
-                checkpointLabels.last?.stringValue = "•••"
-                checkpointLabels.last?.setAccessibilityLabel("Checkpoints on this line")
+                checkpointLabels[usedLabels - 1].stringValue = "•••"
+                checkpointLabels[usedLabels - 1].setAccessibilityLabel("Checkpoints on this line")
                 continue
             }
-            let label = NSTextField(labelWithString: summary.pageCreatedMs.map {
+            let value = summary.pageCreatedMs.map {
                 formatter.string(from: Date(timeIntervalSince1970: Double($0) / 1_000))
-            } ?? "•")
+            } ?? "•"
+            let label: NSTextField
+            if usedLabels < checkpointLabels.count { label = checkpointLabels[usedLabels] }
+            else {
+                label = NSTextField(labelWithString: value)
+                checkpointLabels.append(label)
+                addSubview(label)
+            }
+            label.stringValue = value
             label.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
             label.textColor = .tertiaryLabelColor
             label.alignment = .right
             label.frame = NSRect(x: 8, y: extent.top + 2, width: Self.gutterWidth - 22, height: 16)
             label.setAccessibilityLabel("Checkpoint, \(label.stringValue)")
-            addSubview(label)
-            checkpointLabels.append(label)
+            usedLabels += 1
             previousY = extent.top
         }
+        while checkpointLabels.count > usedLabels { checkpointLabels.removeLast().removeFromSuperview() }
     }
 
     private func publishGeometry() {

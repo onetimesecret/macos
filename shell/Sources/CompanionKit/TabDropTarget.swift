@@ -147,10 +147,11 @@ final class TabDropTarget: NSView {
         if let target = continuousTarget {
             let source = sender.draggingSource as? InkTextView
             if source?.coordinator === target.coordinator, target.coordinator.dragsPageSelection {
-                return target.coordinator.dropPageDrag(at: target.end, offered: mask)
+                return target.coordinator.dropPageDrag(at: target.end, offered: mask, targetPage: page)
             }
             if case .fragment = route {
-                return target.coordinator.dropFragment(from: sender.draggingPasteboard, at: target.end, source: source)
+                return target.coordinator.dropFragment(from: sender.draggingPasteboard, at: target.end,
+                    source: source, targetPage: page)
             }
             if case .seal = route {
                 guard target.coordinator.admitsDrop(from: source),

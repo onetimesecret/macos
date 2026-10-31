@@ -1230,6 +1230,7 @@ public struct InkEditorView: NSViewRepresentable {
             guard selection.location != NSNotFound, selection.length > 0,
                   NSMaxRange(selection) <= storage.length
             else { return nil }
+            if let continuousDocument, continuousDocument.localSelection(selection) == nil { return nil }
             return selection
         }
 
@@ -2749,6 +2750,7 @@ public struct InkEditorView: NSViewRepresentable {
                 return nil
             }
             model.selectContinuousPage(local.page)
+            guard model.sealTarget == local.page else { return nil }
             return local.range
         }
 
@@ -3246,13 +3248,14 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// The page's own drag dropped on it at `index`: moved, or cloned for ⌥,
         /// through the core as one step; stands aside while a field holds the keys.
-        func dropPageDrag(at index: Int, offered mask: NSDragOperation) -> Bool {
+        func dropPageDrag(at index: Int, offered mask: NSDragOperation, targetPage: UInt64? = nil) -> Bool {
             let operation = pageDragOperation(at: index, offered: mask)
             if let continuousDocument, let drag = standingPageDrag, let textView,
                operation != [], admitsDrop(from: textView) {
                 InkEditorView.discardComposition(in: textView)
                 invalidateOrdinaryPasteMeasurement()
-                guard let placed = continuousDocument.drag(drag.range, to: index, cloning: operation == .copy)
+                guard let placed = continuousDocument.drag(drag.range, to: index, cloning: operation == .copy,
+                    targetPage: targetPage)
                 else { return false }
                 settleRewrite(selecting: placed)
                 return true
@@ -3288,11 +3291,13 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// A fragment dragged from another page or app, dropped at `index`: pasted
         /// through the core as ⌘V pastes it, never sealed as its public text.
-        func dropFragment(from board: NSPasteboard, at index: Int, source: NSView? = nil) -> Bool {
+        func dropFragment(from board: NSPasteboard, at index: Int, source: NSView? = nil,
+                          targetPage: UInt64? = nil) -> Bool {
             if let continuousDocument, let textView, takesFragmentDrop, admitsDrop(from: source) {
                 InkEditorView.discardComposition(in: textView)
                 invalidateOrdinaryPasteMeasurement()
-                guard let placed = continuousDocument.paste(NSRange(location: index, length: 0), from: board)
+                guard let placed = continuousDocument.paste(NSRange(location: index, length: 0), from: board,
+                    targetPage: targetPage)
                 else { return false }
                 settleRewrite(selecting: placed)
                 return true

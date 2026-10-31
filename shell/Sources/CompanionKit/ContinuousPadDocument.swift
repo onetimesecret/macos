@@ -8,13 +8,31 @@ final class ContinuousPadDocument {
     private(set) var projection = ContinuousDocumentProjection(pages: [])
     private var renderedChips: [ChipInfo] = []
     private var localRefreshPages: Set<UInt64> = []
+    private struct PageIdentity {
+        let id: UInt64
+        let uuid: String
+        let version: [UInt8]?
+    }
+    private var suspendedPages: [PageIdentity]?
+    private var suspendedAnchor: (page: UInt64, range: NSRange, offset: Int)?
     var savedSelection = NSRange(location: 0, length: 0)
     var savedOffset = NSPoint.zero
     var onChange: (() -> Void)?
+    var isApplyingLocalEdit: Bool { !localRefreshPages.isEmpty }
+    var isSuspended: Bool { suspendedPages != nil }
 
     init(model: PageModel, scope: String) {
         self.model = model
         self.scope = scope
+    }
+
+    func suspend() {
+        guard suspendedPages == nil else { return }
+        suspendedPages = projection.pages.map { .init(id: $0.id, uuid: $0.uuid, version: $0.version) }
+        suspendedAnchor = localSelection(savedSelection)
+        model.applyingProjection { storage.setAttributedString(NSAttributedString(string: "")) }
+        projection = .init(pages: [])
+        renderedChips = []
     }
 
     @discardableResult
@@ -43,16 +61,20 @@ final class ContinuousPadDocument {
                          joinedNextUUID: snapshot.joinNext, version: snapshot.version)
         }
         let next = ContinuousDocumentProjection(pages: pages)
-        guard force || next != projection || chips != renderedChips else { return false }
-        let reordered = projection.pages.map(\.uuid) != next.pages.map(\.uuid)
-        let oldVersions = Dictionary(uniqueKeysWithValues: projection.pages.map { ($0.id, $0.version) })
+        guard force || suspendedPages != nil || next != projection || chips != renderedChips else { return false }
+        let previous = suspendedPages ?? projection.pages.map { .init(id: $0.id, uuid: $0.uuid, version: $0.version) }
+        let reordered = previous.map(\.uuid) != next.pages.map(\.uuid)
+        let oldVersions = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0.version) })
         let externalChange = next.pages.contains { page in
             !localRefreshPages.contains(page.id) && (oldVersions[page.id].map { $0 != page.version } ?? false)
         }
-        let anchor = reordered ? localSelection(savedSelection) : nil
-        if (reordered || externalChange), !projection.pages.isEmpty {
+        let resuming = suspendedPages != nil
+        let anchor = suspendedAnchor ?? (reordered ? localSelection(savedSelection) : nil)
+        if (reordered || externalChange), !previous.isEmpty {
             model.coreClient.continuousClearHistory(scope: scope)
         }
+        suspendedPages = nil
+        suspendedAnchor = nil
         projection = next
         renderedChips = chips
         let rebuilt = NSMutableAttributedString()
@@ -79,7 +101,9 @@ final class ContinuousPadDocument {
             model.applyingProjection { storage.setAttributedString(rebuilt) }
         }
         if let anchor, let segment = next.segments.first(where: { $0.page.id == anchor.page }) {
-            savedSelection = NSRange(location: segment.bodyRange.location + min(anchor.range.location, segment.bodyRange.length), length: 0)
+            let localStart = min(anchor.range.location, segment.bodyRange.length)
+            let length = resuming ? min(anchor.range.length, segment.bodyRange.length - localStart) : 0
+            savedSelection = NSRange(location: segment.bodyRange.location + localStart, length: length)
             if let editor = model.activeEditor as? InkTextView, editor.textStorage === storage {
                 model.applyingProjection { editor.setSelectedRange(savedSelection) }
             }
@@ -180,6 +204,7 @@ final class ContinuousPadDocument {
         guard let result = model.coreClient.continuousStep(scope: scope, back: back) else { return .nothing }
         didEdit(pages: result.pages)
         refresh(force: true)
+        savedSelection = result.selection
         return .init(applied: true, selection: result.selection)
     }
 
@@ -235,8 +260,9 @@ final class ContinuousPadDocument {
         }
     }
 
-    func paste(_ range: NSRange, from board: NSPasteboard?, activeCut: Bool = false) -> NSRange? {
-        guard let segment = projection.page(at: range.location),
+    func paste(_ range: NSRange, from board: NSPasteboard?, activeCut: Bool = false,
+               targetPage: UInt64? = nil) -> NSRange? {
+        guard let segment = destination(at: range.location, page: targetPage, in: projection),
               let plan = try? projection.plan([.del(at: range.location, len: range.length)]) else { return nil }
         var edits = plan.edits
         if !edits.contains(where: { $0.pageID == segment.page.id }) {
@@ -267,13 +293,14 @@ final class ContinuousPadDocument {
         return NSRange(location: range.location, length: placed.lengthUTF16)
     }
 
-    func drag(_ range: NSRange, to index: Int, cloning: Bool) -> NSRange? {
+    func drag(_ range: NSRange, to index: Int, cloning: Bool, targetPage: UInt64? = nil) -> NSRange? {
         guard cloning || !(range.location...NSMaxRange(range)).contains(index),
+              destination(at: index, page: targetPage, in: projection) != nil,
               let sources = selectionJSON([range]),
               let plan = try? projection.plan(cloning ? [] : [.del(at: range.location, len: range.length)])
         else { return nil }
         let destination = index - (!cloning && index > NSMaxRange(range) ? range.length : 0)
-        guard let segment = plan.projection.page(at: destination) else { return nil }
+        guard let segment = self.destination(at: destination, page: targetPage, in: plan.projection) else { return nil }
         var edits = plan.edits
         if !edits.contains(where: { $0.pageID == segment.page.id }) {
             edits.append(.init(pageID: segment.page.id, pageUUID: segment.page.uuid, ops: [], join: .unchanged,
@@ -290,7 +317,10 @@ final class ContinuousPadDocument {
     }
 
     func splitCheckpoint(source: UInt64, at offset: Int, destination: UInt64) -> Bool {
-        guard let from = projection.segments.first(where: { $0.page.id == source }),
+        guard let sourceIndex = projection.pages.firstIndex(where: { $0.id == source }),
+              projection.pages.indices.contains(sourceIndex + 1),
+              projection.pages[sourceIndex + 1].id == destination,
+              let from = projection.segments.first(where: { $0.page.id == source }),
               let to = projection.segments.first(where: { $0.page.id == destination }),
               offset > 0, offset < from.bodyRange.length, to.bodyRange.length == 0 else { return false }
         let range = NSRange(location: from.bodyRange.location + offset, length: from.bodyRange.length - offset)
@@ -310,6 +340,14 @@ final class ContinuousPadDocument {
         didEdit(pages: [source, destination])
         refresh(force: true)
         return true
+    }
+
+    private func destination(at index: Int, page: UInt64?, in projection: ContinuousDocumentProjection)
+        -> ContinuousDocumentProjection.Segment? {
+        guard let page else { return projection.page(at: index) }
+        return projection.segments.first {
+            $0.page.id == page && index >= $0.bodyRange.location && index <= NSMaxRange($0.bodyRange)
+        }
     }
 
     static func wireRange(_ range: NSRange) -> [String: Int] {

@@ -211,6 +211,29 @@ final class ContinuousPadViewTests: XCTestCase {
         XCTAssertEqual(editor.selectedRange(), NSRange(location: 2, length: 0))
     }
 
+    func testSuspendedSelectionFollowsItsCheckpointAfterEarlierContentChanges() throws {
+        let model = try model()
+        _ = try seed("alpha", in: model)
+        _ = try seed("bravo", in: model)
+        let first = try mount(model)
+        let segments = first.canvas.document.projection.segments
+        let selected = NSRange(location: segments[1].bodyRange.location + 1, length: 3)
+        first.canvas.editor.setSelectedRange(selected)
+        unmount(first)
+        XCTAssertTrue(model.coreClient.applyOps(sheet: segments[0].page.id,
+            json: #"[{"ins":{"at":0,"text":"new "}}]"#))
+        model.refresh()
+        let second = try mount(model)
+        XCTAssertEqual(second.canvas.editor.selectedRange(), NSRange(location: selected.location + 4, length: 3))
+        XCTAssertEqual((second.canvas.editor.string as NSString).substring(with: second.canvas.editor.selectedRange()), "rav")
+        unmount(second)
+        XCTAssertTrue(model.coreClient.syncDocument(sheet: segments[1].page.id, json: #"[{"ink":"br"}]"#))
+        model.refresh()
+        let third = try mount(model)
+        defer { unmount(third) }
+        XCTAssertEqual(third.canvas.editor.selectedRange(), NSRange(location: selected.location + 4, length: 1))
+    }
+
     func testNativeReplacementSpanningCheckpointsUsesOneUndoAndRedo() throws {
         let model = try model()
         _ = try seed("alpha", in: model)
@@ -332,6 +355,102 @@ final class ContinuousPadViewTests: XCTestCase {
         XCTAssertEqual(surface.canvas.editor.string, surface.canvas.document.projection.text)
     }
 
+    func testSealMenuExcludesSelectionSpanningCheckpoints() throws {
+        let model = try model()
+        _ = try seed("alpha", in: model)
+        _ = try seed("bravo", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let edge = try XCTUnwrap(surface.canvas.document.projection.segments[0].separatorRange)
+        surface.canvas.editor.setSelectedRange(NSRange(location: edge.location - 1, length: 3))
+        XCTAssertNil(surface.coordinator.sealableSelection())
+        let menu = NSMenu()
+        surface.coordinator.appendSealItem(to: menu)
+        XCTAssertEqual(menu.numberOfItems, 0)
+        let local = NSRange(location: 0, length: 2)
+        surface.canvas.editor.setSelectedRange(local)
+        XCTAssertEqual(surface.coordinator.sealableSelection(), local)
+    }
+
+    func testStaleCheckpointCannotSealIntoCurrentlySelectedPage() throws {
+        let model = try model()
+        model.pads.isEnabled = true
+        let other = try XCTUnwrap(model.createPad(named: "Other"))
+        model.activatePad(PadCatalog.scratchID)
+        _ = try seed("alpha", in: model)
+        _ = try seed("bravo", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let pages = surface.canvas.document.projection.pages
+        let firstTab = try XCTUnwrap(model.tabs.first { $0.pageID == pages[0].id })
+        model.pads.onChange = nil
+        model.pads.assign(tabUUID: try XCTUnwrap(firstTab.uuid), to: other)
+        model.selectContinuousPage(pages[1].id)
+        surface.canvas.editor.setSelectedRange(NSRange(location: 0, length: 2))
+        XCTAssertEqual(model.sealTarget, pages[1].id)
+        surface.canvas.editor.sealSelectedContent(nil)
+        for page in pages { XCTAssertEqual(body(page.id, in: model), page.text) }
+    }
+
+    func testTabDragAppendsToExplicitCheckpointAtJoinedBoundary() throws {
+        let model = try model()
+        _ = try seed("alpha", in: model)
+        _ = try seed("bravo", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let segments = surface.canvas.document.projection.segments
+        let editor = surface.canvas.editor
+        editor.setSelectedRange(try XCTUnwrap(segments[0].separatorRange))
+        editor.deleteBackward(nil)
+        editor.setSelectedRange(NSRange(location: 0, length: 2))
+        guard case .fragment(let item) = surface.coordinator.beginPageDrag() else {
+            return XCTFail("The prefix did not produce a drag fragment.")
+        }
+        defer { surface.coordinator.endPageDrag() }
+        XCTAssertTrue(model.ambientPasteboard.writeObjects([item]))
+        let slot = try XCTUnwrap(model.tabs.first { $0.pageID == segments[0].page.id }?.id)
+        let target = TabDropTarget(model: model, slot: slot, readOnly: false, surface: model.owner)
+        let drop = DraggingInfoStub(pasteboard: model.ambientPasteboard, source: editor,
+            location: .zero, window: surface.window, mask: .move)
+        XCTAssertEqual(target.operation(for: drop), .move)
+        XCTAssertTrue(target.performDragOperation(drop))
+        XCTAssertEqual(body(segments[0].page.id, in: model), "phaal")
+        XCTAssertEqual(body(segments[1].page.id, in: model), "bravo")
+        editor.undo(nil)
+        XCTAssertEqual(body(segments[0].page.id, in: model), "alpha")
+        XCTAssertEqual(body(segments[1].page.id, in: model), "bravo")
+    }
+
+    func testTabFragmentDropAppendsToExplicitCheckpointAtJoinedBoundary() throws {
+        let model = try model()
+        _ = try seed("alpha", in: model)
+        _ = try seed("bravo", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let segments = surface.canvas.document.projection.segments
+        let editor = surface.canvas.editor
+        editor.setSelectedRange(try XCTUnwrap(segments[0].separatorRange))
+        editor.deleteBackward(nil)
+        editor.setSelectedRange(NSRange(location: segments[0].bodyRange.length, length: 1))
+        editor.sealSelectedContent(nil)
+        let sourceText = body(segments[1].page.id, in: model)
+        editor.setSelectedRange(NSRange(location: segments[0].bodyRange.length, length: 2))
+        XCTAssertTrue(surface.coordinator.copySelection())
+        XCTAssertNotNil(SealedFragment.item(on: model.ambientPasteboard))
+        let slot = try XCTUnwrap(model.tabs.first { $0.pageID == segments[0].page.id }?.id)
+        let target = TabDropTarget(model: model, slot: slot, readOnly: false, surface: model.owner)
+        let drop = DraggingInfoStub(pasteboard: model.ambientPasteboard, source: nil,
+            location: .zero, window: surface.window, mask: .copy)
+        XCTAssertEqual(target.dropRoute(for: drop), .fragment)
+        XCTAssertEqual(target.operation(for: drop), .copy)
+        XCTAssertTrue(target.performDragOperation(drop))
+        XCTAssertEqual(body(segments[0].page.id, in: model), "alpha\u{fffc}r")
+        XCTAssertEqual(body(segments[1].page.id, in: model), sourceText)
+        editor.undo(nil)
+        XCTAssertEqual(body(segments[0].page.id, in: model), "alpha")
+        XCTAssertEqual(body(segments[1].page.id, in: model), sourceText)
+    }
+
     func testCheckpointSplitAfterJoinedNeighborWasRemoved() throws {
         let model = try model()
         _ = try seed("first checkpoint", in: model)
@@ -364,6 +483,7 @@ final class ContinuousPadViewTests: XCTestCase {
         surface.canvas.editor.setSelectedRange(NSRange(location: 2, length: 6))
         surface.canvas.editor.insertText("X", replacementRange: surface.canvas.editor.selectedRange())
         let edited = surface.canvas.editor.string
+        let editedSelection = surface.canvas.editor.selectedRange()
         unmount(surface)
         XCTAssertTrue(model.undoEdit(sheet: pages[0].id).applied)
         XCTAssertEqual(body(pages[0].id, in: model), pages[0].text)
@@ -373,6 +493,7 @@ final class ContinuousPadViewTests: XCTestCase {
         defer { unmount(remounted) }
         XCTAssertNotEqual(original, edited)
         XCTAssertEqual(remounted.canvas.editor.string, edited)
+        XCTAssertEqual(remounted.canvas.editor.selectedRange(), editedSelection)
     }
 
     func testSurfaceRefreshKeepsSelectionRebasedAfterEarlierPageChanges() throws {
