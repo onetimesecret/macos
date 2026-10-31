@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -9,6 +10,10 @@ enum PreviewImageRequestPolicy {
     static let maximumDimension = 8_192
     static let maximumAddressBytes = 8_192
     static let timeout: TimeInterval = 15
+
+    static var requestSummary: String {
+        CompanionL10n.string("One HTTPS image request using system DNS and proxies. The hostname may reach a local network. No redirects, cookies, or saved credentials.")
+    }
 
     static func url(for destination: PreviewAddress) -> URL? {
         guard case .unreviewed(let address) = destination,
@@ -23,6 +28,7 @@ enum PreviewImageRequestPolicy {
               let host = parts.host?.lowercased(), validHost(host)
         else { return nil }
         parts.percentEncodedHost = host
+        parts.scheme = "https"
         parts.fragment = nil
         parts.port = nil
         return parts.url
@@ -30,12 +36,14 @@ enum PreviewImageRequestPolicy {
 
     static func refusal(for destination: PreviewAddress) -> String? {
         url(for: destination) == nil
-            ? CompanionL10n.string("Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local names and IP addresses are unavailable.")
+            ? CompanionL10n.string("Images require an absolute HTTPS address with a DNS hostname, no credentials, and the standard HTTPS port. Local-name URLs, IP-literal URLs, and internationalized hostnames are unavailable.")
             : nil
     }
 
     private static func validHost(_ host: String) -> Bool {
         guard !host.hasSuffix("."), host.utf8.count <= 253 else { return false }
+        var numericAddress = in_addr()
+        guard host.withCString({ inet_aton($0, &numericAddress) }) == 0 else { return false }
         let labels = host.split(separator: ".", omittingEmptySubsequences: false)
         guard labels.count >= 2,
               !["localhost", "local", "internal", "home", "lan", "test", "invalid", "arpa",

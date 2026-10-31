@@ -1061,6 +1061,288 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    func testScrollingDuringDeferredPreviewKeepsReadingPositionAndHonorsNavigation() async throws {
+        let model = try makeModel()
+        model.wrapsLines = true
+        let source = (0..<1_200).map { "line \($0) **at a distinct reading position**" }.joined(separator: "\n\n")
+        let reading = try page(in: model, saying: source)
+        let other = try page(in: model, saying: longPage(lines: 80))
+        try select(reading, in: model)
+        model.toggleMarkdownPreview(for: reading)
+        let projection = TimeUnitProjection.project(
+            tabs: model.tabs.map { onDay($0, $0.pageID == reading ? 0 : -1) },
+            selectedPageID: reading, unit: .day)
+        let roll = try mountRoll(model: model)
+        roll.window.isReleasedWhenClosed = false
+        defer { roll.window.close() }
+        roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+        let preview = try XCTUnwrap(roll.stack.previewRegions[reading])
+        try await XCTUnwrap(preview.renderingTask).value
+        let target = "line 600 "
+        let index = (preview.string as NSString).range(of: target).location
+        XCTAssertNotEqual(index, NSNotFound)
+        let glyph = try glyphRect(in: preview, at: index)
+        scroll(roll, to: NSPoint(x: 0, y: preview.frame.minY + glyph.minY + glyph.height / 4))
+        let place = try XCTUnwrap(roll.stack.readingPlace)
+        XCTAssertEqual(place.page, reading)
+        XCTAssertEqual(place.anchor.characterIndex, index)
+
+        model.syncDocument(sheet: reading, runs: [.ink("new paragraph\n\n" + source)])
+        roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+        XCTAssertTrue(preview.isRendering)
+        let pending = try XCTUnwrap(preview.renderingTask)
+        XCTAssertEqual(roll.stack.readingPlace, place)
+        scroll(roll, to: NSPoint(x: 0, y: preview.frame.minY + 3))
+        XCTAssertEqual(roll.stack.currentPlace?.page, reading)
+        XCTAssertEqual(roll.stack.readingPlace, place)
+        await pending.value
+        let moved = (preview.string as NSString).range(of: target).location
+        XCTAssertEqual(roll.stack.currentPlace?.page, reading)
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, moved)
+
+        model.syncDocument(sheet: reading, runs: [.ink("a rail destination\n\n" + source)])
+        roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+        let railRendering = try XCTUnwrap(preview.renderingTask)
+        roll.stack.scroll(toDocumentOffset: preview.frame.minY, animated: false)
+        XCTAssertEqual(roll.stack.readingPlace?.anchor.characterIndex, 0)
+        await railRendering.value
+        XCTAssertEqual(roll.stack.currentPlace?.page, reading)
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, 0)
+
+        model.syncDocument(sheet: reading, runs: [.ink("another paragraph\n\n" + source)])
+        roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+        let next = try XCTUnwrap(preview.renderingTask)
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[other])
+        let otherIndex = (quiet.string as NSString).range(of: "line 40 ").location
+        let otherGlyph = try glyphRect(in: quiet, at: otherIndex)
+        scroll(roll, to: NSPoint(x: 0, y: quiet.frame.minY + otherGlyph.minY + otherGlyph.height / 4))
+        let otherPlace = try XCTUnwrap(roll.stack.readingPlace)
+        XCTAssertEqual(otherPlace.page, other)
+        XCTAssertEqual(otherPlace.anchor.characterIndex, otherIndex)
+        await next.value
+        XCTAssertEqual(roll.stack.currentPlace?.page, other)
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, otherIndex)
+
+        model.toggleMarkdownPreview(for: reading)
+        roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+        let editor = try XCTUnwrap(roll.stack.editor)
+        let sourceIndex = (editor.string as NSString).range(of: target).location
+        let sourceGlyph = try glyphRect(in: editor, at: sourceIndex)
+        scroll(roll, to: NSPoint(x: 0, y: editor.frame.minY + sourceGlyph.minY + sourceGlyph.height / 4))
+        let sourcePlace = try XCTUnwrap(roll.stack.readingPlace)
+        XCTAssertEqual(sourcePlace.reading, .source)
+        model.toggleMarkdownPreview(for: reading)
+        roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+        let returningPreview = try XCTUnwrap(roll.stack.previewRegions[reading])
+        let returning = try XCTUnwrap(returningPreview.renderingTask)
+        scroll(roll, to: NSPoint(x: 0, y: returningPreview.frame.minY + 3))
+        XCTAssertEqual(roll.stack.readingPlace, sourcePlace)
+        await returning.value
+        let expected = try XCTUnwrap(sourcePlace.mappedAnchor(into: .preview, text: returningPreview.string)
+            .offset(in: returningPreview))
+        XCTAssertEqual(roll.stack.currentPlace?.page, reading)
+        XCTAssertEqual(roll.stack.currentPlace?.reading, .preview)
+        XCTAssertEqual(roll.scroll.contentView.bounds.minY, returningPreview.frame.minY + expected.y, accuracy: 0.5)
+    }
+
+    func testScrollingALoadingPreviewUpdatesItsOriginMarkerWithoutReplacingItsTextAnchor() async throws {
+        for moveOffTop in [false, true] {
+            let model = try makeModel()
+            model.pads.isEnabled = true
+            let source = String(repeating: "## Heading **bold**\n\n", count: 900)
+            let reading = try page(in: model, saying: source)
+            _ = try page(in: model, saying: longPage(lines: 80))
+            try select(reading, in: model)
+            model.toggleMarkdownPreview(for: reading)
+            let projection = TimeUnitProjection.project(
+                tabs: model.tabs.map { onDay($0, $0.pageID == reading ? 0 : -1) },
+                selectedPageID: reading, unit: .day)
+            let roll = try mountRoll(model: model)
+            roll.window.isReleasedWhenClosed = false
+            defer { roll.window.close() }
+            roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+            let preview = try XCTUnwrap(roll.stack.previewRegions[reading])
+            try await XCTUnwrap(preview.renderingTask).value
+            scroll(roll, to: NSPoint(x: 0, y: 1))
+            scroll(roll, to: .zero)
+            let place = try XCTUnwrap(roll.stack.readingPlace)
+            XCTAssertTrue(place.atTop)
+            let previous = preview.string
+            let prefix = (0..<20).map { "new paragraph \($0)" }.joined(separator: "\n\n") + "\n\n"
+            model.syncDocument(sheet: reading, runs: [.ink(prefix + source)])
+            roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+            let pending = try XCTUnwrap(preview.renderingTask)
+            if moveOffTop { scroll(roll, to: NSPoint(x: 0, y: preview.frame.minY + 3)) }
+            XCTAssertEqual(roll.stack.readingPlace?.atTop, !moveOffTop)
+            XCTAssertEqual(roll.stack.readingPlace?.anchor, place.anchor)
+            await pending.value
+            if moveOffTop {
+                let rebased = place.rebased(from: previous, to: preview.string)
+                let offset = try XCTUnwrap(rebased.anchor.offset(in: preview))
+                let expected = preview.frame.minY + offset.y
+                XCTAssertGreaterThan(expected, 0)
+                XCTAssertEqual(roll.scroll.contentView.bounds.minY, expected, accuracy: 0.5)
+            } else {
+                XCTAssertEqual(roll.scroll.contentView.bounds.minY, 0, accuracy: 0.5)
+            }
+        }
+    }
+
+    func testLoadingPreviewsCaptureHorizontalMovementAndKeepItThroughLayoutClamps() async throws {
+        for hasSavedPlace in [false, true] {
+            let model = try makeModel()
+            model.wrapsLines = false
+            let source = String(repeating: "## Heading **bold**\n\n", count: 900)
+            let reading = try page(in: model, saying: source)
+            _ = try page(in: model, saying: longLine())
+            try select(reading, in: model)
+            model.toggleMarkdownPreview(for: reading)
+            let projection = TimeUnitProjection.project(
+                tabs: model.tabs.map { onDay($0, $0.pageID == reading ? 0 : -1) },
+                selectedPageID: reading, unit: .day)
+            let roll = try mountRoll(model: model)
+            roll.window.isReleasedWhenClosed = false
+            defer { roll.window.close() }
+            roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+            let preview = try XCTUnwrap(roll.stack.previewRegions[reading])
+            var pending = try XCTUnwrap(preview.renderingTask)
+            if hasSavedPlace {
+                await pending.value
+                scroll(roll, to: NSPoint(x: 120, y: 0))
+                XCTAssertEqual(roll.stack.readingPlace?.anchor.x, 120)
+                model.syncDocument(sheet: reading, runs: [.ink("new paragraph\n\n" + source)])
+                roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+                pending = try XCTUnwrap(preview.renderingTask)
+            } else {
+                XCTAssertNil(roll.stack.readingPlace)
+                roll.scroll.contentView.postsBoundsChangedNotifications = false
+                scroll(roll, to: NSPoint(x: 120, y: 0))
+                XCTAssertEqual(roll.stack.currentPlace?.anchor.x, 120)
+                roll.scroll.contentView.postsBoundsChangedNotifications = true
+            }
+            XCTAssertTrue(preview.isRendering)
+            scroll(roll, to: NSPoint(x: 240, y: 0))
+            XCTAssertEqual(roll.scroll.contentView.bounds.minX, 240)
+            XCTAssertEqual(roll.stack.readingPlace?.anchor.x, 240)
+            model.wrapsLines = true
+            roll.stack.relayout()
+            XCTAssertEqual(roll.scroll.contentView.bounds.minX, 0)
+            XCTAssertEqual(roll.stack.readingPlace?.anchor.x, 240)
+            model.wrapsLines = false
+            roll.stack.relayout()
+            XCTAssertEqual(roll.scroll.contentView.bounds.minX, 240)
+            await pending.value
+            XCTAssertEqual(roll.stack.currentPlace?.anchor.x, 240)
+            XCTAssertEqual(roll.scroll.contentView.bounds.minX, 240)
+            XCTAssertEqual(roll.scroll.contentView.bounds.minY, 0)
+        }
+    }
+
+    func testAnAnimatedZeroDistanceJumpKeepsTheLoadingPreviewPlaceThroughLayoutClamps() async throws {
+        guard StreamNavigator.jumpDuration(
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) > 0
+        else { throw XCTSkip("Animated jump requires motion to be enabled") }
+        let model = try makeModel()
+        model.wrapsLines = false
+        let source = String(repeating: "## Heading **bold**\n\n", count: 900)
+        let reading = try page(in: model, saying: source)
+        _ = try page(in: model, saying: longLine())
+        try select(reading, in: model)
+        model.toggleMarkdownPreview(for: reading)
+        let projection = TimeUnitProjection.project(
+            tabs: model.tabs.map { onDay($0, $0.pageID == reading ? 0 : -1) },
+            selectedPageID: reading, unit: .day)
+        let roll = try mountRoll(model: model, ordered: true)
+        defer { roll.window.close() }
+        roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+        let preview = try XCTUnwrap(roll.stack.previewRegions[reading])
+        try await XCTUnwrap(preview.renderingTask).value
+        scroll(roll, to: NSPoint(x: 240, y: 0))
+        model.syncDocument(sheet: reading, runs: [.ink("new paragraph\n\n" + source)])
+        roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+        let pending = try XCTUnwrap(preview.renderingTask)
+        XCTAssertTrue(roll.window.isVisible)
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin, NSPoint(x: 240, y: 0))
+        roll.stack.scroll(toDocumentOffset: 0, animated: true)
+        XCTAssertEqual(roll.stack.readingPlace?.anchor.x, 240)
+        XCTAssertEqual(roll.stack.readingPlace?.atTop, true)
+        model.wrapsLines = true
+        roll.stack.relayout()
+        XCTAssertEqual(roll.scroll.contentView.bounds.minX, 0)
+        XCTAssertEqual(roll.stack.readingPlace?.anchor.x, 240)
+        model.wrapsLines = false
+        roll.stack.relayout()
+        XCTAssertEqual(roll.scroll.contentView.bounds.minX, 240)
+        await pending.value
+        XCTAssertEqual(roll.scroll.contentView.bounds.origin, NSPoint(x: 240, y: 0))
+        XCTAssertEqual(roll.stack.currentPlace?.anchor.x, 240)
+    }
+
+    func testCrossAxisScrollingDoesNotOverwriteALoadingPreviewsCollapsedAxis() async throws {
+        for (collapseHeight, returnToOrigin) in [(true, false), (false, false), (true, true), (false, true)] {
+            let model = try makeModel()
+            model.wrapsLines = false
+            let source = (0..<1_200).map { "line \($0) **at a distinct reading position**" }.joined(separator: "\n\n")
+            let reading = try page(in: model, saying: source)
+            let following = longLine() + (collapseHeight ? "" : "\n" + longPage(lines: 80))
+            _ = try page(in: model, saying: following)
+            try select(reading, in: model)
+            model.toggleMarkdownPreview(for: reading)
+            let projection = TimeUnitProjection.project(
+                tabs: model.tabs.map { onDay($0, $0.pageID == reading ? 0 : -1) },
+                selectedPageID: reading, unit: .day)
+            let roll = try mountRoll(model: model)
+            roll.window.isReleasedWhenClosed = false
+            defer { roll.window.close() }
+            roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+            let preview = try XCTUnwrap(roll.stack.previewRegions[reading])
+            try await XCTUnwrap(preview.renderingTask).value
+            let target = "line 600 "
+            let index = (preview.string as NSString).range(of: target).location
+            let glyph = try glyphRect(in: preview, at: index)
+            scroll(roll, to: NSPoint(x: collapseHeight ? 0 : 240,
+                                    y: preview.frame.minY + glyph.minY + glyph.height / 4))
+            let place = try XCTUnwrap(roll.stack.readingPlace)
+            XCTAssertEqual(place.anchor.characterIndex, index)
+            XCTAssertFalse(place.atTop)
+
+            model.syncDocument(sheet: reading, runs: [.ink("new paragraph\n\n" + source)])
+            if !collapseHeight { model.wrapsLines = true }
+            roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
+            let pending = try XCTUnwrap(preview.renderingTask)
+            let clip = roll.scroll.contentView
+            if collapseHeight {
+                XCTAssertEqual(roll.stack.frame.height, clip.bounds.height, accuracy: 0.5)
+                XCTAssertEqual(clip.bounds.minY, 0)
+                scroll(roll, to: NSPoint(x: 240, y: 0))
+                XCTAssertEqual(clip.bounds.minX, 240)
+            } else {
+                XCTAssertEqual(roll.stack.frame.width, clip.bounds.width, accuracy: 0.5)
+                XCTAssertEqual(clip.bounds.minX, 0)
+                let before = clip.bounds.minY
+                scroll(roll, to: NSPoint(x: 0, y: preview.frame.minY + 3))
+                XCTAssertNotEqual(clip.bounds.minY, before)
+            }
+            XCTAssertEqual(roll.stack.readingPlace?.anchor.characterIndex, index)
+            XCTAssertEqual(roll.stack.readingPlace?.anchor.x, 240)
+            XCTAssertEqual(roll.stack.readingPlace?.atTop, false)
+            if returnToOrigin { scroll(roll, to: .zero) }
+            let expectedX: CGFloat = returnToOrigin && collapseHeight ? 0 : 240
+            let expectedAtTop = returnToOrigin && !collapseHeight
+            XCTAssertEqual(roll.stack.readingPlace?.anchor.characterIndex, index)
+            XCTAssertEqual(roll.stack.readingPlace?.anchor.x, expectedX)
+            XCTAssertEqual(roll.stack.readingPlace?.atTop, expectedAtTop)
+            model.wrapsLines = false
+            roll.stack.relayout()
+            await pending.value
+            let moved = (preview.string as NSString).range(of: target).location
+            XCTAssertEqual(roll.stack.currentPlace?.anchor.characterIndex, expectedAtTop ? 0 : moved)
+            XCTAssertEqual(clip.bounds.minX, expectedX)
+            if expectedAtTop { XCTAssertEqual(clip.bounds.minY, 0) }
+            else { XCTAssertGreaterThan(clip.bounds.minY, 0) }
+        }
+    }
+
     /// The pump's own report is the only invalidation here, as it is when a peer writes.
     func testAPeersEditReachesAQuietDayAndThePageTheEditorLeft() throws {
         let model = try makeModel()

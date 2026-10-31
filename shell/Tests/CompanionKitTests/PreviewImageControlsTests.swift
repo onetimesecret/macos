@@ -9,6 +9,16 @@ final class PreviewImageControlsTests: XCTestCase {
     private static let markdown = "![A small image](https://example.com/image.png)"
 
     @MainActor
+    private final class KeyLoopWindow: NSWindow {
+        private(set) var recalculations = 0
+
+        override func recalculateKeyViewLoop() {
+            recalculations += 1
+            super.recalculateKeyViewLoop()
+        }
+    }
+
+    @MainActor
     private struct Fixture {
         let model: PageModel
         let page: UInt64
@@ -40,7 +50,7 @@ final class PreviewImageControlsTests: XCTestCase {
         coordinator.surface = model.owner
         let scroll = DayScrollView.makeRoll(model: model, coordinator: coordinator, emptyHint: "hint")
         let frame = NSRect(x: 0, y: 0, width: 420, height: 320)
-        let window = NSWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false)
+        let window = KeyLoopWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = scroll
         scroll.frame = frame
@@ -117,6 +127,11 @@ final class PreviewImageControlsTests: XCTestCase {
             calls += 1
             action()
         }
+    }
+
+    @MainActor
+    private final class TitleChanges {
+        var values: [String] = []
     }
 
     @MainActor
@@ -567,6 +582,94 @@ final class PreviewImageControlsTests: XCTestCase {
         XCTAssertFalse(fragment.plainText.contains("SECRET"))
     }
 
+    private func fixtureWithSealedImageAlt() throws -> (Fixture, UInt64) {
+        let ink = "before ![image SECRET alt](\(Self.address)) after"
+        let fixture = try fixture(ink)
+        fixture.model.toggleMarkdownPreview(for: fixture.page)
+        fixture.update()
+        let editor = try XCTUnwrap(fixture.stack.editor)
+        let range = (ink as NSString).range(of: "SECRET")
+        editor.setSelectedRange(range)
+        fixture.coordinator.sealSelectionOrLine()
+        let chip = try XCTUnwrap(fixture.coordinator.chipAttachment(at: range.location)?.info.chipId)
+        fixture.model.toggleMarkdownPreview(for: fixture.page)
+        fixture.update()
+        let preview = try XCTUnwrap(fixture.stack.previewRegions[fixture.page])
+        let mounted = Fixture(model: fixture.model, page: fixture.page, window: fixture.window,
+                              scroll: fixture.scroll, stack: fixture.stack, coordinator: fixture.coordinator,
+                              preview: preview, loader: fixture.loader)
+        return (mounted, chip)
+    }
+
+    private func firstChip(in text: NSAttributedString) -> ChipAttachment? {
+        var result: ChipAttachment?
+        text.enumerateAttribute(.attachment, in: NSRange(location: 0, length: text.length)) { value, _, stop in
+            if let chip = value as? ChipAttachment { result = chip; stop.pointee = true }
+        }
+        return result
+    }
+
+    func testSealedImageAltRemintAndRepeatedResizeKeepTheLoadedImageAndReference() async throws {
+        let (fixture, chip) = try fixtureWithSealedImageAlt()
+        defer { fixture.window.close() }
+        let preview = fixture.preview
+        fixture.loader.handler = { _ in self.image() }
+        let button = try XCTUnwrap(preview.imageControls.buttons.first)
+        button.performClick(nil)
+        try await eventually { preview.imageControls.loadedImageCount == 1 }
+        let original = preview.string
+        let selected = (original as NSString).range(of: "after")
+        preview.setSelectedRange(selected)
+        for width: CGFloat in [320, 320, 600, 600, 320] {
+            fixture.window.setContentSize(NSSize(width: width, height: 400))
+            fixture.scroll.frame = NSRect(x: 0, y: 0, width: width, height: 400)
+            fixture.update()
+            fixture.update()
+            let before = try XCTUnwrap(firstChip(in: fixture.model.quietRendering(for: fixture.page).text))
+            fixture.model.invalidateQuietRendering(for: fixture.page)
+            let after = try XCTUnwrap(firstChip(in: fixture.model.quietRendering(for: fixture.page).text))
+            XCTAssertFalse(before === after)
+            XCTAssertEqual(before.info, after.info)
+            fixture.update()
+            await Task.yield()
+            XCTAssertEqual(preview.imageControls.loadedImageCount, 1)
+            XCTAssertTrue(preview.imageControls.buttons.first === button)
+            XCTAssertEqual(loadedPictureBounds(in: preview).count, 1)
+            XCTAssertEqual(fixture.loader.requests.count, 1)
+            XCTAssertEqual(preview.string, original)
+            XCTAssertEqual(preview.selectedRange(), selected)
+            preview.setSelectedRange(NSRange(location: 0, length: preview.string.utf16.count))
+            let copied = preview.shownSelection().flatMap { $0 }
+            XCTAssertEqual(copied.filter { if case .chip = $0 { true } else { false } }, [.chip(chip)])
+            let ink = copied.reduce(into: "") { if case .ink(let text) = $1 { $0 += text } }
+            XCTAssertEqual(ink, "before image  alt after\n")
+            preview.setSelectedRange(selected)
+        }
+    }
+
+    func testChangedSealedImageAltMetadataRefreshesThePreviewAndRequiresAnotherLoad() async throws {
+        let (fixture, chip) = try fixtureWithSealedImageAlt()
+        defer { fixture.window.close() }
+        let preview = fixture.preview
+        fixture.loader.handler = { _ in self.image() }
+        let button = try XCTUnwrap(preview.imageControls.buttons.first)
+        button.performClick(nil)
+        try await eventually { preview.imageControls.loadedImageCount == 1 }
+        XCTAssertTrue(fixture.model.setChipName("IMAGE_OBJECT", chip: chip, sheet: fixture.page))
+        fixture.update()
+        XCTAssertEqual(firstChip(in: try XCTUnwrap(preview.textStorage))?.info.name, "IMAGE_OBJECT")
+        XCTAssertEqual(preview.imageControls.loadedImageCount, 0)
+        XCTAssertEqual(fixture.loader.requests.count, 1)
+        let refreshed = try XCTUnwrap(preview.imageControls.buttons.first)
+        XCTAssertFalse(refreshed === button)
+        XCTAssertTrue(refreshed.title.hasPrefix("Load"))
+        refreshed.performClick(nil)
+        try await eventually { preview.imageControls.loadedImageCount == 1 }
+        XCTAssertEqual(fixture.loader.requests.count, 2)
+        preview.setSelectedRange(NSRange(location: 0, length: preview.string.utf16.count))
+        XCTAssertEqual(preview.shownSelection().flatMap { $0 }.filter { if case .chip = $0 { true } else { false } }, [.chip(chip)])
+    }
+
     func testLoadingUnloadingAndResizingKeepTheTextStreamAndSelectionStable() async throws {
         let fixture = try fixture("before " + Self.markdown + " after")
         defer { fixture.window.close() }
@@ -635,18 +738,21 @@ final class PreviewImageControlsTests: XCTestCase {
         XCTAssertEqual(lineYInClip(), before, accuracy: 1)
     }
 
-    func testPreserveConsentRechecksDestinationsEvenWhenTheAltTextIsUnchanged() async throws {
+    func testSourceDestinationEditRequiresAnotherLoadWhenTheAltTextIsUnchanged() async throws {
         let fixture = try fixture()
         defer { fixture.window.close() }
         fixture.loader.handler = { _ in self.image() }
         let preview = fixture.preview
         preview.imageControls.buttons[0].performClick(nil)
         try await eventually { preview.imageControls.loadedImageCount == 1 }
-        let current = MarkdownPreviewView.render(NSAttributedString(string: Self.markdown))
-        let changed = MarkdownPreviewView.render(NSAttributedString(
-            string: "![A small image](https://other.example.org/new.png)"))
-        XCTAssertEqual(current.string, changed.string)
-        preview.imageControls.seed(changed, preserveConsent: true)
+        let original = preview.string
+        let button = preview.imageControls.buttons[0]
+        fixture.model.syncDocument(sheet: fixture.page, runs: [
+            .ink("![A small image](https://other.example.org/new.png)"),
+        ])
+        fixture.update()
+        XCTAssertEqual(preview.string, original)
+        XCTAssertFalse(preview.imageControls.buttons[0] === button)
         XCTAssertEqual(preview.imageControls.loadedImageCount, 0)
         XCTAssertTrue(preview.imageControls.buttons[0].title.hasPrefix("Load"))
         XCTAssertTrue(preview.imageControls.buttons[0].title.contains("other.example.org"))
@@ -656,17 +762,21 @@ final class PreviewImageControlsTests: XCTestCase {
         XCTAssertEqual(fixture.loader.requests.map(\.absoluteString), [Self.address, "https://other.example.org/new.png"])
     }
 
-    func testPreserveConsentRechecksImageRangesInAnUnchangedTextStream() async throws {
-        let fixture = try fixture("a![same](\(Self.address))same")
+    func testSourceImageRangeEditRequiresAnotherLoadInAnUnchangedTextStream() async throws {
+        let initialSource = "a![same](\(Self.address))same"
+        let changedSource = "asame![same](\(Self.address))"
+        XCTAssertEqual(MarkdownPreviewView.render(NSAttributedString(string: initialSource)).string,
+                       MarkdownPreviewView.render(NSAttributedString(string: changedSource)).string)
+        let fixture = try fixture(initialSource)
         defer { fixture.window.close() }
         fixture.loader.handler = { _ in self.image() }
         let preview = fixture.preview
         preview.imageControls.buttons[0].performClick(nil)
         try await eventually { preview.imageControls.loadedImageCount == 1 }
-        let first = MarkdownPreviewView.render(NSAttributedString(string: "a![same](\(Self.address))same"))
-        let moved = MarkdownPreviewView.render(NSAttributedString(string: "asame![same](\(Self.address))"))
-        XCTAssertEqual(first.string, moved.string)
-        preview.imageControls.seed(moved, preserveConsent: true)
+        let button = preview.imageControls.buttons[0]
+        fixture.model.syncDocument(sheet: fixture.page, runs: [.ink(changedSource)])
+        fixture.update()
+        XCTAssertFalse(preview.imageControls.buttons[0] === button)
         XCTAssertEqual(preview.imageControls.loadedImageCount, 0)
         XCTAssertTrue(preview.imageControls.buttons[0].title.hasPrefix("Load"))
         XCTAssertEqual(fixture.loader.requests.count, 1)
@@ -851,6 +961,276 @@ final class PreviewImageControlsTests: XCTestCase {
         button.performClick(nil)
         XCTAssertTrue(fixture.loader.requests.isEmpty)
         XCTAssertEqual(fixture.preview.imageControls.loadedImageCount, 0)
+    }
+
+    func testNarrowImageTablesStackCellsAndRestoreColumnsWithoutChangingCopy() async throws {
+        let address = "https://averylonghostnameforanimage.example.com/photo.png"
+        let row = (0..<8).map { "![image\($0)](\(address))" }.joined(separator: " | ")
+        let header = (0..<8).map { "column\($0)" }.joined(separator: " | ")
+        let source = "| \(header) |\n| " + Array(repeating: "---", count: 8).joined(separator: " | ") + " |\n| \(row) |"
+        let fixture = try fixture(source)
+        defer { fixture.window.close() }
+        let preview = fixture.preview
+        let template = MarkdownPreviewView.render(NSAttributedString(string: source))
+        preview.imageControls.seed(template)
+        let storage = try XCTUnwrap(preview.textStorage)
+        let original = storage.string
+        let selection = (original as NSString).range(of: "image3")
+        preview.setSelectedRange(selection)
+        func tableBlockCount() -> Int {
+            var count = 0
+            storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
+                if let style = value as? NSParagraphStyle,
+                   style.textBlocks.contains(where: { $0 is NSTextTableBlock }) { count += 1 }
+            }
+            return count
+        }
+        for width: CGFloat in [320, 1600, 320, 1600] {
+            fixture.window.setContentSize(NSSize(width: width, height: 900))
+            fixture.scroll.frame = NSRect(x: 0, y: 0, width: width, height: 900)
+            fixture.update()
+            let narrow = width == 320
+            try await eventually { narrow ? tableBlockCount() == 0 : tableBlockCount() > 0 }
+            preview.layoutSubtreeIfNeeded()
+            XCTAssertEqual(storage.string, original)
+            XCTAssertEqual(preview.selectedRange(), selection)
+            for button in preview.imageControls.buttons {
+                XCTAssertGreaterThanOrEqual(button.frame.width, 44)
+                XCTAssertGreaterThanOrEqual(button.frame.height, 28)
+                XCTAssertGreaterThanOrEqual(button.frame.minX, 0)
+                XCTAssertLessThanOrEqual(button.frame.maxX, preview.bounds.width + 1)
+                XCTAssertEqual(button.lineBreakMode, .byTruncatingTail)
+                XCTAssertTrue(button.title.hasPrefix("Load"))
+                XCTAssertTrue(button.accessibilityLabel()?.contains("averylonghostnameforanimage.example.com") == true)
+                XCTAssertTrue(button.accessibilityHelp()?.contains(address) == true)
+                for help in [button.toolTip, button.accessibilityHelp()] {
+                    XCTAssertTrue(help?.contains("system DNS and proxies") == true)
+                    XCTAssertTrue(help?.contains("may reach a local network") == true)
+                }
+            }
+            preview.setSelectedRange(NSRange(location: 0, length: storage.length))
+            let copied = preview.shownSelection().flatMap { $0 }.reduce(into: "") {
+                if case .ink(let text) = $1 { $0 += text }
+            }
+            XCTAssertFalse(copied.contains("\u{FFFC}"))
+            for index in 0..<8 { XCTAssertTrue(copied.contains("image\(index)")) }
+            preview.setSelectedRange(selection)
+        }
+        var templateHasTable = false
+        template.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: template.length)) { value, _, _ in
+            if let style = value as? NSParagraphStyle,
+               style.textBlocks.contains(where: { $0 is NSTextTableBlock }) { templateHasTable = true }
+        }
+        XCTAssertTrue(templateHasTable)
+        XCTAssertTrue(fixture.loader.requests.isEmpty)
+    }
+
+    func testCompactActionsKeepFullDestinationAnnouncementsAndKeyboardFocus() async throws {
+        let address = "https://averylonghostnameforanimage.example.com/photo.png"
+        let fixture = try fixture("![first](\(address))\n\n![second](\(Self.address))")
+        defer { fixture.window.close() }
+        fixture.window.setContentSize(NSSize(width: 200, height: 500))
+        fixture.scroll.frame = NSRect(x: 0, y: 0, width: 200, height: 500)
+        fixture.update()
+        let preview = fixture.preview
+        let controls = preview.imageControls
+        try await eventually { controls.buttons[0].title == "Load image" }
+        let button = controls.buttons[0]
+        let pending = PendingLoads()
+        fixture.loader.handler = { try await pending.load($0) }
+        XCTAssertTrue(fixture.window.makeFirstResponder(button))
+        let children = preview.accessibilityChildren() ?? []
+        let indices = try controls.buttons.map { button in
+            try XCTUnwrap(children.firstIndex { ($0 as AnyObject) === button })
+        }
+        XCTAssertLessThan(indices[0], indices[1])
+        button.performClick(nil)
+        try await eventually { pending.addresses.count == 1 }
+        XCTAssertEqual(button.title, "Cancel image")
+        XCTAssertTrue(fixture.window.firstResponder === button)
+        XCTAssertTrue(button.accessibilityLabel()?.contains("Cancel image from averylonghostnameforanimage.example.com") == true)
+        pending.finish(0, with: image())
+        try await eventually { controls.loadedImageCount == 1 }
+        XCTAssertEqual(button.title, "Unload image")
+        XCTAssertTrue(fixture.window.firstResponder === button)
+        button.performClick(nil)
+        XCTAssertEqual(button.title, "Load image")
+        XCTAssertTrue(fixture.window.firstResponder === button)
+    }
+
+
+
+    func testTabTraversalFollowsImageOrderAndReachesAnExternalControl() throws {
+        try XCTSkipUnless(NSApplication.shared.isFullKeyboardAccessEnabled,
+                          "Native Tab traversal requires enabled macOS keyboard navigation")
+        let fixture = try fixture("![first](\(Self.address))\n\n![unavailable](http://example.com/a.png)\n\n![second](\(Self.address))\n\n![third](\(Self.address))")
+        defer { fixture.window.close() }
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 400))
+        let external = NSButton(title: "Outside the preview", target: nil, action: nil)
+        external.frame = NSRect(x: 20, y: 5, width: 180, height: 28)
+        root.addSubview(external)
+        root.addSubview(fixture.scroll)
+        fixture.window.contentView = root
+        fixture.scroll.frame = NSRect(x: 0, y: 40, width: 420, height: 360)
+        fixture.update()
+        fixture.preview.layoutSubtreeIfNeeded()
+        let buttons = fixture.preview.imageControls.buttons
+        for button in buttons { button.frame = .zero }
+        fixture.window.recalculateKeyViewLoop()
+        fixture.preview.imageControls.layout()
+        XCTAssertTrue(fixture.window.makeFirstResponder(fixture.preview))
+        for button in [buttons[0], buttons[2], buttons[3]] {
+            fixture.window.selectNextKeyView(nil)
+            XCTAssertTrue(fixture.window.firstResponder === button,
+                          "Tab reached \(String(describing: fixture.window.firstResponder)) before \(button.accessibilityLabel() ?? "image")")
+        }
+        var reachedExternal = false
+        for _ in 0..<12 {
+            fixture.window.selectNextKeyView(nil)
+            if fixture.window.firstResponder === external { reachedExternal = true; break }
+        }
+        XCTAssertTrue(reachedExternal, "The image controls must not trap the window key loop")
+        XCTAssertTrue(fixture.window.makeFirstResponder(buttons[3]))
+        for view in [buttons[2], buttons[0], fixture.preview] {
+            fixture.window.selectPreviousKeyView(nil)
+            XCTAssertTrue(fixture.window.firstResponder === view)
+        }
+        XCTAssertTrue(fixture.loader.requests.isEmpty)
+    }
+
+
+    func testRestoringHiddenControlsRecalculatesKeyOrderWithUnchangedFrames() throws {
+        let fixture = try fixture("![first](\(Self.address))\n\n![second](\(Self.address))")
+        defer { fixture.window.close() }
+        let window = try XCTUnwrap(fixture.window as? KeyLoopWindow)
+        let preview = fixture.preview
+        let controls = preview.imageControls
+        controls.layout()
+        let storage = try XCTUnwrap(preview.textStorage)
+        let rendered = NSAttributedString(attributedString: storage)
+        let frames = controls.buttons.map(\.frame)
+        storage.setAttributedString(NSAttributedString(string: ""))
+        let beforeHiding = window.recalculations
+        controls.layout()
+        XCTAssertTrue(controls.buttons.allSatisfy(\.isHidden))
+        XCTAssertGreaterThan(window.recalculations, beforeHiding)
+        storage.setAttributedString(rendered)
+        let beforeRestoring = window.recalculations
+        controls.layout()
+        XCTAssertTrue(controls.buttons.allSatisfy { !$0.isHidden })
+        XCTAssertEqual(controls.buttons.map(\.frame), frames)
+        XCTAssertGreaterThan(window.recalculations, beforeRestoring)
+        XCTAssertTrue(fixture.loader.requests.isEmpty)
+    }
+
+    func testTabTraversesRestoredControlsWhenKeyboardNavigationIsEnabled() throws {
+        try XCTSkipUnless(NSApplication.shared.isFullKeyboardAccessEnabled,
+                          "Native Tab traversal requires enabled macOS keyboard navigation")
+        let fixture = try fixture("![first](\(Self.address))\n\n![second](\(Self.address))")
+        defer { fixture.window.close() }
+        let controls = fixture.preview.imageControls
+        controls.layout()
+        let storage = try XCTUnwrap(fixture.preview.textStorage)
+        let rendered = NSAttributedString(attributedString: storage)
+        storage.setAttributedString(NSAttributedString(string: ""))
+        controls.layout()
+        storage.setAttributedString(rendered)
+        controls.layout()
+        XCTAssertTrue(fixture.window.makeFirstResponder(fixture.preview))
+        for button in controls.buttons {
+            fixture.window.selectNextKeyView(nil)
+            XCTAssertTrue(fixture.window.firstResponder === button)
+        }
+        XCTAssertTrue(fixture.loader.requests.isEmpty)
+    }
+
+    func testTableControlMinimumWidthTracksTheActualButtonFont() async throws {
+        let fixture = try fixture("| Image | Other |\n| --- | --- |\n| ![image](\(Self.address)) | text |")
+        defer { fixture.window.close() }
+        let controls = fixture.preview.imageControls
+        let button = try XCTUnwrap(controls.buttons.first)
+        let storage = try XCTUnwrap(fixture.preview.textStorage)
+        let original = storage.string
+        func hasTable() -> Bool {
+            var result = false
+            storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
+                if let style = value as? NSParagraphStyle,
+                   style.textBlocks.contains(where: { $0 is NSTextTableBlock }) { result = true }
+            }
+            return result
+        }
+        XCTAssertTrue(hasTable())
+        button.font = .systemFont(ofSize: 24)
+        controls.resize()
+        try await eventually { !hasTable() }
+        button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        controls.resize()
+        try await eventually { hasTable() }
+        XCTAssertEqual(storage.string, original)
+        XCTAssertTrue(fixture.loader.requests.isEmpty)
+    }
+
+    func testRetinaImageSizingUsesRasterPixelsWhenImagePointSizeDiffers() async throws {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 240, pixelsHigh: 120, bitsPerSample: 8,
+            samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let image = NSImage(size: NSSize(width: 120, height: 60))
+        image.addRepresentation(bitmap)
+        image.size = NSSize(width: 120, height: 60)
+        XCTAssertEqual(PreviewImageControls.pictureBounds(image: image, room: 600, backingScale: 1).size,
+                       NSSize(width: 240, height: 120))
+        XCTAssertEqual(PreviewImageControls.pictureBounds(image: image, room: 600, backingScale: 2).size,
+                       NSSize(width: 120, height: 60))
+        let fixture = try fixture()
+        defer { fixture.window.close() }
+        fixture.loader.handler = { _ in image }
+        fixture.preview.imageControls.buttons[0].performClick(nil)
+        try await eventually { fixture.preview.imageControls.loadedImageCount == 1 }
+        let bounds = try XCTUnwrap(loadedPictureBounds(in: fixture.preview).first)
+        let scale = max(1, fixture.window.backingScaleFactor)
+        XCTAssertEqual(bounds.width, 240 / scale, accuracy: 0.01)
+        XCTAssertEqual(bounds.height, 120 / scale, accuracy: 0.01)
+    }
+
+    func testUnchangedResizeAndDiscardDoNotRewriteTheCompactButtonTitle() async throws {
+        let fixture = try fixture("![image](https://averylonghostnameforanimage.example.com/photo.png)")
+        defer { fixture.window.close() }
+        fixture.window.setContentSize(NSSize(width: 200, height: 500))
+        fixture.scroll.frame = NSRect(x: 0, y: 0, width: 200, height: 500)
+        fixture.update()
+        let controls = fixture.preview.imageControls
+        let button = controls.buttons[0]
+        try await eventually { button.title == "Load image" }
+        let label = button.accessibilityLabel()
+        let changes = TitleChanges()
+        let observation = button.observe(\.title, options: [.new]) { _, change in
+            MainActor.assumeIsolated { changes.values.append(change.newValue ?? "") }
+        }
+        defer { observation.invalidate() }
+        for _ in 0..<5 {
+            controls.resize()
+            controls.discard()
+            XCTAssertEqual(button.title, "Load image")
+            XCTAssertEqual(button.accessibilityLabel(), label)
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(changes.values.isEmpty)
+        XCTAssertEqual(button.title, "Load image")
+        XCTAssertEqual(button.accessibilityLabel(), label)
+        XCTAssertTrue(fixture.loader.requests.isEmpty)
+    }
+
+    func testRetinaSizingUsesPixelsPerPointWithoutUpscalingSmallImages() {
+        let pixels = NSSize(width: 240, height: 120)
+        XCTAssertEqual(PreviewImageControls.pictureBounds(pixelSize: pixels, room: 600, backingScale: 1).size,
+                       NSSize(width: 240, height: 120))
+        XCTAssertEqual(PreviewImageControls.pictureBounds(pixelSize: pixels, room: 600, backingScale: 2).size,
+                       NSSize(width: 120, height: 60))
+        XCTAssertEqual(PreviewImageControls.pictureBounds(pixelSize: pixels, room: 60, backingScale: 2).size,
+                       NSSize(width: 60, height: 30))
+        XCTAssertEqual(PreviewImageControls.pictureBounds(pixelSize: NSSize(width: 3200, height: 2400), room: 900,
+                                                         backingScale: 2).height, 400)
     }
 
     func testPreviewWithoutImagesDoesNotScheduleImageLayoutOnResize() async throws {

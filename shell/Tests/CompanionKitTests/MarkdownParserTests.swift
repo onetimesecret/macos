@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+import os
 
 @testable import CompanionKit
 
@@ -154,9 +155,7 @@ final class MarkdownParserTests: XCTestCase {
 
     // MARK: Objects the grammar hides
 
-    /// A definition's object stays at the definition, before or after the reference, and a
-    /// reference to it refuses the address with the stand-in; no object moves from later text.
-    func testDefinitionsAndKnownStockSourceRangesDecodeThroughFFI() throws {
+    func testDefinitionObjectPositionsDecodeThroughFFI() throws {
         for dialect in PreviewDialect.allCases {
             let before: [String?] = ["[r]: https://e.example/", nil, " \"t\"\n\n[link][r] then ", nil]
             XCTAssertEqual(try parse(before, dialect).blocks, [
@@ -174,19 +173,20 @@ final class MarkdownParserTests: XCTestCase {
                 .objects(["1"]),
             ], "\(dialect): after")
             XCTAssertEqual(try parse(["[r]: /u \"title ", nil, "\"\ntext ", nil, "\n\n[x][r]"], dialect).blocks, [
+                .objects(["0"]),
                 .paragraph([.text("text "), .object("1")]),
                 .paragraph([
                     .enterLink(destination: [.text("/u")], title: [.text("title \u{FFFC}")]),
-                    .text("x"), .leaveLink, .object("0"),
+                    .text("x"), .leaveLink,
                 ]),
-            ], "\(dialect): known stock-comrak source range, tracked in Rust definitions.rs")
+            ], "\(dialect): definition before the surviving paragraph")
             XCTAssertEqual(try parse(["[a", nil, "]: /u\n\nplain"], dialect).blocks, [
                 .objects(["0"]), .paragraph([.text("plain")]),
             ], "\(dialect): in a label")
             XCTAssertEqual(try parse(["[r]: /u", nil], dialect).blocks, [.objects(["0"])], "\(dialect): alone")
             XCTAssertEqual(try parse(["> [r]: /u", nil, "\n> text"], dialect).blocks, [
-                .quote([.paragraph([.text("text")]), .objects(["0"])]),
-            ], "\(dialect): known stock-comrak source range in a quote")
+                .quote([.objects(["0"]), .paragraph([.text("text")])]),
+            ], "\(dialect): definition before text inside a quote")
             let listed = try parse(["- a\n- [r]: /u", nil, "\n- b"], dialect)
             guard case .list(_, _, _, let items)? = listed.blocks.first else { return XCTFail("\(dialect): a list") }
             XCTAssertEqual(items.map(\.blocks), [
@@ -420,17 +420,14 @@ final class MarkdownParserTests: XCTestCase {
         let jobs = PreviewDialect.allCases.flatMap { dialect in pages.map { (dialect, $0) } }
         let serial = try jobs.map { try MarkdownParser.parse($0.1, dialect: $0.0) }
         let rounds = 40
-        let results = UnsafeMutableBufferPointer<MarkdownDocument?>.allocate(capacity: jobs.count * rounds)
-        results.initialize(repeating: nil)
-        defer {
-            results.deinitialize()
-            results.deallocate()
-        }
-        DispatchQueue.concurrentPerform(iterations: results.count) { index in
+        let count = jobs.count * rounds
+        let results = OSAllocatedUnfairLock(initialState: [MarkdownDocument?](repeating: nil, count: count))
+        DispatchQueue.concurrentPerform(iterations: count) { index in
             let job = jobs[index % jobs.count]
-            results[index] = try? MarkdownParser.parse(job.1, dialect: job.0)
+            let document = try? MarkdownParser.parse(job.1, dialect: job.0)
+            results.withLock { $0[index] = document }
         }
-        for (index, result) in results.enumerated() {
+        for (index, result) in results.withLock({ $0 }).enumerated() {
             XCTAssertEqual(result, serial[index % jobs.count], "\(jobs[index % jobs.count])")
         }
     }

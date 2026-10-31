@@ -43,7 +43,7 @@ Toolchain is pinned (`rust-toolchain.toml`, edition 2024). Static `.a` links int
 ## Verification (matches CI exactly — all must pass before done)
 
 ```bash
-cargo fmt --all && cargo fmt --all --check          # fmt LAST after edits; CI fails on it
+cargo fmt && cargo fmt --check                    # fmt LAST; keep vendor source bytes intact
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 swift build --package-path shell

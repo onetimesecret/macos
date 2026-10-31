@@ -28,7 +28,7 @@ Short version: this is a spec-first project.
   source of truth; this is the same set, in one line, on a Mac:
 
   ```sh
-  cargo fmt --all --check \
+  cargo fmt --check \
     && cargo clippy --workspace --all-targets -- -D warnings \
     && cargo test --workspace \
     && cargo test --workspace --features test-util \

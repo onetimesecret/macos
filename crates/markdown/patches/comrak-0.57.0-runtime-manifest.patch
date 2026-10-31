@@ -1,0 +1,112 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -90,67 +90,8 @@
+ [lib]
+ name = "comrak"
+ path = "src/lib.rs"
+-
+-[[bin]]
+-name = "comrak"
+-path = "src/main.rs"
+-doc = false
+-required-features = ["cli"]
+-
+-[[example]]
+-name = "custom_formatter"
+-path = "examples/custom_formatter.rs"
+-
+-[[example]]
+-name = "custom_formatter_alt_text"
+-path = "examples/custom_formatter_alt_text.rs"
+-
+-[[example]]
+-name = "custom_formatter_user"
+-path = "examples/custom_formatter_user.rs"
+-
+-[[example]]
+-name = "custom_headings"
+-path = "examples/custom_headings.rs"
+-
+-[[example]]
+-name = "headers"
+-path = "examples/headers.rs"
+-
+-[[example]]
+-name = "iterator_replace"
+-path = "examples/iterator_replace.rs"
+-
+-[[example]]
+-name = "s-expr"
+-path = "examples/s-expr.rs"
+-required-features = ["bon"]
+-
+-[[example]]
+-name = "sample"
+-path = "examples/sample.rs"
+-
+-[[example]]
+-name = "syntax_highlighter"
+-path = "examples/syntax_highlighter.rs"
+-
+-[[example]]
+-name = "syntect"
+-path = "examples/syntect.rs"
+-required-features = ["syntect"]
+-
+-[[example]]
+-name = "traverse_demo"
+-path = "examples/traverse_demo.rs"
+-
+-[[example]]
+-name = "update-readme"
+-path = "examples/update-readme.rs"
+-
+-[[bench]]
+-name = "progits"
+-path = "benches/progits.rs"
+-harness = false
++test = false
++doctest = false
+ 
+ [dependencies.arbitrary]
+ version = "1"
+@@ -195,32 +136,6 @@
+ [dependencies.typed-arena]
+ version = "2.0.2"
+ 
+-[dev-dependencies.divan]
+-version = "4.2.0"
+-package = "codspeed-divan-compat"
+-
+-[dev-dependencies.glob]
+-version = "0.3.3"
+-
+-[dev-dependencies.ntest]
+-version = "0.9"
+-
+-[dev-dependencies.percent-encoding-rfc3986]
+-version = "0.1.3"
+-
+-[dev-dependencies.pretty_assertions]
+-version = "1.4.1"
+-
+-[dev-dependencies.slug]
+-version = "0.1.4"
+-
+-[dev-dependencies.strum]
+-version = "0.28.0"
+-features = ["derive"]
+-
+-[dev-dependencies.toml]
+-version = "1.0.6"
+-
+ [build-dependencies.entities]
+ version = "1"
+ 
+@@ -264,6 +179,3 @@
+ ]
+ optional = true
+ 
+-[profile.release]
+-lto = true
+-codegen-units = 1

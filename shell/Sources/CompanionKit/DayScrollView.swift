@@ -558,7 +558,15 @@ final class DayStackView: NSView {
     @objc private func rollScrolled(_ notification: Notification) {
         positionViewportChrome()
         // Out of a window the clip reads nothing; the last place stays for `departingPlace`.
-        if !isLayingOut, window != nil { readingPlace = currentPlace }
+        if !isLayingOut, window != nil, let clip = enclosingScrollView?.contentView {
+            readingPlace = currentPlace
+            if frame.height > clip.bounds.height {
+                readingPlace?.atTop = clip.bounds.minY <= 0
+            }
+            if frame.width > clip.bounds.width {
+                readingPlace?.anchor.x = clip.bounds.minX
+            }
+        }
         publishGeometry()
     }
 
@@ -933,6 +941,12 @@ final class DayStackView: NSView {
     /// its page as a click on a quiet page does (ADR-0030).
     private func previewRegion(for page: UInt64, selected: Bool) -> MarkdownPreviewView {
         let region = previewRegions[page] ?? MarkdownPreviewView(page: page, coordinator: coordinator)
+        region.onRenderingChanged = { [weak self, weak region] previous in
+            guard let self, let region, self.previewRegions[page] === region,
+                  self.model.owner == self.coordinator.surface else { return }
+            self.follow(page, in: region, replacing: previous)
+            self.relayout()
+        }
         if region.frame.width == 0 {
             region.setFrameSize(NSSize(width: clipWidth, height: 1))
         }
@@ -1327,10 +1341,12 @@ final class DayStackView: NSView {
         let clip = scroll.contentView
         let floor = max(frame.height - clip.bounds.height, 0)
         let target = NSPoint(x: clip.bounds.origin.x, y: min(max(offset, 0), floor))
+        let destination = rows.first { $0.page != nil && !$0.body.isHidden && $0.body.frame.maxY > target.y }
+        if (destination?.body as? MarkdownPreviewView)?.isRendering == true { readingPlace = nil }
         let duration = StreamNavigator.jumpDuration(
             reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         )
-        guard animated, duration > 0, window?.isVisible == true else {
+        guard animated, duration > 0, window?.isVisible == true, target != clip.bounds.origin else {
             moveClip(of: scroll, to: target, supersedingJump: true)
             // A deliberate move is the reader's place even out of a window, where `rollScrolled` ignores it.
             readingPlace = clipPlace
@@ -1441,14 +1457,20 @@ final class DayStackView: NSView {
     private var clipPlace: RollPlace? {
         guard let scroll = enclosingScrollView else { return nil }
         let origin = scroll.contentView.bounds.origin
-        guard origin.y > 0 || origin.x > 0 || model.pads.isEnabled,
-              let row = rows.first(where: { $0.page != nil && !$0.body.isHidden && $0.body.frame.maxY > origin.y }),
-              let page = row.page, let text = row.body as? NSTextView,
-              let anchor = ScrollAnchor(
-                  topOf: text,
-                  clipOrigin: NSPoint(x: origin.x, y: origin.y - text.frame.minY)
-              )
+        guard let row = rows.first(where: { $0.page != nil && !$0.body.isHidden && $0.body.frame.maxY > origin.y }),
+              let page = row.page, let text = row.body as? NSTextView
         else { return nil }
+        let isRenderingPreview = (text as? MarkdownPreviewView)?.isRendering == true
+        if isRenderingPreview, let place = readingPlace, place.page == page { return place }
+        guard origin.y > 0 || origin.x > 0 || model.pads.isEnabled else { return nil }
+        if isRenderingPreview {
+            return RollPlace(page: page, anchor: ScrollAnchor(characterIndex: 0, x: origin.x), reading: .preview,
+                             atTop: origin.y <= 0)
+        }
+        guard let anchor = ScrollAnchor(
+            topOf: text,
+            clipOrigin: NSPoint(x: origin.x, y: origin.y - text.frame.minY)
+        ) else { return nil }
         return RollPlace(
             page: page, anchor: anchor, reading: Self.reading(of: text),
             length: text.textStorage?.length ?? 0, atTop: origin.y <= 0)
