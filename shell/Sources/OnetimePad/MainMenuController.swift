@@ -6,6 +6,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     private unowned let app: BackdropAppDelegate
     private weak var closeItem: NSMenuItem?
     private weak var languageMenu: NSMenu?
+    private weak var timelineItem: NSMenuItem?
+    private weak var tabsItem: NSMenuItem?
 
     init(app: BackdropAppDelegate) {
         self.app = app
@@ -66,7 +68,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         closeItem = close
         file.addItem(close)
         file.addItem(action(CompanionL10n.string("Reopen Last Closed Page or Tab"), command: .pageReopenLast,
-                            enabled: { [app] in !app.pages.closedTabs.isEmpty }) { [app] in
+                            enabled: { [app] in app.pages.hasClosedTabs }) { [app] in
             app.pages.perform(.pageReopenLast)
             app.returnToOwner()
         })
@@ -128,18 +130,23 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     private func makeViewMenu(in main: NSMenu) {
         let view = submenu(CompanionL10n.string("View"), in: main)
+        view.delegate = self
         view.addItem(action(CompanionL10n.string("Command Palette…"), command: .appCommandPalette) { [app] in
             app.showCommandPalette()
         })
         view.addItem(.separator())
-        view.addItem(action(CompanionL10n.string("Open Timeline"), command: .appOpenTimeline) { [app] in
+        let timeline = action(CompanionL10n.string("Open Timeline"), command: .appOpenTimeline) { [app] in
             app.pages.perform(.appOpenTimeline)
             app.returnToOwner()
-        })
-        view.addItem(action(CompanionL10n.string("Switch to Tabs View"), command: .appSwitchToTabs) { [app] in
+        }
+        timelineItem = timeline
+        view.addItem(timeline)
+        let tabs = action(CompanionL10n.string("Switch to Tabs View"), command: .appSwitchToTabs) { [app] in
             app.pages.perform(.appSwitchToTabs)
             app.returnToOwner()
-        })
+        }
+        tabsItem = tabs
+        view.addItem(tabs)
         view.addItem(.separator())
         view.addItem(responder(CompanionL10n.string("Enter Full Screen"), #selector(NSWindow.toggleFullScreen(_:)), key: "f", modifiers: [.command, .control]))
     }
@@ -170,7 +177,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     }
 
     private var onFile: () -> Bool {
-        { [app] in if case .file = app.pages.activeTarget { true } else { false } }
+        { [app] in CommandPalettePresentation.canSave(app.pages.activeTarget) }
     }
 
     private var closeChoice: CloseMenuItem {
@@ -180,6 +187,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         closeItem?.title = CompanionL10n.string(closeChoice.title)
+        timelineItem?.state = app.pages.showsTimeUnits ? .on : .off
+        tabsItem?.state = app.pages.showsTimeUnits ? .off : .on
         if menu === languageMenu { updateLanguages(in: menu) }
     }
 

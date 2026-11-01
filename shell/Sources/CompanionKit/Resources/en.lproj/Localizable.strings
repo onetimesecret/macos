@@ -166,7 +166,7 @@
 "No matching commands" = "No matching commands";
 "↑↓ Select · Return Run · Esc Cancel" = "↑↓ Select · Return Run · Esc Cancel";
 "page.close.save_failed" = "the page could not be saved; it remains open";
-"page.reopen.expired" = "the page expired; its saved tab is open";
+"page.reopen.expired" = "the page expired; showing its saved empty tab in Tabs view";
 
 "Save" = "Save";
 "Save As…" = "Save As…";
@@ -180,8 +180,12 @@
 "Detect Code Language" = "Detect Code Language";
 "View" = "View";
 "Back to Commands" = "Back to Commands";
-"page.close.unavailable" = "Saved state is unavailable in this session. The page remains open.";
-"page.close.identity_unavailable" = "This page cannot be closed because its saved identity is unavailable.";
-"page.close.finish_name" = "Finish or cancel the variable name before closing this page.";
-"page.close.finish_composition" = "Finish composing text before closing this page.";
-"surface.finish_composition" = "Finish composing text before running this command.";
+"page.close.unavailable" = "saved state is unavailable in this session; the page remains open";
+"page.close.identity_unavailable" = "this page cannot be closed because its saved identity is unavailable";
+"page.close.finish_name" = "finish or cancel the variable name before closing this page";
+"page.close.finish_composition" = "finish composing text before closing this page";
+"surface.finish_composition" = "finish composing text before running this command";
+"layout.switch.pendingClose" = "finish the file close decision before changing page views";
+"Close File" = "Close File";
+"Close Page" = "Close Page";
+"Close Ledger" = "Close Ledger";

@@ -27,8 +27,10 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     private var sourceWasEdited = false
     private nonisolated(unsafe) var storageObserver: NSObjectProtocol?
     private nonisolated(unsafe) var windowCloseObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var windowResignObserver: NSObjectProtocol?
     private var originalTarget: SurfaceTarget?
     private var originalPage: UInt64?
+    private var originalLedger = false
     private var availableEditorCommands: Set<CommandID> = []
     private var hasPageContext = false
     private var rows: [Row] = []
@@ -96,6 +98,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         }
         if let storageObserver { NotificationCenter.default.removeObserver(storageObserver) }
         if let windowCloseObserver { NotificationCenter.default.removeObserver(windowCloseObserver) }
+        if let windowResignObserver { NotificationCenter.default.removeObserver(windowResignObserver) }
     }
 
     func show(in window: NSWindow, pageContext: Bool, reopen: Bool = false) {
@@ -113,6 +116,11 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         originalWindow = window
         windowCloseObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.dismiss(restoringFocus: false) }
+        }
+        windowResignObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: window, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.dismiss(restoringFocus: false) }
         }
@@ -139,6 +147,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         }
         originalTarget = model.activeTarget
         originalPage = model.selectedPageID
+        originalLedger = model.showingLedger
         availableEditorCommands = Set(CommandID.allCases.filter {
             (originalResponder as? CommandPaletteResponder)?.canPerformPaletteCommand($0) == true
         })
@@ -182,6 +191,8 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         storageObserver = nil
         if let windowCloseObserver { NotificationCenter.default.removeObserver(windowCloseObserver) }
         windowCloseObserver = nil
+        if let windowResignObserver { NotificationCenter.default.removeObserver(windowResignObserver) }
+        windowResignObserver = nil
         guard restoringFocus, let window = originalWindow, window.isVisible else { return }
         if let control = originalControl {
             guard control.window === window else { return }
@@ -275,6 +286,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         search.stringValue = ""
         search.placeholderString = CompanionL10n.string("Search closed pages or tabs…")
         reload()
+        _ = originalWindow?.makeFirstResponder(search)
     }
 
     @objc private func showCommands(_ sender: Any?) {
@@ -298,8 +310,9 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
             }
         } else {
             rows = CommandPaletteCatalog.entries(keymap: model.keymap).compactMap { entry in
-                guard entry.matches(search.stringValue), isAvailable(entry) else { return nil }
-                return Row(title: entry.title, detail: entry.scope.title,
+                let title = entry.command == .pageClose ? CompanionL10n.string(closeChoice.title) : entry.title
+                guard entry.matches(search.stringValue, title: title), isAvailable(entry) else { return nil }
+                return Row(title: title, detail: entry.scope.title,
                     shortcut: entry.shortcut, command: entry.command, scope: entry.scope, tab: nil)
             }
         }
@@ -316,9 +329,11 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     }
 
     private func isAvailable(_ entry: CommandPaletteEntry) -> Bool {
-        if entry.command == .pageReopenLast { return !model.closedTabs.isEmpty }
-        if entry.command == .pageClose, model.selection == nil && model.activeFile == nil { return false }
-        if entry.command == .fileSaveAs { return hasPageContext && model.activeFile != nil }
+        if entry.command == .pageReopenLast { return model.hasClosedTabs }
+        if entry.command == .pageClose, !closeChoice.isEnabled { return false }
+        if entry.command == .fileSaveAs || entry.command == .stateSaveNow {
+            return hasPageContext && contextIsCurrent && CommandPalettePresentation.canSave(model.activeTarget)
+        }
         if entry.scope == .application { return true }
         guard hasPageContext, contextIsCurrent else { return false }
         if entry.command.dispatch == .editor {
@@ -327,8 +342,14 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         return true
     }
 
+    private var closeChoice: CloseMenuItem {
+        CloseMenuItem.resolve(target: .surface, showing: model.activeTarget,
+            ledgerShowing: model.showingLedger, keyWindowCanClose: true)
+    }
+
     private var contextIsCurrent: Bool {
         model.activeTarget == originalTarget && model.selectedPageID == originalPage
+            && model.showingLedger == originalLedger
             && !sourceWasEdited && originalEditor?.textStorage === originalStorage
     }
 
@@ -420,5 +441,14 @@ final class PaletteCommandCell: NSTableCellView {
         titleLabel.frame = NSRect(x: inset, y: 21, width: titleWidth, height: 18)
         detailLabel.frame = NSRect(x: inset, y: 4, width: titleWidth, height: 15)
         shortcutLabel.frame = NSRect(x: shortcutX, y: 13, width: shortcutWidth, height: 18)
+    }
+}
+
+
+@MainActor
+internal enum CommandPalettePresentation {
+    static func canSave(_ target: SurfaceTarget) -> Bool {
+        if case .file = target { return true }
+        return false
     }
 }

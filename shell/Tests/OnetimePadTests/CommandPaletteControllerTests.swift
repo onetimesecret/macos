@@ -416,4 +416,99 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertEqual(editor.borrowEnds, 1)
     }
 
+
+    func testSaveAvailabilityAndCloseLabelsMatchTheCurrentSurface() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        palette.search.stringValue = "state::SaveNow"
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        XCTAssertEqual(palette.table.numberOfRows, 0)
+        palette.dismiss(restoringFocus: true)
+        model.showLedger()
+        palette.show(in: window, pageContext: true)
+        palette.search.stringValue = "close ledger"
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        XCTAssertEqual(palette.table.numberOfRows, 1)
+        let ledgerRow = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+        XCTAssertEqual(ledgerRow.titleLabel.stringValue, "Close Ledger")
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertFalse(model.showingLedger)
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("palette-file-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("synthetic.txt")
+        try "synthetic file".write(to: file, atomically: true, encoding: .utf8)
+        model.openFile(at: file)
+        palette.show(in: window, pageContext: true)
+        palette.search.stringValue = "state::SaveNow"
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        XCTAssertEqual(palette.table.numberOfRows, 1)
+        palette.search.stringValue = "close file"
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        XCTAssertEqual(palette.table.numberOfRows, 1)
+        let fileRow = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+        XCTAssertEqual(fileRow.titleLabel.stringValue, "Close File")
+    }
+
+    func testEnteringReopenModeReturnsFocusToItsSearchField() throws {
+        let model = try makeModel()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false)
+        XCTAssertTrue(window.makeFirstResponder(palette.table))
+        palette.show(in: window, pageContext: false, reopen: true)
+        XCTAssertTrue(window.firstResponder === palette.search.currentEditor())
+        XCTAssertFalse(palette.backButton.isHidden)
+    }
+
+    func testLosingTheOriginWindowsKeysDismissesAndReleasesTheFocusBorrow() throws {
+        let model = try makeModel()
+        let (window, editor) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        XCTAssertNil(palette.overlay)
+        XCTAssertEqual(editor.borrowEnds, 1)
+        XCTAssertFalse(window.firstResponder === editor)
+    }
+
+    func testViewMenuChecksTheCurrentLayout() throws {
+        let model = try makeModel()
+        let tag = "palette-menu-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: tag))
+        defer { UserDefaults.standard.removePersistentDomain(forName: tag) }
+        let app = BackdropAppDelegate(model: BackdropModel(defaults: defaults, pages: model))
+        prepareApplicationMenuRoles()
+        let previous = NSApp.mainMenu
+        let windows = NSApp.windowsMenu, help = NSApp.helpMenu, services = NSApp.servicesMenu
+        let servicesItem = services?.supermenu?.items.first { $0.submenu === services }
+        defer {
+            services?.supermenu?.items.first { $0.submenu === services }?.submenu = nil
+            servicesItem?.submenu = services
+            NSApp.mainMenu = previous
+            NSApp.windowsMenu = windows
+            NSApp.helpMenu = help
+            NSApp.servicesMenu = services
+        }
+        let controller = MainMenuController(app: app)
+        controller.install()
+        let view = try XCTUnwrap(NSApp.mainMenu?.items.first { $0.title == CompanionL10n.string("View") }?.submenu)
+        let timeline = try XCTUnwrap(view.items.first { $0.title == CompanionL10n.string("Open Timeline") })
+        let tabs = try XCTUnwrap(view.items.first { $0.title == CompanionL10n.string("Switch to Tabs View") })
+        for showsTimeline in [false, true] {
+            model.showsTimeUnits = showsTimeline
+            controller.menuNeedsUpdate(view)
+            XCTAssertEqual(timeline.state, showsTimeline ? .on : .off)
+            XCTAssertEqual(tabs.state, showsTimeline ? .off : .on)
+        }
+    }
+
 }

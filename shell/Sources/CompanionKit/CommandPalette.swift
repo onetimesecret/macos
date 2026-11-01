@@ -34,46 +34,56 @@ public struct CommandPaletteEntry: Identifiable, Equatable, Sendable {
     public let keywords: String
     public let shortcut: String?
 
-    public func matches(_ query: String) -> Bool {
+    public func matches(_ query: String, title displayedTitle: String? = nil) -> Bool {
         let words = query.split(whereSeparator: { $0.isWhitespace })
-        let text = title + " " + keywords + " " + command.rawValue
+        let text = (displayedTitle ?? title) + " " + keywords + " " + command.rawValue
         return words.allSatisfy { text.localizedStandardContains(String($0)) }
     }
 }
 
 public enum CommandPaletteCatalog {
     public static func entries(keymap: ResolvedKeymap) -> [CommandPaletteEntry] {
-        let definitions: [(CommandID, String, CommandPaletteScope, String)] = [
-            (.appOpenTimeline, "Open Timeline", .application, "view dated pages history"),
-            (.appSwitchToTabs, "Switch to Tabs View", .application, "layout navigation"),
-            (.pageReopenDated, "Reopen Dated Tabs…", .application, "closed saved pages history restore re-open"),
-            (.pageReopenLast, "Reopen Last Closed Page or Tab", .application, "restore saved re-open"),
-            (.pageNew, "New Page", .application, "new tab"),
-            (.fileOpen, "Open File…", .application, "document"),
-            (.appSettings, "Settings…", .application, "preferences"),
-            (.appHelp, "OnetimePad Help", .application, "documentation"),
-            (.windowClose, "Close Window", .application, "window dismiss"),
-            (.stateSaveNow, "Save", .page, "disk state document"),
-            (.fileSaveAs, "Save As…", .page, "file document"),
-            (.pageClose, "Close Page or Tab", .page, "hide dismiss"),
-            (.pagePrevious, "Previous Page or Tab", .page, "navigate"),
-            (.pageNext, "Next Page or Tab", .page, "navigate"),
-            (.editorToggleWrap, "Toggle Line Wrapping", .page, "text horizontal"),
-            (.clipboardSeal, "Seal Clipboard", .selection, "insert paste"),
-            (.clipboardSealSelection, "Seal Selected Content", .selection, "text line"),
-            (.chipCopyDecrypted, "Copy Decrypted Contents", .selection, "sealed object"),
-            (.editorUndo, "Undo", .selection, "edit"),
-            (.editorRedo, "Redo", .selection, "edit"),
-            (.editorDetectCodeLanguage, "Detect Code Language", .selection, "syntax"),
-            (.noteToggleExpanded, "Toggle Note Expansion", .selection, "sealed note")
-        ]
-        return definitions.map { command, title, scope, keywords in
-            CommandPaletteEntry(command: command, title: CompanionL10n.string(title),
-                scope: scope, keywords: keywords,
+        CommandID.allCases.compactMap { command in
+            guard let definition = command.paletteDefinition else { return nil }
+            return CommandPaletteEntry(command: command, title: CompanionL10n.string(definition.title),
+                scope: definition.scope, keywords: definition.keywords,
                 shortcut: keymap.hintKeystroke(for: command)?.displaySymbol)
         }.enumerated().sorted { left, right in
             left.element.scope == right.element.scope
                 ? left.offset < right.offset : left.element.scope.rawValue < right.element.scope.rawValue
         }.map(\.element)
+    }
+}
+
+extension CommandID {
+    var paletteDefinition: (title: String, scope: CommandPaletteScope, keywords: String)? {
+        switch self {
+        case .appOpenTimeline: ("Open Timeline", .application, "view dated pages history")
+        case .appSwitchToTabs: ("Switch to Tabs View", .application, "layout navigation")
+        case .pageReopenDated: ("Reopen Dated Tabs…", .application, "closed saved pages history restore re-open")
+        case .pageReopenLast: ("Reopen Last Closed Page or Tab", .application, "restore saved re-open")
+        case .pageNew: ("New Page", .application, "new tab")
+        case .fileOpen: ("Open File…", .application, "document")
+        case .appSettings: ("Settings…", .application, "preferences")
+        case .appHelp: ("OnetimePad Help", .application, "documentation")
+        case .windowClose: ("Close Window", .application, "window dismiss")
+        case .stateSaveNow: ("Save", .page, "disk state document")
+        case .fileSaveAs: ("Save As…", .page, "file document")
+        case .pageClose: ("Close Page or Tab", .page, "hide dismiss")
+        case .pagePrevious: ("Previous Page or Tab", .page, "navigate")
+        case .pageNext: ("Next Page or Tab", .page, "navigate")
+        case .editorToggleWrap: ("Toggle Line Wrapping", .page, "text horizontal")
+        case .clipboardSeal: ("Seal Clipboard", .selection, "insert paste")
+        case .clipboardSealSelection: ("Seal Selected Content", .selection, "text line")
+        case .chipCopyDecrypted: ("Copy Decrypted Contents", .selection, "sealed object")
+        case .editorUndo: ("Undo", .selection, "edit")
+        case .editorRedo: ("Redo", .selection, "edit")
+        case .editorDetectCodeLanguage: ("Detect Code Language", .selection, "syntax")
+        case .noteToggleExpanded: ("Toggle Note Expansion", .selection, "sealed note")
+        case .pageSelect1, .pageSelect2, .pageSelect3, .pageSelect4, .pageSelect5,
+             .pageSelect6, .pageSelect7, .pageSelect8, .pageSelect9,
+             .ledgerShow, .surfaceHandBackKeys, .appCommandPalette:
+            nil
+        }
     }
 }
