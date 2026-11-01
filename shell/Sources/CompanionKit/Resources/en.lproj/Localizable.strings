@@ -134,7 +134,6 @@
 "chip.name.charset" = "use A–Z, a–z, digits and underscores, starting with a letter or underscore";
 
 /* Sealed-content accessibility action names. */
-"chip.handle.move" = "Select Sealed Content";
 "chip.handle.decrypted" = "Copy Decrypted Contents";
 
 /* The page editor, as VoiceOver names it. */

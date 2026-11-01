@@ -229,16 +229,12 @@ public struct ConcealView: View {
                 HStack(spacing: 8) {
                     copyLinkButton
                     Spacer(minLength: 12)
-                    deleteLocalButton
                     doneButton
                 }
                 .fixedSize(horizontal: true, vertical: false)
                 VStack(alignment: .leading, spacing: 8) {
                     copyLinkButton
-                    HStack(spacing: 8) {
-                        deleteLocalButton
-                        doneButton
-                    }
+                    doneButton
                 }
             }
             .controlSize(.small)
@@ -246,6 +242,8 @@ public struct ConcealView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Divider().padding(.vertical, 4)
+            deleteLocalButton
         }
     }
 
@@ -257,6 +255,7 @@ public struct ConcealView: View {
 
     private var deleteLocalButton: some View {
         Button(Self.deleteLabel(for: draft.target), role: .destructive) { model.burnConcealedCopy() }
+            .controlSize(.small)
             .help(Self.deleteHelp(for: draft.target))
     }
 

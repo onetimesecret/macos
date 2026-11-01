@@ -613,11 +613,18 @@ final class DocumentOpsWiringTests: XCTestCase {
         let offered = NSMenu()
         coordinator.appendSealItem(to: offered)
         XCTAssertEqual(offered.items.map(\.title), [
-            SealSelectionMenu.contextMenuTitle, SealSelectionMenu.consequence,
+            SealSelectionMenu.consequence, SealSelectionMenu.contextMenuTitle,
         ])
-        XCTAssertTrue(offered.items[0].target === coordinator)
-        XCTAssertEqual(offered.items[0].toolTip, SealSelectionMenu.help)
-        XCTAssertFalse(offered.items[1].isEnabled)
+        XCTAssertNil(offered.items[0].action)
+        XCTAssertNil(offered.items[0].target)
+        if #available(macOS 14, *) {
+            XCTAssertTrue(offered.items[0].isSectionHeader)
+            XCTAssertFalse(offered.items[1].isSectionHeader)
+        } else {
+            XCTAssertFalse(offered.items[0].isEnabled)
+        }
+        XCTAssertTrue(offered.items[1].target === coordinator)
+        XCTAssertEqual(offered.items[1].toolTip, SealSelectionMenu.help)
         coordinator.sealSelectionOrLine()
 
         // A selection holding the chip: the row is withheld, because

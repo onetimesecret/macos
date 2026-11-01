@@ -232,4 +232,67 @@ final class SealedBlockTests: XCTestCase {
         XCTAssertEqual(widths.value, 5)
     }
 
+    func testControlTitlesFitTheirBoundsWithLongTranslatedCopyFeedbackAndNotes() {
+        let titles = [
+            "Entschlüsselten Inhalt in die Zwischenablage kopieren",
+            "Der entschlüsselte Inhalt wurde in die Zwischenablage kopiert",
+            "Bearbeiten Sie die Anmerkung zu diesem versiegelten Inhalt",
+        ]
+        for title in titles {
+            for width in [CGFloat(1), 7, 24, 108] {
+                let bounds = NSRect(x: 30, y: 20, width: width, height: 24)
+                let fitted = SealedBlockCell.controlTitle(SealedBlockCell.controlString(title), in: bounds)
+                XCTAssertGreaterThanOrEqual(fitted.rect.minX, bounds.minX)
+                XCTAssertGreaterThanOrEqual(fitted.rect.minY, bounds.minY)
+                XCTAssertLessThanOrEqual(fitted.rect.maxX, bounds.maxX)
+                XCTAssertLessThanOrEqual(fitted.rect.maxY, bounds.maxY)
+                XCTAssertLessThanOrEqual(fitted.text.size().width, max(0, width - 8))
+                if width >= 24 {
+                    XCTAssertFalse(fitted.text.string.isEmpty)
+                    XCTAssertTrue(fitted.text.string.hasSuffix("…"))
+                }
+            }
+        }
+    }
+
+    func testLongControlTitlesDoNotPaintOutsideTheirButtons() throws {
+        for title in [
+            "Entschlüsselten Inhalt in die Zwischenablage kopieren",
+            "Der entschlüsselte Inhalt wurde in die Zwischenablage kopiert",
+            "Bearbeiten Sie die Anmerkung zu diesem versiegelten Inhalt",
+        ] {
+            let rep = try XCTUnwrap(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: 240, pixelsHigh: 80,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+            let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep))
+            let button = NSRect(x: 66, y: 28, width: 108, height: 24)
+            let appearance = try XCTUnwrap(NSAppearance(named: .aqua))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            NSColor.white.setFill()
+            NSRect(x: 0, y: 0, width: 240, height: 80).fill()
+            appearance.performAsCurrentDrawingAppearance {
+                SealedBlockCell.drawControl(SealedBlockCell.controlString(title), in: button, bordered: true)
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            var painted = 0
+            var outside = 0
+            let allowance = button.insetBy(dx: -1, dy: -1)
+            for y in 0..<rep.pixelsHigh {
+                for x in 0..<rep.pixelsWide {
+                    let pixel = try XCTUnwrap(rep.colorAt(x: x, y: y))
+                    if min(pixel.redComponent, pixel.greenComponent, pixel.blueComponent) < 0.99 {
+                        painted += 1
+                        if !allowance.contains(NSPoint(x: CGFloat(x) + 0.5, y: CGFloat(y) + 0.5)) {
+                            outside += 1
+                        }
+                    }
+                }
+            }
+            XCTAssertGreaterThan(painted, 0)
+            XCTAssertEqual(outside, 0, "a long control title painted beyond its button")
+        }
+    }
+
 }

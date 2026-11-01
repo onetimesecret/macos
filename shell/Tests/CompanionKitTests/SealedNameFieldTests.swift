@@ -66,7 +66,6 @@ final class SealedNameFieldTests: XCTestCase {
             "chip.menu.copy_reference": "Copy Sealed Reference",
             "chip.menu.copy_decrypted": "Copy Decrypted Contents",
             "chip.control.copy": "Copy Decrypted",
-            "chip.handle.move": "Select Sealed Content",
             "chip.handle.decrypted": "Copy Decrypted Contents",
         ]
         for (key, value) in expected {
@@ -358,6 +357,106 @@ final class SealedNameFieldTests: XCTestCase {
         editor.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification))
         XCTAssertFalse(editor.isOpen)
         XCTAssertEqual(coreName(page), "MY_KEY")
+    }
+
+    private func hostNameEditor(_ page: Page) -> NSWindow {
+        let window = NSWindow(contentRect: page.scroll.frame, styleMask: [.titled],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = page.scroll
+        return window
+    }
+
+    private func typeInvalidName(in editor: SealedNameEditor) throws {
+        let input = try XCTUnwrap(editor.field.currentEditor() as? NSTextView)
+        input.insertText("my.key", replacementRange: NSRange(location: 0, length: input.string.utf16.count))
+    }
+
+    func testInvalidBlurDefersRefocusAndKeepsTheDraftEditable() throws {
+        let page = try makePage()
+        let window = hostNameEditor(page)
+        defer { window.close() }
+        let originalKeyWindow = NSApp?.keyWindow
+        let originallyActive = NSApp?.isActive
+        let originallyKey = window.isKeyWindow
+        let originallyVisible = window.isVisible
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        try typeInvalidName(in: editor)
+
+        XCTAssertTrue(window.makeFirstResponder(page.textView))
+        XCTAssertTrue(window.firstResponder === page.textView, "refocus ran inside a responder transition")
+        XCTAssertTrue(editor.isOpen)
+        XCTAssertTrue(editor.rename.isRefusing)
+        drainMainQueue()
+        XCTAssertTrue(editor.holdsKeys)
+        XCTAssertEqual(editor.draft, "my.key")
+        XCTAssertEqual(editor.rename.error, ChipRename.words(for: .outsideCharset))
+        XCTAssertNil(coreName(page))
+        XCTAssertTrue(NSApp?.keyWindow === originalKeyWindow)
+        XCTAssertEqual(NSApp?.isActive, originallyActive)
+        XCTAssertEqual(window.isKeyWindow, originallyKey)
+        XCTAssertEqual(window.isVisible, originallyVisible)
+
+        let input = try XCTUnwrap(editor.field.currentEditor() as? NSTextView)
+        input.insertText("MY_KEY", replacementRange: NSRange(location: 0, length: input.string.utf16.count))
+        XCTAssertTrue(window.makeFirstResponder(page.textView))
+        drainMainQueue()
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertTrue(window.firstResponder === page.textView)
+        XCTAssertEqual(coreName(page), "MY_KEY")
+    }
+
+    func testCancelInvalidatesPendingInvalidDraftRefocus() throws {
+        let page = try makePage()
+        let window = hostNameEditor(page)
+        defer { window.close() }
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        try typeInvalidName(in: editor)
+        XCTAssertTrue(window.makeFirstResponder(page.textView))
+        XCTAssertTrue(editor.rename.isRefusing)
+        editor.helpView.cancel.performClick(nil)
+        drainMainQueue()
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertFalse(editor.holdsKeys)
+        XCTAssertTrue(editor.field.isHidden)
+        XCTAssertNil(editor.overlay.superview)
+        XCTAssertTrue(window.firstResponder === page.textView)
+        XCTAssertNil(coreName(page))
+    }
+
+    func testWindowTeardownInvalidatesPendingInvalidDraftRefocus() throws {
+        let page = try makePage()
+        let window = hostNameEditor(page)
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        try typeInvalidName(in: editor)
+        XCTAssertTrue(window.makeFirstResponder(page.textView))
+        XCTAssertTrue(editor.rename.isRefusing)
+        window.close()
+        drainMainQueue()
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertFalse(editor.holdsKeys)
+        XCTAssertTrue(editor.field.isHidden)
+        XCTAssertNil(editor.overlay.superview)
+        XCTAssertNil(coreName(page))
+    }
+
+    func testWindowTeardownSavesAValidPendingDraft() throws {
+        let page = try makePage()
+        let window = hostNameEditor(page)
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        let input = try XCTUnwrap(editor.field.currentEditor() as? NSTextView)
+        input.insertText("API_KEY", replacementRange: NSRange(location: 0, length: input.string.utf16.count))
+        XCTAssertTrue(editor.holdsKeys)
+        window.close()
+        drainMainQueue()
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertTrue(editor.field.isHidden)
+        XCTAssertNil(editor.overlay.superview)
+        XCTAssertEqual(coreName(page), "API_KEY")
     }
 
     func testFocusingAnInvalidDraftRestoresItsFieldWithoutChangingIt() throws {

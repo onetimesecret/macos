@@ -1252,16 +1252,20 @@ public struct InkEditorView: NSViewRepresentable {
             return selection
         }
 
-        /// The context menu's Seal Selection row (D-30), offered when
-        /// the selection is sealable and holds no chip: over a chip the
-        /// row would only ever refuse, and a menu should not offer a
-        /// verb it knows it will decline.
+        /// The editor's Seal Selection group for a selection without sealed objects (D-30).
         func appendSealItem(to menu: NSMenu) {
             guard let storage = textView?.textStorage, let selection = sealableSelection(),
                   !Self.containsChip(storage, in: selection)
             else { return }
             // The page's own group, set off from AppKit's text items.
             menu.addSeparatorIfNeeded()
+            if #available(macOS 14, *) {
+                menu.addItem(.sectionHeader(title: SealSelectionMenu.consequence))
+            } else {
+                let consequence = NSMenuItem(title: SealSelectionMenu.consequence, action: nil, keyEquivalent: "")
+                consequence.isEnabled = false
+                menu.addItem(consequence)
+            }
             let seal = NSMenuItem(
                 title: SealSelectionMenu.contextMenuTitle,
                 action: #selector(sealSelectionFromMenu(_:)),
@@ -1270,9 +1274,6 @@ public struct InkEditorView: NSViewRepresentable {
             seal.target = self
             seal.toolTip = SealSelectionMenu.help
             menu.addItem(seal)
-            let consequence = NSMenuItem(title: SealSelectionMenu.consequence, action: nil, keyEquivalent: "")
-            consequence.isEnabled = false
-            menu.addItem(consequence)
         }
 
         @objc private func sealSelectionFromMenu(_ sender: NSMenuItem) {
@@ -7820,7 +7821,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     @MainActor
-    static var decryptedDragString: NSAttributedString { seatString(decryptedDragWords) }
+    static var decryptedDragString: NSAttributedString { controlString(decryptedDragWords) }
 
     @MainActor
     static func moveHandleString(selected: Bool) -> NSAttributedString {
@@ -7828,16 +7829,50 @@ final class SealedBlockCell: NSTextAttachmentCell {
             .font: NSFont.systemFont(ofSize: 15), .foregroundColor: quietInk(selected: selected)])
     }
 
+    nonisolated static func controlColors(selected: Bool) -> (ink: NSColor, fill: NSColor, border: NSColor) {
+        (selected ? .selectedTextColor : .labelColor,
+         selected ? .selectedTextBackgroundColor : .controlBackgroundColor,
+         selected ? .selectedTextColor : .secondaryInk)
+    }
+
     @MainActor
-    private static func drawControl(_ text: NSAttributedString, in rect: NSRect, bordered: Bool) {
+    static func controlString(_ text: String, selected: Bool = false) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: 12), .foregroundColor: controlColors(selected: selected).ink])
+    }
+
+    @MainActor
+    static func controlTitle(_ text: NSAttributedString, in rect: NSRect) -> (text: NSAttributedString, rect: NSRect) {
+        let insetX = min(4, max(0, rect.width) / 2)
+        let insetY = min(2, max(0, rect.height) / 2)
+        let interior = rect.insetBy(dx: insetX, dy: insetY)
+        guard text.length > 0, interior.width > 0, interior.height > 0 else {
+            return (NSAttributedString(string: ""), NSRect(origin: rect.origin, size: .zero))
+        }
+        let fitted = Self.fitted(text.string, attributes: text.attributes(at: 0, effectiveRange: nil),
+                                 width: interior.width)
+        let size = fitted.size()
+        let height = min(size.height, interior.height)
+        return (fitted, NSRect(x: interior.midX - size.width / 2, y: interior.midY - height / 2,
+                               width: size.width, height: height))
+    }
+
+    @MainActor
+    static func drawControl(_ text: NSAttributedString, in rect: NSRect, bordered: Bool, selected: Bool = false) {
         if bordered {
+            let colors = controlColors(selected: selected)
             let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
-            NSColor.quaternaryLabelColor.setStroke()
+            colors.fill.setFill()
+            path.fill()
+            colors.border.setStroke()
             path.lineWidth = 1
             path.stroke()
         }
-        let size = text.size()
-        text.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+        let title = controlTitle(text, in: rect)
+        NSGraphicsContext.saveGraphicsState()
+        title.rect.clip()
+        title.text.draw(in: title.rect)
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     @MainActor static func drawDecryptedDragHandle(in rect: NSRect) {
@@ -7845,7 +7880,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     @MainActor static func drawMoveHandle(in rect: NSRect, selected: Bool) {
-        drawControl(moveHandleString(selected: selected), in: rect, bordered: false)
+        drawControl(moveHandleString(selected: selected), in: rect, bordered: false, selected: selected)
     }
 
     nonisolated static func blockWidth(
@@ -7962,11 +7997,14 @@ final class SealedBlockCell: NSTextAttachmentCell {
         }
         if showsControls {
             if let doorway = doorwayRect(in: frame) {
-                Self.drawControl(Self.seatString(Self.doorwayWord, selected: selected), in: doorway, bordered: false)
+                Self.drawControl(Self.controlString(Self.doorwayWord, selected: selected), in: doorway,
+                                 bordered: true, selected: selected)
             }
-            Self.drawControl(Self.seatString(Self.actionsGlyph, selected: selected), in: Self.actionsRect(in: frame), bordered: false)
+            Self.drawControl(Self.controlString(Self.actionsGlyph, selected: selected), in: Self.actionsRect(in: frame),
+                             bordered: true, selected: selected)
             if let copy = copyRect(in: frame) {
-                Self.drawControl(Self.seatString(copied ? Self.copiedWords : Self.decryptedDragWords, selected: selected), in: copy, bordered: true)
+                Self.drawControl(Self.controlString(copied ? Self.copiedWords : Self.decryptedDragWords, selected: selected),
+                                 in: copy, bordered: true, selected: selected)
             }
             if let move = moveHandleRect(in: frame) { Self.drawMoveHandle(in: move, selected: selected) }
         }

@@ -307,6 +307,7 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
     let overlay = NoteOverlayView()
     let helpView = SealedNameHelpView()
     private nonisolated(unsafe) var observers: [NSObjectProtocol] = []
+    private var refocusGeneration: UInt64 = 0
     /// Room past the draft for the caret, and the field's inset before its text.
     static let caretRoom: CGFloat = 8
     static let textInset: CGFloat = 2
@@ -362,6 +363,7 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
             commit(returningKeys: false)
             guard !rename.isOpen else { return }
         }
+        refocusGeneration &+= 1
         rename.open(chip: face.chipId, sheet: sheet, name: face.name, in: model)
         field.font = InkStyle.chipNameFont
         field.placeholderAttributedString = NSAttributedString(
@@ -392,14 +394,16 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
     }
 
     /// Return, Save or a valid focus-loss edit commits the draft.
-    func commit(returningKeys: Bool = true) {
-        guard rename.isOpen else { return }
+    @discardableResult
+    func commit(returningKeys: Bool = true) -> Bool {
+        guard rename.isOpen else { return true }
         rename.edit(field.stringValue, in: model)
         guard rename.commit(in: model) else {
             follow()
-            return
+            return false
         }
         close(returningKeys: returningKeys)
+        return true
     }
 
     @discardableResult
@@ -472,6 +476,17 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
                 MainActor.assumeIsolated { self?.follow() }
             })
         }
+        if let window = field.window {
+            observers.append(center.addObserver(
+                forName: NSWindow.willCloseNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.commit(returningKeys: false)
+                    if self.isOpen { self.keep(returningKeys: false) }
+                }
+            })
+        }
     }
 
     @objc private func saveClicked(_ sender: Any?) { commit() }
@@ -491,6 +506,7 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
     }
 
     private func close(returningKeys: Bool) {
+        refocusGeneration &+= 1
         defer { field.stringValue = "" }
         let index = textView?.naming?.index
         textView?.naming = nil
@@ -524,6 +540,26 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
     }
 
     func controlTextDidEndEditing(_ notification: Notification) {
-        commit(returningKeys: false)
+        guard !commit(returningKeys: false) else { return }
+        refocusRefusedDraftAfterTransition()
+    }
+
+    private func refocusRefusedDraftAfterTransition() {
+        guard rename.isOpen, rename.isRefusing, let window = field.window else { return }
+        refocusGeneration &+= 1
+        let generation = refocusGeneration
+        let chip = rename.chip
+        let keyWindow = NSApp?.keyWindow
+        let applicationWasActive = NSApp?.isActive ?? false
+        DispatchQueue.main.async { [weak self, weak window, weak keyWindow] in
+            guard let self, let window, self.refocusGeneration == generation,
+                  self.rename.isOpen, self.rename.isRefusing, self.rename.chip == chip,
+                  self.field.window === window, !self.field.isHidden,
+                  self.textView?.isEditable == true,
+                  NSApp?.keyWindow === keyWindow,
+                  (NSApp?.isActive ?? false) == applicationWasActive
+            else { return }
+            _ = self.focusDraft()
+        }
     }
 }
