@@ -5493,6 +5493,18 @@ public enum SealSelectionMenu {
 /// A button action for a sealed object's accessibility child.
 private final class SealedActionElement: NSAccessibilityElement {
     private let callback = OSAllocatedUnfairLock<(@MainActor @Sendable () -> Bool)?>(initialState: nil)
+    private let availability = OSAllocatedUnfairLock<(@MainActor @Sendable () -> Bool)?>(initialState: nil)
+
+    @MainActor var enabled: (@MainActor @Sendable () -> Bool)? {
+        get { availability.withLock { $0 } }
+        set { availability.withLock { $0 = newValue } }
+    }
+
+    override func isAccessibilityEnabled() -> Bool {
+        guard super.isAccessibilityEnabled(), Thread.isMainThread else { return false }
+        let check = availability.withLock { $0 }
+        return MainActor.assumeIsolated { check?() ?? false }
+    }
 
     @MainActor var press: (@MainActor @Sendable () -> Bool)? {
         get { callback.withLock { $0 } }
@@ -5927,10 +5939,14 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
                     .joined(separator: "\n")
                 element.setAccessibilityHelp(help)
                 element.setAccessibilityParent(self)
-                element.setAccessibilityEnabled(canPrepareSealedAction)
+                element.setAccessibilityEnabled(true)
+                element.enabled = { [weak self] in
+                    guard let self else { return false }
+                    return self.canPrepareSealedAction && self.chipIndex(ofChip: chip) != nil
+                }
                 element.setAccessibilityFrameInParentSpace(accessibilityParentSpaceRect(rect))
-                element.press = { [weak self] in
-                    guard let self, self.canPrepareSealedAction, let coordinator = self.coordinator,
+                element.press = { [weak self, weak element] in
+                    guard let self, element?.isAccessibilityEnabled() == true, let coordinator = self.coordinator,
                           coordinator.prepareChipAction(), let current = self.chipIndex(ofChip: chip)
                     else { return false }
                     self.setSelectedRange(NSRange(location: current, length: 1))
@@ -5954,8 +5970,11 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     }
 
     private var canPrepareSealedAction: Bool {
-        isEditable && !keysHeldInAnotherWindow()
-            && (answersChords || coordinator?.nameEditor?.holdsKeys == true || coordinator?.noteEditor?.holdsKeys == true)
+        guard isEditable, !keysHeldInAnotherWindow() else { return false }
+        if answersChords { return true }
+        let nameOwnsFocus = coordinator?.nameEditor.map { $0.isOpen && $0.holdsKeys } ?? false
+        let noteOwnsFocus = coordinator?.noteEditor.map { $0.isOpen && $0.holdsKeys } ?? false
+        return nameOwnsFocus || noteOwnsFocus
     }
 
     /// `rect`, drawn in this flipped view, in the space a child element's parent space frame
