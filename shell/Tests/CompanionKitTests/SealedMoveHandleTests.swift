@@ -396,50 +396,94 @@ final class SealedMoveHandleTests: XCTestCase {
         let model = try makeModel()
         let page = try mountPage(on: model)
         let textView = page.textView
-        let (move, copy, frame) = try handles(page)
+        let (_, copy, frame) = try handles(page)
         let more = SealedBlockCell.actionsRect(in: frame)
         let elements = textView.handleAccessibilityElements
         XCTAssertEqual(elements.map { $0.accessibilityLabel() },
-                       ["Select Sealed Content", "Copy Decrypted Contents", "Sealed Content Actions"])
+                       ["Copy Decrypted Contents", "Sealed Content Actions"])
         XCTAssertEqual(elements.map { $0.accessibilityFrame() },
-                       [move, copy, more].map { onScreen($0, in: page) })
+                       [copy, more].map { onScreen($0, in: page) })
         for element in elements {
             XCTAssertEqual(element.accessibilityRole(), .button)
             XCTAssertTrue((element.accessibilityParent() as AnyObject?) === textView)
         }
         XCTAssertTrue(elements[0].accessibilityPerformPress())
         XCTAssertEqual(textView.selectedRange(), NSRange(location: object, length: 1))
-        XCTAssertEqual(sent(model), [])
-        XCTAssertTrue(elements[1].accessibilityPerformPress())
         XCTAssertEqual(sent(model).count, 1)
         var presented: NSMenu?
         page.coordinator.chipMenuPresenter = { menu, _, _ in presented = menu }
-        XCTAssertTrue(elements[2].accessibilityPerformPress())
+        XCTAssertTrue(elements[1].accessibilityPerformPress())
         XCTAssertTrue(try XCTUnwrap(presented).items.contains { $0.title == "Copy Decrypted Contents" })
         hover(page, at: nil)
-        XCTAssertEqual(textView.handleAccessibilityElements.count, 3)
+        XCTAssertEqual(textView.handleAccessibilityElements.count, 2)
         textView.handlesMayHaveMoved()
         for (first, second) in zip(elements, textView.handleAccessibilityElements) {
             XCTAssertTrue(first === second)
         }
         XCTAssertTrue(page.window.makeFirstResponder(page.field))
         drainMainQueue()
-        XCTAssertFalse(elements[1].accessibilityPerformPress())
+        XCTAssertFalse(elements[0].accessibilityPerformPress())
+    }
+
+    func testAccessibilityHelpGivesEachControlsGuidanceAndObjectIdentity() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let view = page.textView
+        let cell = try XCTUnwrap(view.chipCell(at: object))
+        let chip = cell.info.chipId
+        XCTAssertTrue(model.setChipName("API_KEY", chip: chip, sheet: page.sheet))
+        XCTAssertTrue(model.applyNoteOps(
+            chip: chip, json: #"[{"ins":{"at":0,"text":"Rotate monthly"}}]"#,
+            intent: .typing, selection: nil))
+        model.restateChipFace(chip, sheet: page.sheet)
+        view.handlesMayHaveMoved()
+        let elements = view.handleAccessibilityElements
+        XCTAssertEqual(elements.map { $0.accessibilityLabel() },
+                       ["Copy Decrypted Contents", "Sealed Content Actions", "Edit Note"])
+        let helpKeys = ["chip.control.copy.help", "chip.control.actions.help", "chip.control.note.help"]
+        let identity = try XCTUnwrap(view.chipCell(at: object)?.accessibilityLabel())
+        XCTAssertTrue(identity.contains("API_KEY"))
+        for (element, key) in zip(elements, helpKeys) {
+            XCTAssertEqual(element.accessibilityHelp(), CompanionL10n.string(key) + "\n" + identity)
+        }
     }
 
     func testAccessibilityFramesFollowTheirControlsWhenTheWindowMoves() throws {
         let page = try mountPage(on: try makeModel())
         page.window.setFrameOrigin(NSPoint(x: 300, y: 200))
         let textView = page.textView
-        let (move, copy, frame) = try handles(page)
-        let controls = [move, copy, SealedBlockCell.actionsRect(in: frame)]
+        let (_, copy, frame) = try handles(page)
+        let controls = [copy, SealedBlockCell.actionsRect(in: frame)]
         let elements = textView.handleAccessibilityElements
-        XCTAssertEqual(elements.count, 3)
+        XCTAssertEqual(elements.count, 2)
         for (element, rect) in zip(elements, controls) {
             XCTAssertEqual(element.accessibilityFrame(), onScreen(rect, in: page))
         }
         page.window.setFrameOrigin(NSPoint(x: 120, y: 640))
         XCTAssertEqual(elements.map { $0.accessibilityFrame() }, controls.map { onScreen($0, in: page) })
+    }
+
+    func testNarrowObjectsMoveThroughNativeCutAndPasteActions() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model, width: 90)
+        let view = page.textView
+        let frame = try XCTUnwrap(view.chipFrame(at: object))
+        let cell = try XCTUnwrap(view.chipCell(at: object))
+        let chip = cell.info.chipId
+        XCTAssertNil(cell.moveHandleRect(in: frame))
+        XCTAssertNil(cell.copyRect(in: frame))
+        XCTAssertEqual(view.handleAccessibilityElements.map { $0.accessibilityLabel() }, ["Sealed Content Actions"])
+        view.setSelectedRange(NSRange(location: object, length: 1))
+        XCTAssertTrue(NSApp.sendAction(#selector(NSText.cut(_:)), to: view, from: nil))
+        XCTAssertNil(view.chipIndex(ofChip: chip))
+        XCTAssertNotNil(model.activeCut)
+        let end = (view.string as NSString).length
+        view.setSelectedRange(NSRange(location: end, length: 0))
+        XCTAssertTrue(NSApp.sendAction(#selector(NSText.paste(_:)), to: view, from: nil))
+        XCTAssertEqual(view.chipIndex(ofChip: chip), end)
+        XCTAssertNil(model.activeCut)
+        XCTAssertEqual(view.string, "ab  cd\u{FFFC}")
+        XCTAssertEqual(sent(model), [])
     }
 
     func testRenderSealedObjectPreviewsWhenRequested() throws {

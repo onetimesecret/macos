@@ -242,6 +242,10 @@ public struct ConcealView: View {
                 }
             }
             .controlSize(.small)
+            Text(Self.recoveryHelp)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

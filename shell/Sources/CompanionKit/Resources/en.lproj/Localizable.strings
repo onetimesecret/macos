@@ -169,7 +169,7 @@
 "chip.control.note" = "Note";
 "chip.control.move.help" = "drag to move this sealed object; Option-drag to duplicate it";
 "chip.control.copy.help" = "copy decrypted contents; drag to copy into another app";
-"chip.control.actions.help" = "sealed content actions";
+"chip.control.actions.help" = "open the menu to copy, name, share or remove this sealed object";
 "chip.control.note.help" = "edit note";
 "chip.status.classification" = "sealed content";
 "chip.status.text" = "sealed text";
@@ -194,3 +194,10 @@
 "sharing.recovery.target" = "Sharing: %@";
 
 "chip.status.value_elsewhere" = "value on another device";
+
+/* Sealing guidance. */
+"seal.clipboard.action" = "Seal Clipboard";
+"seal.clipboard.offer" = "Clipboard content is ready to seal";
+"seal.clipboard.accessibility" = "Seal the clipboard's content onto this page";
+"seal.selection.consequence" = "Sealing cannot be undone.";
+"seal.selection.help" = "Sealing cannot be undone. To change the contents, use Copy Decrypted Contents, edit the text, then seal a replacement.";

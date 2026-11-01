@@ -5648,66 +5648,14 @@ public final class PageModel: ObservableObject {
         let dwell = action == nil ? Self.noticeDwell : Self.noticeDwellWithAction
         DispatchQueue.main.asyncAfter(deadline: .now() + dwell) { [weak self] in
             guard let self, self.noticeGeneration == generation else { return }
-            self.showHeldOrNothing()
+            self.clearNotice()
         }
     }
 
-    /// A line `holdNotice` put up, named so that only its own release ends it.
-    public struct NoticeHold: Equatable, Sendable {
-        fileprivate let serial: Int
-    }
-
-    /// The held line, which a flash stands in front of and a clear returns to.
-    private var held: (hold: NoticeHold, message: String, tone: NoticeTone)?
-    private var holdSerial = 0
-    /// The generation at which the held line was last put on screen.
-    private var heldGeneration: Int?
-
-    /// Holds `message` under the page while a field stays open (Law 0007,
-    /// Refusing; D-14); given the standing hold, it changes that hold's words.
-    @discardableResult
-    public func holdNotice(
-        _ message: String, tone: NoticeTone = .actionable, replacing standing: NoticeHold? = nil
-    ) -> NoticeHold {
-        if let standing, held?.hold == standing {
-            held = (standing, message, tone)
-            if heldGeneration == noticeGeneration {
-                notice = message
-                noticeTone = tone
-            }
-            return standing
-        }
-        holdSerial += 1
-        let hold = NoticeHold(serial: holdSerial)
-        held = (hold, message, tone)
-        clearNotice()
-        return hold
-    }
-
-    /// Ends a hold. Its line goes if it is on screen; a flash in front of
-    /// it keeps its dwell and then leaves the line empty.
-    public func releaseNotice(_ hold: NoticeHold) {
-        guard held?.hold == hold else { return }
-        held = nil
-        if heldGeneration == noticeGeneration { clearNotice() }
-        heldGeneration = nil
-    }
-
-    /// Takes down what the line says, back to the held line if one stands.
     private func clearNotice() {
         noticeGeneration += 1
-        showHeldOrNothing()
-    }
-
-    private func showHeldOrNothing() {
         noticeAction = nil
-        guard let held else {
-            notice = nil
-            return
-        }
-        notice = held.message
-        noticeTone = held.tone
-        heldGeneration = noticeGeneration
+        notice = nil
     }
 
     /// The notice's button was pressed: run it, and take the line down

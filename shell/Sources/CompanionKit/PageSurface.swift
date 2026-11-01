@@ -205,7 +205,7 @@ public struct PageStatusStack: View {
     /// The offer's button names the chord the keymap binds, as the
     /// strip's tooltip does; unbound, it names only the verb.
     static func sealItTitle(chord: Keystroke?) -> String {
-        Keystroke.chorded("Seal Clipboard", chord: chord)
+        Keystroke.chorded(CompanionL10n.string("seal.clipboard.action"), chord: chord)
     }
 
     @ObservedObject var model: PageModel
@@ -355,7 +355,7 @@ public struct PageStatusStack: View {
             // sealed-paste path so the chip lands at the caret.
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text("Clipboard content is ready to seal")
+                    Text(CompanionL10n.string("seal.clipboard.offer"))
                         .font(.caption)
                         .foregroundStyle(Color.secondaryInk)
                     Button(Self.sealItTitle(chord: model.keymap.hintKeystroke(for: .clipboardSeal))) {
@@ -364,11 +364,11 @@ public struct PageStatusStack: View {
                         .font(.caption)
                         .controlSize(.small)
                         .help(SealSelectionMenu.help)
-                        .accessibilityLabel(Text("Seal the clipboard's content onto this page"))
+                        .accessibilityLabel(Text(CompanionL10n.string("seal.clipboard.accessibility")))
                         .accessibilityHint(Text(SealSelectionMenu.help))
                     Spacer()
                 }
-                Text(SealSelectionMenu.consequence + " Use Copy Decrypted Contents to make changes.")
+                Text(SealSelectionMenu.help)
                     .font(.caption2)
                     .foregroundStyle(Color.secondaryInk)
             }

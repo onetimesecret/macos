@@ -195,10 +195,10 @@ final class SealedNameField: NSTextField {
 final class SealedNameHelpView: NSView {
     override var isFlipped: Bool { true }
 
-    let title = NSTextField(labelWithString: CompanionL10n.string("chip.name.title"))
+    let title = NSTextField(wrappingLabelWithString: CompanionL10n.string("chip.name.title"))
     let help = NSTextField(wrappingLabelWithString: CompanionL10n.string("chip.name.help"))
     let error = NSTextField(wrappingLabelWithString: "")
-    let hint = NSTextField(labelWithString: CompanionL10n.string("chip.name.hint"))
+    let hint = NSTextField(wrappingLabelWithString: CompanionL10n.string("chip.name.hint"))
     let save = NSButton(title: CompanionL10n.string("chip.name.save"), target: nil, action: nil)
     let cancel = NSButton(title: CompanionL10n.string("chip.name.cancel"), target: nil, action: nil)
 
@@ -223,39 +223,68 @@ final class SealedNameHelpView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("the variable name helper is created in code") }
 
-    func preferredHeight(width: CGFloat) -> CGFloat {
-        let textWidth = max(0, width - 20)
-        let helpHeight = textHeight(help, width: textWidth)
-        let errorHeight = error.stringValue.isEmpty ? 0 : textHeight(error, width: textWidth) + 6
-        let hintRow = separatesHint(width: width) ? CGFloat(20) : 0
-        return 10 + 16 + 6 + helpHeight + errorHeight + 8 + hintRow + 24 + 10
+    private struct Layout {
+        let title: NSRect
+        let help: NSRect
+        let error: NSRect
+        let hint: NSRect
+        let save: NSRect
+        let cancel: NSRect
+        let height: CGFloat
     }
 
-    private func separatesHint(width: CGFloat) -> Bool {
-        width - 150 < hint.intrinsicContentSize.width
-    }
+    func preferredHeight(width: CGFloat) -> CGFloat { arrangement(width: width).height }
 
     private func textHeight(_ label: NSTextField, width: CGFloat) -> CGFloat {
-        label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: 1000)).height ?? 16
+        max(14, ceil(label.cell?.cellSize(forBounds:
+            NSRect(x: 0, y: 0, width: width, height: 1000)).height ?? 14))
+    }
+
+    private func arrangement(width: CGFloat) -> Layout {
+        let width = max(0, width)
+        let inset = min(10, width / 2)
+        let textWidth = max(0, width - inset * 2)
+        let titleRect = NSRect(x: inset, y: 10, width: textWidth, height: textHeight(title, width: textWidth))
+        let helpRect = NSRect(x: inset, y: titleRect.maxY + 6, width: textWidth,
+                              height: textHeight(help, width: textWidth))
+        let errorRect = NSRect(x: inset, y: helpRect.maxY + 6, width: textWidth,
+                               height: error.stringValue.isEmpty ? 0 : textHeight(error, width: textWidth))
+        let y = (error.stringValue.isEmpty ? helpRect.maxY : errorRect.maxY) + 8
+        let saveWidth = max(56, ceil(save.intrinsicContentSize.width))
+        let cancelWidth = max(62, ceil(cancel.intrinsicContentSize.width))
+        let buttonWidth = saveWidth + 6 + cancelWidth
+        let stacked = textWidth < buttonWidth
+        let hintWidth = NSAttributedString(string: hint.stringValue,
+            attributes: [.font: hint.font ?? NSFont.systemFont(ofSize: 11)]).size().width
+        let separateHint = stacked || textWidth < buttonWidth + 10 + hintWidth
+        let hintHeight = textHeight(hint, width: separateHint ? textWidth : max(0, textWidth - buttonWidth - 10))
+        let buttonY = y + (separateHint ? hintHeight + 6 : 0)
+        let saveRect: NSRect
+        let cancelRect: NSRect
+        if stacked {
+            cancelRect = NSRect(x: inset, y: buttonY, width: textWidth, height: 24)
+            saveRect = NSRect(x: inset, y: cancelRect.maxY + 6, width: textWidth, height: 24)
+        } else {
+            saveRect = NSRect(x: width - inset - saveWidth, y: buttonY, width: saveWidth, height: 24)
+            cancelRect = NSRect(x: saveRect.minX - 6 - cancelWidth, y: buttonY, width: cancelWidth, height: 24)
+        }
+        let hintRect = NSRect(x: inset, y: separateHint ? y : buttonY + (24 - hintHeight) / 2,
+                              width: separateHint ? textWidth : max(0, cancelRect.minX - inset - 10),
+                              height: hintHeight)
+        return Layout(title: titleRect, help: helpRect, error: errorRect, hint: hintRect,
+                      save: saveRect, cancel: cancelRect, height: max(saveRect.maxY, cancelRect.maxY) + 10)
     }
 
     override func layout() {
         super.layout()
-        let width = max(0, bounds.width - 20)
-        title.frame = NSRect(x: 10, y: 10, width: width, height: 16)
-        help.frame = NSRect(x: 10, y: 32, width: width, height: textHeight(help, width: width))
+        let placed = arrangement(width: bounds.width)
+        title.frame = placed.title
+        help.frame = placed.help
         error.isHidden = error.stringValue.isEmpty
-        error.frame = NSRect(
-            x: 10, y: help.frame.maxY + 6, width: width,
-            height: error.isHidden ? 0 : textHeight(error, width: width))
-        let y = (error.isHidden ? help.frame.maxY : error.frame.maxY) + 8
-        let separateHint = separatesHint(width: bounds.width)
-        let buttonY = y + (separateHint ? 20 : 0)
-        save.frame = NSRect(x: bounds.maxX - 66, y: buttonY, width: 56, height: 24)
-        cancel.frame = NSRect(x: save.frame.minX - 68, y: buttonY, width: 62, height: 24)
-        hint.frame = NSRect(
-            x: 10, y: separateHint ? y : y + 5,
-            width: separateHint ? width : max(0, cancel.frame.minX - 16), height: 14)
+        error.frame = placed.error
+        hint.frame = placed.hint
+        save.frame = placed.save
+        cancel.frame = placed.cancel
     }
 
     override func draw(_ dirtyRect: NSRect) {

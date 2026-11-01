@@ -378,7 +378,7 @@ final class SealedNoteTests: XCTestCase {
         page.coordinator.beginNote(at: 3)
         page.coordinator.beginNaming(at: 3)
         XCTAssertFalse(editor.isOpen, "the name field and the note stood together")
-        page.coordinator.keepNaming()
+        page.coordinator.nameEditor?.keep(returningKeys: true)
 
         page.coordinator.beginNote(at: 3)
         let other = page.model.storage(for: try XCTUnwrap({ () -> UInt64? in

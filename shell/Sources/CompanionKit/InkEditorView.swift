@@ -3751,11 +3751,6 @@ public struct InkEditorView: NSViewRepresentable {
             editor.begin(chipAt: current, sheet: sheet)
         }
 
-        /// Keeps the name a field stands over when its page goes from under it.
-        func keepNaming() {
-            nameEditor?.keep(returningKeys: nameEditor?.holdsKeys ?? false)
-        }
-
         /// Save a valid draft before teardown, then close any remaining invalid draft.
         func finishNaming() {
             guard let editor = nameEditor, editor.isOpen else { return }
@@ -5486,19 +5481,12 @@ public final class CodeLanguageChoice: NSObject {
 public enum SealSelectionMenu {
     public static let contextMenuTitle = "Seal Selection"
     public static let editMenuTitle = "Seal Selected Content"
-    public static let consequence = "Sealing cannot be undone."
-    public static let help = "Sealing cannot be undone. To change the contents, use Copy Decrypted Contents, edit the text, then seal a replacement."
+    public static var consequence: String { CompanionL10n.string("seal.selection.consequence") }
+    public static var help: String { CompanionL10n.string("seal.selection.help") }
     public static let command = CommandID.clipboardSealSelection
 }
 
-/// The page's text view: routes the seal gestures, keeps ⌘V plain,
-/// hands Esc back, and seals external drops through the core's drag
-/// route. Chips are atomic under the caret by construction — an
-/// attachment is one character: arrows step over it, one ⌫ removes it
-/// whole, selection cannot reach inside it.
-/// Carries the mounted editor's finite viewport measure into TextKit's
-/// nonisolated attachment-sizing callbacks. One scalar update replaces a
-/// whole-document attachment scan on every layout pass.
+/// A button action for a sealed object's accessibility child.
 private final class SealedActionElement: NSAccessibilityElement {
     private let callback = OSAllocatedUnfairLock<(@MainActor @Sendable () -> Bool)?>(initialState: nil)
 
@@ -5514,6 +5502,7 @@ private final class SealedActionElement: NSAccessibilityElement {
     }
 }
 
+/// Stores the finite editor measure for TextKit's attachment-sizing callbacks.
 final class InkTextContainer: NSTextContainer {
     private let editorMeasure = OSAllocatedUnfairLock<CGFloat?>(initialState: nil)
 
@@ -5903,7 +5892,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         rebuildHandleElements()
     }
 
-    private enum SealedAction: Hashable { case move, copy, more, note }
+    private enum SealedAction: Hashable { case copy, more, note }
 
     private struct HandleElementKey: Hashable {
         let chip: UInt64
@@ -5919,20 +5908,21 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         var elements: [NSAccessibilityElement] = []
         for index in blocksWithHandles {
             guard let frame = chipFrame(at: index), let cell = chipCell(at: index) else { continue }
-            let actions: [(SealedAction, NSRect?, String)] = [
-                (.move, cell.moveHandleRect(in: frame), CompanionL10n.string("chip.handle.move")),
-                (.copy, cell.copyRect(in: frame), CompanionL10n.string("chip.handle.decrypted")),
-                (.more, SealedBlockCell.actionsRect(in: frame), CompanionL10n.string("chip.accessibility.actions")),
-                (.note, cell.doorwayRect(in: frame), CompanionL10n.string("chip.accessibility.note")),
+            let actions: [(SealedAction, NSRect?, String, String)] = [
+                (.copy, cell.copyRect(in: frame), "chip.handle.decrypted", "chip.control.copy.help"),
+                (.more, SealedBlockCell.actionsRect(in: frame), "chip.accessibility.actions", "chip.control.actions.help"),
+                (.note, cell.doorwayRect(in: frame), "chip.accessibility.note", "chip.control.note.help"),
             ]
-            for (action, optionalRect, label) in actions {
+            for (action, optionalRect, labelKey, helpKey) in actions {
                 guard let rect = optionalRect, !rect.isEmpty else { continue }
                 let chip = cell.info.chipId
                 let key = HandleElementKey(chip: chip, action: action)
                 let element = handleElements[key] ?? SealedActionElement()
                 element.setAccessibilityRole(.button)
-                element.setAccessibilityLabel(label)
-                element.setAccessibilityHelp(cell.accessibilityLabel())
+                element.setAccessibilityLabel(CompanionL10n.string(labelKey))
+                let help = [CompanionL10n.string(helpKey), cell.accessibilityLabel()].compactMap { $0 }
+                    .joined(separator: "\n")
+                element.setAccessibilityHelp(help)
                 element.setAccessibilityParent(self)
                 element.setAccessibilityEnabled(isEditable && answersChords)
                 element.setAccessibilityFrameInParentSpace(accessibilityParentSpaceRect(rect))
@@ -5949,7 +5939,6 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
                         guard let now = self.chipFrame(at: current) else { return false }
                         coordinator.openChipMenu(at: current, from: NSPoint(x: now.maxX, y: now.maxY), in: self)
                     case .note: coordinator.beginNote(at: current)
-                    case .move: break
                     }
                     return true
                 }
@@ -6069,10 +6058,10 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         if Self.startsHandleDrag(
             onHandle: pressed != nil, handleShown: drawsHandles(at: index),
             clickCount: event.clickCount, modifierFlags: event.modifierFlags),
-            let handle = pressed, let frame, let cell, let _ = cell.handleRect(handle, in: frame)
+            let handle = pressed, let cell
         {
             let chip = cell.info.chipId
-            trackHandlePress(from: event, chipAt: index, onClick: { [weak self] in
+            trackHandlePress(from: event, chip: chip, handle: handle, onClick: { [weak self] in
                 guard let self, coordinator.prepareChipAction(),
                       let current = self.chipIndex(ofChip: chip) else { return }
                 self.setSelectedRange(NSRange(location: current, length: 1))
@@ -6121,14 +6110,12 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         hypot(point.x - start.x, point.y - start.y) >= decryptedDragSlop
     }
 
-    /// A press on a handle: once it moves, `begin` starts the handle's drag; a press that
-    /// lifts first selects the object, as a click elsewhere on the block does.
+    /// Track one handle until release or drag, resolving the object by identity.
     private func trackHandlePress(
-        from event: NSEvent, chipAt index: Int, onClick: () -> Void, begin: (NSEvent) -> Void
+        from event: NSEvent, chip: UInt64, handle: SealedBlockCell.Handle,
+        onClick: () -> Void, begin: (NSEvent) -> Void
     ) {
-        guard let window, let chip = chipCell(at: index)?.info.chipId else { return }
-        let startedHandle = chipFrame(at: index).flatMap { chipCell(at: index)?.handle(
-            at: convert(event.locationInWindow, from: nil), in: $0) }
+        guard let window else { return }
         #if DEBUG
         handlePressStarted?()
         #endif
@@ -6148,8 +6135,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
             if next.type == .leftMouseUp {
                 let end = convert(next.locationInWindow, from: nil)
                 if let current = chipIndex(ofChip: chip), let frame = chipFrame(at: current),
-                   let cell = chipCell(at: current), let startedHandle,
-                   startedHandle == cell.handle(at: end, in: frame) {
+                   let cell = chipCell(at: current), handle == cell.handle(at: end, in: frame) {
                     onClick()
                 }
                 return
@@ -7746,7 +7732,6 @@ final class SealedBlockCell: NSTextAttachmentCell {
     struct ContentLayout {
         let metrics: SealedBlockLayout.Metrics
         let left: CGFloat
-        let statusRowY: CGFloat
         let identityRowY: CGFloat
         let lockRect: NSRect
         let labelOrigin: NSPoint
@@ -7781,7 +7766,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let actionY = actionsRect(in: frame).minY
         let lock = NSRect(x: left, y: actionY + 6, width: 11, height: 12)
         return ContentLayout(
-            metrics: metrics, left: left, statusRowY: actionY + 4, identityRowY: frame.minY + 8,
+            metrics: metrics, left: left, identityRowY: frame.minY + 8,
             lockRect: lock, labelOrigin: NSPoint(x: lock.maxX + 5, y: actionY + 4),
             metadataRight: frame.maxX - 12, metadataY: actionY + 4,
             rowBand: NSRect(x: frame.minX, y: frame.minY, width: frame.width,
@@ -7808,12 +7793,6 @@ final class SealedBlockCell: NSTextAttachmentCell {
     enum Handle: CaseIterable, Hashable, Sendable {
         case move
         case decrypted
-        var accessibilityLabel: String {
-            switch self {
-            case .move: "Move sealed content"
-            case .decrypted: "Copy decrypted contents"
-            }
-        }
     }
 
     @MainActor

@@ -7,6 +7,17 @@ import XCTest
 /// shows only where a take could land: a page, not the ledger, and in
 /// the window that owns the page content, not the other one (ADR-0033).
 final class PasteboardOfferTests: XCTestCase {
+    @MainActor
+    func testSealGuidanceUsesTheCompanionResourceBundle() {
+        let guidance = "Sealing cannot be undone. To change the contents, use Copy Decrypted Contents, edit the text, then seal a replacement."
+        XCTAssertEqual(SealSelectionMenu.help, guidance)
+        XCTAssertEqual(CompanionL10n.string("seal.selection.help"), guidance)
+        XCTAssertEqual(CompanionL10n.string("seal.selection.consequence"), "Sealing cannot be undone.")
+        XCTAssertEqual(CompanionL10n.string("seal.clipboard.offer"), "Clipboard content is ready to seal")
+        XCTAssertEqual(CompanionL10n.string("seal.clipboard.accessibility"), "Seal the clipboard's content onto this page")
+        XCTAssertEqual(PageStatusStack.sealItTitle(chord: nil), "Seal Clipboard")
+    }
+
     func testContentAndAPageShowTheOffer() {
         XCTAssertTrue(
             PageModel.shouldShowPasteboardOffer(

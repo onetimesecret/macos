@@ -91,25 +91,52 @@ final class SealedNameFieldTests: XCTestCase {
         XCTAssertEqual(helper.cancel.accessibilityHelp(), CompanionL10n.string("chip.name.cancel.help"))
     }
 
-    func testNamingHelpKeepsItsHintAndButtonsVisibleAtNarrowAndWideWidths() {
+    func testNamingHelpKeepsItsControlsInsideVeryNarrowAndWideBounds() {
         let helper = SealedNameHelpView()
-        for width in [CGFloat(244), 440] {
+        for width in [CGFloat(1), 7, 40, 80, 120, 149, 244, 440] {
             for message in ["", ChipRename.words(for: .outsideCharset)] {
                 helper.error.stringValue = message
                 helper.frame = NSRect(x: 0, y: 0, width: width, height: helper.preferredHeight(width: width))
                 helper.layout()
-                for view in [helper.hint, helper.save, helper.cancel] as [NSView] {
-                    XCTAssertTrue(helper.bounds.contains(view.frame), "a naming control extends beyond the helper")
+                for view in helper.subviews where !view.isHidden {
+                    XCTAssertGreaterThanOrEqual(view.frame.minX, helper.bounds.minX)
+                    XCTAssertGreaterThanOrEqual(view.frame.minY, helper.bounds.minY)
+                    XCTAssertLessThanOrEqual(view.frame.maxX, helper.bounds.maxX)
+                    XCTAssertLessThanOrEqual(view.frame.maxY, helper.bounds.maxY)
+                    XCTAssertGreaterThanOrEqual(view.frame.width, 0)
+                    XCTAssertGreaterThanOrEqual(view.frame.height, 0)
                 }
-                XCTAssertGreaterThanOrEqual(helper.hint.frame.width, helper.hint.intrinsicContentSize.width)
                 XCTAssertFalse(helper.hint.frame.intersects(helper.save.frame))
                 XCTAssertFalse(helper.hint.frame.intersects(helper.cancel.frame))
-                if width == 244 {
+                XCTAssertFalse(helper.save.frame.intersects(helper.cancel.frame))
+                if width < 244 {
                     XCTAssertLessThanOrEqual(helper.hint.frame.maxY, helper.cancel.frame.minY)
                 } else {
+                    XCTAssertGreaterThanOrEqual(helper.hint.frame.width, helper.hint.intrinsicContentSize.width)
+                }
+                if width < 140 {
+                    XCTAssertLessThan(helper.cancel.frame.maxY, helper.save.frame.minY)
+                } else if width == 440 {
                     XCTAssertEqual(helper.hint.frame.midY, helper.cancel.frame.midY)
                 }
             }
+        }
+    }
+
+    func testNamingHelpFitsLongerButtonTitlesAtNarrowWidths() {
+        let helper = SealedNameHelpView()
+        helper.save.title = "Save Variable Name"
+        helper.cancel.title = "Discard This Draft"
+        for width in [CGFloat(180), 244, 440] {
+            helper.frame = NSRect(x: 0, y: 0, width: width, height: helper.preferredHeight(width: width))
+            helper.layout()
+            for button in [helper.save, helper.cancel] {
+                XCTAssertTrue(helper.bounds.contains(button.frame))
+                XCTAssertGreaterThanOrEqual(button.frame.width, button.intrinsicContentSize.width)
+            }
+            XCTAssertFalse(helper.save.frame.intersects(helper.cancel.frame))
+            XCTAssertFalse(helper.hint.frame.intersects(helper.save.frame))
+            XCTAssertFalse(helper.hint.frame.intersects(helper.cancel.frame))
         }
     }
 
@@ -195,7 +222,7 @@ final class SealedNameFieldTests: XCTestCase {
         XCTAssertFalse(unnamed.items.contains { $0.title == "Edit Variable Name…" })
         _ = (verb.target as? NSObject)?.perform(verb.action, with: verb)
         XCTAssertEqual(page.coordinator.nameEditor?.isOpen, true)
-        page.coordinator.keepNaming()
+        page.coordinator.nameEditor?.keep(returningKeys: true)
 
         XCTAssertTrue(page.model.setChipName("DB_PASSWORD", chip: page.chip, sheet: page.sheet))
         let named = try XCTUnwrap(page.coordinator.chipMenu(at: 3))
