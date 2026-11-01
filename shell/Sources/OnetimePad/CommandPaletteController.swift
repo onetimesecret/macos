@@ -466,8 +466,16 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
             rows = CommandPaletteCatalog.entries(keymap: model.keymap).compactMap { entry in
                 let title = entry.command == .pageClose ? CompanionL10n.string(closeChoice.title) : entry.title
                 guard entry.matches(search.stringValue, title: title), isAvailable(entry) else { return nil }
-                let detail = entry.command == .fileSaveAs || entry.command == .stateSaveNow
-                    ? CompanionL10n.string("Current File") : entry.scope.title
+                let detail: String
+                if entry.command == .fileSaveAs || entry.command == .stateSaveNow {
+                    detail = CompanionL10n.string("Current File")
+                } else if model.selectedFile == nil, !model.showingLedger,
+                          (entry.command == .appOpenTimeline && model.showsTimeUnits)
+                            || (entry.command == .appSwitchToTabs && !model.showsTimeUnits) {
+                    detail = CompanionL10n.string("Current View")
+                } else {
+                    detail = entry.scope.title
+                }
                 return Row(title: title, detail: detail,
                     shortcut: entry.shortcut, command: entry.command, scope: entry.scope, tab: nil)
             }

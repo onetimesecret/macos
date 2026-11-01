@@ -63,4 +63,31 @@ final class CommandPaletteTests: XCTestCase {
         XCTAssertEqual(entries.first { $0.command == .pageNew }?.shortcut, "⌘N")
     }
 
+    func testContextualCloseTitleRetainsPageAndTabSearchAliases() throws {
+        let map = Keymap.resolve(defaultText: try XCTUnwrap(Keymap.bundledDefaultText()), overrideText: nil)
+        let close = try XCTUnwrap(CommandPaletteCatalog.entries(keymap: map).first { $0.command == .pageClose })
+        XCTAssertTrue(close.matches("close tab", title: "Close Page"))
+        XCTAssertTrue(close.matches("close page", title: "Close File"))
+    }
+
+    func testReopenDatedDispatchReportsWhetherItsCallbackExists() throws {
+        let tag = "palette-dispatch-\(UUID().uuidString)"
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(tag)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: tag))
+        defer {
+            UserDefaults.standard.removePersistentDomain(forName: tag)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let model = PageModel(formFactor: .panel, defaults: defaults,
+            seams: .init(stateDirectory: directory, client: .ephemeral(tag: tag)))
+        XCTAssertFalse(model.perform(.pageReopenDated))
+        var requests = 0
+        model.onReopenDatedTabs = { requests += 1 }
+        XCTAssertTrue(model.perform(.pageReopenDated))
+        XCTAssertEqual(requests, 1)
+        model.onReopenDatedTabs = nil
+        XCTAssertFalse(model.perform(.pageReopenDated))
+        XCTAssertEqual(requests, 1)
+    }
+
 }

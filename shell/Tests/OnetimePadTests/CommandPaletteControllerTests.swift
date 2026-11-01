@@ -1128,4 +1128,45 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertEqual(palette.table.numberOfRows, 1)
     }
 
+    func testLayoutCommandsIdentifyTheCurrentView() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false)
+        for timeline in [false, true] {
+            model.showsTimeUnits = timeline
+            for command in [CommandID.appOpenTimeline, .appSwitchToTabs] {
+                palette.search.stringValue = command.rawValue
+                palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+                XCTAssertEqual(palette.table.numberOfRows, 1)
+                let row = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+                let current = command == .appOpenTimeline ? timeline : !timeline
+                XCTAssertEqual(row.detailLabel.stringValue,
+                    current ? CompanionL10n.string("Current View") : CompanionL10n.string("Application"))
+            }
+        }
+        model.showLedger()
+        for command in [CommandID.appOpenTimeline, .appSwitchToTabs] {
+            palette.search.stringValue = command.rawValue
+            palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+            let row = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+            XCTAssertEqual(row.detailLabel.stringValue, CompanionL10n.string("Application"))
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("palette-layout-file-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("synthetic.txt")
+        try "synthetic layout file".write(to: file, atomically: true, encoding: .utf8)
+        model.openFile(at: file)
+        XCTAssertNotNil(model.selectedFile)
+        for command in [CommandID.appOpenTimeline, .appSwitchToTabs] {
+            palette.search.stringValue = command.rawValue
+            palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+            let row = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+            XCTAssertEqual(row.detailLabel.stringValue, CompanionL10n.string("Application"))
+        }
+    }
+
 }

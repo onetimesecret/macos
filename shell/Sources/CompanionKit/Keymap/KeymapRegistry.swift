@@ -31,7 +31,8 @@ extension PageModel {
         case .pageReopenLast:
             reopenLastClosedTab()
         case .pageReopenDated:
-            onReopenDatedTabs?()
+            guard let onReopenDatedTabs else { return false }
+            onReopenDatedTabs()
         case .appCommandPalette:
             return false
         case .pageNew:

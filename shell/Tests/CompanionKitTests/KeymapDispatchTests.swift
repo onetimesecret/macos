@@ -36,11 +36,14 @@ final class KeymapDispatchTests: XCTestCase {
     /// arm belongs to this route". This is the second half.
     func testEverySurfaceCommandIsTheModelsToRun() throws {
         let model = try makeModel()
+        var datedPickerRequests = 0
+        model.onReopenDatedTabs = { datedPickerRequests += 1 }
         for command in CommandID.allCases where command.dispatch == .surface {
             XCTAssertTrue(
                 model.perform(command),
                 "\(command.rawValue) is dispatched by the surface but the model refused it")
         }
+        XCTAssertEqual(datedPickerRequests, 1)
     }
 
     /// These commands are refused by the model on purpose: the selection,
