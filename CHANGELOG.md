@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A searchable command palette on Shift-Command-P** (app 0.46.0; #340).
+  Application actions come first, then the current page, file and editor
+  actions, each labelled with its shortcut from the resolved keymap. The
+  palette includes Timeline and Tabs navigation and a dated picker for
+  closed items. Escape returns focus to where it was.
+
+- **Reopen Last Closed Page or Tab and Reopen Dated Tabs** (#340). Closing
+  a page or tab hides it and keeps it saved; reopening restores the same
+  item rather than minting a new one, and an expired item reopens its
+  existing empty slot. Close Window stays separate on Shift-Command-W, and
+  Command-W dismisses the page. See
+  [ADR-0061](docs/adr/0061-close-hides-saved-page-navigation.md).
+
 - Load individual HTTPS images in Markdown previews with explicit Load,
   Cancel, Retry and Unload controls. Image alt text remains available before
   loading and when copying. See the [proposed request policy](docs/spec/design/2026-1028-preview-image-loading.md). (#332)
@@ -18,6 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previews immediately. (#332)
 
 ### Changed
+
+- **Sealed blocks select like text and keep their actions in a visible row**
+  (#339). A click on a named sealed block selects it instead of copying;
+  Copy, More and Note sit in a stable row with distinct accessibility
+  help, and native selection with Cut and Paste moves a block by keyboard.
+  Menus and presses resolve the block by identity, so an edit or removal
+  while a menu is open refuses rather than acting on the wrong block.
+  Variable-name drafts save on focus loss, pad switches and editor
+  handoffs when valid and stay open with a local error when not. Sharing
+  forms name the source, and Copy Link Again recovers the latest completed
+  one-time link for 60 seconds. See the
+  [sealed-content interface revision](docs/spec/design/2026-1031-sealed-content-ux-revision.md).
 
 - Large Markdown previews show a loading state while rendering without blocking
   the initial page refresh. (#332)
