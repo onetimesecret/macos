@@ -247,4 +247,46 @@ final class KeymapEventTests: XCTestCase {
         XCTAssertEqual(editor.string, "do not delete any words")
     }
 
+
+    func testAConfiguredControlShortcutDispatchesAnySurfaceCommand() throws {
+        let (model, editor) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-n":"page::New"}}]"#)
+        model.loadStateIfNeeded()
+        let count = model.tabs.count
+        editor.keyDown(with: try press("n", flags: [.control], keyCode: 45))
+        XCTAssertEqual(model.tabs.count, count + 1)
+    }
+
+    func testControlWDoesNotCloseOrUnmarkAnIMEComposition() throws {
+        let (model, editor) = try makeStack()
+        model.loadStateIfNeeded()
+        let tab = try XCTUnwrap(model.selection)
+        editor.setMarkedText("ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(editor.hasMarkedText())
+
+        editor.keyDown(with: try press("w", flags: [.control], keyCode: 13))
+
+        XCTAssertTrue(editor.hasMarkedText())
+        XCTAssertEqual(model.navigationTabs.map(\.id), [tab])
+        XCTAssertTrue(model.closedTabs.isEmpty)
+        XCTAssertEqual(model.notice, CompanionL10n.string("surface.finish_composition"))
+    }
+
+    func testAConfiguredSurfaceShortcutWaitsForIMEComposition() throws {
+        let (model, editor) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-n":"page::New"}}]"#)
+        model.loadStateIfNeeded()
+        let count = model.tabs.count
+        editor.setMarkedText("ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(editor.hasMarkedText())
+
+        editor.keyDown(with: try press("n", flags: [.control], keyCode: 45))
+
+        XCTAssertEqual(model.tabs.count, count)
+        XCTAssertTrue(editor.hasMarkedText())
+        XCTAssertEqual(model.notice, CompanionL10n.string("surface.finish_composition"))
+    }
+
 }

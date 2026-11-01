@@ -5,10 +5,24 @@ import XCTest
 
 private final class ClosedPageSaveClient: CompanionClient, @unchecked Sendable {
     var refusesSave = false
+    enum UUIDStyle { case original, uppercase, missing }
+    var uuidStyle = UUIDStyle.original
     private(set) var destructiveCloses = 0
 
     init(tag: String) {
         super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+    }
+
+    override func tabs() -> [TabSummary] {
+        super.tabs().map { original in
+            var tab = original
+            switch uuidStyle {
+            case .original: break
+            case .uppercase: tab.uuid = tab.uuid?.uppercased()
+            case .missing: tab.uuid = nil
+            }
+            return tab
+        }
     }
 
     override func persistSave(to path: String) -> Bool {
@@ -217,6 +231,116 @@ final class ClosedPageTests: XCTestCase {
             XCTAssertEqual(model.tabs.first?.id, hidden.id)
             XCTAssertEqual(model.tabs.count, padsEnabled ? 4 : 3)
         }
+    }
+
+
+    func testRefusedRestoreExplainsUnavailableSaveWithoutHidingOrOverwriting() throws {
+        let fixture = try fixture()
+        let state = FormFactor.stateFileURL(in: fixture.directory)
+        let original = Data("unreadable saved state".utf8)
+        try original.write(to: state)
+        let client = ClosedPageSaveClient(tag: fixture.tag)
+        let model = model(fixture, client: client)
+        let tab = try XCTUnwrap(model.selectedTab)
+        XCTAssertTrue(model.contentRestoreRefused)
+
+        model.close(tab.id)
+
+        XCTAssertEqual(model.notice, CompanionL10n.string("page.close.unavailable"))
+        XCTAssertNotEqual(model.notice, CompanionL10n.string("page.close.save_failed"))
+        XCTAssertEqual(model.navigationTabs.map(\.id), [tab.id])
+        XCTAssertTrue(model.closedTabs.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: state), original)
+        XCTAssertEqual(client.destructiveCloses, 0)
+    }
+
+    func testUnloadedSessionExplainsUnavailableSaveBeforeClose() throws {
+        let fixture = try fixture()
+        let client = ClosedPageSaveClient(tag: fixture.tag)
+        let model = PageModel(formFactor: .panel, defaults: fixture.defaults,
+            seams: .init(stateDirectory: fixture.directory, client: client, saveDebounce: 3_600))
+        model.newPage()
+        let tab = try XCTUnwrap(model.selectedTab)
+
+        model.close(tab.id)
+
+        XCTAssertEqual(model.notice, CompanionL10n.string("page.close.unavailable"))
+        XCTAssertEqual(model.navigationTabs.map(\.id), [tab.id])
+        XCTAssertTrue(model.closedTabs.isEmpty)
+        XCTAssertEqual(client.destructiveCloses, 0)
+    }
+
+    func testClosedMembershipNormalizesUppercaseUUIDsAcrossRestart() throws {
+        let fixture = try fixture()
+        let firstClient = ClosedPageSaveClient(tag: fixture.tag)
+        firstClient.uuidStyle = .uppercase
+        let first = model(fixture, client: firstClient)
+        first.pads.isEnabled = true
+        let pad = try XCTUnwrap(first.createPad(named: "Uppercase identities"))
+        first.newPage()
+        let original = try seed("case-independent saved page", in: first)
+        let uuid = try XCTUnwrap(original.uuid)
+        XCTAssertEqual(uuid, uuid.uppercased())
+        first.close(original.id)
+        XCTAssertTrue(first.navigationTabs.isEmpty)
+        XCTAssertEqual(first.closedTabs.first?.uuid, uuid)
+        XCTAssertEqual(fixture.defaults.stringArray(forKey: "closedPageUUIDs"), [uuid.lowercased()])
+
+        let secondClient = ClosedPageSaveClient(tag: fixture.tag)
+        secondClient.uuidStyle = .uppercase
+        let second = model(fixture, client: secondClient)
+        XCTAssertEqual(second.pads.activeID, pad)
+        XCTAssertTrue(second.navigationTabs.isEmpty)
+        XCTAssertTrue(second.continuousTabs(scope: pad.uuidString).isEmpty)
+        let restored = try XCTUnwrap(second.closedTabs.first)
+        XCTAssertEqual(restored.uuid, uuid)
+        XCTAssertTrue(second.reopenClosedTab(restored.id))
+        XCTAssertEqual(second.navigationTabs.map(\.id), [restored.id])
+        XCTAssertTrue(second.closedTabs.isEmpty)
+        XCTAssertEqual(ink(second, page: try XCTUnwrap(restored.pageID)), "case-independent saved page")
+        XCTAssertEqual(second.pads.owner(ofTabUUID: restored.uuid), pad)
+        second.activatePad(PadCatalog.scratchID)
+        second.activatePad(pad)
+        XCTAssertEqual(second.selection, restored.id)
+    }
+
+    func testMissingSavedIdentityExplainsWhyCloseCannotHideTheItem() throws {
+        let fixture = try fixture()
+        let client = ClosedPageSaveClient(tag: fixture.tag)
+        client.uuidStyle = .missing
+        let model = model(fixture, client: client)
+        let tab = try XCTUnwrap(model.selectedTab)
+
+        model.close(tab.id)
+
+        XCTAssertEqual(model.notice, CompanionL10n.string("page.close.identity_unavailable"))
+        XCTAssertEqual(model.navigationTabs.map(\.id), [tab.id])
+        XCTAssertTrue(model.closedTabs.isEmpty)
+        XCTAssertEqual(client.destructiveCloses, 0)
+    }
+
+    func testCloseFromTheMenuRefusesAnUnfinishedComposition() throws {
+        let model = model(try fixture())
+        let tab = try XCTUnwrap(model.selectedTab)
+        let page = try XCTUnwrap(tab.pageID)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let editor = try XCTUnwrap(InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: coordinator))
+        editor.isEditable = true
+        coordinator.currentSheet = page
+        coordinator.textView = editor
+        editor.delegate = coordinator
+        model.mountEditor(editor, from: .panel)
+        editor.setMarkedText("ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(editor.hasMarkedText())
+
+        model.close(tab.id)
+
+        XCTAssertTrue(editor.hasMarkedText())
+        XCTAssertEqual(model.notice, CompanionL10n.string("page.close.finish_composition"))
+        XCTAssertEqual(model.navigationTabs.map(\.id), [tab.id])
+        XCTAssertTrue(model.closedTabs.isEmpty)
     }
 
 }

@@ -452,7 +452,10 @@ public final class PageModel: ObservableObject {
     /// or not the tab holds a page (ADR-0017). A tab whose page expired
     /// keeps its place here, named and empty.
     @Published public private(set) var tabs: [TabSummary] = []
-    @Published private var closedPageUUIDs: [String] = []
+    @Published private var closedPageUUIDs: [String] = [] {
+        didSet { closedPageUUIDIndex = Set(closedPageUUIDs) }
+    }
+    private var closedPageUUIDIndex: Set<String> = []
     private static let closedPageUUIDsKey = "closedPageUUIDs"
 
     public var onReopenDatedTabs: (() -> Void)?
@@ -1565,11 +1568,12 @@ public final class PageModel: ObservableObject {
         self.defaults = defaults
         var restoredClosedUUIDs: [String] = []
         for value in defaults.stringArray(forKey: Self.closedPageUUIDsKey) ?? [] {
-            guard let uuid = UUID(uuidString: value)?.uuidString.lowercased() else { continue }
+            guard let uuid = Self.normalizedTabUUID(value) else { continue }
             restoredClosedUUIDs.removeAll { $0 == uuid }
             restoredClosedUUIDs.append(uuid)
         }
         _closedPageUUIDs = Published(initialValue: restoredClosedUUIDs)
+        closedPageUUIDIndex = Set(restoredClosedUUIDs)
         pads = PadCatalog(defaults: defaults)
         let resolvedClient =
             seams.client ?? CompanionClient(credentialService: formFactor.credentialService)
@@ -3105,8 +3109,12 @@ public final class PageModel: ObservableObject {
 
     // MARK: Experimental pads (local navigation ownership)
 
+    private static func normalizedTabUUID(_ value: String?) -> String? {
+        value.flatMap(UUID.init(uuidString:))?.uuidString.lowercased()
+    }
+
     private func isClosed(_ tab: TabSummary) -> Bool {
-        tab.uuid.map { closedPageUUIDs.contains($0) } ?? false
+        Self.normalizedTabUUID(tab.uuid).map { closedPageUUIDIndex.contains($0) } ?? false
     }
 
     public var navigationTabs: [TabSummary] {
@@ -3114,11 +3122,12 @@ public final class PageModel: ObservableObject {
     }
 
     public var closedTabs: [TabSummary] {
-        let byUUID = Dictionary(uniqueKeysWithValues: tabs.compactMap { tab in
-            tab.uuid.map { ($0, tab) }
-        })
+        var byUUID: [String: TabSummary] = [:]
+        for tab in tabs {
+            if let uuid = Self.normalizedTabUUID(tab.uuid) { byUUID[uuid] = tab }
+        }
         return closedPageUUIDs.reversed().compactMap { uuid in
-            guard let tab = byUUID[uuid], !pads.isEnabled || pads.owner(ofTabUUID: uuid) == pads.activeID
+            guard let tab = byUUID[uuid], !pads.isEnabled || pads.owner(ofTabUUID: tab.uuid) == pads.activeID
             else { return nil }
             return tab
         }
@@ -3402,7 +3411,7 @@ public final class PageModel: ObservableObject {
         let readStartedAt = Date()
         tabs = client.tabs()
         if stateLoaded && saveLicence {
-            let existing = Set(tabs.compactMap(\.uuid))
+            let existing = Set(tabs.compactMap { Self.normalizedTabUUID($0.uuid) })
             let retained = closedPageUUIDs.filter { existing.contains($0) }
             if retained != closedPageUUIDs {
                 closedPageUUIDs = retained
@@ -6069,19 +6078,34 @@ public final class PageModel: ObservableObject {
         selectedPageID == nil
     }
 
-    /// Save the current content, then hide its existing navigation item.
+    /// Save a loaded, writable session before hiding its navigation item; explain any refusal.
     public func close(_ id: UInt64) {
-        guard let tab = tabs.first(where: { $0.id == id }), !isClosed(tab), let uuid = tab.uuid else { return }
+        guard let tab = tabs.first(where: { $0.id == id }), !isClosed(tab) else { return }
+        guard let uuid = Self.normalizedTabUUID(tab.uuid) else {
+            flash(CompanionL10n.string("page.close.identity_unavailable"), tone: .actionable)
+            return
+        }
         if let page = tab.pageID, let editor = activeEditor as? InkTextView,
            let coordinator = editor.coordinator, coordinator.displaysPage(page) {
-            InkEditorView.discardComposition(in: editor)
+            let focused = editor.window?.firstResponder as? NSTextView
+            guard !editor.hasMarkedText(), focused?.hasMarkedText() != true else {
+                flash(CompanionL10n.string("page.close.finish_composition"), tone: .actionable)
+                return
+            }
             coordinator.nameEditor?.commit()
-            guard coordinator.nameEditor?.isOpen != true else { return }
+            guard coordinator.nameEditor?.isOpen != true else {
+                flash(CompanionL10n.string("page.close.finish_name"), tone: .actionable)
+                return
+            }
             coordinator.closeNote()
             let scroll = editor.enclosingScrollView
             coordinator.saveViewState(textView: editor, scrollView: scroll?.documentView === editor ? scroll : nil)
         }
-        guard stateLoaded, saveLicence, saveState() else {
+        guard stateLoaded, saveLicence else {
+            flash(CompanionL10n.string("page.close.unavailable"), tone: .actionable)
+            return
+        }
+        guard saveState() else {
             flash(CompanionL10n.string("page.close.save_failed"), tone: .actionable)
             return
         }
@@ -6104,7 +6128,8 @@ public final class PageModel: ObservableObject {
     @discardableResult
     public func reopenClosedTab(_ id: UInt64) -> Bool {
         guard pendingFileClose == nil,
-              let tab = closedTabs.first(where: { $0.id == id }), let uuid = tab.uuid else { return false }
+              let tab = closedTabs.first(where: { $0.id == id }),
+              let uuid = Self.normalizedTabUUID(tab.uuid) else { return false }
         closedPageUUIDs.removeAll { $0 == uuid }
         persistClosedPages()
         selectedFile = nil
@@ -6113,7 +6138,7 @@ public final class PageModel: ObservableObject {
         selection = id
         refresh()
         requestRoll(onPickedPageLeaving: true)
-        if pads.isEnabled { pads.remember(tabUUID: uuid, for: pads.activeID) }
+        if pads.isEnabled { pads.remember(tabUUID: tab.uuid, for: pads.activeID) }
         if tab.pageID == nil { flash(CompanionL10n.string("page.reopen.expired")) }
         refocusEditorIfKeyed()
         return true

@@ -315,4 +315,13 @@ final class BundledKeymapTests: XCTestCase {
         case .failure(let failure): throw failure
         }
     }
+
+    func testCloseMenuKeepsCommandWWhileControlWRemainsAnEditorAlias() throws {
+        let resolved = try bundled()
+        XCTAssertEqual(resolved.menuKeystroke(for: .pageClose)?.canonical, "cmd-w")
+        XCTAssertTrue(resolved.bindings.contains {
+            $0.command == .pageClose && $0.keystroke.canonical == "ctrl-w"
+        })
+    }
+
 }

@@ -6432,10 +6432,18 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     /// while the page itself holds the keyboard.
     override func keyDown(with event: NSEvent) {
         if answersChords, let coordinator,
-           coordinator.model.keymap.command(for: event, in: .editor) == .pageClose,
-           !event.modifierFlags.contains(.command) {
-            coordinator.model.perform(.pageClose)
-            return
+           let command = coordinator.model.keymap.command(for: event, in: .editor),
+           command.dispatch == .surface, !event.modifierFlags.contains(.command) {
+            if command == .surfaceHandBackKeys {
+                if hasMarkedText() { super.keyDown(with: event) }
+                else { cancelOperation(nil) }
+                return
+            }
+            guard !hasMarkedText() else {
+                coordinator.model.flash(CompanionL10n.string("surface.finish_composition"), tone: .actionable)
+                return
+            }
+            if coordinator.model.perform(command) { return }
         }
         if let command = editorCommand(for: event), !command.modifiers.contains(.command),
            dispatch(command.id) {
