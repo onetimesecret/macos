@@ -357,10 +357,8 @@ final class TabLifetimeTests: XCTestCase {
         )
     }
 
-    /// Closing the last tab is what empties the strip, and only then is
-    /// there nothing left to seal. The two predicates disagree in
-    /// between, which is the whole reason they are separate.
-    func testOnlyClosingEveryTabLeavesNothingToReseal() throws {
+    /// Explicit core removal and expiry have distinct emptiness results.
+    func testOnlyRemovingEveryCoreTabLeavesNothingToReseal() throws {
         let model = try makeModel()
         model.loadStateIfNeeded()
         let tab = try XCTUnwrap(model.selection)
@@ -381,7 +379,8 @@ final class TabLifetimeTests: XCTestCase {
             "and it must rotate the halves the dead pages were sealed under"
         )
 
-        model.close(tab)
+        XCTAssertTrue(model.coreClient.closeTab(id: tab))
+        model.refresh()
         let afterClose = try XCTUnwrap(model.coreClient.emptiness())
         XCTAssertTrue(afterClose.holdsNoPage)
         XCTAssertTrue(afterClose.hasNoTabs)

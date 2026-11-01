@@ -78,10 +78,11 @@ final class LedgerAppendArmingTests: XCTestCase {
                     chip: chip?.chipId ?? 0, pasteboard: board, item: NSPasteboardItem(),
                     type: .string)
             }),
-            // A removal in an edit batch detaches and appends nothing
-            // (ADR-0046 point 1); the close below records the chip's death.
-            ("close appends discarded for the chip and the page", {
-                if let page = model.selection { model.close(page) }
+            ("discard local copy appends discarded for the chip and page", {
+                guard let page = model.selectedPageID else { return }
+                model.beginConceal(.page(page))
+                model.concealDraft?.receiptId = "isolated-test-receipt"
+                model.burnConcealedCopy()
             }),
         ]
         for step in steps {

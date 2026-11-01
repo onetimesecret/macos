@@ -139,7 +139,7 @@ final class PadModelTests: XCTestCase {
         XCTAssertEqual(second.pads.activeID, familia)
         XCTAssertEqual(second.navigationTabs.count, 1)
         XCTAssertEqual(second.navigationTabs.first?.uuid, uuid)
-        XCTAssertEqual(second.selection, 1, "dense counter changed; ownership must not")
+        XCTAssertEqual(second.selectedTab?.uuid, uuid, "relaunch selects the same saved item")
     }
     func testSoftAppRouteYieldsToExplicitFileInBothOrdersAndModal() throws {
         let model = isolatedModel(defaults: try defaults())
@@ -511,7 +511,9 @@ final class PadModelTests: XCTestCase {
         XCTAssertEqual(model.pads.checkpointSortDirection(for: pad, onDate: date), .natural)
         XCTAssertEqual(model.pads.owner(ofTabUUID: uuid), pad)
         model.closeCurrent()
-        XCTAssertEqual(model.pads.owner(ofTabUUID: uuid), PadCatalog.scratchID)
+        XCTAssertEqual(model.pads.owner(ofTabUUID: uuid), pad)
+        XCTAssertTrue(model.navigationTabs.isEmpty)
+        XCTAssertEqual(model.closedTabs.first?.uuid, uuid)
     }
 
     func testClosingFilePrunesItsRecordedOwnerAndRememberedSelection() throws {

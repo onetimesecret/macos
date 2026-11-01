@@ -94,6 +94,7 @@ final class NoticeHoldTests: XCTestCase {
         let hold = model.holdNotice("Enter a pad name.")
         model.newPage()
         XCTAssertEqual(model.notice, "Enter a pad name.", "a new page took the held line down")
+        model.loadStateIfNeeded()
         model.close(try XCTUnwrap(model.selection))
         XCTAssertEqual(model.notice, "Enter a pad name.", "a closed tab took the held line down")
         model.releaseNotice(hold)

@@ -529,15 +529,17 @@ final class FileSurfaceTests: XCTestCase {
         let model = isolatedModel(defaults: try defaults())
         model.perform(.pageNew)
         model.perform(.pageNew)
+        model.loadStateIfNeeded()
         model.notice = nil
         model.perform(.pageClose)
-        XCTAssertEqual(model.tabs.count, 1, "on a page the close chord closes the tab")
+        XCTAssertEqual(model.navigationTabs.count, 1)
+        XCTAssertEqual(model.tabs.count, 2, "Close preserves the saved roster")
 
         let id = CompanionClient.fileIDTag | 10
         model.standOpenFiles([file(id: id, dirty: true)])
         model.select(target: .file(id))
         model.perform(.pageClose)
-        XCTAssertEqual(model.tabs.count, 1, "on a file the close chord leaves the tabs alone")
+        XCTAssertEqual(model.tabs.count, 2, "on a file Close leaves the saved tabs alone")
         XCTAssertEqual(
             model.pendingFileClose?.fileID, id,
             "on a dirty file the close chord publishes the inline decision"
