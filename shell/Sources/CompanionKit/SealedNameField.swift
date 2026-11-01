@@ -411,6 +411,7 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         field.isHidden = false
         follow()
         textView.window?.makeFirstResponder(field)
+        textView.handlesMayHaveMoved()
         field.currentEditor()?.selectAll(nil)
     }
 
@@ -481,7 +482,10 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         }
         field.setAccessibilityHelp(rename.error ?? CompanionL10n.string("chip.name.field.help"))
         var block = textView.convert(block, to: overlay)
-        let room = overlay.bounds.insetBy(dx: 8, dy: 8)
+        let room = NSRect(
+            x: overlay.bounds.minX + 8, y: overlay.bounds.minY + 8,
+            width: max(0, overlay.bounds.width - 16),
+            height: max(0, overlay.bounds.height - 16))
         let width = min(440, max(0, room.width))
         helpView.isCompact = false
         var height = helpView.preferredHeight(width: width)
@@ -564,7 +568,10 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
 
     private func close(returningKeys: Bool) {
         refocusGeneration &+= 1
-        defer { field.stringValue = "" }
+        defer {
+            field.stringValue = ""
+            textView?.handlesMayHaveMoved()
+        }
         let index = textView?.naming?.index
         textView?.naming = nil
         field.isHidden = true

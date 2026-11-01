@@ -257,6 +257,11 @@ final class SealedNameFieldTests: XCTestCase {
         editor.follow()
         XCTAssertGreaterThan(editor.field.frame.height, 0)
         XCTAssertTrue(editor.helpScroll.isHidden)
+        for rect in [editor.field.frame, editor.helpScroll.frame, editor.helpView.frame] {
+            for value in [rect.minX, rect.minY, rect.width, rect.height] {
+                XCTAssertTrue(value.isFinite)
+            }
+        }
         editor.keep(returningKeys: false)
     }
 
