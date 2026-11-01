@@ -622,9 +622,15 @@ final class SealedMoveHandleTests: XCTestCase {
         let model = try makeModel()
         let page = try mountPage(on: model)
         let chip = try XCTUnwrap(page.textView.chipCell(at: object)?.info.chipId)
+        let beforeScheduling = Date()
         page.textView.beginCopyBeat(at: object)
+        let afterScheduling = Date()
         let timer = try XCTUnwrap(page.textView.copyBeatTimerForTests)
-        XCTAssertEqual(timer.timeInterval, SealedBlockCell.beatDuration)
+        XCTAssertTrue(timer.isValid)
+        XCTAssertGreaterThanOrEqual(timer.fireDate.timeIntervalSince(beforeScheduling),
+                                    SealedBlockCell.beatDuration - 0.05)
+        XCTAssertLessThanOrEqual(timer.fireDate.timeIntervalSince(afterScheduling),
+                                 SealedBlockCell.beatDuration + 0.05)
         page.textView.insertText("prefix ", replacementRange: NSRange(location: 0, length: 0))
         let moved = try XCTUnwrap(page.textView.chipIndex(ofChip: chip))
         XCTAssertNotEqual(moved, object)
