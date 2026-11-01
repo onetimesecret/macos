@@ -442,35 +442,8 @@ public struct PageStatusStack: View {
 
 // MARK: - The keyboard map
 
-/// The surface-level keyboard map (docs/spec/04), carried by zero-size
-/// hidden buttons: active exactly while the surface holds the keys —
-/// never a global claim (the summon hotkeys are the one exception, and
-/// they live in the form factors' hotkey types).
-///
-/// Which chord runs which command is no longer written here. It is
-/// read out of the keymap (issue #76,
-/// `docs/development/keymap-format-and-dispatch.md`): the bundled default file
-/// says ⌘1 through ⌘9 jump by visible tab order, ⌘W closes, ⌘S forces
-/// the debounced write to happen now, ⌘, opens Settings and Esc hands
-/// the keyboard back, and a user's own keymap may say otherwise. What
-/// is left here is the installation: one hidden button per chord the
-/// surface carries, mounted only while the surface is raised.
-///
-/// ⌘0 used to sit at the end of that run and open the ledger. It is
-/// withdrawn from the default file while the ledger's entry points are
-/// hidden (issue #78); the command still dispatches, so an override
-/// keymap can name it.
-///
-/// The seal gestures (⇧⌘V, ⌘↩) and the wrap toggle are in the same
-/// file and are not installed here. They are dispatched by the page's
-/// own text view, which sees a keystroke before any of these buttons
-/// do and which owns the caret they act on.
-///
-/// And only in the window that owns the page content (ADR-0033). The
-/// map is one of the things that has a single owner, and it is guarded
-/// here by construction: a window that does not own installs no chord,
-/// so there is never a second map to answer a keystroke meant for the
-/// first.
+/// Installs the owning presentation's surface bindings; text-aware chords
+/// use AppKit while other bindings use hidden SwiftUI buttons (ADR-0033).
 public struct PageKeyboardMap: View {
     @ObservedObject var model: PageModel
     @Environment(\.presentationSurface) private var surface
@@ -482,6 +455,7 @@ public struct PageKeyboardMap: View {
     public var body: some View {
         Group {
             if Self.installs(surface: surface, owner: model.owner) {
+                SurfaceShortcutFallback(model: model, surface: surface)
                 ForEach(model.keymap.surfaceShortcuts()) { installed in
                     Button("") { model.perform(installed.command) }
                         .keyboardShortcut(installed.shortcut)
@@ -498,6 +472,42 @@ public struct PageKeyboardMap: View {
         surface: PresentationOwner, owner: PresentationOwner
     ) -> Bool {
         PresentationOwner.mayWrite(surface, owner: owner)
+    }
+}
+
+private struct SurfaceShortcutFallback: NSViewRepresentable {
+    let model: PageModel
+    let surface: PresentationOwner
+
+    func makeNSView(context: Context) -> SurfaceShortcutFallbackView {
+        SurfaceShortcutFallbackView(model: model, surface: surface)
+    }
+
+    func updateNSView(_ view: SurfaceShortcutFallbackView, context: Context) {
+        view.model = model
+        view.surface = surface
+    }
+}
+
+final class SurfaceShortcutFallbackView: NSView {
+    var model: PageModel
+    var surface: PresentationOwner
+
+    init(model: PageModel, surface: PresentationOwner) {
+        self.model = model
+        self.surface = surface
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("surface shortcuts are created in code") }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // Text responders keep their native editing and composition route.
+        guard PresentationOwner.mayWrite(surface, owner: model.owner),
+              let window, !(window.firstResponder is NSTextView),
+              let command = model.keymap.textAwareSurfaceCommand(for: event) else { return false }
+        return model.perform(command)
     }
 }
 

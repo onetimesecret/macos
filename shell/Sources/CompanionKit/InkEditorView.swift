@@ -6571,9 +6571,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     /// while the page itself holds the keyboard.
     override func keyDown(with event: NSEvent) {
         if answersChords, let coordinator,
-           let command = coordinator.model.keymap.command(for: event, in: .editor),
-           command.dispatch == .surface, !event.modifierFlags.contains(.command),
-           !event.modifierFlags.intersection([.control, .option]).isEmpty {
+           let command = coordinator.model.keymap.textAwareSurfaceCommand(for: event) {
             guard !hasMarkedText() else {
                 coordinator.model.flash(CompanionL10n.string("surface.finish_composition"), tone: .actionable)
                 return
@@ -8751,9 +8749,7 @@ extension InkTextView: CommandPaletteResponder {
     func prepareForCommandPalette() -> Bool {
         coordinator?.nameEditor?.commit()
         if coordinator?.nameEditor?.isOpen == true {
-            if let field = coordinator?.nameEditor?.field {
-                _ = field.window?.makeFirstResponder(field)
-            }
+            coordinator?.nameEditor?.focusDraft()
             return false
         }
         return true
