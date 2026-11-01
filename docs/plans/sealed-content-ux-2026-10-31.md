@@ -66,7 +66,7 @@ plaintext disclosure.
 | 20 | Naming loses valid draft on blur | Valid blur, pad switches and editor handoffs save. Save/Cancel and Return/Esc are visible. Invalid blur drafts stay open; explicit teardown closes them. | Focus-loss, commit and cancel tests. |
 | 21 | Name refusal appears far away | Error stays beside the field and is exposed through accessibility help. | Local-error tests. |
 | 22 | No direct contents editor and unclear commitment | One-way sealing remains explicit: visible pre-seal explanation, menu/help, and copy/edit/seal replacement instructions. No silent unseal or new contents editor. | Selection-menu and clipboard-offer tests; existing seal tests. |
-| 23 | Incomplete accessibility identity/actions | Summary includes the permitted excerpt and note presence; visible Move/Copy/More/Note controls expose actionable buttons with identity-based callbacks. | AX labels, frames, stable elements and actual press tests. VoiceOver hand check remains. |
+| 23 | Incomplete accessibility identity/actions | Summary includes the permitted excerpt and note presence. Copy/More/Note expose actionable buttons with distinct guidance and identity context. Native selection and Cut/Paste provide keyboard movement; the pointer Move handle adds no redundant AX button. | AX labels/help, frames, stable elements, actual press and narrow Cut/Paste tests. VoiceOver hand check remains. |
 | 24 | Sharing loses source identity | Confirmation snapshots and shows the selected object name/excerpt or page title. | Sharing identity tests. |
 | 25 | Stale clipboard success and no recovery | Past-tense success wording plus Copy Link Again. A core-only recovery buffer uses a unique token and a fixed initial recovery deadline; the shell receives availability, never the URL text. | FFI and Swift recovery, expiry, supersession and repeated-receipt tests. |
 | 26 | Remove and burn wording is inconsistent | Remove from Document is distinct from Delete Local Sealed Content / Discard Local Page. Done replaces Keep It; help describes the actual action. | Menu/removal and sharing tests. |
@@ -89,10 +89,10 @@ These are implementation observations to verify, not independent guarantees.
 
 ## Verification record
 
-- `scripts/test-shell.sh`: 393 app tests and 2,327 CompanionKit tests executed,
+- `scripts/test-shell.sh`: 393 app tests and 2,331 CompanionKit tests executed,
   7 existing skips, 0 failures. The full run set `ONETIMEPAD_SEALED_PREVIEW_DIR=/tmp/sealed-ux-preview` and included the optional rendering tests.
 - `cargo test -p companion-ffi -- --test-threads=1 --skip drop_to_seal_reads_the_drag_board_core_side`:
-  402 passed, 1 existing ignored test, 1 excluded shared-system-drag-pasteboard test.
+  403 passed, 1 existing ignored test, 1 excluded shared-system-drag-pasteboard test.
 - `cargo clippy -p companion-ffi --all-targets --features test-util -- -D warnings`:
   passed.
 - `cargo fmt --check`, `git diff --check`, and `scripts/lint-adrs.py docs/adr`:
@@ -132,6 +132,7 @@ security properties or replace the operative records.
 | DOC-03 | A dated record was edited in place instead of superseded whole. | Addressed by the [dated successor](../spec/design/2026-1031-sealed-content-ux-revision.md), with immutable incorporation and scoped revisions. Earlier dated bodies remain unchanged. | Prior bodies compared with commit `367a65c6f4d051ffdc87ac8ebb43f154e9b97783`; status/successor fields checked. |
 | DOC-04 | The implementation plan was presented as authority and historical sharing copy remained ambiguous. | Addressed by direct successor links, operative law amendments and superseded status on the former records. Linked manual checks now exercise explicit controls. | Local link and scope review; manual checks remain unperformed. |
 | COPY-01 | Revised native labels and instructional guidance conflicted with D-15/ADR-0055. | Addressed by the successor's scoped copy-register decision and ADR-0055 amendment. | Labels compared with the revised source; ADR structural lint checked. |
+| DOC-05 | Successor metadata replaced the earlier scoped and intermediate relationships. | Addressed by structured superseded-by entries preserving ADR-0060 and the stream-to-clear-interval chain alongside the new successor; the successor explains whole-record status and immutable incorporation. ADR-0055 retains its accepted body with a dated history pointer. | YAML metadata, referenced paths, unchanged historical bodies and documentation conventions checked. |
 
 ## Code-review followups
 
@@ -154,3 +155,18 @@ The visibility predicate remains an explicit shared guard for the current editor
 state. The note/name helper uses the existing page-overlay approach; the dated
 successor records that presentation choice. Actual VoiceOver and physical-pointer
 checks remain unperformed.
+
+
+## Final external-review dispositions
+
+| ID | Finding | Disposition and verification |
+| --- | --- | --- |
+| REV-01 | Native `Instant` pauses during macOS sleep. | Recovery creation and public copy/availability queries now use the existing page-store clock. Public-entry tests set a controlled deadline and exercise refusal, remaining time and re-copy without extending it. Physical system sleep was not simulated. |
+| REV-02 | A model could close without forgetting its recovery token. | Teardown forgets the mirrored token while the client may remain alive. Asynchronous creation explicitly retains its model through outcome handling, then teardown requests guarded clipboard clearing and forgets the recovery token. Both lifecycle paths have regression tests. |
+| REV-03 | Re-copy did not have a second-clear assertion. | The Swift regression compares the synthetic URL on the in-memory pasteboard, waits for its initial clear, re-copies it, and checks the second clear. Its test-only getter refuses a system pasteboard. |
+| REV-04 | Redundant Move accessibility button. | Removed the selection-only child. Native selection and Cut/Paste remain available at narrow widths; the new editor regression checks movement and object identity. |
+| REV-05 | Child accessibility help repeated the object summary. | Copy/More/Note combine their own localized action guidance with object identity. A regression checks distinct help and the shared context. |
+| REV-06 | Pre-seal wording bypassed localization and drifted between surfaces. | The visible explanation and tooltip share the CompanionKit resource string. Clipboard offer text and accessibility label also use its bundle. Recovery timing is visible below the buttons, including after disablement. `%u` remains paired with its `UInt32` argument. |
+| REV-07 | Unused helper APIs and duplicate tracking state. | Removed the uncalled notice-hold API and its obsolete tests, the naming wrapper, hardcoded AX labels, unused status coordinate and no-op rectangle lookup. The resolved handle is passed into press tracking. Notice lifecycle coverage checks clearing and action replacement. |
+| REV-08 | Prior successor metadata was overwritten. | Restored the earlier edges as structured entries. Whole-record status follows the dated-record rule; unchanged decisions remain incorporated by immutable reference. The accepted ADR body is preserved, with the scoped revision in dated history. |
+| REV-09 | Helper buttons could escape very narrow bounds. | The helper wraps text and stacks buttons to fit its available width, including longer translated titles. Bounds tests cover very narrow widths. The live block uses `preferredHeight(identityLineHeight:)`; 52 points is its minimum and the geometry helper's fallback, not the live font-derived height. |

@@ -44,6 +44,21 @@ for Timeline navigation, retain their scope. The old stream record's
 one-time-link success sentence is historical; the D-09/D-42 revision below
 replaces that sentence as incorporated by the former clear-interval record.
 
+The full `superseded` status follows the dated-record rule in the
+[behaviour law conventions](../../law/README.md): a dated record
+“is superseded whole when any of them changes.” Unchanged behavior is
+incorporated above rather than removed. This differs from an ADR's partial
+replacement, which retains the ADR's accepted status under the
+[ADR conventions](../../adr/README.md#metadata-and-relationships).
+
+The predecessors' structured `superseded-by` entries retain their earlier
+relationships as well as the new successor: the UI/UX record's scoped
+ADR-0060 edge remains explicit, and the stream record's whole-record path
+through the clear-interval record remains explicit. The new record is the
+whole-record successor of the UI/UX and clear-interval snapshots, and the
+stream record's successor through that existing chain. No earlier edge or
+scoped behavior is withdrawn by this metadata update.
+
 ## Revised decisions
 
 ### The block, D-10 and D-27 through D-29: identity and explicit controls

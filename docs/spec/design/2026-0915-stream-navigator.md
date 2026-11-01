@@ -4,7 +4,14 @@ title: The stream navigator and the sealed capsule's actions
 status: superseded   # draft → accepted → superseded
 dated: 2026-09-15
 supersedes: docs/spec/design/2026-0915-ui-ux-decisions.md, on D-26's side metrics, D-27's block, D-29's confirmation line, the object menu's removal item and the clear interval only
-superseded-by: docs/spec/design/2026-1031-sealed-content-ux-revision.md
+superseded-by:
+  - record: docs/spec/design/2026-0916-clipboard-clear-interval.md
+    scope: whole record
+    dated: 2026-09-16
+  - record: docs/spec/design/2026-1031-sealed-content-ux-revision.md
+    scope: transitive whole-record successor
+    via: docs/spec/design/2026-0916-clipboard-clear-interval.md
+    dated: 2026-10-31
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface), Days + side
 sources:

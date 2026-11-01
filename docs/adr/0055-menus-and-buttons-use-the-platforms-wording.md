@@ -29,10 +29,6 @@ menu's *create* as the sheet's verb.
 
 Menus and buttons are worded as the platform words them.
 
-T󠄁h󠄁e󠄁 s󠄁e󠄁a󠄁l󠄁e󠄁d󠄁-󠄁i󠄁n󠄁t󠄁e󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 p󠄁o󠄁r󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 o󠄁f󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁 1󠄁–󠄁3󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 m󠄁e󠄁n󠄁u󠄁 e󠄁x󠄁a󠄁m󠄁p󠄁l󠄁e󠄁s󠄁 a󠄁r󠄁e󠄁
-a󠄁m󠄁e󠄁n󠄁d󠄁e󠄁d󠄁 b󠄁y󠄁 t󠄁h󠄁e󠄁 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁0󠄁-󠄁3󠄁1󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁d󠄁 r󠄁e󠄁v󠄁i󠄁s󠄁i󠄁o󠄁n󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁.󠄁 O󠄁t󠄁h󠄁e󠄁r󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁f󠄁a󠄁c󠄁e󠄁s󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁
-t󠄁h󠄁e󠄁s󠄁e󠄁 r󠄁u󠄁l󠄁e󠄁s󠄁.󠄁
-
 1. Menu items and buttons are title case: every word capitalised but
    articles, coordinating conjunctions and prepositions of four letters
    or fewer, unless first or last. Status lines, notices, captions,
@@ -67,24 +63,6 @@ t󠄁h󠄁e󠄁s󠄁e󠄁 r󠄁u󠄁l󠄁e󠄁s󠄁.󠄁
 - `Name=Value` reads oddly in title case; it is kept as written because
   the rule has no exception for a literal.
 
-## Sealed-interface amendment, 2026-10-31
-
-T󠄁h󠄁e󠄁 m󠄁a󠄁i󠄁n󠄁t󠄁a󠄁i󠄁n󠄁e󠄁r󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 2󠄁8󠄁-󠄁i󠄁t󠄁e󠄁m󠄁 s󠄁e󠄁a󠄁l󠄁e󠄁d󠄁-󠄁c󠄁o󠄁n󠄁t󠄁e󠄁n󠄁t󠄁 U󠄁X󠄁 r󠄁e󠄁v󠄁i󠄁s󠄁i󠄁o󠄁n󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁
-i󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁d󠄁 b󠄁y󠄁 t󠄁h󠄁e󠄁 [d󠄁a󠄁t󠄁e󠄁d󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁o󠄁r󠄁](../spec/design/2026-1031-sealed-content-ux-revision.md).󠄁
-T󠄁h󠄁a󠄁t󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 s󠄁e󠄁a󠄁l󠄁e󠄁d󠄁 m󠄁e󠄁n󠄁u󠄁 a󠄁n󠄁d󠄁 s󠄁h󠄁a󠄁r󠄁i󠄁n󠄁g󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁s󠄁 a󠄁b󠄁o󠄁v󠄁e󠄁.󠄁 I󠄁t󠄁 s󠄁p󠄁e󠄁c󠄁i󠄁f󠄁i󠄁e󠄁s󠄁
-S󠄁e󠄁t󠄁/󠄁E󠄁d󠄁i󠄁t󠄁 V󠄁a󠄁r󠄁i󠄁a󠄁b󠄁l󠄁e󠄁 N󠄁a󠄁m󠄁e󠄁…󠄁,󠄁 C󠄁o󠄁p󠄁y󠄁 V󠄁a󠄁r󠄁i󠄁a󠄁b󠄁l󠄁e󠄁 N󠄁a󠄁m󠄁e󠄁,󠄁 C󠄁o󠄁p󠄁y󠄁 N󠄁A󠄁M󠄁E󠄁=󠄁V󠄁a󠄁l󠄁u󠄁e󠄁 (󠄁U󠄁n󠄁q󠄁u󠄁o󠄁t󠄁e󠄁d󠄁)󠄁,󠄁
-A󠄁d󠄁d󠄁/󠄁E󠄁d󠄁i󠄁t󠄁 N󠄁o󠄁t󠄁e󠄁…󠄁,󠄁 a󠄁n󠄁d󠄁 R󠄁e󠄁m󠄁o󠄁v󠄁e󠄁 f󠄁r󠄁o󠄁m󠄁 D󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁.󠄁 S󠄁h󠄁a󠄁r󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁i󠄁o󠄁n󠄁 u󠄁s󠄁e󠄁s󠄁 C󠄁o󠄁p󠄁y󠄁 L󠄁i󠄁n󠄁k󠄁
-A󠄁g󠄁a󠄁i󠄁n󠄁,󠄁 D󠄁o󠄁n󠄁e󠄁,󠄁 D󠄁e󠄁l󠄁e󠄁t󠄁e󠄁 L󠄁o󠄁c󠄁a󠄁l󠄁 S󠄁e󠄁a󠄁l󠄁e󠄁d󠄁 C󠄁o󠄁n󠄁t󠄁e󠄁n󠄁t󠄁 a󠄁n󠄁d󠄁 D󠄁i󠄁s󠄁c󠄁a󠄁r󠄁d󠄁 L󠄁o󠄁c󠄁a󠄁l󠄁 P󠄁a󠄁g󠄁e󠄁.󠄁
-
-M󠄁e󠄁n󠄁u󠄁s󠄁 a󠄁n󠄁d󠄁 o󠄁r󠄁d󠄁i󠄁n󠄁a󠄁r󠄁y󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁s󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 t󠄁i󠄁t󠄁l󠄁e󠄁 c󠄁a󠄁s󠄁e󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁c󠄁t󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁 u󠄁s󠄁e󠄁s󠄁 s󠄁e󠄁n󠄁t󠄁e󠄁n󠄁c󠄁e󠄁
-c󠄁a󠄁s󠄁e󠄁 f󠄁o󠄁r󠄁 S󠄁e󠄁a󠄁l󠄁e󠄁d󠄁 t󠄁e󠄁x󠄁t󠄁,󠄁 S󠄁e󠄁a󠄁l󠄁e󠄁d󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁,󠄁 C󠄁o󠄁p󠄁y󠄁 d󠄁e󠄁c󠄁r󠄁y󠄁p󠄁t󠄁e󠄁d󠄁 a󠄁n󠄁d󠄁 C󠄁o󠄁p󠄁i󠄁e󠄁d󠄁.󠄁 F󠄁i󠄁e󠄁l󠄁d󠄁 g󠄁u󠄁i󠄁d󠄁a󠄁n󠄁c󠄁e󠄁,󠄁
-v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 p󠄁r󠄁e󠄁-󠄁s󠄁e󠄁a󠄁l󠄁 e󠄁x󠄁p󠄁l󠄁a󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 u󠄁s󠄁e󠄁 o󠄁r󠄁d󠄁i󠄁n󠄁a󠄁r󠄁y󠄁 s󠄁e󠄁n󠄁t󠄁e󠄁n󠄁c󠄁e󠄁 c󠄁a󠄁s󠄁e󠄁
-a󠄁n󠄁d󠄁 m󠄁a󠄁y󠄁 i󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁a󠄁d󠄁e󠄁r󠄁 d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁l󠄁y󠄁.󠄁 T󠄁h󠄁e󠄁 e󠄁l󠄁l󠄁i󠄁p󠄁s󠄁i󠄁s󠄁 o󠄁n󠄁 S󠄁e󠄁t󠄁/󠄁E󠄁d󠄁i󠄁t󠄁 V󠄁a󠄁r󠄁i󠄁a󠄁b󠄁l󠄁e󠄁 N󠄁a󠄁m󠄁e󠄁…󠄁
-i󠄁s󠄁 a󠄁n󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 e󠄁x󠄁c󠄁e󠄁p󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁a󠄁t󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 a󠄁n󠄁d󠄁 i󠄁t󠄁s󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁e󠄁d󠄁 a󠄁u󠄁x󠄁i󠄁l󠄁i󠄁a󠄁r󠄁y󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁.󠄁
-P󠄁a󠄁g󠄁e󠄁,󠄁 t󠄁a󠄁b󠄁 a󠄁n󠄁d󠄁 p󠄁a󠄁d󠄁 r󠄁e󠄁n󠄁a󠄁m󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁s󠄁.󠄁 E󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 f󠄁o󠄁o󠄁t󠄁e󠄁r󠄁
-n󠄁o󠄁t󠄁i󠄁c󠄁e󠄁s󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 D󠄁-󠄁1󠄁5󠄁'󠄁s󠄁 l󠄁o󠄁w󠄁e󠄁r󠄁-󠄁c󠄁a󠄁s󠄁e󠄁 s󠄁t󠄁a󠄁t󠄁u󠄁s󠄁 r󠄁e󠄁g󠄁i󠄁s󠄁t󠄁e󠄁r󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁e󠄁r󠄁 s󠄁e󠄁a󠄁l󠄁e󠄁d󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁s󠄁
-a󠄁b󠄁o󠄁v󠄁e󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 h󠄁i󠄁s󠄁t󠄁o󠄁r󠄁i󠄁c󠄁a󠄁l󠄁 b󠄁a󠄁s󠄁i󠄁s󠄁 o󠄁f󠄁 t󠄁h󠄁i󠄁s󠄁 A󠄁D󠄁R󠄁,󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁a󠄁n󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁s󠄁e󠄁d󠄁 m󠄁e󠄁n󠄁u󠄁.󠄁
-
 ## Eject triggers
 
 - A localization whose own convention for menu case differs, which would
@@ -112,6 +90,7 @@ a󠄁b󠄁o󠄁v󠄁e󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 h󠄁i�
   that still said *conceal* as a noun or a UI verb (issue #295): the
   Connection and Sync settings, the conceal sheet's server tooltip and
   error line, and the strip's ↗ page tab. The API token is named as such.
-- 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁0󠄁-󠄁3󠄁1󠄁:󠄁 S󠄁c󠄁o󠄁p󠄁e󠄁d󠄁 s󠄁e󠄁a󠄁l󠄁e󠄁d󠄁-󠄁i󠄁n󠄁t󠄁e󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 a󠄁m󠄁e󠄁n󠄁d󠄁m󠄁e󠄁n󠄁t󠄁.󠄁 T󠄁h󠄁e󠄁 d󠄁a󠄁t󠄁e󠄁d󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁o󠄁r󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁s󠄁
-  t󠄁h󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁s󠄁e󠄁d󠄁 m󠄁e󠄁n󠄁u󠄁,󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁c󠄁t󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁s󠄁,󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 g󠄁u󠄁i󠄁d󠄁a󠄁n󠄁c󠄁e󠄁 a󠄁n󠄁d󠄁 s󠄁h󠄁a󠄁r󠄁i󠄁n󠄁g󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁;󠄁
-  o󠄁t󠄁h󠄁e󠄁r󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁f󠄁a󠄁c󠄁e󠄁s󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 w󠄁o󠄁r󠄁d󠄁i󠄁n󠄁g󠄁 r󠄁u󠄁l󠄁e󠄁s󠄁.󠄁
+- 2026-10-31: The [sealed-interface revision](../spec/design/2026-1031-sealed-content-ux-revision.md)
+  replaces the sealed menu and sharing labels, and records scoped exceptions
+  for compact sentence-case controls, instructional guidance and the ellipsis
+  on Set/Edit Variable Name…. Other interfaces retain this ADR's wording rules.
