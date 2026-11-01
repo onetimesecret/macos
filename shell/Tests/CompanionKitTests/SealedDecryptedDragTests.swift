@@ -156,7 +156,7 @@ final class SealedDecryptedDragTests: XCTestCase {
         let copy = try XCTUnwrap(cell.copyRect(in: frame))
         let more = SealedBlockCell.actionsRect(in: frame)
         XCTAssertEqual(copy.maxX + SealedBlockLayout.controlGap, more.minX)
-        XCTAssertEqual(copy.width, SealedBlockLayout.copyWidth)
+        XCTAssertEqual(copy.width, SealedBlockCell.copyControlWidth)
         XCTAssertEqual(copy.height, 24)
         XCTAssertEqual(cell.decryptedDragRect(in: frame), copy)
         XCTAssertEqual(SealedBlockCell.decryptedDragWords, CompanionL10n.string("chip.control.copy"))
@@ -171,7 +171,7 @@ final class SealedDecryptedDragTests: XCTestCase {
         XCTAssertEqual(DecryptedDrag.pasteboardType(forKind: "text"), .string)
         XCTAssertEqual(DecryptedDrag.pasteboardType(forKind: "image"), .png)
         XCTAssertNil(DecryptedDrag.pasteboardType(forKind: "file"))
-        let frame = NSRect(x: 0, y: 0, width: 400, height: SealedBlockCell.blockHeight)
+        let frame = NSRect(x: 0, y: 0, width: 400, height: SealedBlockCell.preferredHeight)
         func cell(_ kind: String) -> SealedBlockCell {
             SealedBlockCell(info: ChipInfo(
                 chipId: 1, kind: kind, excerpt: "n0…3t", sizeLabel: "tiny", concealed: false))
@@ -422,7 +422,7 @@ final class SealedDecryptedDragTests: XCTestCase {
         let id = try XCTUnwrap(chipID(page))
         let cell = try XCTUnwrap(page.textView.chipCell(at: object))
         XCTAssertFalse(cell.info.available)
-        let frame = NSRect(x: 0, y: 0, width: 400, height: SealedBlockCell.blockHeight)
+        let frame = NSRect(x: 0, y: 0, width: 400, height: SealedBlockCell.preferredHeight)
         XCTAssertNil(cell.decryptedDragRect(in: frame))
         XCTAssertNotNil(cell.moveHandleRect(in: frame), "a move keeps the identity, so it stays")
         XCTAssertNil(page.coordinator.beginDecryptedDrag(at: object))

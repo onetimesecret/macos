@@ -295,4 +295,64 @@ final class SealedBlockTests: XCTestCase {
         }
     }
 
+    func testCopyControlMeasureFitsBothLocalizedLabelsWithoutChangingDuringFeedback() throws {
+        let copy = "Entschlüsselten Inhalt kopieren"
+        let feedback = "Der Inhalt wurde kopiert"
+        let width = SealedBlockLayout.copyWidth(
+            titleWidth: SealedBlockCell.controlString(copy).size().width,
+            feedbackWidth: SealedBlockCell.controlString(feedback).size().width)
+        let frame = NSRect(x: 0, y: 0, width: 560, height: SealedBlockCell.preferredHeight)
+        let button = try XCTUnwrap(SealedBlockLayout.copyRect(in: frame, width: width))
+        for title in [copy, feedback] {
+            let fitted = SealedBlockCell.controlTitle(SealedBlockCell.controlString(title), in: button)
+            XCTAssertEqual(fitted.text.string, title)
+        }
+        let narrow = NSRect(x: 0, y: 0, width: width + 30, height: frame.height)
+        XCTAssertNil(SealedBlockLayout.copyRect(in: narrow, width: width))
+    }
+
+    func testMoreHitTargetAddsSlopWithoutEnteringTheCopyControl() throws {
+        let cell = SealedBlockCell(info: face())
+        for width in [CGFloat(60), 180, 340, 560] {
+            let frame = NSRect(x: 10, y: 20, width: width, height: SealedBlockCell.preferredHeight)
+            let drawn = SealedBlockCell.actionsRect(in: frame)
+            let hit = SealedBlockCell.actionsHitRect(in: frame)
+            XCTAssertTrue(frame.contains(hit))
+            XCTAssertTrue(hit.contains(drawn))
+            XCTAssertGreaterThan(hit.height, drawn.height)
+            if let copy = cell.copyRect(in: frame) { XCTAssertFalse(hit.intersects(copy)) }
+        }
+    }
+
+    func testNarrowEditableObjectIncludesItsNoteInTheStatusWhenTheNoteButtonDoesNotFit() throws {
+        let cell = SealedBlockCell(info: face(note: true))
+        for width in [CGFloat(180), 220, 260] {
+            let frame = NSRect(x: 0, y: 0, width: width, height: SealedBlockCell.preferredHeight)
+            XCTAssertNil(cell.doorwayRect(in: frame))
+            let image = NSImage(size: frame.size)
+            image.lockFocus()
+            let editor = InkTextView(frame: frame)
+            editor.isEditable = true
+            cell.draw(withFrame: frame, in: editor)
+            image.unlockFocus()
+            XCTAssertEqual(cell.lastDrawnStatus, CompanionL10n.format("chip.status.has_note", "sealed text"))
+            XCTAssertEqual(cell.lastDrawnStatusSymbol, "note.text")
+            let symbol = try XCTUnwrap(cell.lastDrawnStatusSymbolFrame)
+            XCTAssertTrue(frame.contains(symbol))
+            for control in [cell.copyRect(in: frame), cell.moveHandleRect(in: frame),
+                            SealedBlockCell.actionsRect(in: frame)].compactMap({ $0 }) {
+                XCTAssertFalse(symbol.intersects(control))
+            }
+        }
+    }
+
+    func testNotePopoverAnchorUsesMoreWhenTheNoteButtonDoesNotFit() throws {
+        let cell = SealedBlockCell(info: face(note: true))
+        let narrow = NSRect(x: 10, y: 20, width: 180, height: SealedBlockCell.preferredHeight)
+        XCTAssertNil(cell.doorwayRect(in: narrow))
+        XCTAssertEqual(cell.noteAnchorRect(in: narrow), SealedBlockCell.actionsRect(in: narrow))
+        let wide = NSRect(x: 10, y: 20, width: 480, height: SealedBlockCell.preferredHeight)
+        XCTAssertEqual(cell.noteAnchorRect(in: wide), try XCTUnwrap(cell.doorwayRect(in: wide)))
+    }
+
 }

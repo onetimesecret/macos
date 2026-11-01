@@ -7,33 +7,42 @@ enum SealedBlockLayout {
     static let maximumWidth: CGFloat = 560
     static let controlHeight: CGFloat = 24
     static let controlGap: CGFloat = 6
-    static let copyWidth: CGFloat = 108
+    static let horizontalPadding: CGFloat = 12
+    static let controlHitSlop: CGFloat = 3
+
+    static func copyWidth(titleWidth: CGFloat, feedbackWidth: CGFloat) -> CGFloat {
+        ceil(max(titleWidth, feedbackWidth)) + 8
+    }
 
     static func preferredHeight(identityLineHeight: CGFloat) -> CGFloat {
         max(height, ceil(identityLineHeight) + 48)
     }
 
     static func preferredWidth(available: CGFloat, identityWidth: CGFloat) -> CGFloat {
-        min(max(0, available), max(minimumWidth, min(maximumWidth, ceil(identityWidth) + 24)))
+        min(max(0, available), max(minimumWidth, min(maximumWidth, ceil(identityWidth) + horizontalPadding * 2)))
     }
 
     static func actionsRect(in frame: CGRect) -> CGRect {
-        CGRect(x: max(frame.minX, frame.maxX - 36), y: frame.maxY - 32,
+        CGRect(x: max(frame.minX, frame.maxX - horizontalPadding - controlHeight), y: frame.maxY - 32,
                width: min(controlHeight, frame.width), height: controlHeight)
     }
 
-    static func copyRect(in frame: CGRect) -> CGRect? {
+    static func actionsHitRect(in frame: CGRect) -> CGRect {
+        actionsRect(in: frame).insetBy(dx: -controlHitSlop, dy: -controlHitSlop).intersection(frame)
+    }
+
+    static func copyRect(in frame: CGRect, width: CGFloat) -> CGRect? {
         let more = actionsRect(in: frame)
-        let rect = CGRect(x: more.minX - controlGap - copyWidth, y: more.minY,
-                          width: copyWidth, height: controlHeight)
-        return rect.minX >= frame.minX + 12 ? rect : nil
+        let rect = CGRect(x: more.minX - controlGap - width, y: more.minY,
+                          width: width, height: controlHeight)
+        return rect.minX >= frame.minX + horizontalPadding ? rect : nil
     }
 
     static func moveRect(in frame: CGRect, before neighbourMinX: CGFloat) -> CGRect? {
         let rect = CGRect(x: neighbourMinX - controlGap - controlHeight,
                           y: actionsRect(in: frame).minY,
                           width: controlHeight, height: controlHeight)
-        return rect.minX >= frame.minX + 12 ? rect : nil
+        return rect.minX >= frame.minX + horizontalPadding ? rect : nil
     }
 
     struct Metrics: Equatable, Sendable {
@@ -64,6 +73,6 @@ enum SealedBlockLayout {
     }
 
     static func metrics(containerWidth: CGFloat) -> Metrics {
-        Metrics(width: containerWidth, horizontalPadding: 12, pillRadius: 4)
+        Metrics(width: containerWidth, horizontalPadding: horizontalPadding, pillRadius: 4)
     }
 }

@@ -142,7 +142,7 @@ final class SealedMoveHandleTests: XCTestCase {
         XCTAssertEqual(move.maxX + 6, copy.minX)
         XCTAssertEqual(copy.maxX + 6, more.minX)
         XCTAssertEqual(move.size, NSSize(width: 24, height: 24))
-        XCTAssertEqual(copy.size, NSSize(width: SealedBlockLayout.copyWidth, height: 24))
+        XCTAssertEqual(copy.size, NSSize(width: SealedBlockCell.copyControlWidth, height: 24))
         for rect in [move, copy, more] { XCTAssertTrue(frame.contains(rect)) }
         XCTAssertFalse(move.intersects(copy))
         XCTAssertFalse(copy.intersects(more))
@@ -294,7 +294,7 @@ final class SealedMoveHandleTests: XCTestCase {
     /// Which handle a press is on: the midpoint of each seat is its handle, and the gap
     /// between them, the lock, the actions seat and the bottom row are on neither.
     func testAPressIsOnTheHandleWhoseSeatItIsIn() throws {
-        let frame = NSRect(x: 10, y: 10, width: 400, height: SealedBlockCell.blockHeight)
+        let frame = NSRect(x: 10, y: 10, width: 400, height: SealedBlockCell.preferredHeight)
         let text = cell("text")
         let move = try XCTUnwrap(text.handleRect(.move, in: frame))
         let decrypted = try XCTUnwrap(text.handleRect(.decrypted, in: frame))
@@ -535,6 +535,39 @@ final class SealedMoveHandleTests: XCTestCase {
         XCTAssertTrue(page.textView.handleAccessibilityElements.isEmpty)
         XCTAssertTrue(page.textView.decryptedDragCursorRects.isEmpty)
         XCTAssertTrue(page.textView.moveHandleCursorRects.isEmpty)
+    }
+
+    func testHandlePressCancelsWhenTheEditorLeavesItsWindowBeforeRelease() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let (_, copy, _) = try handles(page)
+        let point = mid(copy)
+        let release = try mouseEvent(.leftMouseUp, page, at: point)
+        let down = try mouseEvent(.leftMouseDown, page, at: point)
+        page.textView.handlePressEventSource = {
+            page.textView.removeFromSuperview()
+            return release
+        }
+        defer { page.textView.handlePressEventSource = nil }
+        page.textView.mouseDown(with: down)
+        XCTAssertTrue(sent(model).isEmpty)
+        XCTAssertNil(page.textView.copyBeat)
+    }
+
+    func testHandlePressCancelsWhenTheEditorBecomesReadOnlyBeforeRelease() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let (_, copy, _) = try handles(page)
+        let point = mid(copy)
+        let release = try mouseEvent(.leftMouseUp, page, at: point)
+        page.textView.handlePressEventSource = {
+            page.textView.isEditable = false
+            return release
+        }
+        defer { page.textView.handlePressEventSource = nil }
+        page.textView.mouseDown(with: try mouseEvent(.leftMouseDown, page, at: point))
+        XCTAssertTrue(sent(model).isEmpty)
+        XCTAssertNil(page.textView.copyBeat)
     }
 
 }

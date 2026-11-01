@@ -3576,7 +3576,7 @@ public struct InkEditorView: NSViewRepresentable {
         @objc private func copyChipReference(_ sender: NSMenuItem) {
             guard let index = chipIndex(for: sender), let textView else { return }
             textView.setSelectedRange(NSRange(location: index, length: 1))
-            if copySelection() { model.flash("copied the sealed reference; paste it into OnetimePad") }
+            if copySelection() { model.flash(CompanionL10n.string("chip.reference.copied")) }
         }
 
         @objc private func copyOutChip(_ sender: NSMenuItem) {
@@ -5829,7 +5829,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         if let index, let point, let frame = chipFrame(at: index), let cell = chipCell(at: index) {
             if isEditable, cell.copyRect(in: frame)?.contains(point) == true {
                 toolTip = CompanionL10n.string("chip.control.copy.help")
-            } else if isEditable, SealedBlockCell.actionsRect(in: frame).contains(point) {
+            } else if isEditable, SealedBlockCell.actionsHitRect(in: frame).contains(point) {
                 toolTip = CompanionL10n.string("chip.control.actions.help")
             } else if isEditable, cell.moveHandleRect(in: frame)?.contains(point) == true {
                 toolTip = CompanionL10n.string("chip.control.move.help")
@@ -5887,7 +5887,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         for rect in moveHandleCursorRects { addCursorRect(rect, cursor: .openHand) }
         for index in blocksWithHandles {
             guard let frame = chipFrame(at: index), let cell = chipCell(at: index) else { continue }
-            addCursorRect(SealedBlockCell.actionsRect(in: frame), cursor: .pointingHand)
+            addCursorRect(SealedBlockCell.actionsHitRect(in: frame), cursor: .pointingHand)
             if let note = cell.doorwayRect(in: frame) { addCursorRect(note, cursor: .pointingHand) }
         }
         rebuildHandleElements()
@@ -6046,7 +6046,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
             clickCount: event.clickCount, modifierFlags: event.modifierFlags)
             || (Self.shouldOpenChipActions(
                 clickCount: event.clickCount, modifierFlags: event.modifierFlags)
-                && chipFrame(at: index).map { SealedBlockCell.actionsRect(in: $0).contains(point) }
+                && chipFrame(at: index).map { SealedBlockCell.actionsHitRect(in: $0).contains(point) }
                     == true)
         {
             setSelectedRange(NSRange(location: index, length: 1))
@@ -6117,6 +6117,15 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         onClick: () -> Void, begin: (NSEvent) -> Void
     ) {
         guard let window else { return }
+        let applicationWasActive = NSApp?.isActive ?? false
+        let windowWasKey = window.isKeyWindow
+        let windowWasVisible = window.isVisible
+        func contextIsCurrent() -> Bool {
+            self.window === window && isEditable
+                && (NSApp?.isActive ?? false) == applicationWasActive
+                && window.isKeyWindow == windowWasKey
+                && window.isVisible == windowWasVisible
+        }
         #if DEBUG
         handlePressStarted?()
         #endif
@@ -6128,8 +6137,10 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
                 matching: [.leftMouseDragged, .leftMouseUp],
                 until: Date(timeIntervalSinceNow: 0.1), inMode: .eventTracking, dequeue: true)
         }
-        while true {
-            guard let next = nextTrackedEvent() else {
+        while contextIsCurrent() {
+            let tracked = nextTrackedEvent()
+            guard contextIsCurrent() else { return }
+            guard let next = tracked else {
                 if NSEvent.pressedMouseButtons & 1 == 0 { return }
                 continue
             }
@@ -7561,6 +7572,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
     @MainActor private(set) var lastDrawnShowsControls: Bool?
     @MainActor private(set) var lastDrawnSelected: Bool?
     @MainActor private(set) var lastDrawnStatus: String?
+    @MainActor private(set) var lastDrawnStatusSymbol: String?
+    @MainActor private(set) var lastDrawnStatusSymbolFrame: NSRect?
     #endif
 
     nonisolated static let blockHeight = SealedBlockLayout.height
@@ -7658,6 +7671,11 @@ final class SealedBlockCell: NSTextAttachmentCell {
         return rect.maxX + 8 <= actionRowStart(in: cellFrame) ? rect : nil
     }
 
+    @MainActor
+    func noteAnchorRect(in frame: NSRect) -> NSRect {
+        doorwayRect(in: frame) ?? Self.actionsRect(in: frame)
+    }
+
     struct NamedRow {
         let name: NSAttributedString
         let equals: NSAttributedString
@@ -7679,7 +7697,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let valueAttributes = Self.valueAttributes(available: info.available, selected: selected)
         let separator = NSAttributedString(string: " · ", attributes: valueAttributes)
         let value = Self.valueText(of: info)
-        let available = max(0, cellFrame.width - 24)
+        let available = max(0, cellFrame.width - SealedBlockLayout.horizontalPadding * 2)
         let allotment = editingWidth.map {
             (name: min($0, available), value: max(0, available - $0 - separator.size().width))
         } ?? SealedBlockLayout.rowAllotment(
@@ -7702,7 +7720,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     @MainActor
-    func nameFieldRoom(in cellFrame: NSRect) -> CGFloat { max(0, cellFrame.width - 24) }
+    func nameFieldRoom(in cellFrame: NSRect) -> CGFloat { max(0, cellFrame.width - SealedBlockLayout.horizontalPadding * 2) }
 
     @MainActor
     static func fitted(
@@ -7731,18 +7749,11 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     struct ContentLayout {
-        let metrics: SealedBlockLayout.Metrics
         let left: CGFloat
         let identityRowY: CGFloat
         let lockRect: NSRect
         let labelOrigin: NSPoint
-        let metadataRight: CGFloat
-        let metadataY: CGFloat
         let rowBand: NSRect
-
-        func metadataOrigin(width: CGFloat) -> NSPoint {
-            NSPoint(x: metadataRight - width, y: metadataY)
-        }
 
         func namedRow(
             nameWidth: CGFloat, equalsWidth: CGFloat, valueWidth: CGFloat, height: CGFloat
@@ -7753,11 +7764,6 @@ final class SealedBlockCell: NSTextAttachmentCell {
             return SealedBlockLayout.NamedRow(
                 name: name, equals: separator, value: value)
         }
-
-        func excerptRect(metadataWidth: CGFloat, height: CGFloat) -> NSRect {
-            NSRect(x: left, y: identityRowY,
-                   width: max(0, metrics.width - 24 - metadataWidth), height: height)
-        }
     }
 
     // Geometry is shared by the cell and the inline name editor.
@@ -7767,9 +7773,8 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let actionY = actionsRect(in: frame).minY
         let lock = NSRect(x: left, y: actionY + 6, width: 11, height: 12)
         return ContentLayout(
-            metrics: metrics, left: left, identityRowY: frame.minY + 8,
+            left: left, identityRowY: frame.minY + 8,
             lockRect: lock, labelOrigin: NSPoint(x: lock.maxX + 5, y: actionY + 4),
-            metadataRight: frame.maxX - 12, metadataY: actionY + 4,
             rowBand: NSRect(x: frame.minX, y: frame.minY, width: frame.width,
                             height: max(0, actionY - frame.minY)))
     }
@@ -7778,10 +7783,24 @@ final class SealedBlockCell: NSTextAttachmentCell {
         SealedBlockLayout.actionsRect(in: frame)
     }
 
+    nonisolated static func actionsHitRect(in frame: NSRect) -> NSRect {
+        SealedBlockLayout.actionsHitRect(in: frame)
+    }
+
+    @MainActor
+    static var copyControlWidth: CGFloat {
+        SealedBlockLayout.copyWidth(
+            titleWidth: controlString(decryptedDragWords).size().width,
+            feedbackWidth: controlString(copiedWords).size().width)
+    }
+
     @MainActor
     func copyRect(in frame: NSRect) -> NSRect? {
         guard dragsDecrypted else { return nil }
-        return SealedBlockLayout.copyRect(in: frame)
+        guard let rect = SealedBlockLayout.copyRect(in: frame, width: Self.copyControlWidth),
+              !info.hasNote || rect.minX >= Self.contentLayout(in: frame).lockRect.maxX + 8
+        else { return nil }
+        return rect
     }
 
     // The Copy button doubles as an explicitly labelled outward-drag source.
@@ -7811,8 +7830,11 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     @MainActor
     func moveHandleRect(in frame: NSRect) -> NSRect? {
-        SealedBlockLayout.moveRect(
-            in: frame, before: copyRect(in: frame)?.minX ?? Self.actionsRect(in: frame).minX)
+        guard let rect = SealedBlockLayout.moveRect(
+            in: frame, before: copyRect(in: frame)?.minX ?? Self.actionsRect(in: frame).minX),
+              !info.hasNote || rect.minX >= Self.contentLayout(in: frame).lockRect.maxX + 8
+        else { return nil }
+        return rect
     }
 
     @MainActor
@@ -7918,7 +7940,6 @@ final class SealedBlockCell: NSTextAttachmentCell {
         MainActor.assumeIsolated { preferredBounds(available: 0).origin }
     }
 
-    enum Face { case page, dragImage }
     nonisolated static let beatDuration: TimeInterval = 1
     nonisolated static let beatFade: TimeInterval = 0.15
 
@@ -7967,12 +7988,15 @@ final class SealedBlockCell: NSTextAttachmentCell {
         frame: NSRect, drag: Bool, selected: Bool, editingWidth: CGFloat?, copied: Bool,
         showsControls: Bool
     ) {
-        let status = statusString(selected: selected, includesNote: !showsControls)
+        let noteNeedsStatus = showsControls && info.hasNote && doorwayRect(in: frame) == nil
+        let status = statusString(selected: selected, includesNote: !showsControls || noteNeedsStatus)
         #if DEBUG
         lastDrawnFrame = frame
         lastDrawnShowsControls = showsControls
         lastDrawnSelected = selected
         lastDrawnStatus = status.string
+        lastDrawnStatusSymbol = nil
+        lastDrawnStatusSymbolFrame = nil
         #endif
         let path = NSBezierPath(roundedRect: frame.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
         if !selected {
@@ -7983,15 +8007,22 @@ final class SealedBlockCell: NSTextAttachmentCell {
         path.lineWidth = 1
         path.stroke()
         let layout = Self.contentLayout(in: frame)
-        let statusEnd = showsControls ? actionRowStart(in: frame) - 8 : frame.maxX - 12
+        let statusEnd = showsControls ? actionRowStart(in: frame) - 8 : frame.maxX - SealedBlockLayout.horizontalPadding
         let statusRoom = max(0, statusEnd - layout.labelOrigin.x)
+        let symbolName = noteNeedsStatus ? "note.text" : "lock.fill"
+        let symbolEnd = showsControls ? actionRowStart(in: frame) : frame.maxX
+        if (statusRoom >= 30 || noteNeedsStatus), layout.lockRect.maxX <= symbolEnd,
+           let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
+            let tinted = symbol.withSymbolConfiguration(
+                NSImage.SymbolConfiguration(paletteColors: [Self.quietInk(selected: selected)])) ?? symbol
+            tinted.draw(in: layout.lockRect, from: .zero, operation: .sourceOver, fraction: 1,
+                        respectFlipped: true, hints: nil)
+            #if DEBUG
+            lastDrawnStatusSymbol = symbolName
+            lastDrawnStatusSymbolFrame = layout.lockRect
+            #endif
+        }
         if statusRoom >= 30 {
-            if let symbol = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil) {
-                let tinted = symbol.withSymbolConfiguration(
-                    NSImage.SymbolConfiguration(paletteColors: [Self.quietInk(selected: selected)])) ?? symbol
-                tinted.draw(in: layout.lockRect, from: .zero, operation: .sourceOver, fraction: 1,
-                            respectFlipped: true, hints: nil)
-            }
             let fitted = Self.fitted(status.string, attributes: status.attributes(at: 0, effectiveRange: nil), width: statusRoom)
             fitted.draw(at: layout.labelOrigin)
         }
@@ -8016,7 +8047,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
             }
         } else if !drag {
             let attributes = Self.valueAttributes(available: info.available, selected: selected)
-            Self.fitted(Self.valueText(of: info), attributes: attributes, width: max(0, frame.width - 24))
+            Self.fitted(Self.valueText(of: info), attributes: attributes, width: max(0, frame.width - SealedBlockLayout.horizontalPadding * 2))
                 .draw(at: NSPoint(x: layout.left, y: layout.identityRowY))
         }
     }

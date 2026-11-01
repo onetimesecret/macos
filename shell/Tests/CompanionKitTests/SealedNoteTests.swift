@@ -237,7 +237,7 @@ final class SealedNoteTests: XCTestCase {
     /// Once a note exists the seat reads `small · note`, size class first;
     /// a hovered zone or a copy takes the seat whole.
     func testTheSeatOpensADoorwayOnceANoteExists() {
-        let frame = NSRect(x: 0, y: 0, width: 480, height: SealedBlockCell.blockHeight)
+        let frame = NSRect(x: 0, y: 0, width: 480, height: SealedBlockCell.preferredHeight)
         let face = ChipInfo(
             chipId: 1, kind: "text", excerpt: "ab…cd", sizeLabel: "small", concealed: false,
             hasNote: true)

@@ -286,9 +286,7 @@ final class SealedNoteEditor: NSObject {
               let cell = pageView.chipCell(at: index),
               overlay.superview != nil
         else { return close(returningKeys: holdsKeys) }
-        let layout = SealedBlockCell.contentLayout(in: frame)
-        let doorway = cell.doorwayRect(in: frame)
-            ?? NSRect(x: layout.metadataRight - 12, y: layout.metadataY, width: 0, height: 0)
+        let doorway = cell.noteAnchorRect(in: frame)
         let placement = NotePopoverLayout.placement(
             block: overlay.convert(frame, from: pageView),
             doorwayX: overlay.convert(NSPoint(x: doorway.midX, y: doorway.midY), from: pageView).x,

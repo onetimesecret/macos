@@ -906,7 +906,7 @@ final class MarkdownPreviewRenderingTests: XCTestCase {
         }
 
         let plain = NSTextContainer(size: NSSize(width: 400, height: 400))
-        let cell = NSRect(x: 0, y: 0, width: 200, height: SealedBlockCell.blockHeight)
+        let cell = NSRect(x: 0, y: 0, width: 200, height: SealedBlockCell.preferredHeight)
         XCTAssertEqual(
             SealedBlockCell.blockWidth(in: plain, proposedLineFragment: cell),
             floor(200 - plain.lineFragmentPadding * 2))
