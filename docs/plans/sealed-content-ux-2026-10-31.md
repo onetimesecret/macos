@@ -233,3 +233,36 @@ l󠄁o󠄁c󠄁a󠄁l󠄁i󠄁z󠄁e󠄁d󠄁 C󠄁o󠄁p󠄁y󠄁 s󠄁i󠄁z�
 p󠄁r󠄁e󠄁s󠄁s󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁l󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁a󠄁d󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 p󠄁r󠄁e󠄁s󠄁s󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁l󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 S󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁
 r󠄁e󠄁g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁t󠄁e󠄁d󠄁;󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁r󠄁r󠄁o󠄁w󠄁 n󠄁a󠄁m󠄁i󠄁n󠄁g󠄁-󠄁e󠄁r󠄁r󠄁o󠄁r󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁 w󠄁a󠄁s󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁.󠄁 A󠄁D󠄁R󠄁 l󠄁i󠄁n󠄁t󠄁,󠄁 E󠄁n󠄁g󠄁l󠄁i󠄁s󠄁h󠄁
 s󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 s󠄁y󠄁n󠄁t󠄁a󠄁x󠄁 a󠄁n󠄁d󠄁 d󠄁i󠄁f󠄁f󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁.󠄁 R󠄁u󠄁s󠄁t󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁s󠄁 d󠄁i󠄁d󠄁 n󠄁o󠄁t󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁 i󠄁n󠄁 t󠄁h󠄁i󠄁s󠄁 r󠄁o󠄁u󠄁n󠄁d󠄁.󠄁
+
+
+R󠄁o󠄁u󠄁n󠄁d󠄁 t󠄁w󠄁o󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁e󠄁d󠄁 `99accb26`.󠄁 G󠄁r󠄁e󠄁p󠄁t󠄁i󠄁l󠄁e󠄁 f󠄁o󠄁u󠄁n󠄁d󠄁 n󠄁o󠄁 c󠄁o󠄁n󠄁c󠄁r󠄁e󠄁t󠄁e󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁i󠄁n󠄁g󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁s󠄁
+a󠄁n󠄁d󠄁 r󠄁a󠄁t󠄁e󠄁d󠄁 c󠄁o󠄁n󠄁f󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁 5󠄁/󠄁5󠄁.󠄁 C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 f󠄁i󠄁x󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 s󠄁u󠄁p󠄁p󠄁l󠄁i󠄁e󠄁d󠄁
+t󠄁h󠄁e󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁i󠄁n󠄁g󠄁 n󠄁e󠄁w󠄁 t󠄁o󠄁p󠄁i󠄁c󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁s󠄁e󠄁 a󠄁s󠄁s󠄁e󠄁s󠄁s󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 a󠄁r󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁,󠄁 n󠄁o󠄁t󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁t󠄁y󠄁.󠄁
+
+| I󠄁D󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 r󠄁o󠄁u󠄁n󠄁d󠄁-󠄁t󠄁w󠄁o󠄁 t󠄁o󠄁p󠄁i󠄁c󠄁 | D󠄁i󠄁s󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 |
+| --- | --- | --- |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁1󠄁 | S󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 i󠄁n󠄁d󠄁e󠄁x󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁s󠄁 t󠄁w󠄁o󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁e󠄁s󠄁.󠄁 | C󠄁o󠄁r󠄁r󠄁e󠄁c󠄁t󠄁 t󠄁h󠄁e󠄁 c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 i󠄁n󠄁d󠄁e󠄁x󠄁 t󠄁o󠄁 C󠄁o󠄁p󠄁y󠄁/󠄁M󠄁o󠄁r󠄁e󠄁/󠄁N󠄁o󠄁t󠄁e󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁/󠄁C󠄁u󠄁t󠄁/󠄁P󠄁a󠄁s󠄁t󠄁e󠄁 m󠄁o󠄁v󠄁e󠄁m󠄁e󠄁n󠄁t󠄁;󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 h󠄁i󠄁s󠄁t󠄁o󠄁r󠄁i󠄁c󠄁a󠄁l󠄁 a󠄁m󠄁e󠄁n󠄁d󠄁m󠄁e󠄁n󠄁t󠄁 e󠄁n󠄁t󠄁r󠄁i󠄁e󠄁s󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁2󠄁 | U󠄁n󠄁k󠄁n󠄁o󠄁w󠄁n󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁n󠄁t󠄁 k󠄁i󠄁n󠄁d󠄁s󠄁 a󠄁r󠄁e󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁d󠄁 a󠄁s󠄁 t󠄁e󠄁x󠄁t󠄁.󠄁 | U󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 n󠄁e󠄁u󠄁t󠄁r󠄁a󠄁l󠄁 c󠄁l󠄁a󠄁s󠄁s󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 f󠄁o󠄁r󠄁 a󠄁n󠄁 u󠄁n󠄁k󠄁n󠄁o󠄁w󠄁n󠄁 k󠄁i󠄁n󠄁d󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁3󠄁 | S󠄁e󠄁v󠄁e󠄁r󠄁e󠄁l󠄁y󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁 h󠄁i󠄁d󠄁e󠄁s󠄁 i󠄁t󠄁s󠄁 e󠄁r󠄁r󠄁o󠄁r󠄁/󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 | A󠄁d󠄁d󠄁 a󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁c󠄁t󠄁 e󠄁r󠄁r󠄁o󠄁r󠄁-󠄁f󠄁i󠄁r󠄁s󠄁t󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 a󠄁n󠄁d󠄁 t󠄁e󠄁s󠄁t󠄁 t󠄁i󠄁g󠄁h󠄁t󠄁e󠄁r󠄁 v󠄁i󠄁e󠄁w󠄁p󠄁o󠄁r󠄁t󠄁s󠄁 t󠄁h󠄁a󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 c󠄁a󠄁s󠄁e󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁4󠄁 | U󠄁n󠄁u󠄁s󠄁e󠄁d󠄁 n󠄁a󠄁m󠄁e󠄁-󠄁f󠄁l󠄁o󠄁o󠄁r󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁a󠄁n󠄁t󠄁.󠄁 | U󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁m󠄁e󠄁d󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁a󠄁n󠄁t󠄁 i󠄁n󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁5󠄁 | M󠄁o󠄁r󠄁e󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁a󠄁n󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 d󠄁e󠄁a󠄁d󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁 c󠄁l󠄁e󠄁a󠄁n󠄁u󠄁p󠄁.󠄁 | D󠄁e󠄁f󠄁e󠄁r󠄁 b󠄁r󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 c󠄁o󠄁s󠄁m󠄁e󠄁t󠄁i󠄁c󠄁 r󠄁e󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁u󠄁r󠄁i󠄁n󠄁g󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁 f󠄁l󠄁o󠄁o󠄁r󠄁/󠄁t󠄁e󠄁s󠄁t󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁;󠄁 n󠄁o󠄁 n󠄁e󠄁w󠄁 u󠄁s󠄁e󠄁r󠄁-󠄁v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁6󠄁 | N󠄁o󠄁t󠄁e󠄁 a󠄁n󠄁d󠄁 C󠄁o󠄁p󠄁y󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 d󠄁i󠄁f󠄁f󠄁e󠄁r󠄁e󠄁n󠄁t󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁s󠄁.󠄁 | M󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁 b󠄁o󠄁t󠄁h󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 s󠄁a󠄁m󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 f󠄁o󠄁n󠄁t󠄁 a󠄁n󠄁d󠄁 p󠄁a󠄁d󠄁d󠄁i󠄁n󠄁g󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁7󠄁 | N󠄁o󠄁t󠄁e󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 a󠄁n󠄁d󠄁 s󠄁t󠄁a󠄁t󠄁u󠄁s󠄁 t󠄁r󠄁u󠄁n󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 u󠄁s󠄁e󠄁 d󠄁i󠄁f󠄁f󠄁e󠄁r󠄁e󠄁n󠄁t󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁s󠄁.󠄁 | T󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 n󠄁o󠄁n󠄁i󠄁n󠄁t󠄁e󠄁r󠄁s󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 g󠄁u󠄁a󠄁r󠄁d󠄁 a󠄁v󠄁o󠄁i󠄁d󠄁s󠄁 c󠄁o󠄁l󠄁l󠄁i󠄁s󠄁i󠄁o󠄁n󠄁.󠄁 P󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 t󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁-󠄁s󠄁t󠄁a󠄁t󠄁u󠄁s󠄁 b󠄁a󠄁s󠄁i󠄁s󠄁;󠄁 n󠄁o󠄁 n󠄁e󠄁w󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁8󠄁 | N󠄁o󠄁t󠄁e󠄁-󠄁s󠄁p󠄁e󠄁c󠄁i󠄁f󠄁i󠄁c󠄁 i󠄁n󠄁d󠄁i󠄁c󠄁a󠄁t󠄁o󠄁r󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁.󠄁 | C󠄁l󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁 r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 n󠄁o󠄁t󠄁e󠄁 i󠄁n󠄁d󠄁i󠄁c󠄁a󠄁t󠄁o󠄁r󠄁 w󠄁h󠄁e󠄁n󠄁 i󠄁t󠄁s󠄁 t󠄁e󠄁x󠄁t󠄁/󠄁c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 c󠄁a󠄁n󠄁n󠄁o󠄁t󠄁 f󠄁i󠄁t󠄁;󠄁 o󠄁r󠄁d󠄁i󠄁n󠄁a󠄁r󠄁y󠄁 s󠄁t󠄁a󠄁t󠄁u󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 u󠄁n󠄁d󠄁e󠄁r󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁a󠄁i󠄁n󠄁t󠄁s󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁9󠄁 | A󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁t󠄁s󠄁e󠄁l󠄁f󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁s󠄁 a󠄁 p󠄁r󠄁e󠄁s󠄁s󠄁.󠄁 | P󠄁e󠄁r󠄁m󠄁i󠄁t󠄁 p󠄁r󠄁o󠄁m󠄁o󠄁t󠄁i󠄁o󠄁n󠄁 t󠄁o󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁e󠄁/󠄁k󠄁e󠄁y󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁x󠄁t󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁 a󠄁n󠄁y󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁q󠄁u󠄁e󠄁n󠄁t󠄁 l󠄁o󠄁s󠄁s󠄁.󠄁 T󠄁e󠄁s󠄁t󠄁 t󠄁h󠄁e󠄁s󠄁e󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 t󠄁r󠄁a󠄁n󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁 p󠄁e󠄁r󠄁s󠄁o󠄁n󠄁'󠄁s󠄁 a󠄁p󠄁p󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁1󠄁0󠄁 | D󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 o󠄁u󠄁t󠄁c󠄁o󠄁m󠄁e󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁 i󠄁s󠄁 m󠄁u󠄁t󠄁a󠄁b󠄁l󠄁e󠄁.󠄁 | M󠄁a󠄁k󠄁e󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁 i󠄁m󠄁m󠄁u󠄁t󠄁a󠄁b󠄁l󠄁e󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁n󠄁v󠄁e󠄁n󠄁i󠄁e󠄁n󠄁c󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁n󠄁 a󠄁b󠄁s󠄁e󠄁n󠄁t󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁1󠄁1󠄁 | R󠄁e󠄁c󠄁o󠄁v󠄁e󠄁r󠄁y󠄁 c󠄁a󠄁p󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁p󠄁e󠄁a󠄁t󠄁e󠄁d󠄁l󠄁y󠄁 q󠄁u󠄁e󠄁r󠄁i󠄁e󠄁s󠄁 a󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁a󠄁n󠄁t󠄁.󠄁 | C󠄁a󠄁c󠄁h󠄁e󠄁 t󠄁h󠄁e󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁i󠄁z󠄁e󠄁d󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁v󠄁a󠄁l󠄁 t󠄁e󠄁x󠄁t󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁1󠄁2󠄁 | R󠄁e󠄁c󠄁o󠄁v󠄁e󠄁r󠄁y󠄁 c󠄁a󠄁p󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁.󠄁 | H󠄁i󠄁d󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁v󠄁a󠄁l󠄁 g󠄁u󠄁i󠄁d󠄁a󠄁n󠄁c󠄁e󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 r󠄁e󠄁c󠄁o󠄁v󠄁e󠄁r󠄁y󠄁 b󠄁e󠄁c󠄁o󠄁m󠄁e󠄁s󠄁 u󠄁n󠄁a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁 a󠄁n󠄁d󠄁 u󠄁p󠄁d󠄁a󠄁t󠄁e󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁-󠄁b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁 h󠄁e󠄁l󠄁p󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁1󠄁3󠄁 | A󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁r󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁l󠄁o󠄁s󠄁e󠄁s󠄁 a󠄁 n󠄁o󠄁t󠄁e󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 c󠄁h󠄁o󠄁r󠄁d󠄁 o󠄁w󠄁n󠄁e󠄁r󠄁s󠄁h󠄁i󠄁p󠄁.󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 i󠄁n󠄁t󠄁e󠄁n󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 h󠄁a󠄁n󠄁d󠄁o󠄁f󠄁f󠄁:󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁g󠄁e󠄁 b󠄁e󠄁c󠄁o󠄁m󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁d󠄁e󠄁r󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 i󠄁t󠄁s󠄁 c󠄁h󠄁o󠄁r󠄁d󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁.󠄁 N󠄁o󠄁 i󠄁n󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁 p󠄁r󠄁e󠄁m󠄁a󠄁t󠄁u󠄁r󠄁e󠄁-󠄁r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁1󠄁4󠄁 | S󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁-󠄁s󠄁t󠄁a󠄁t󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁a󠄁s󠄁t󠄁 l󠄁a󠄁c󠄁k󠄁s󠄁 i󠄁n󠄁c󠄁r󠄁e󠄁a󠄁s󠄁e󠄁d󠄁-󠄁c󠄁o󠄁n󠄁t󠄁r󠄁a󠄁s󠄁t󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁a󠄁g󠄁e󠄁.󠄁 | A󠄁d󠄁d󠄁 t󠄁h󠄁o󠄁s󠄁e󠄁 a󠄁p󠄁p󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁s󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁-󠄁s󠄁t󠄁a󠄁t󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁a󠄁s󠄁t󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁.󠄁 |
+| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁1󠄁5󠄁 | S󠄁t󠄁r󠄁i󠄁p󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 m󠄁a󠄁r󠄁k󠄁s󠄁.󠄁 | N󠄁o󠄁t󠄁 a󠄁d󠄁o󠄁p󠄁t󠄁e󠄁d󠄁;󠄁 s󠄁e󠄁e󠄁 R󠄁1󠄁2󠄁8󠄁-󠄁1󠄁3󠄁 a󠄁n󠄁d󠄁 R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁1󠄁8󠄁.󠄁 |
+
+
+R󠄁o󠄁u󠄁n󠄁d󠄁-󠄁t󠄁w󠄁o󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁:󠄁 t󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁 i󠄁s󠄁o󠄁l󠄁a󠄁t󠄁e󠄁d󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 3󠄁9󠄁3󠄁 a󠄁p󠄁p󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁
+2󠄁,󠄁3󠄁5󠄁2󠄁 C󠄁o󠄁m󠄁p󠄁a󠄁n󠄁i󠄁o󠄁n󠄁K󠄁i󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁,󠄁 w󠄁i󠄁t󠄁h󠄁 s󠄁e󠄁v󠄁e󠄁n󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 s󠄁k󠄁i󠄁p󠄁s󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 s󠄁i󠄁x󠄁
+n󠄁e󠄁w󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁r󠄁o󠄁m󠄁o󠄁t󠄁i󠄁o󠄁n󠄁/󠄁l󠄁o󠄁s󠄁s󠄁,󠄁 n󠄁e󠄁u󠄁t󠄁r󠄁a󠄁l󠄁 u󠄁n󠄁k󠄁n󠄁o󠄁w󠄁n󠄁-󠄁k󠄁i󠄁n󠄁d󠄁 s󠄁t󠄁a󠄁t󠄁u󠄁s󠄁,󠄁
+s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 N󠄁o󠄁t󠄁e󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁,󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁c󠄁t󠄁 e󠄁r󠄁r󠄁o󠄁r󠄁/󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁,󠄁 a󠄁n󠄁d󠄁 e󠄁x󠄁t󠄁r󠄁e󠄁m󠄁e󠄁-󠄁h󠄁e󠄁i󠄁g󠄁h󠄁t󠄁
+b󠄁o󠄁u󠄁n󠄁d󠄁s󠄁/󠄁E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁.󠄁 S󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 a󠄁l󠄁s󠄁o󠄁 p󠄁a󠄁s󠄁s󠄁 b󠄁o󠄁t󠄁h󠄁 i󠄁n󠄁c󠄁r󠄁e󠄁a󠄁s󠄁e󠄁d󠄁-󠄁c󠄁o󠄁n󠄁t󠄁r󠄁a󠄁s󠄁t󠄁 a󠄁p󠄁p󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁s󠄁.󠄁
+S󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁 r󠄁e󠄁g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁t󠄁e󠄁d󠄁.󠄁 R󠄁u󠄁s󠄁t󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁s󠄁 d󠄁i󠄁d󠄁 n󠄁o󠄁t󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁 i󠄁n󠄁 e󠄁i󠄁t󠄁h󠄁e󠄁r󠄁
+r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁e󠄁d󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 r󠄁o󠄁u󠄁n󠄁d󠄁.󠄁 A󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 p󠄁h󠄁y󠄁s󠄁i󠄁c󠄁a󠄁l󠄁-󠄁d󠄁i󠄁s󠄁p󠄁l󠄁a󠄁y󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁
+u󠄁n󠄁p󠄁e󠄁r󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁.󠄁
