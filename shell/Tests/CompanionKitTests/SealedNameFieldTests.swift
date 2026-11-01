@@ -139,6 +139,40 @@ final class SealedNameFieldTests: XCTestCase {
         }
     }
 
+    func testShortViewportClipsNamingHelpWithoutCoveringTheDraft() throws {
+        for width in [CGFloat(260), 520] {
+            let page = try makePage(width: width)
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: width, height: 140),
+                styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = page.scroll
+            defer { window.close() }
+            page.scroll.frame.size.height = 140
+            page.scroll.layoutSubtreeIfNeeded()
+            page.coordinator.beginNaming(at: 3)
+            let editor = try field(page)
+            editor.draft = "invalid.name"
+            XCTAssertFalse(editor.commit(returningKeys: false))
+            editor.helpView.layoutSubtreeIfNeeded()
+            let fieldFrame = editor.field.convert(editor.field.bounds, to: editor.overlay)
+            XCTAssertFalse(editor.helpScroll.isHidden)
+            XCTAssertFalse(editor.helpScroll.frame.intersects(fieldFrame))
+            XCTAssertTrue(editor.overlay.bounds.contains(editor.helpScroll.frame))
+            XCTAssertLessThan(editor.helpScroll.contentSize.height, editor.helpView.frame.height)
+
+            let fieldPoint = editor.field.convert(
+                NSPoint(x: editor.field.bounds.midX, y: editor.field.bounds.midY), to: page.scroll)
+            XCTAssertNil(editor.overlay.hitTest(fieldPoint), "the helper intercepted a draft click")
+            let actions = editor.helpView.save.frame.union(editor.helpView.cancel.frame)
+            editor.helpView.scrollToVisible(actions)
+            XCTAssertTrue(editor.helpView.visibleRect.intersects(editor.helpView.save.frame))
+            XCTAssertTrue(editor.helpView.visibleRect.intersects(editor.helpView.cancel.frame))
+            editor.helpView.cancel.performClick(nil)
+            XCTAssertFalse(editor.isOpen)
+        }
+    }
+
     func testRenderNamingPreviewsWhenRequested() throws {
         guard let directory = ProcessInfo.processInfo.environment["ONETIMEPAD_SEALED_PREVIEW_DIR"] else {
             throw XCTSkip("set ONETIMEPAD_SEALED_PREVIEW_DIR to render synthetic naming previews")

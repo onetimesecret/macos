@@ -306,6 +306,7 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
     let field = SealedNameField()
     let overlay = NoteOverlayView()
     let helpView = SealedNameHelpView()
+    let helpScroll = NSScrollView()
     private nonisolated(unsafe) var observers: [NSObjectProtocol] = []
     private var refocusGeneration: UInt64 = 0
     /// Room past the draft for the caret, and the field's inset before its text.
@@ -332,7 +333,12 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         helpView.cancel.target = self
         helpView.cancel.action = #selector(cancelClicked(_:))
         overlay.autoresizingMask = [.width, .height]
-        overlay.addSubview(helpView)
+        helpScroll.drawsBackground = false
+        helpScroll.borderType = .noBorder
+        helpScroll.hasVerticalScroller = true
+        helpScroll.autohidesScrollers = true
+        helpScroll.documentView = helpView
+        overlay.addSubview(helpScroll)
     }
 
     deinit {
@@ -454,11 +460,21 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         let room = overlay.bounds.insetBy(dx: 8, dy: 8)
         let width = min(440, max(0, room.width))
         let height = helpView.preferredHeight(width: width)
-        let below = room.maxY - block.maxY >= height + 4
-        let y = below ? block.maxY + 4 : max(room.minY, block.minY - height - 4)
-        helpView.frame = NSRect(
+        let belowY = max(room.minY, block.maxY + 4)
+        let belowRoom = max(0, room.maxY - belowY)
+        let aboveEnd = min(room.maxY, block.minY - 4)
+        let aboveRoom = max(0, aboveEnd - room.minY)
+        let below = belowRoom >= height || belowRoom >= aboveRoom
+        let visibleHeight = min(height, below ? belowRoom : aboveRoom)
+        let y = below ? belowY : aboveEnd - visibleHeight
+        helpScroll.frame = NSRect(
             x: min(max(room.minX, block.minX), max(room.minX, room.maxX - width)),
-            y: y, width: width, height: height)
+            y: y, width: width, height: visibleHeight)
+        helpScroll.isHidden = visibleHeight <= 0
+        helpScroll.tile()
+        let contentWidth = helpScroll.contentSize.width
+        helpView.frame = NSRect(x: 0, y: 0, width: contentWidth,
+            height: helpView.preferredHeight(width: contentWidth))
         helpView.needsLayout = true
     }
 
