@@ -31,6 +31,13 @@ private final class PaletteStorageNotification: @unchecked Sendable {
     init(_ storage: NSTextStorage) { self.storage = storage }
 }
 
+private final class PaletteTitleChanges: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String] = []
+    func append(_ value: String) { lock.lock(); values.append(value); lock.unlock() }
+    var snapshot: [String] { lock.lock(); defer { lock.unlock() }; return values }
+}
+
 @MainActor
 private final class PaletteEventSink: NSResponder {
     private(set) var scrolls = 0
@@ -184,6 +191,7 @@ final class CommandPaletteControllerTests: XCTestCase {
         let model = try makeModel()
         let (window, _) = makeWindow()
         defer { window.close() }
+        window.styleMask.insert(.closable)
         var commands: [CommandID] = []
         let palette = CommandPaletteController(model: model, performWindowCommand: { commands.append($0) }, returnToPages: {})
         palette.show(in: window, pageContext: true)
@@ -485,6 +493,8 @@ final class CommandPaletteControllerTests: XCTestCase {
         palette.search.stringValue = "state::SaveNow"
         palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
         XCTAssertEqual(palette.table.numberOfRows, 1)
+        let saveRow = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+        XCTAssertEqual(saveRow.detailLabel.stringValue, CompanionL10n.string("Current File"))
         palette.search.stringValue = "close file"
         palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
         XCTAssertEqual(palette.table.numberOfRows, 1)
@@ -977,6 +987,145 @@ final class CommandPaletteControllerTests: XCTestCase {
             XCTAssertNil(palette.overlay)
             XCTAssertTrue(window.firstResponder === editor)
         }
+    }
+
+    func testHostedSurfaceShortcutsDoNotRunBehindPaletteSearchOrResults() throws {
+        let model = try makeModel(overrideText:
+            #"[{"context":"Editor","use_key_equivalents":true,"bindings":{"alt-n":"page::New","x":"page::New"}}]"#)
+        model.loadStateIfNeeded()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let host = NSHostingView(rootView: PageKeyboardMap(model: model))
+        host.frame = window.contentLayoutRect
+        let container = PresentationContentContainer(content: host)
+        window.contentView = container
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false)
+        let original = model.tabs.map(\.id)
+        let owner = model.owner
+        var handBacks = 0
+        model.onHandBackKeys = { handBacks += 1 }
+        let searchEditor = try XCTUnwrap(palette.search.currentEditor() as? NSTextView)
+        searchEditor.setMarkedText("書", selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+        XCTAssertFalse(container.performKeyEquivalent(with: escape))
+        XCTAssertNotNil(palette.overlay)
+        XCTAssertTrue(searchEditor.hasMarkedText())
+        XCTAssertEqual(searchEditor.string, "書")
+        XCTAssertEqual(model.owner, owner)
+        XCTAssertEqual(handBacks, 0)
+        searchEditor.unmarkText()
+        palette.search.stringValue = ""
+        for resultsFocused in [false, true] {
+            if resultsFocused { XCTAssertTrue(window.makeFirstResponder(palette.table)) }
+            for (flags, character, key, code) in [
+                (NSEvent.ModifierFlags.option, "˜", "n", UInt16(45)),
+                (NSEvent.ModifierFlags(), "x", "x", UInt16(7))
+            ] {
+                let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                    modifierFlags: flags, timestamp: 0, windowNumber: window.windowNumber,
+                    context: nil, characters: character, charactersIgnoringModifiers: key,
+                    isARepeat: false, keyCode: code))
+                XCTAssertFalse(container.performKeyEquivalent(with: event))
+                XCTAssertNotNil(palette.overlay)
+                XCTAssertEqual(model.tabs.map(\.id), original)
+            }
+        }
+        let commandNew = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: [.command], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, characters: "n", charactersIgnoringModifiers: "n", isARepeat: false, keyCode: 45))
+        XCTAssertTrue(container.performKeyEquivalent(with: commandNew))
+        XCTAssertNil(palette.overlay)
+        XCTAssertEqual(model.tabs.count, original.count + 1)
+    }
+
+    func testSettingsContentOnlyReceivesKeysAfterThePaletteDismisses() throws {
+        let model = try makeModel()
+        let content = NSViewController()
+        let sink = PaletteKeyEquivalentSink(frame: NSRect(x: 0, y: 0, width: 480, height: 360))
+        content.view = sink
+        let window = SettingsPaletteWindow(contentViewController: content)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.orderFront(nil)
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false)
+        for resultsFocused in [false, true] {
+            if resultsFocused { XCTAssertTrue(window.makeFirstResponder(palette.table)) }
+            for (flags, character, key, code) in [
+                (NSEvent.ModifierFlags.option, "˜", "n", UInt16(45)),
+                (NSEvent.ModifierFlags(), "x", "x", UInt16(7))
+            ] {
+                let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                    modifierFlags: flags, timestamp: 0, windowNumber: window.windowNumber,
+                    context: nil, characters: character, charactersIgnoringModifiers: key,
+                    isARepeat: false, keyCode: code))
+                XCTAssertFalse(window.performKeyEquivalent(with: event))
+                XCTAssertNotNil(palette.overlay)
+                XCTAssertEqual(sink.received, 0)
+            }
+        }
+        let commandNew = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: [.command], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, characters: "n", charactersIgnoringModifiers: "n", isARepeat: false, keyCode: 45))
+        XCTAssertTrue(window.performKeyEquivalent(with: commandNew))
+        XCTAssertNil(palette.overlay)
+        XCTAssertEqual(sink.received, 1)
+    }
+
+    func testUnrelatedAndCountdownPublicationsDoNotRewriteDatedRowLabels() async throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        let tab = try XCTUnwrap(model.selection)
+        XCTAssertTrue(model.coreClient.setTitle(tab: tab, "Initial synthetic title"))
+        model.refresh()
+        model.closeCurrent()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false, reopen: true)
+        let cell = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+        let changes = PaletteTitleChanges()
+        let observation = cell.titleLabel.observe(\.stringValue, options: [.new]) { _, change in
+            changes.append(change.newValue ?? "")
+        }
+        defer { observation.invalidate() }
+        model.notice = "unrelated synthetic notice"
+        await drainMainQueue()
+        XCTAssertTrue(companion_test_age_ms(model.coreClient.rawHandleForTests, 1_000))
+        model.refresh()
+        await drainMainQueue()
+        XCTAssertEqual(changes.snapshot, [])
+        XCTAssertTrue(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) === cell)
+        XCTAssertEqual(cell.titleLabel.stringValue, "Initial synthetic title")
+        XCTAssertTrue(model.coreClient.setTitle(tab: tab, "Changed synthetic title"))
+        model.refresh()
+        await drainMainQueue()
+        let changed = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+        XCTAssertEqual(changed.titleLabel.stringValue, "Changed synthetic title")
+        XCTAssertFalse(changes.snapshot.isEmpty)
+    }
+
+    func testCloseWindowRequiresAClosableOriginWindow() throws {
+        let model = try makeModel()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false)
+        palette.search.stringValue = "Close Window"
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        XCTAssertEqual(palette.table.numberOfRows, 0)
+        palette.dismiss(restoringFocus: true)
+        window.styleMask.insert(.closable)
+        palette.show(in: window, pageContext: false)
+        palette.search.stringValue = "Close Window"
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        XCTAssertEqual(palette.table.numberOfRows, 1)
     }
 
 }

@@ -256,3 +256,5 @@
 "palette.context_changed" = "the page changed; reopen the command palette to use page commands";
 
 "palette.reopen_unavailable" = "this page is no longer available to reopen";
+
+"Current File" = "Current File";

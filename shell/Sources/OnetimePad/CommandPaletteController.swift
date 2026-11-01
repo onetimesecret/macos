@@ -5,13 +5,19 @@ import CompanionKit
 
 @MainActor
 final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
-    private struct Row {
+    private struct Row: Equatable {
         let title: String
         let detail: String
         let shortcut: String?
         let command: CommandID?
         let scope: CommandPaletteScope?
         let tab: UInt64?
+    }
+
+    private struct DatedSource: Equatable {
+        let id: UInt64
+        let title: String
+        let pageCreatedMs: UInt64?
     }
 
     private let model: PageModel
@@ -40,7 +46,8 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     private var modelChangeQueued = false
     private let realizedCells = NSHashTable<PaletteCommandCell>.weakObjects()
     private var rows: [Row] = []
-    private var datedSource: [TabSummary] = []
+    private var datedSource: [DatedSource] = []
+    private var renderedReopening: Bool?
     private var datedRows: [Row] = []
     private var datedLocale: String?
     private var datedTimeZone: String?
@@ -262,6 +269,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         contextGeneration = UUID()
         modelObservation = nil
         rows.removeAll()
+        renderedReopening = nil
         clearDatedCache()
         clearRealizedCells()
         table.reloadData()
@@ -430,9 +438,10 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     }
 
     private func reload() {
+        let previousRows = rows
         let selected = rows.indices.contains(table.selectedRow) ? rows[table.selectedRow] : nil
         if reopening {
-            let source = model.closedTabs
+            let source = model.closedTabs.map { DatedSource(id: $0.id, title: $0.title, pageCreatedMs: $0.pageCreatedMs) }
             let locale = Locale.current.identifier
             let timeZone = TimeZone.current.identifier
             if source != datedSource || locale != datedLocale || timeZone != datedTimeZone {
@@ -457,10 +466,14 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
             rows = CommandPaletteCatalog.entries(keymap: model.keymap).compactMap { entry in
                 let title = entry.command == .pageClose ? CompanionL10n.string(closeChoice.title) : entry.title
                 guard entry.matches(search.stringValue, title: title), isAvailable(entry) else { return nil }
-                return Row(title: title, detail: entry.scope.title,
+                let detail = entry.command == .fileSaveAs || entry.command == .stateSaveNow
+                    ? CompanionL10n.string("Current File") : entry.scope.title
+                return Row(title: title, detail: detail,
                     shortcut: entry.shortcut, command: entry.command, scope: entry.scope, tab: nil)
             }
         }
+        guard rows != previousRows || renderedReopening != reopening else { return }
+        renderedReopening = reopening
         backButton.isHidden = !reopening
         search.nextKeyView = table
         table.nextKeyView = reopening ? backButton : search
@@ -480,6 +493,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     }
 
     private func isAvailable(_ entry: CommandPaletteEntry) -> Bool {
+        if entry.command == .windowClose { return originalWindow?.styleMask.contains(.closable) == true }
         if entry.command == .pageReopenLast { return model.hasClosedTabs }
         if entry.command == .pageClose, !closeChoice.isEnabled { return false }
         if entry.command == .fileSaveAs || entry.command == .stateSaveNow {

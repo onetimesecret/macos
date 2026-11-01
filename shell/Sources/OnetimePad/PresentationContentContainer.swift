@@ -21,8 +21,10 @@ final class PresentationContentContainer: NSView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if let overlay = subviews.reversed().compactMap({ $0 as? PaletteOverlayView }).first,
-           overlay.performKeyEquivalent(with: event) { return true }
+        if let overlay = subviews.reversed().compactMap({ $0 as? PaletteOverlayView }).first {
+            if overlay.performKeyEquivalent(with: event) { return true }
+            if overlay.superview === self { return false }
+        }
         return super.performKeyEquivalent(with: event)
     }
 }

@@ -231,8 +231,11 @@ final class BackdropSettingsWindowController: NSObject {
 @MainActor
 final class SettingsPaletteWindow: NSWindow {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if let overlay = contentView?.subviews.reversed().compactMap({ $0 as? PaletteOverlayView }).first,
-           overlay.performKeyEquivalent(with: event) { return true }
+        if let host = contentView,
+           let overlay = host.subviews.reversed().compactMap({ $0 as? PaletteOverlayView }).first {
+            if overlay.performKeyEquivalent(with: event) { return true }
+            if overlay.superview === host { return false }
+        }
         return super.performKeyEquivalent(with: event)
     }
 }
