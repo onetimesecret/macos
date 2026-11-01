@@ -24,6 +24,16 @@ extension PageModel {
             return true
         }
         switch command {
+        case .appOpenTimeline:
+            showPageLayout(timeline: true)
+        case .appSwitchToTabs:
+            showPageLayout(timeline: false)
+        case .pageReopenLast:
+            reopenLastClosedTab()
+        case .pageReopenDated:
+            onReopenDatedTabs?()
+        case .appCommandPalette:
+            return false
         case .pageNew:
             newPage()
         case .pageClose:

@@ -14,6 +14,12 @@ import Foundation
 /// of the contract. A user's keymap names these strings, so renaming
 /// one breaks their file; treat the raw values as published.
 public enum CommandID: String, CaseIterable, Sendable {
+    case appCommandPalette = "app::CommandPalette"
+    case appOpenTimeline = "app::OpenTimeline"
+    case appSwitchToTabs = "app::SwitchToTabs"
+    case pageReopenLast = "page::ReopenLast"
+    case pageReopenDated = "page::ReopenDated"
+
     // Pages
     case pageNew = "page::New"
     case pageClose = "page::Close"
@@ -102,7 +108,7 @@ public enum CommandID: String, CaseIterable, Sendable {
         case .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorToggleWrap,
             .editorDetectCodeLanguage, .editorUndo, .editorRedo, .noteToggleExpanded:
             return .editor
-        case .windowClose, .appHelp:
+        case .windowClose, .appHelp, .appCommandPalette:
             return .window
         default:
             return .surface

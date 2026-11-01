@@ -231,4 +231,20 @@ final class KeymapEventTests: XCTestCase {
             host.performKeyEquivalent(with: try press("m", flags: [.option], keyCode: 46)),
             "the surface claims keys nothing bound, so the claim above proves nothing")
     }
+
+    func testControlWClosesThePageInsteadOfDeletingAWord() throws {
+        let (model, editor) = try makeStack()
+        model.loadStateIfNeeded()
+        model.newPage()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        editor.string = "do not delete any words"
+        editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
+        editor.keyDown(with: try press("w", flags: [.control], keyCode: 13))
+        XCTAssertEqual(model.tabs.count, 3)
+        XCTAssertEqual(model.navigationTabs.count, 2)
+        XCTAssertEqual(model.closedTabs.first?.pageID, page)
+        XCTAssertEqual(editor.string, "do not delete any words")
+    }
+
 }

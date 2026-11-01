@@ -140,3 +140,30 @@
 /* The page editor, as VoiceOver names it. */
 "editor.content" = "Editor content";
 "Rendering preview…" = "Rendering preview…";
+
+"Application" = "Application";
+"Current Page or Tab" = "Current Page or Tab";
+"Editor and Selection" = "Editor and Selection";
+"Open Timeline" = "Open Timeline";
+"Switch to Tabs View" = "Switch to Tabs View";
+"Reopen Dated Tabs…" = "Reopen Dated Tabs…";
+"Reopen Last Closed Page or Tab" = "Reopen Last Closed Page or Tab";
+"Open File…" = "Open File…";
+"OnetimePad Help" = "OnetimePad Help";
+"Close Page or Tab" = "Close Page or Tab";
+"Previous Page or Tab" = "Previous Page or Tab";
+"Next Page or Tab" = "Next Page or Tab";
+"Toggle Line Wrapping" = "Toggle Line Wrapping";
+"Seal Clipboard" = "Seal Clipboard";
+"Toggle Note Expansion" = "Toggle Note Expansion";
+"Search commands…" = "Search commands…";
+"Command Palette" = "Command Palette";
+"Command Palette…" = "Command Palette…";
+"Commands" = "Commands";
+"Search closed pages or tabs…" = "Search closed pages…";
+"Saved tab" = "Saved tab";
+"No closed pages or tabs" = "No closed pages or tabs";
+"No matching commands" = "No matching commands";
+"↑↓ Select · Return Run · Esc Cancel" = "↑↓ Select · Return Run · Esc Cancel";
+"page.close.save_failed" = "the page could not be saved; it remains open";
+"page.reopen.expired" = "the page expired; its saved tab is open";

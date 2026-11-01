@@ -65,6 +65,14 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         }
         closeItem = close
         file.addItem(close)
+        file.addItem(action(CompanionL10n.string("Reopen Last Closed Page or Tab"), command: .pageReopenLast,
+                            enabled: { [app] in !app.pages.closedTabs.isEmpty }) { [app] in
+            app.pages.perform(.pageReopenLast)
+            app.returnToOwner()
+        })
+        file.addItem(action(CompanionL10n.string("Reopen Dated Tabs…"), command: .pageReopenDated) { [app] in
+            app.showCommandPalette(reopen: true)
+        })
     }
 
     private func makeEditMenu(in main: NSMenu) {
@@ -120,6 +128,19 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     private func makeViewMenu(in main: NSMenu) {
         let view = submenu(CompanionL10n.string("View"), in: main)
+        view.addItem(action(CompanionL10n.string("Command Palette…"), command: .appCommandPalette) { [app] in
+            app.showCommandPalette()
+        })
+        view.addItem(.separator())
+        view.addItem(action(CompanionL10n.string("Open Timeline"), command: .appOpenTimeline) { [app] in
+            app.pages.perform(.appOpenTimeline)
+            app.returnToOwner()
+        })
+        view.addItem(action(CompanionL10n.string("Switch to Tabs View"), command: .appSwitchToTabs) { [app] in
+            app.pages.perform(.appSwitchToTabs)
+            app.returnToOwner()
+        })
+        view.addItem(.separator())
         view.addItem(responder(CompanionL10n.string("Enter Full Screen"), #selector(NSWindow.toggleFullScreen(_:)), key: "f", modifiers: [.command, .control]))
     }
 
