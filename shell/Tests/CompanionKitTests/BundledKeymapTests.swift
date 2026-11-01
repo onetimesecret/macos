@@ -124,13 +124,13 @@ final class BundledKeymapTests: XCTestCase {
             ])
     }
 
-    /// Everything else is carried by the surface's hidden buttons, and
-    /// every one of them has to be installable.
-    func testEverySurfaceChordCanBeInstalled() throws {
+    func testControlWUsesTheEditorRouteWhileCommandWAndEscapeRemainSurfaceShortcuts() throws {
         let resolved = try bundled()
-        XCTAssertEqual(
-            resolved.surfaceShortcuts().count,
-            resolved.bindings(in: .editor, dispatch: .surface).count)
+        let installed = Set(resolved.surfaceShortcuts().map { $0.keystroke.canonical })
+        XCTAssertFalse(installed.contains("ctrl-w"))
+        XCTAssertTrue(installed.contains("cmd-w"))
+        XCTAssertTrue(installed.contains("escape"))
+        XCTAssertEqual(resolved.command(for: try parse("ctrl-w"), in: .editor), .pageClose)
     }
 
     /// New is the one command the default file puts two chords on, and

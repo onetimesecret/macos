@@ -452,10 +452,17 @@ public final class PageModel: ObservableObject {
     /// or not the tab holds a page (ADR-0017). A tab whose page expired
     /// keeps its place here, named and empty.
     @Published public private(set) var tabs: [TabSummary] = []
-    @Published private var closedPageUUIDs: [String] = [] {
-        didSet { closedPageUUIDIndex = Set(closedPageUUIDs) }
+    private struct ClosedPageNavigation {
+        var orderedUUIDs: [String] = []
+        var tabIDs: Set<UInt64> = []
+        var summaries: [TabSummary] = []
     }
-    private var closedPageUUIDIndex: Set<String> = []
+    @Published private var closedPageNavigation = ClosedPageNavigation()
+    private var normalizedRosterUUIDs: [UInt64: String] = [:]
+    #if DEBUG
+    private(set) var closedRosterNormalizationCount = 0
+    #endif
+    private var closedPageUUIDs: [String] { closedPageNavigation.orderedUUIDs }
     private static let closedPageUUIDsKey = "closedPageUUIDs"
 
     public var onReopenDatedTabs: (() -> Void)?
@@ -1572,8 +1579,8 @@ public final class PageModel: ObservableObject {
             restoredClosedUUIDs.removeAll { $0 == uuid }
             restoredClosedUUIDs.append(uuid)
         }
-        _closedPageUUIDs = Published(initialValue: restoredClosedUUIDs)
-        closedPageUUIDIndex = Set(restoredClosedUUIDs)
+        _closedPageNavigation = Published(initialValue:
+            ClosedPageNavigation(orderedUUIDs: restoredClosedUUIDs))
         pads = PadCatalog(defaults: defaults)
         let resolvedClient =
             seams.client ?? CompanionClient(credentialService: formFactor.credentialService)
@@ -3107,14 +3114,14 @@ public final class PageModel: ObservableObject {
     /// What it costs instead is a walk over the summaries the model has
     /// already decoded, with no call into the core at all.
 
-    // MARK: Experimental pads (local navigation ownership)
+    // MARK: Page navigation
 
     private static func normalizedTabUUID(_ value: String?) -> String? {
         value.flatMap(UUID.init(uuidString:))?.uuidString.lowercased()
     }
 
     private func isClosed(_ tab: TabSummary) -> Bool {
-        Self.normalizedTabUUID(tab.uuid).map { closedPageUUIDIndex.contains($0) } ?? false
+        closedPageNavigation.tabIDs.contains(tab.id)
     }
 
     public var navigationTabs: [TabSummary] {
@@ -3122,15 +3129,48 @@ public final class PageModel: ObservableObject {
     }
 
     public var closedTabs: [TabSummary] {
-        var byUUID: [String: TabSummary] = [:]
+        guard pads.isEnabled else { return closedPageNavigation.summaries }
+        return closedPageNavigation.summaries.filter { pads.owner(ofTabUUID: $0.uuid) == pads.activeID }
+    }
+
+    public var hasClosedTabs: Bool {
+        guard pads.isEnabled else { return !closedPageNavigation.summaries.isEmpty }
+        return closedPageNavigation.summaries.contains { pads.owner(ofTabUUID: $0.uuid) == pads.activeID }
+    }
+
+    private func readNormalizedRosterUUIDs() -> [UInt64: String] {
+        var result: [UInt64: String] = [:]
         for tab in tabs {
-            if let uuid = Self.normalizedTabUUID(tab.uuid) { byUUID[uuid] = tab }
+            #if DEBUG
+            closedRosterNormalizationCount += 1
+            #endif
+            if let uuid = Self.normalizedTabUUID(tab.uuid) { result[tab.id] = uuid }
         }
-        return closedPageUUIDs.reversed().compactMap { uuid in
-            guard let tab = byUUID[uuid], !pads.isEnabled || pads.owner(ofTabUUID: tab.uuid) == pads.activeID
-            else { return nil }
-            return tab
+        return result
+    }
+
+    private func cacheClosedRosterUUIDs() {
+        normalizedRosterUUIDs = closedPageUUIDs.isEmpty ? [:] : readNormalizedRosterUUIDs()
+    }
+
+    private func setClosedPageUUIDs(_ orderedUUIDs: [String]) {
+        if !orderedUUIDs.isEmpty, normalizedRosterUUIDs.isEmpty {
+            normalizedRosterUUIDs = readNormalizedRosterUUIDs()
         }
+        let membership = Set(orderedUUIDs)
+        var byUUID: [String: TabSummary] = [:]
+        if !membership.isEmpty {
+            for tab in tabs {
+                if let uuid = normalizedRosterUUIDs[tab.id], membership.contains(uuid) { byUUID[uuid] = tab }
+            }
+        }
+        let summaries = orderedUUIDs.reversed().compactMap { byUUID[$0] }
+        let state = ClosedPageNavigation(orderedUUIDs: orderedUUIDs,
+            tabIDs: Set(summaries.map(\.id)), summaries: summaries)
+        guard state.orderedUUIDs != closedPageNavigation.orderedUUIDs
+            || state.tabIDs != closedPageNavigation.tabIDs
+            || state.summaries != closedPageNavigation.summaries else { return }
+        closedPageNavigation = state
     }
 
     private func persistClosedPages() {
@@ -3138,8 +3178,9 @@ public final class PageModel: ObservableObject {
     }
 
     public func showPageLayout(timeline: Bool) {
+        if showsTimeUnits == timeline, selectedFile == nil, !showingLedger { return }
         guard pendingFileClose == nil else {
-            flash(CompanionL10n.string("pad.switch.pendingClose"))
+            flash(CompanionL10n.string("layout.switch.pendingClose"))
             return
         }
         selectedFile = nil
@@ -3410,14 +3451,15 @@ public final class PageModel: ObservableObject {
         let rosterCalendar = Calendar.current
         let readStartedAt = Date()
         tabs = client.tabs()
-        if stateLoaded && saveLicence {
-            let existing = Set(tabs.compactMap { Self.normalizedTabUUID($0.uuid) })
-            let retained = closedPageUUIDs.filter { existing.contains($0) }
-            if retained != closedPageUUIDs {
-                closedPageUUIDs = retained
-                persistClosedPages()
-            }
+        cacheClosedRosterUUIDs()
+        var retainedClosedUUIDs = closedPageUUIDs
+        if stateLoaded && saveLicence, !retainedClosedUUIDs.isEmpty {
+            let existing = Set(normalizedRosterUUIDs.values)
+            retainedClosedUUIDs.removeAll { !existing.contains($0) }
         }
+        let closedOrderChanged = retainedClosedUUIDs != closedPageUUIDs
+        setClosedPageUUIDs(retainedClosedUUIDs)
+        if closedOrderChanged { persistClosedPages() }
         let readFinishedAt = Date()
         padRosterDate = Self.validatedPadRosterDate(readStartedAt: readStartedAt,
             readFinishedAt: readFinishedAt, calendar: rosterCalendar, finishedCalendar: .current)
@@ -6081,17 +6123,31 @@ public final class PageModel: ObservableObject {
     /// Save a loaded, writable session before hiding its navigation item; explain any refusal.
     public func close(_ id: UInt64) {
         guard let tab = tabs.first(where: { $0.id == id }), !isClosed(tab) else { return }
+        guard pendingFileClose == nil else {
+            flash(CompanionL10n.string("page.close.pendingFileDecision"), tone: .actionable)
+            return
+        }
+        let wasSelected = selection == id
         guard let uuid = Self.normalizedTabUUID(tab.uuid) else {
             flash(CompanionL10n.string("page.close.identity_unavailable"), tone: .actionable)
             return
         }
-        if let page = tab.pageID, let editor = activeEditor as? InkTextView,
-           let coordinator = editor.coordinator, coordinator.displaysPage(page) {
+        let closingEditor = (activeEditor as? InkTextView).flatMap { view -> InkTextView? in
+            guard let page = tab.pageID, view.coordinator?.displaysPage(page) == true else { return nil }
+            return view
+        }
+        if let editor = closingEditor {
             let focused = editor.window?.firstResponder as? NSTextView
             guard !editor.hasMarkedText(), focused?.hasMarkedText() != true else {
                 flash(CompanionL10n.string("page.close.finish_composition"), tone: .actionable)
                 return
             }
+        }
+        guard stateLoaded, saveLicence else {
+            flash(CompanionL10n.string("page.close.unavailable"), tone: .actionable)
+            return
+        }
+        if let editor = closingEditor, let coordinator = editor.coordinator {
             coordinator.nameEditor?.commit()
             guard coordinator.nameEditor?.isOpen != true else {
                 flash(CompanionL10n.string("page.close.finish_name"), tone: .actionable)
@@ -6100,10 +6156,6 @@ public final class PageModel: ObservableObject {
             coordinator.closeNote()
             let scroll = editor.enclosingScrollView
             coordinator.saveViewState(textView: editor, scrollView: scroll?.documentView === editor ? scroll : nil)
-        }
-        guard stateLoaded, saveLicence else {
-            flash(CompanionL10n.string("page.close.unavailable"), tone: .actionable)
-            return
         }
         guard saveState() else {
             flash(CompanionL10n.string("page.close.save_failed"), tone: .actionable)
@@ -6114,15 +6166,19 @@ public final class PageModel: ObservableObject {
            Self.shouldClearConcealDraft(target: draft.target, closingSheet: page, chipsOnSheet: chipIds(onSheet: page)) {
             concealDraft = nil
         }
-        closedPageUUIDs.removeAll { $0 == uuid }
-        closedPageUUIDs.append(uuid)
+        var closed = closedPageUUIDs.filter { $0 != uuid }
+        closed.append(uuid)
+        setClosedPageUUIDs(closed)
         persistClosedPages()
         if let page = tab.pageID {
             padReadingPlaces = padReadingPlaces.filter { $0.value.page != page }
         }
-        rollRequest = nil
+        if case .page(let requested) = rollRequest, requested == tab.pageID { rollRequest = nil }
         if expandedPageID == tab.pageID { expandedPageID = nil }
         refresh()
+        if wasSelected, showsTimeUnits, selectedFile == nil, !showingLedger {
+            requestRoll(onPickedPageLeaving: true)
+        }
     }
 
     @discardableResult
@@ -6130,7 +6186,7 @@ public final class PageModel: ObservableObject {
         guard pendingFileClose == nil,
               let tab = closedTabs.first(where: { $0.id == id }),
               let uuid = Self.normalizedTabUUID(tab.uuid) else { return false }
-        closedPageUUIDs.removeAll { $0 == uuid }
+        setClosedPageUUIDs(closedPageUUIDs.filter { $0 != uuid })
         persistClosedPages()
         selectedFile = nil
         showingLedger = false

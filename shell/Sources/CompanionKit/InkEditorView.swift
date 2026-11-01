@@ -6433,12 +6433,8 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     override func keyDown(with event: NSEvent) {
         if answersChords, let coordinator,
            let command = coordinator.model.keymap.command(for: event, in: .editor),
-           command.dispatch == .surface, !event.modifierFlags.contains(.command) {
-            if command == .surfaceHandBackKeys {
-                if hasMarkedText() { super.keyDown(with: event) }
-                else { cancelOperation(nil) }
-                return
-            }
+           command.dispatch == .surface, !event.modifierFlags.contains(.command),
+           !event.modifierFlags.intersection([.control, .option]).isEmpty {
             guard !hasMarkedText() else {
                 coordinator.model.flash(CompanionL10n.string("surface.finish_composition"), tone: .actionable)
                 return

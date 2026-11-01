@@ -160,7 +160,9 @@ extension ResolvedKeymap {
     /// rather than towards a chord that does the wrong thing.
     public func surfaceShortcuts(in context: KeymapContext = .editor) -> [InstalledShortcut] {
         bindings(in: context, dispatch: .surface).compactMap { binding in
-            binding.keystroke.keyboardShortcut.map {
+            let modifiers = binding.keystroke.modifiers
+            if !modifiers.contains(.command), !modifiers.intersection([.control, .option]).isEmpty { return nil }
+            return binding.keystroke.keyboardShortcut.map {
                 InstalledShortcut(
                     keystroke: binding.keystroke, command: binding.command, shortcut: $0)
             }

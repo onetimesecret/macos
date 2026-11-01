@@ -193,43 +193,45 @@ final class KeymapEventTests: XCTestCase {
 
     // MARK: The surface route, and what it takes when asked
 
-    /// A surface command bound to a chord without ⌘ is claimed by the
-    /// hidden buttons, and claimed ahead of the page: a key equivalent
-    /// is offered to the view tree before the first responder's
-    /// `keyDown` runs. So an override binding ⌥N to a surface command
-    /// costs the page ⌥N, which on a US layout is the dead key that
-    /// composes ñ.
-    ///
-    /// The page's own route refuses exactly this (`InkTextView`
-    /// answers non-command chords in `keyDown`, so they fire only
-    /// while it holds the keyboard). The surface installs whatever the
-    /// file names, and nothing warns. Pinned here as the fact it is:
-    /// the bundled default names no such chord, and whether the
-    /// validator should say something about one is a question this
-    /// suite is not the place to answer.
-    ///
-    /// The claim is what is asserted, not the effect. The button's
-    /// action needs a key window to run, which a test that must pass
-    /// on a headless runner cannot promise; with one, verified by
-    /// hand, the page is created.
-    func testAnOptionOnlyChordOnTheSurfaceRouteTakesTheKeyFromThePage() throws {
-        let (model, _) = try makeStack(
-            overrideText: """
-                [{ "context": "Editor", "bindings": { "alt-n": "page::New" } }]
-                """)
+    func testAnOptionSurfaceShortcutPassesTheHostingKeyEquivalentStageAndRunsInTheEditor() throws {
+        let (model, editor) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"alt-n":"page::New"}}]"#)
         let host = NSHostingView(rootView: PageKeyboardMap(model: model))
         host.frame = NSRect(x: 0, y: 0, width: 100, height: 100)
-        let window = NSWindow(
-            contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
-        window.contentView?.addSubview(host)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = host
         window.layoutIfNeeded()
+        let event = try press("n", flags: [.option], keyCode: 45)
+        let count = model.tabs.count
 
-        XCTAssertTrue(
-            host.performKeyEquivalent(with: try press("n", flags: [.option], keyCode: 45)),
-            "the surface did not install an option-only chord the file named")
-        XCTAssertFalse(
-            host.performKeyEquivalent(with: try press("m", flags: [.option], keyCode: 46)),
-            "the surface claims keys nothing bound, so the claim above proves nothing")
+        XCTAssertFalse(host.performKeyEquivalent(with: event))
+        XCTAssertEqual(model.tabs.count, count)
+        editor.keyDown(with: event)
+        XCTAssertEqual(model.tabs.count, count + 1)
+    }
+
+    func testControlWPassesTheHostingKeyEquivalentStageBeforeTheIMERefusal() throws {
+        let (model, editor) = try makeStack()
+        model.loadStateIfNeeded()
+        let host = NSHostingView(rootView: PageKeyboardMap(model: model))
+        host.frame = NSRect(x: 0, y: 0, width: 100, height: 100)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = host
+        window.layoutIfNeeded()
+        editor.setMarkedText("ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        let event = try press("w", flags: [.control], keyCode: 13)
+
+        XCTAssertFalse(host.performKeyEquivalent(with: event))
+        XCTAssertTrue(editor.hasMarkedText())
+        editor.keyDown(with: event)
+        XCTAssertTrue(editor.hasMarkedText())
+        XCTAssertTrue(model.closedTabs.isEmpty)
+        XCTAssertEqual(model.notice, CompanionL10n.string("surface.finish_composition"))
     }
 
     func testControlWClosesThePageInsteadOfDeletingAWord() throws {

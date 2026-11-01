@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import XCTest
 
 @testable import CompanionKit
@@ -341,6 +342,187 @@ final class ClosedPageTests: XCTestCase {
         XCTAssertEqual(model.notice, CompanionL10n.string("page.close.finish_composition"))
         XCTAssertEqual(model.navigationTabs.map(\.id), [tab.id])
         XCTAssertTrue(model.closedTabs.isEmpty)
+    }
+
+
+    func testClosedVisibilityQueriesReuseTheRosterIdentityCache() throws {
+        let model = model(try fixture())
+        for _ in 0..<5 { model.newPage() }
+        XCTAssertEqual(model.closedRosterNormalizationCount, 0)
+        model.refresh()
+        XCTAssertEqual(model.closedRosterNormalizationCount, 0)
+        let tab = try XCTUnwrap(model.selection)
+        model.close(tab)
+        XCTAssertTrue(model.hasClosedTabs)
+        let count = model.closedRosterNormalizationCount
+        XCTAssertGreaterThan(count, 0)
+        for _ in 0..<20 {
+            _ = model.navigationTabs
+            _ = model.continuousTabs(scope: "legacy")
+            _ = model.closedTabs
+            _ = model.hasClosedTabs
+        }
+        XCTAssertEqual(model.closedRosterNormalizationCount, count)
+        XCTAssertTrue(model.reopenLastClosedTab())
+        XCTAssertFalse(model.hasClosedTabs)
+        let afterReopen = model.closedRosterNormalizationCount
+        model.refresh()
+        XCTAssertEqual(model.closedRosterNormalizationCount, afterReopen)
+    }
+
+    func testCloseAndReopenPublishCoherentPrechangeNavigationSnapshots() throws {
+        let model = model(try fixture())
+        let tab = try seed("published navigation", in: model)
+        var snapshots: [(visible: Set<UInt64>, closed: Set<UInt64>)] = []
+        let subscription = model.objectWillChange.sink {
+            snapshots.append((Set(model.navigationTabs.map(\.id)), Set(model.closedTabs.map(\.id))))
+        }
+        defer { subscription.cancel() }
+
+        model.close(tab.id)
+        XCTAssertTrue(model.reopenLastClosedTab())
+
+        XCTAssertFalse(snapshots.isEmpty)
+        for snapshot in snapshots {
+            XCTAssertTrue(snapshot.visible.isDisjoint(with: snapshot.closed))
+            XCTAssertEqual(snapshot.visible.union(snapshot.closed), [tab.id])
+        }
+        XCTAssertTrue(snapshots.contains { $0.visible == [tab.id] && $0.closed.isEmpty })
+        XCTAssertTrue(snapshots.contains { $0.visible.isEmpty && $0.closed == [tab.id] })
+    }
+
+    func testExplicitLayoutCommandReturnsFromTheLedgerEvenWhenLayoutIsAlreadySelected() throws {
+        let model = model(try fixture())
+        let tab = try seed("page behind ledger", in: model)
+        let layout = model.showsTimeUnits
+        model.showLedger()
+        XCTAssertTrue(model.showingLedger)
+
+        model.showPageLayout(timeline: layout)
+
+        XCTAssertFalse(model.showingLedger)
+        XCTAssertEqual(model.selection, tab.id)
+        XCTAssertEqual(model.showsTimeUnits, layout)
+        XCTAssertEqual(model.tabs.count, 1)
+    }
+
+    func testLayoutCommandKeepsAnUnfinishedFileCloseDecisionAndNamesTheRightAction() throws {
+        let fixture = try fixture()
+        let model = model(fixture)
+        let file = fixture.directory.appendingPathComponent("layout-context.txt")
+        try "original file".write(to: file, atomically: true, encoding: .utf8)
+        model.openFile(at: file)
+        let opened = try XCTUnwrap(model.activeFile)
+        model.applyOps(sheet: opened.id,
+            opsJSON: try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "unsaved ")])))
+        XCTAssertFalse(model.closeActiveFile())
+        XCTAssertNotNil(model.pendingFileClose)
+        let layout = model.showsTimeUnits
+
+        model.showPageLayout(timeline: !layout)
+
+        XCTAssertEqual(model.activeFile?.id, opened.id)
+        XCTAssertEqual(model.pendingFileClose?.fileID, opened.id)
+        XCTAssertEqual(model.showsTimeUnits, layout)
+        XCTAssertEqual(model.notice, CompanionL10n.string("layout.switch.pendingClose"))
+    }
+
+
+    func testUnavailableCloseDoesNotCommitNamingOrDismissAMountedNote() throws {
+        let fixture = try fixture()
+        try Data("unreadable saved state".utf8).write(to: FormFactor.stateFileURL(in: fixture.directory))
+        let model = model(fixture)
+        let tab = try XCTUnwrap(model.selectedTab)
+        let page = try XCTUnwrap(tab.pageID)
+        let chip = try XCTUnwrap(model.coreClient.sealText(sheet: page, "a synthetic sealed value", at: 0, length: 0))
+        model.refresh()
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let editor = try XCTUnwrap(InkEditorView.makeInkTextView(model: model, sheetID: page, coordinator: coordinator))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 400),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let scroll = InkEditorView.bareScroller()
+        scroll.frame = window.contentLayoutRect
+        InkEditorView.seat(editor, in: scroll)
+        window.contentView = scroll
+        editor.isEditable = true
+        model.mountEditor(editor, from: .panel)
+        editor.layoutManager?.ensureLayout(for: try XCTUnwrap(editor.textContainer))
+        coordinator.beginNaming(at: 0)
+        let naming = try XCTUnwrap(coordinator.nameEditor)
+        naming.draft = "UNSAVED_NAME"
+        XCTAssertTrue(naming.isOpen)
+
+        model.close(tab.id)
+
+        XCTAssertTrue(naming.isOpen)
+        XCTAssertEqual(naming.draft, "UNSAVED_NAME")
+        let name = model.coreClient.documentRuns(sheet: page).compactMap { run -> String? in
+            if case .chip(let face) = run, face.chipId == chip.chipId { return face.name }
+            return nil
+        }.first
+        XCTAssertNil(name)
+        XCTAssertEqual(model.notice, CompanionL10n.string("page.close.unavailable"))
+        naming.keep(returningKeys: false)
+        coordinator.beginNote(at: 0)
+        let note = try XCTUnwrap(coordinator.noteEditor)
+        XCTAssertTrue(note.isOpen)
+
+        model.close(tab.id)
+
+        XCTAssertTrue(note.isOpen)
+        XCTAssertEqual(model.navigationTabs.map(\.id), [tab.id])
+        XCTAssertTrue(model.closedTabs.isEmpty)
+    }
+
+    func testDirectPageCloseWaitsForTheStandingFileCloseDecision() throws {
+        let fixture = try fixture()
+        let model = model(fixture)
+        let tab = try seed("saved page behind a file", in: model)
+        let file = fixture.directory.appendingPathComponent("pending-file.txt")
+        try "file text".write(to: file, atomically: true, encoding: .utf8)
+        model.openFile(at: file)
+        let opened = try XCTUnwrap(model.activeFile)
+        model.applyOps(sheet: opened.id,
+            opsJSON: try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "unsaved ")])))
+        XCTAssertFalse(model.closeActiveFile())
+
+        model.close(tab.id)
+
+        XCTAssertEqual(model.pendingFileClose?.fileID, opened.id)
+        XCTAssertEqual(model.activeFile?.id, opened.id)
+        XCTAssertEqual(model.navigationTabs.map(\.id), [tab.id])
+        XCTAssertTrue(model.closedTabs.isEmpty)
+        XCTAssertEqual(model.notice, CompanionL10n.string("page.close.pendingFileDecision"))
+    }
+
+    func testClosingAnotherTimelinePagePreservesTheSelectedPagesPendingRollRequest() throws {
+        let model = model(try fixture())
+        let first = try seed("first timeline page", in: model)
+        model.showsTimeUnits = true
+        model.newPage()
+        let second = try seed("second timeline page", in: model)
+        XCTAssertEqual(model.selection, second.id)
+
+        model.close(first.id)
+
+        XCTAssertEqual(model.selection, second.id)
+        XCTAssertEqual(model.takeRollRequest(), .page(try XCTUnwrap(second.pageID)))
+    }
+
+    func testClosingTheSelectedTimelinePageRequestsTheRemainingVisiblePage() throws {
+        let model = model(try fixture())
+        let first = try seed("first timeline page", in: model)
+        model.showsTimeUnits = true
+        model.newPage()
+        let second = try seed("second timeline page", in: model)
+        _ = model.takeRollRequest()
+
+        model.close(second.id)
+
+        XCTAssertEqual(model.selection, first.id)
+        XCTAssertEqual(model.takeRollRequest(), .page(try XCTUnwrap(first.pageID)))
     }
 
 }
