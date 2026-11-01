@@ -6111,7 +6111,6 @@ public final class PageModel: ObservableObject {
                 flash(CompanionL10n.string("page.close.finish_name"), tone: .actionable)
                 return
             }
-            coordinator.closeNote()
             let scroll = editor.enclosingScrollView
             coordinator.saveViewState(textView: editor, scrollView: scroll?.documentView === editor ? scroll : nil)
         }
@@ -6119,6 +6118,7 @@ public final class PageModel: ObservableObject {
             flash(CompanionL10n.string("page.close.save_failed"), tone: .actionable)
             return
         }
+        closingEditor?.coordinator?.closeNote()
         clearNotice()
         if let draft = concealDraft, let page = tab.pageID,
            Self.shouldClearConcealDraft(target: draft.target, closingSheet: page, chipsOnSheet: chipIds(onSheet: page)) {
@@ -8220,8 +8220,9 @@ public final class PageModel: ObservableObject {
     /// The countdown's repaint: summaries only. Never `refresh()` —
     /// that re-arms timers and reconciles selection, work the clock
     /// tick has no business doing.
-    private func refreshSummaries() {
+    func refreshSummaries() {
         tabs = client.tabs()
+        setClosedPageUUIDs(closedPageUUIDs)
     }
 
     /// Arm exactly one timer, at the core's next event — a page expiry

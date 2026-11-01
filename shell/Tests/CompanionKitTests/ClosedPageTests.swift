@@ -476,6 +476,85 @@ final class ClosedPageTests: XCTestCase {
         XCTAssertTrue(model.closedTabs.isEmpty)
     }
 
+    func testRefusedSaveKeepsTheMountedNoteOpenAfterCommittingAValidName() throws {
+        let fixture = try fixture()
+        let client = ClosedPageSaveClient(tag: fixture.tag)
+        let model = model(fixture, client: client)
+        let tab = try XCTUnwrap(model.selectedTab)
+        let page = try XCTUnwrap(tab.pageID)
+        let chip = try XCTUnwrap(client.sealText(sheet: page, "synthetic value", at: 0, length: 0))
+        model.refresh()
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let editor = try XCTUnwrap(InkEditorView.makeInkTextView(model: model, sheetID: page, coordinator: coordinator))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 400),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let scroll = InkEditorView.bareScroller()
+        scroll.frame = window.contentLayoutRect
+        InkEditorView.seat(editor, in: scroll)
+        window.contentView = scroll
+        editor.isEditable = true
+        model.mountEditor(editor, from: .panel)
+        editor.layoutManager?.ensureLayout(for: try XCTUnwrap(editor.textContainer))
+        coordinator.beginNaming(at: 0)
+        let naming = try XCTUnwrap(coordinator.nameEditor)
+        naming.draft = "SAVED_NAME"
+        client.refusesSave = true
+
+        model.close(tab.id)
+
+        XCTAssertFalse(naming.isOpen)
+        let name = client.documentRuns(sheet: page).compactMap { run -> String? in
+            if case .chip(let face) = run, face.chipId == chip.chipId { return face.name }
+            return nil
+        }.first
+        XCTAssertEqual(name, "SAVED_NAME")
+        coordinator.beginNote(at: 0)
+        let note = try XCTUnwrap(coordinator.noteEditor)
+        XCTAssertTrue(note.isOpen)
+        note.textView.insertText("unfinished note", replacementRange: NSRange(location: NSNotFound, length: 0))
+        note.textView.setSelectedRange(NSRange(location: 4, length: 5))
+        XCTAssertTrue(window.makeFirstResponder(note.textView))
+
+        model.close(tab.id)
+
+        XCTAssertTrue(note.isOpen)
+        XCTAssertTrue(window.firstResponder === note.textView)
+        XCTAssertEqual(note.textView.selectedRange(), NSRange(location: 4, length: 5))
+        XCTAssertEqual(note.textView.string, "unfinished note")
+        XCTAssertEqual(model.noteText(chip: chip.chipId), "unfinished note")
+        XCTAssertEqual(model.navigationTabs.map(\.id), [tab.id])
+        XCTAssertTrue(model.closedTabs.isEmpty)
+        XCTAssertEqual(model.notice, CompanionL10n.string("page.close.save_failed"))
+        client.refusesSave = false
+        model.close(tab.id)
+        XCTAssertFalse(note.isOpen)
+        XCTAssertEqual(model.closedTabs.map(\.id), [tab.id])
+    }
+
+    func testSummaryTickRefreshesClosedCountdownWithoutReparsingIdentities() throws {
+        let model = model(try fixture())
+        let tab = try seed("closed countdown", in: model)
+        model.close(tab.id)
+        let before = try XCTUnwrap(model.closedTabs.first)
+        let normalizationCount = model.closedRosterNormalizationCount
+        var cachedSnapshots: [[TabSummary]] = []
+        let subscription = model.objectWillChange.sink { cachedSnapshots.append(model.closedTabs) }
+        defer { subscription.cancel() }
+        XCTAssertTrue(model.coreClient.ageForTests(byMs: 60_000))
+
+        model.refreshSummaries()
+
+        let refreshed = try XCTUnwrap(model.tabs.first)
+        XCTAssertLessThan(refreshed.remainingMs, before.remainingMs)
+        XCTAssertEqual(model.closedTabs, [refreshed])
+        XCTAssertEqual(model.closedRosterNormalizationCount, normalizationCount)
+        XCTAssertTrue(cachedSnapshots.contains([before]))
+        XCTAssertTrue(cachedSnapshots.allSatisfy { $0 == [before] })
+        XCTAssertTrue(model.navigationTabs.isEmpty)
+    }
+
     func testDirectPageCloseWaitsForTheStandingFileCloseDecision() throws {
         let fixture = try fixture()
         let model = model(fixture)
