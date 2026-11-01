@@ -242,6 +242,35 @@ final class SealedNameFieldTests: XCTestCase {
         XCTAssertFalse(editor.isOpen)
     }
 
+    func testTinyViewportDoesNotCollapseTheDraftField() throws {
+        let page = try makePage(width: 260)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 10),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = page.scroll
+        defer { window.close() }
+        page.scroll.frame.size.height = 10
+        page.scroll.layoutSubtreeIfNeeded()
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        editor.follow()
+        XCTAssertGreaterThan(editor.field.frame.height, 0)
+        XCTAssertTrue(editor.helpScroll.isHidden)
+        editor.keep(returningKeys: false)
+    }
+
+    func testCompactHelperTruncatesItsTitleAndRestoresWrapping() {
+        let helper = SealedNameHelpView()
+        helper.title.stringValue = String(repeating: "Long localized title ", count: 10)
+        helper.isCompact = true
+        XCTAssertEqual(helper.title.maximumNumberOfLines, 1)
+        XCTAssertEqual(helper.title.lineBreakMode, .byTruncatingTail)
+        helper.isCompact = false
+        XCTAssertEqual(helper.title.maximumNumberOfLines, 0)
+        XCTAssertEqual(helper.title.lineBreakMode, .byWordWrapping)
+    }
+
     func testRenderNamingPreviewsWhenRequested() throws {
         guard let directory = ProcessInfo.processInfo.environment["ONETIMEPAD_SEALED_PREVIEW_DIR"] else {
             throw XCTSkip("set ONETIMEPAD_SEALED_PREVIEW_DIR to render synthetic naming previews")

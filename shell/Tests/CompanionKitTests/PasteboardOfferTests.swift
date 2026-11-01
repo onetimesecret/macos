@@ -9,7 +9,7 @@ import XCTest
 final class PasteboardOfferTests: XCTestCase {
     @MainActor
     func testSealGuidanceUsesTheCompanionResourceBundle() {
-        let guidance = "Sealing cannot be undone. To change the contents, use Copy Decrypted Contents, edit the text, then seal a replacement."
+        let guidance = "Sealing cannot be undone. To change the contents, use Copy Decrypted, edit the text, then seal a replacement."
         XCTAssertEqual(SealSelectionMenu.help, guidance)
         XCTAssertEqual(CompanionL10n.string("seal.selection.help"), guidance)
         XCTAssertEqual(CompanionL10n.string("seal.selection.consequence"), "Sealing cannot be undone.")

@@ -199,6 +199,6 @@
 "seal.clipboard.offer" = "Clipboard content is ready to seal";
 "seal.clipboard.accessibility" = "Seal the clipboard's content onto this page";
 "seal.selection.consequence" = "Sealing cannot be undone.";
-"seal.selection.help" = "Sealing cannot be undone. To change the contents, use Copy Decrypted Contents, edit the text, then seal a replacement.";
+"seal.selection.help" = "Sealing cannot be undone. To change the contents, use Copy Decrypted, edit the text, then seal a replacement.";
 
 "chip.reference.copied" = "copied the sealed reference; paste it into OnetimePad";

@@ -196,6 +196,8 @@ final class SealedNameHelpView: NSView {
     override var isFlipped: Bool { true }
     var isCompact = false {
         didSet {
+            title.maximumNumberOfLines = isCompact ? 1 : 0
+            title.lineBreakMode = isCompact ? .byTruncatingTail : .byWordWrapping
             error.maximumNumberOfLines = isCompact ? 1 : 0
             error.lineBreakMode = isCompact ? .byTruncatingTail : .byWordWrapping
         }
@@ -466,11 +468,11 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
         let midY = row?.equals.midY ?? (layout.identityRowY + height / 2)
         field.frame = NSRect(
             x: layout.left - Self.textInset, y: midY - height / 2, width: width, height: height)
-        placeHelp(under: frame)
+        placeDraftAndHelp(under: frame)
         textView.redrawChip(at: index)
     }
 
-    private func placeHelp(under block: NSRect) {
+    private func placeDraftAndHelp(under block: NSRect) {
         guard let textView else { return }
         let previousError = helpView.error.stringValue
         helpView.error.stringValue = rename.error ?? ""
@@ -491,10 +493,10 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
             helpView.isCompact = true
             let compactHeight = helpView.preferredHeight(width: width)
             height = compactHeight
-            if max(belowRoom, aboveRoom) < compactHeight {
+            if max(belowRoom, aboveRoom) < compactHeight,
+               room.height >= field.frame.height {
                 var fieldFrame = field.convert(field.bounds, to: overlay)
                 fieldFrame.origin.y = room.minY
-                fieldFrame.size.height = min(fieldFrame.height, max(0, room.height))
                 field.frame = overlay.convert(fieldFrame, to: textView)
                 block = fieldFrame
                 belowY = min(room.maxY, fieldFrame.maxY + 4)
