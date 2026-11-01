@@ -83,18 +83,18 @@ and an in-memory credential client. Automated fixtures use
 - [ ] **VoiceOver reads identity and explicit actions.** In the fixture,
       navigate named and unnamed objects with VoiceOver and the arrow keys.
       **Pass:** the summary identifies the name, existing excerpt, size and
-      note presence. C󠄁o󠄁p󠄁y󠄁/󠄁M󠄁o󠄁r󠄁e󠄁/󠄁N󠄁o󠄁t󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 h󠄁a󠄁v󠄁e󠄁 u󠄁s󠄁e󠄁f󠄁u󠄁l󠄁 n󠄁a󠄁m󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 p󠄁r󠄁e󠄁s󠄁s󠄁
-      a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 t󠄁a󠄁r󠄁g󠄁e󠄁t󠄁 t󠄁h󠄁a󠄁t󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 t󠄁e󠄁x󠄁t󠄁 i󠄁s󠄁 i󠄁n󠄁s󠄁e󠄁r󠄁t󠄁e󠄁d󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 i󠄁t󠄁.󠄁 N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁e󠄁x󠄁t󠄁
-      s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 C󠄁u󠄁t󠄁/󠄁P󠄁a󠄁s󠄁t󠄁e󠄁 p󠄁r󠄁o󠄁v󠄁i󠄁d󠄁e󠄁 m󠄁o󠄁v󠄁e󠄁m󠄁e󠄁n󠄁t󠄁;󠄁 t󠄁h󠄁e󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁e󠄁r󠄁 M󠄁o󠄁v󠄁e󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁e󠄁 a󠄁d󠄁d󠄁s󠄁
-      n󠄁o󠄁 d󠄁u󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁e󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 c󠄁h󠄁i󠄁l󠄁d󠄁.󠄁 **F󠄁a󠄁i󠄁l󠄁:󠄁** c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 a󠄁r󠄁e󠄁 u󠄁n󠄁n󠄁a󠄁m󠄁e󠄁d󠄁,󠄁 t󠄁a󠄁r󠄁g󠄁e󠄁t󠄁
-      a󠄁n󠄁o󠄁t󠄁h󠄁e󠄁r󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 o󠄁r󠄁 r󠄁e󠄁a󠄁d󠄁 b󠄁e󠄁y󠄁o󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 p󠄁e󠄁r󠄁m󠄁i󠄁t󠄁t󠄁e󠄁d󠄁 f󠄁a󠄁c󠄁e󠄁.󠄁 R󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁
-      V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁.󠄁
-- [ ] **V󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 s󠄁e󠄁a󠄁l󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁n󠄁s󠄁e󠄁q󠄁u󠄁e󠄁n󠄁c󠄁e󠄁.󠄁** O󠄁p󠄁e󠄁n󠄁 t󠄁h󠄁e󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁'󠄁s󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁x󠄁t󠄁 m󠄁e󠄁n󠄁u󠄁 w󠄁i󠄁t󠄁h󠄁
-      V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁.󠄁 **P󠄁a󠄁s󠄁s󠄁:󠄁** t󠄁h󠄁e󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 n󠄁o󠄁n󠄁i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁v󠄁e󠄁 h󠄁e󠄁a󠄁d󠄁e󠄁r󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 S󠄁e󠄁a󠄁l󠄁
-      S󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁n󠄁 m󠄁a󠄁c󠄁O󠄁S󠄁 1󠄁4󠄁+󠄁,󠄁 o󠄁r󠄁 i󠄁n󠄁f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 o󠄁n󠄁 m󠄁a󠄁c󠄁O󠄁S󠄁 1󠄁3󠄁,󠄁 c󠄁o󠄁n󠄁v󠄁e󠄁y󠄁s󠄁
-      t󠄁h󠄁a󠄁t󠄁 s󠄁e󠄁a󠄁l󠄁i󠄁n󠄁g󠄁 c󠄁a󠄁n󠄁n󠄁o󠄁t󠄁 b󠄁e󠄁 u󠄁n󠄁d󠄁o󠄁n󠄁e󠄁;󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁p󠄁l󠄁a󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁s󠄁 n󠄁o󠄁t󠄁 t󠄁o󠄁o󠄁l󠄁t󠄁i󠄁p󠄁-󠄁o󠄁n󠄁l󠄁y󠄁.󠄁
-      **F󠄁a󠄁i󠄁l󠄁:󠄁** i󠄁t󠄁 i󠄁s󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁d󠄁 a󠄁s󠄁 a󠄁n󠄁o󠄁t󠄁h󠄁e󠄁r󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁a󠄁b󠄁l󠄁e󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁 o󠄁r󠄁 i󠄁s󠄁 m󠄁i󠄁s󠄁s󠄁e󠄁d󠄁
-      d󠄁u󠄁r󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁e󠄁d󠄁 a󠄁s󠄁s󠄁i󠄁s󠄁t󠄁i󠄁v󠄁e󠄁-󠄁t󠄁e󠄁c󠄁h󠄁n󠄁o󠄁l󠄁o󠄁g󠄁y󠄁 n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁
+      note presence. Copy/More/Note controls have useful names and their press
+      actions target that object after text is inserted before it. Native text
+      selection and Cut/Paste provide movement; the pointer Move handle adds
+      no duplicate accessibility child. **Fail:** controls are unnamed, target
+      another object or read beyond the permitted face. Record actual
+      VoiceOver navigation separately from the existing keyboard regression.
+- [ ] **Visible sealing consequence.** Open the selection's context menu with
+      VoiceOver. **Pass:** the native noninteractive header before Seal
+      Selection on macOS 14+, or informational fallback on macOS 13, conveys
+      that sealing cannot be undone; the explanation is not tooltip-only.
+      **Fail:** it is presented as another actionable command or is missed
+      during the tested assistive-technology navigation.
 - [ ] **A named image.** Seal a synthetic image and choose Set Variable
       Name… to enter `LOGO`. **Pass:** identity reads `LOGO · <excerpt>`;
       clicking it selects; the menu offers Copy Variable Name and omits
@@ -118,4 +118,4 @@ stay: a re-run adds a row rather than replacing one that failed.
 | | | the page's own surface in the note | | |
 | | | VoiceOver reads identity and explicit actions | | record the macOS version |
 | | | a named image | | |
-| | | v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 s󠄁e󠄁a󠄁l󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁n󠄁s󠄁e󠄁q󠄁u󠄁e󠄁n󠄁c󠄁e󠄁 | | r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 m󠄁a󠄁c󠄁O󠄁S󠄁 v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 |
+| | | visible sealing consequence | | record macOS version and VoiceOver navigation |

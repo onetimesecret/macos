@@ -5,9 +5,9 @@ Status: implemented; automated verification and rendered-fixture review complete
 The user asked for a methodical response to the 28-item visual and source audit.
 This file records implementation choices and verification; it is not an
 independent security specification or evidence that these changes work.
-T󠄁h󠄁e󠄁 [d󠄁a󠄁t󠄁e󠄁d󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁](../spec/design/2026-1031-sealed-content-ux-revision.md)
-a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 a󠄁m󠄁e󠄁n󠄁d󠄁e󠄁d󠄁 l󠄁a󠄁w󠄁 r󠄁o󠄁w󠄁s󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁l󠄁i󠄁s󠄁t󠄁
-d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁 t󠄁h󠄁e󠄁m󠄁.󠄁
+The [dated interface record](../spec/design/2026-1031-sealed-content-ux-revision.md)
+and the amended law rows state the presentation decisions. This checklist
+does not replace them.
 
 ## Existing decisions and scope
 
@@ -77,19 +77,19 @@ plaintext disclosure.
 
 The FFI's implementation keeps one `Zeroizing<Vec<u8>>` recovery buffer
 for the latest completed link, identified by a core-generated token rather than
-a server receipt. I󠄁t󠄁s󠄁 6󠄁0󠄁-󠄁s󠄁e󠄁c󠄁o󠄁n󠄁d󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁 d󠄁e󠄁a󠄁d󠄁l󠄁i󠄁n󠄁e󠄁 s󠄁t󠄁a󠄁r󠄁t󠄁s󠄁 a󠄁t󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 i󠄁s󠄁 n󠄁o󠄁t󠄁
-e󠄁x󠄁t󠄁e󠄁n󠄁d󠄁e󠄁d󠄁 b󠄁y󠄁 a󠄁 r󠄁e󠄁-󠄁c󠄁o󠄁p󠄁y󠄁.󠄁 T󠄁h󠄁e󠄁 s󠄁h󠄁e󠄁l󠄁l󠄁 s󠄁c󠄁h󠄁e󠄁d󠄁u󠄁l󠄁e󠄁s󠄁 a󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁a󠄁l󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁r󠄁e󠄁'󠄁s󠄁
-r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁i󠄁n󠄁g󠄁 d󠄁u󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 f󠄁o󠄁r󠄁g󠄁e󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁 m󠄁a󠄁t󠄁c󠄁h󠄁i󠄁n󠄁g󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁 w󠄁h󠄁e󠄁n󠄁 i󠄁t󠄁s󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 c󠄁l󠄁o󠄁s󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁
-b󠄁u󠄁f󠄁f󠄁e󠄁r󠄁 i󠄁s󠄁 d󠄁r󠄁o󠄁p󠄁p󠄁e󠄁d󠄁 o󠄁n󠄁 a󠄁n󠄁 e󠄁x󠄁p󠄁i󠄁r󠄁y󠄁 q󠄁u󠄁e󠄁r󠄁y󠄁,󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 f󠄁o󠄁r󠄁g󠄁e󠄁t󠄁/󠄁d󠄁r󠄁a󠄁f󠄁t󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁,󠄁
-s󠄁u󠄁p󠄁e󠄁r󠄁s󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 o󠄁r󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁e󠄁 d󠄁r󠄁o󠄁p󠄁;󠄁 r󠄁e󠄁a󠄁c󠄁h󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁 d󠄁e󠄁a󠄁d󠄁l󠄁i󠄁n󠄁e󠄁 a󠄁l󠄁o󠄁n󠄁e󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 e󠄁a󠄁g󠄁e󠄁r󠄁l󠄁y󠄁
-w󠄁i󠄁p󠄁e󠄁 i󠄁t󠄁.󠄁 A newer completion replaces
+a server receipt. Its 60-second access deadline starts at completion and is not
+extended by a re-copy. The shell schedules a removal request from the core's
+remaining duration and forgets the matching token when its draft closes. The
+buffer is dropped on an expiry query, explicit forget/draft dismissal,
+supersession or handle drop; reaching the access deadline alone does not eagerly
+wipe it. A newer completion replaces
 the prior buffer; old requests cannot copy or forget the newer token. A re-copy
 uses the existing pasteboard writer and creates no additional network request.
 These are implementation observations to verify, not independent guarantees.
 
 ## Verification record
 
-- `scripts/test-shell.sh`: 393 app tests and 2󠄁,󠄁3󠄁3󠄁9󠄁 CompanionKit tests executed,
+- `scripts/test-shell.sh`: 393 app tests and 2,339 CompanionKit tests executed,
   7 existing skips, 0 failures. The full run set `ONETIMEPAD_SEALED_PREVIEW_DIR=/tmp/sealed-ux-preview` and included the optional rendering tests.
 - `cargo test -p companion-ffi -- --test-threads=1 --skip drop_to_seal_reads_the_drag_board_core_side`:
   403 passed, 1 existing ignored test, 1 excluded shared-system-drag-pasteboard test.
@@ -172,97 +172,97 @@ checks remain unperformed.
 | REV-09 | Helper buttons could escape very narrow bounds. | The helper wraps text and stacks buttons to fit its available width, including longer translated titles. Bounds tests cover very narrow widths. The live block uses `preferredHeight(identityLineHeight:)`; 52 points is its minimum and the geometry helper's fallback, not the live font-derived height. |
 
 
-## R󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 o󠄁f󠄁 r󠄁e󠄁v󠄁i󠄁s󠄁i󠄁o󠄁n󠄁 1󠄁2󠄁8󠄁d󠄁1󠄁6󠄁d󠄁3󠄁
+## Review of revision 128d16d3
 
-T󠄁h󠄁e󠄁 a󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁e󠄁d󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 s󠄁u󠄁p󠄁p󠄁l󠄁i󠄁e󠄁d󠄁 l󠄁e󠄁a󠄁d󠄁s󠄁 f󠄁o󠄁r󠄁 a󠄁n󠄁o󠄁t󠄁h󠄁e󠄁r󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 a󠄁n󠄁d󠄁 v󠄁i󠄁s󠄁u󠄁a󠄁l󠄁 p󠄁a󠄁s󠄁s󠄁;󠄁 i󠄁t󠄁 i󠄁s󠄁
-n󠄁o󠄁t󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁t󠄁y󠄁 f󠄁o󠄁r󠄁 p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 o󠄁r󠄁 s󠄁e󠄁c󠄁u󠄁r󠄁i󠄁t󠄁y󠄁 p󠄁r󠄁o󠄁p󠄁e󠄁r󠄁t󠄁i󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 d󠄁i󠄁s󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁
-b󠄁e󠄁l󠄁o󠄁w󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁 a󠄁d󠄁o󠄁p󠄁t󠄁e󠄁d󠄁 f󠄁i󠄁x󠄁e󠄁s󠄁 f󠄁r󠄁o󠄁m󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁f󠄁u󠄁t󠄁e󠄁d󠄁 f󠄁i󠄁n󠄁d󠄁i󠄁n󠄁g󠄁s󠄁.󠄁
-T󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 7󠄁4󠄁-󠄁t󠄁e󠄁s󠄁t󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁 U󠄁I󠄁 r󠄁u󠄁n󠄁 a󠄁n󠄁d󠄁 f󠄁u󠄁l󠄁l󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁 a󠄁b󠄁o󠄁v󠄁e󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁
-t󠄁h󠄁e󠄁s󠄁e󠄁 f󠄁i󠄁x󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 m󠄁e󠄁n󠄁u󠄁-󠄁h󠄁e󠄁a󠄁d󠄁e󠄁r󠄁 i󠄁m󠄁p󠄁r󠄁o󠄁v󠄁e󠄁m󠄁e󠄁n󠄁t󠄁.󠄁 T󠄁h󠄁e󠄁 3󠄁2󠄁 s󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁
-r󠄁e󠄁g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁t󠄁e󠄁d󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁;󠄁 m󠄁a󠄁n󠄁u󠄁a󠄁l󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 p󠄁h󠄁y󠄁s󠄁i󠄁c󠄁a󠄁l󠄁-󠄁d󠄁i󠄁s󠄁p󠄁l󠄁a󠄁y󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁
-u󠄁n󠄁p󠄁e󠄁r󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁.󠄁
+The automated review supplied leads for another source and visual pass; it is
+not authority for product decisions or security properties. The dispositions
+below distinguish adopted fixes from retained behavior and refuted findings.
+The final 74-test focused UI run and full Swift suite recorded above passed
+these fixes and the menu-header improvement. The 32 synthetic renders were
+regenerated and inspected; manual VoiceOver and physical-display checks remain
+unperformed.
 
-| I󠄁D󠄁 | R󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 t󠄁o󠄁p󠄁i󠄁c󠄁 | D󠄁i󠄁s󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁 | V󠄁e󠄁r󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁 |
+| ID | Review topic | Disposition and evidence | Verification scope |
 | --- | --- | --- | --- |
-| R󠄁1󠄁2󠄁8󠄁-󠄁0󠄁1󠄁 | L󠄁o󠄁n󠄁g󠄁 t󠄁r󠄁a󠄁n󠄁s󠄁l󠄁a󠄁t󠄁e󠄁d󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁s󠄁 c󠄁a󠄁n󠄁 o󠄁v󠄁e󠄁r󠄁r󠄁u󠄁n󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁s󠄁.󠄁 | A󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁e󠄁d󠄁:󠄁 f󠄁i󠄁t󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁e󠄁d󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁,󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 g󠄁u󠄁i󠄁d󠄁a󠄁n󠄁c󠄁e󠄁.󠄁 | `SealedBlockTests.testControlTitlesFitTheirBoundsWithLongTranslatedCopyFeedbackAndNotes` a󠄁n󠄁d󠄁 `testLongControlTitlesDoNotPaintOutsideTheirButtons` p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 r󠄁a󠄁s󠄁t󠄁e󠄁r󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁s󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁.󠄁 |
-| R󠄁1󠄁2󠄁8󠄁-󠄁0󠄁2󠄁 | A󠄁n󠄁 i󠄁n󠄁v󠄁a󠄁l󠄁i󠄁d󠄁 b󠄁l󠄁u󠄁r󠄁 c󠄁a󠄁n󠄁 l󠄁e󠄁a󠄁v󠄁e󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁m󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 t󠄁h󠄁e󠄁 k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁.󠄁 | A󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁e󠄁d󠄁:󠄁 k󠄁e󠄁e󠄁p󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁v󠄁a󠄁l󠄁i󠄁d󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 a󠄁n󠄁d󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 e󠄁r󠄁r󠄁o󠄁r󠄁,󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁.󠄁 | `SealedNameFieldTests.testInvalidBlurDefersRefocusAndKeepsTheDraftEditable`,󠄁 `testCancelInvalidatesPendingInvalidDraftRefocus`,󠄁 `testWindowTeardownInvalidatesPendingInvalidDraftRefocus` a󠄁n󠄁d󠄁 `testWindowTeardownSavesAValidPendingDraft` p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁;󠄁 n󠄁a󠄁m󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁s󠄁 r󠄁e󠄁g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁t󠄁e󠄁d󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁.󠄁 |
-| R󠄁1󠄁2󠄁8󠄁-󠄁0󠄁3󠄁 | N󠄁o󠄁t󠄁e󠄁,󠄁 M󠄁o󠄁r󠄁e󠄁 a󠄁n󠄁d󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁i󠄁e󠄁s󠄁 n󠄁e󠄁e󠄁d󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁e󠄁r󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 t󠄁r󠄁e󠄁a󠄁t󠄁m󠄁e󠄁n󠄁t󠄁s󠄁.󠄁 | A󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁e󠄁d󠄁:󠄁 c󠄁l󠄁a󠄁r󠄁i󠄁f󠄁y󠄁 t󠄁h󠄁e󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 t󠄁a󠄁r󠄁g󠄁e󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 b󠄁o󠄁r󠄁d󠄁e󠄁r󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁a󠄁s󠄁t󠄁.󠄁 | `ThemeContrastTests.testRestingSealedControlTextAndBordersContrastWithTheirActualSurfaces` a󠄁n󠄁d󠄁 `testSelectedSealedControlsKeepTextAndBorderContrastOnTheirFill` p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁.󠄁 R󠄁e󠄁f󠄁r󠄁e󠄁s󠄁h󠄁e󠄁d󠄁 l󠄁i󠄁g󠄁h󠄁t󠄁/󠄁d󠄁a󠄁r󠄁k󠄁 a󠄁n󠄁d󠄁 n󠄁a󠄁r󠄁r󠄁o󠄁w󠄁/󠄁w󠄁i󠄁d󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁s󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁;󠄁 p󠄁h󠄁y󠄁s󠄁i󠄁c󠄁a󠄁l󠄁-󠄁d󠄁i󠄁s󠄁p󠄁l󠄁a󠄁y󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 m󠄁a󠄁n󠄁u󠄁a󠄁l󠄁.󠄁 |
-| R󠄁1󠄁2󠄁8󠄁-󠄁0󠄁4󠄁 | D󠄁e󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁v󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁i󠄁n󠄁g󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁m󠄁p󠄁e󠄁t󠄁e󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 C󠄁o󠄁p󠄁y󠄁/󠄁D󠄁o󠄁n󠄁e󠄁.󠄁 | A󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁e󠄁d󠄁:󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁 d󠄁e󠄁l󠄁e󠄁t󠄁i󠄁o󠄁n󠄁/󠄁d󠄁i󠄁s󠄁c󠄁a󠄁r󠄁d󠄁 i󠄁n󠄁 i󠄁t󠄁s󠄁 o󠄁w󠄁n󠄁 r󠄁o󠄁w󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁 a󠄁 d󠄁i󠄁v󠄁i󠄁d󠄁e󠄁r󠄁.󠄁 | `ConcealRecoveryTests.testRenderSharingPreviewsWhenRequested` p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁;󠄁 r󠄁e󠄁f󠄁r󠄁e󠄁s󠄁h󠄁e󠄁d󠄁 l󠄁i󠄁g󠄁h󠄁t󠄁/󠄁d󠄁a󠄁r󠄁k󠄁,󠄁 n󠄁a󠄁r󠄁r󠄁o󠄁w󠄁/󠄁w󠄁i󠄁d󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁s󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁.󠄁 |
-| R󠄁1󠄁2󠄁8󠄁-󠄁0󠄁5󠄁 | D󠄁i󠄁s󠄁c󠄁a󠄁r󠄁d󠄁e󠄁d󠄁 p󠄁a󠄁g󠄁e󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 r󠄁e󠄁a󠄁d󠄁a󠄁b󠄁l󠄁e󠄁 t󠄁o󠄁 l󠄁i󠄁n󠄁k󠄁 r󠄁e󠄁c󠄁o󠄁v󠄁e󠄁r󠄁y󠄁.󠄁 | R󠄁e󠄁f󠄁u󠄁t󠄁e󠄁d󠄁 b󠄁y󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁:󠄁 [d󠄁i󠄁s󠄁c󠄁a󠄁r󠄁d󠄁_p󠄁a󠄁g󠄁e󠄁](../../crates/core/src/store.rs) r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁g󠄁e󠄁 w󠄁i󠄁t󠄁h󠄁 `tab.page.take()` a󠄁n󠄁d󠄁 e󠄁n󠄁t󠄁o󠄁m󠄁b󠄁s󠄁 i󠄁t󠄁;󠄁 o󠄁n󠄁l󠄁y󠄁 t󠄁h󠄁e󠄁 s󠄁l󠄁o󠄁t󠄁 s󠄁u󠄁r󠄁v󠄁i󠄁v󠄁e󠄁s󠄁.󠄁 [c󠄁a󠄁c󠄁h󠄁e󠄁d󠄁_l󠄁i󠄁n󠄁k󠄁](../../crates/ffi/src/lib.rs) r󠄁e󠄁q󠄁u󠄁i󠄁r󠄁e󠄁s󠄁 t󠄁h󠄁a󠄁t󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 p󠄁a󠄁g󠄁e󠄁 i󠄁n󠄁 `readable_sheets()`.󠄁 U󠄁I󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁 a󠄁l󠄁s󠄁o󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁 f󠄁o󠄁r󠄁g󠄁e󠄁t󠄁s󠄁 i󠄁t󠄁s󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁.󠄁 | O󠄁w󠄁n󠄁i󠄁n󠄁g󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁;󠄁 n󠄁o󠄁 p󠄁a󠄁g󠄁e󠄁-󠄁c󠄁o󠄁n󠄁t󠄁e󠄁n󠄁t󠄁-󠄁e󠄁q󠄁u󠄁a󠄁l󠄁i󠄁t󠄁y󠄁 i󠄁n󠄁v󠄁a󠄁r󠄁i󠄁a󠄁n󠄁t󠄁 a󠄁d󠄁d󠄁e󠄁d󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 i󠄁s󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁,󠄁 n󠄁o󠄁t󠄁 a󠄁 n󠄁e󠄁w󠄁 s󠄁e󠄁c󠄁u󠄁r󠄁i󠄁t󠄁y󠄁 g󠄁u󠄁a󠄁r󠄁a󠄁n󠄁t󠄁e󠄁e󠄁.󠄁 |
-| R󠄁1󠄁2󠄁8󠄁-󠄁0󠄁6󠄁 | R󠄁e󠄁s󠄁t󠄁o󠄁r󠄁e󠄁 a󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 M󠄁o󠄁v󠄁e󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 c󠄁h󠄁i󠄁l󠄁d󠄁.󠄁 | N󠄁o󠄁t󠄁 a󠄁d󠄁o󠄁p󠄁t󠄁e󠄁d󠄁:󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁d󠄁u󠄁n󠄁d󠄁a󠄁n󠄁t󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 c󠄁h󠄁i󠄁l󠄁d󠄁 w󠄁a󠄁s󠄁 d󠄁e󠄁l󠄁i󠄁b󠄁e󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁.󠄁 N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁e󠄁x󠄁t󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 C󠄁u󠄁t󠄁/󠄁P󠄁a󠄁s󠄁t󠄁e󠄁 a󠄁r󠄁e󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁n󠄁d󠄁e󠄁d󠄁 k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁/󠄁V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 m󠄁o󠄁v󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁.󠄁 | `testNarrowObjectsMoveThroughNativeCutAndPasteActions` c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 m󠄁o󠄁v󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 a󠄁n󠄁d󠄁 i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁.󠄁 A󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 u󠄁n󠄁p󠄁e󠄁r󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁.󠄁 |
-| R󠄁1󠄁2󠄁8󠄁-󠄁0󠄁7󠄁 | A󠄁 5󠄁2󠄁-󠄁p󠄁o󠄁i󠄁n󠄁t󠄁 f󠄁l󠄁o󠄁o󠄁r󠄁 a󠄁n󠄁d󠄁 f󠄁i󠄁x󠄁e󠄁d󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 t󠄁y󠄁p󠄁e󠄁 i󠄁m󠄁p󠄁l󠄁y󠄁 b󠄁r󠄁o󠄁k󠄁e󠄁n󠄁 f󠄁o󠄁n󠄁t󠄁 s󠄁c󠄁a󠄁l󠄁i󠄁n󠄁g󠄁.󠄁 | C󠄁l󠄁a󠄁r󠄁i󠄁f󠄁i󠄁e󠄁d󠄁:󠄁 5󠄁2󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁 i󠄁s󠄁 t󠄁h󠄁e󠄁 m󠄁i󠄁n󠄁i󠄁m󠄁u󠄁m󠄁/󠄁f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁;󠄁 l󠄁i󠄁v󠄁e󠄁 h󠄁e󠄁i󠄁g󠄁h󠄁t󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁s󠄁 i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁 l󠄁i󠄁n󠄁e󠄁 m󠄁e󠄁t󠄁r󠄁i󠄁c󠄁s󠄁.󠄁 F󠄁i󠄁x󠄁e󠄁d󠄁 1󠄁2󠄁-󠄁p󠄁o󠄁i󠄁n󠄁t󠄁 s󠄁y󠄁s󠄁t󠄁e󠄁m󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁h󠄁r󠄁o󠄁m󠄁e󠄁 i󠄁s󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁c󠄁t󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 u󠄁s󠄁e󠄁r󠄁'󠄁s󠄁 w󠄁r󠄁i󠄁t󠄁i󠄁n󠄁g󠄁 f󠄁o󠄁n󠄁t󠄁.󠄁 | E󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 f󠄁o󠄁n󠄁t󠄁-󠄁r󠄁a󠄁n󠄁g󠄁e󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁s󠄁 t󠄁h󠄁e󠄁 l󠄁i󠄁v󠄁e󠄁 i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁 r󠄁o󠄁w󠄁;󠄁 t󠄁h󠄁e󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁o󠄁r󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁s󠄁 t󠄁h󠄁i󠄁s󠄁 i󠄁n󠄁t󠄁e󠄁n󠄁t󠄁.󠄁 |
-| R󠄁1󠄁2󠄁8󠄁-󠄁0󠄁8󠄁 | R󠄁e󠄁c󠄁o󠄁v󠄁e󠄁r󠄁y󠄁 d󠄁e󠄁a󠄁d󠄁l󠄁i󠄁n󠄁e󠄁 i󠄁m󠄁p󠄁l󠄁i󠄁e󠄁s󠄁 a󠄁n󠄁 e󠄁a󠄁g󠄁e󠄁r󠄁 p󠄁h󠄁y󠄁s󠄁i󠄁c󠄁a󠄁l󠄁 w󠄁i󠄁p󠄁e󠄁.󠄁 | N󠄁o󠄁t󠄁 a󠄁d󠄁o󠄁p󠄁t󠄁e󠄁d󠄁:󠄁 t󠄁h󠄁e󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁 d󠄁e󠄁a󠄁d󠄁l󠄁i󠄁n󠄁e󠄁 a󠄁n󠄁d󠄁 l󠄁a󠄁z󠄁y󠄁 b󠄁u󠄁f󠄁f󠄁e󠄁r󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁a󠄁l󠄁 a󠄁r󠄁e󠄁 a󠄁l󠄁r󠄁e󠄁a󠄁d󠄁y󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁e󠄁d󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁v󠄁e󠄁r󠄁y󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 | N󠄁o󠄁 n󠄁e󠄁w󠄁 r󠄁e󠄁t󠄁e󠄁n󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁r󠄁 e󠄁r󠄁a󠄁s󠄁u󠄁r󠄁e󠄁 g󠄁u󠄁a󠄁r󠄁a󠄁n󠄁t󠄁e󠄁e󠄁.󠄁 |
-| R󠄁1󠄁2󠄁8󠄁-󠄁0󠄁9󠄁 | R󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁 s󠄁t󠄁r󠄁o󠄁n󠄁g󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁-󠄁t󠄁a󠄁s󠄁k󠄁 o󠄁w󠄁n󠄁e󠄁r󠄁s󠄁h󠄁i󠄁p󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁 w󠄁e󠄁a󠄁k󠄁 c󠄁a󠄁p󠄁t󠄁u󠄁r󠄁e󠄁.󠄁 | N󠄁o󠄁t󠄁 a󠄁d󠄁o󠄁p󠄁t󠄁e󠄁d󠄁:󠄁 `confirmConceal` d󠄁e󠄁l󠄁i󠄁b󠄁e󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁s󠄁 i󠄁t󠄁s󠄁 m󠄁o󠄁d󠄁e󠄁l󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 o󠄁u󠄁t󠄁c󠄁o󠄁m󠄁e󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 c󠄁l󠄁e󠄁a󠄁n󠄁u󠄁p󠄁.󠄁 | `testInFlightCreationFinishesCleanupBeforeReleasingItsModel` c󠄁o󠄁v󠄁e󠄁r󠄁s󠄁 t󠄁h󠄁e󠄁 l󠄁i󠄁f󠄁e󠄁t󠄁i󠄁m󠄁e󠄁 p󠄁a󠄁t󠄁h󠄁;󠄁 n󠄁o󠄁 w󠄁e󠄁a󠄁k󠄁 c󠄁a󠄁p󠄁t󠄁u󠄁r󠄁e󠄁 r󠄁e󠄁i󠄁n󠄁t󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁d󠄁.󠄁 |
-| R󠄁1󠄁2󠄁8󠄁-󠄁1󠄁0󠄁 | V󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁e󠄁 a󠄁 v󠄁a󠄁r󠄁i󠄁a󠄁b󠄁l󠄁e󠄁 n󠄁a󠄁m󠄁e󠄁 o󠄁n󠄁 e󠄁v󠄁e󠄁r󠄁y󠄁 e󠄁d󠄁i󠄁t󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 a󠄁n󠄁y󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁.󠄁 | N󠄁o󠄁t󠄁 a󠄁d󠄁o󠄁p󠄁t󠄁e󠄁d󠄁:󠄁 e󠄁r󠄁r󠄁o󠄁r󠄁s󠄁 u󠄁p󠄁d󠄁a󠄁t󠄁e󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁d󠄁 s󠄁a󠄁v󠄁e󠄁/󠄁b󠄁l󠄁u󠄁r󠄁 a󠄁t󠄁t󠄁e󠄁m󠄁p󠄁t󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 i󠄁s󠄁 t󠄁h󠄁e󠄁 R󠄁e󠄁f󠄁u󠄁s󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁x󠄁t󠄁,󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁a󠄁n󠄁 p󠄁r󠄁e󠄁m󠄁a󠄁t󠄁u󠄁r󠄁e󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁l󠄁y󠄁 t󠄁y󠄁p󠄁i󠄁n󠄁g󠄁.󠄁 | `ChipRename.edit` a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁-󠄁r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁;󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁o󠄁r󠄁 w󠄁o󠄁r󠄁d󠄁i󠄁n󠄁g󠄁 c󠄁l󠄁a󠄁r󠄁i󠄁f󠄁i󠄁e󠄁d󠄁.󠄁 |
-| R󠄁1󠄁2󠄁8󠄁-󠄁1󠄁1󠄁 | R󠄁e󠄁m󠄁o󠄁v󠄁e󠄁 t󠄁h󠄁e󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 p󠄁r󠄁e󠄁-󠄁s󠄁e󠄁a󠄁l󠄁 e󠄁x󠄁p󠄁l󠄁a󠄁n󠄁a󠄁t󠄁o󠄁r󠄁y󠄁 l󠄁i󠄁n󠄁e󠄁.󠄁 | V󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 c󠄁o󠄁n󠄁s󠄁e󠄁q󠄁u󠄁e󠄁n󠄁c󠄁e󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 a󠄁n󠄁d󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁m󠄁p󠄁r󠄁o󠄁v󠄁e󠄁d󠄁:󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 n󠄁o󠄁n󠄁i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁v󠄁e󠄁 s󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 h󠄁e󠄁a󠄁d󠄁e󠄁r󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 S󠄁e󠄁a󠄁l󠄁 S󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁n󠄁 m󠄁a󠄁c󠄁O󠄁S󠄁 1󠄁4󠄁+󠄁,󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁 i󠄁n󠄁f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 o󠄁n󠄁 m󠄁a󠄁c󠄁O󠄁S󠄁 1󠄁3󠄁.󠄁 A󠄁 t󠄁o󠄁o󠄁l󠄁t󠄁i󠄁p󠄁 a󠄁l󠄁o󠄁n󠄁e󠄁 i󠄁s󠄁 i󠄁n󠄁s󠄁u󠄁f󠄁f󠄁i󠄁c󠄁i󠄁e󠄁n󠄁t󠄁.󠄁 | `DocumentOpsWiringTests.testTheContextMenuOffersSealSelectionOverInkOnly` p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁.󠄁 m󠄁a󠄁c󠄁O󠄁S󠄁 1󠄁3󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 i󠄁n󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁;󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 a󠄁n󠄁n󠄁o󠄁u󠄁n󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 a󠄁 m󠄁a󠄁n󠄁u󠄁a󠄁l󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁.󠄁 |
-| R󠄁1󠄁2󠄁8󠄁-󠄁1󠄁2󠄁 | S󠄁m󠄁a󠄁l󠄁l󠄁e󠄁r󠄁 u󠄁n󠄁u󠄁s󠄁e󠄁d󠄁-󠄁p󠄁a󠄁r󠄁a󠄁m󠄁e󠄁t󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 p󠄁e󠄁r󠄁f󠄁o󠄁r󠄁m󠄁a󠄁n󠄁c󠄁e󠄁 s󠄁u󠄁g󠄁g󠄁e󠄁s󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 | D󠄁e󠄁f󠄁e󠄁r󠄁r󠄁e󠄁d󠄁 a󠄁s󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 c󠄁l󠄁e󠄁a󠄁n󠄁u󠄁p󠄁 w󠄁h󠄁e󠄁r󠄁e󠄁 n󠄁o󠄁 c󠄁o󠄁r󠄁r󠄁e󠄁c󠄁t󠄁n󠄁e󠄁s󠄁s󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁 w󠄁a󠄁s󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁.󠄁 | N󠄁o󠄁n󠄁m󠄁a󠄁t󠄁e󠄁r󠄁i󠄁a󠄁l󠄁 t󠄁o󠄁 t󠄁h󠄁i󠄁s󠄁 U󠄁I󠄁 c󠄁o󠄁r󠄁r󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁;󠄁 n󠄁o󠄁 a󠄁d󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁.󠄁 |
-| R󠄁1󠄁2󠄁8󠄁-󠄁1󠄁3󠄁 | R󠄁e󠄁m󠄁o󠄁v󠄁e󠄁 U󠄁n󠄁i󠄁c󠄁o󠄁d󠄁e󠄁 p󠄁r󠄁o󠄁v󠄁e󠄁n󠄁a󠄁n󠄁c󠄁e󠄁 m󠄁a󠄁r󠄁k󠄁s󠄁.󠄁 | R󠄁e󠄁j󠄁e󠄁c󠄁t󠄁e󠄁d󠄁:󠄁 a󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 s󠄁u󠄁g󠄁g󠄁e󠄁s󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁s󠄁 n󠄁o󠄁t󠄁 u󠄁s󠄁e󠄁r󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 t󠄁o󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 E󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 m󠄁a󠄁r󠄁k󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁.󠄁 | S󠄁u󠄁p󠄁p󠄁o󠄁r󠄁t󠄁e󠄁d󠄁 T󠄁e󠄁x󠄁t󠄁P󠄁r󠄁o󠄁v󠄁 d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁 e󠄁d󠄁i󠄁t󠄁i󠄁n󠄁g󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁a󠄁c󠄁t󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁 m󠄁a󠄁r󠄁k󠄁s󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 m󠄁a󠄁r󠄁k󠄁i󠄁n󠄁g󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 p󠄁r󠄁o󠄁s󠄁e󠄁.󠄁 |
+| R128-01 | Long translated control labels can overrun their bounds. | Addressed: fit labels within their allocated controls, preserving complete action guidance. | `SealedBlockTests.testControlTitlesFitTheirBoundsWithLongTranslatedCopyFeedbackAndNotes` and `testLongControlTitlesDoNotPaintOutsideTheirButtons` passed, including raster bounds checks. |
+| R128-02 | An invalid blur can leave the name field without the keyboard. | Addressed: keep the invalid draft and local error, and restore field focus. | `SealedNameFieldTests.testInvalidBlurDefersRefocusAndKeepsTheDraftEditable`, `testCancelInvalidatesPendingInvalidDraftRefocus`, `testWindowTeardownInvalidatesPendingInvalidDraftRefocus` and `testWindowTeardownSavesAValidPendingDraft` passed; naming renders regenerated and inspected. |
+| R128-03 | Note, More and control boundaries need clearer action treatments. | Addressed: clarify the visible targets and their border contrast. | `ThemeContrastTests.testRestingSealedControlTextAndBordersContrastWithTheirActualSurfaces` and `testSelectedSealedControlsKeepTextAndBorderContrastOnTheirFill` passed. Refreshed light/dark and narrow/wide renders inspected; physical-display check remains manual. |
+| R128-04 | Destructive sharing action competes with Copy/Done. | Addressed: place deletion/discard in its own row below a divider. | `ConcealRecoveryTests.testRenderSharingPreviewsWhenRequested` passed; refreshed light/dark, narrow/wide sharing renders inspected. |
+| R128-05 | Discarded pages remain readable to link recovery. | Refuted by source: [discard_page](../../crates/core/src/store.rs) removes the page with `tab.page.take()` and entombs it; only the slot survives. [cached_link](../../crates/ffi/src/lib.rs) requires that source page in `readable_sheets()`. UI dismissal also explicitly forgets its token. | Owning source inspected; no page-content-equality invariant added. This is source evidence, not a new security guarantee. |
+| R128-06 | Restore a separate Move accessibility child. | Not adopted: the redundant selection-only child was deliberately removed. Native text selection and Cut/Paste are the intended keyboard/VoiceOver movement route. | `testNarrowObjectsMoveThroughNativeCutAndPasteActions` checks keyboard movement and identity. Actual VoiceOver navigation remains unperformed. |
+| R128-07 | A 52-point floor and fixed action type imply broken font scaling. | Clarified: 52 points is the minimum/fallback; live height follows identity line metrics. Fixed 12-point system action chrome is distinct from the user's writing font. | Existing font-range geometry covers the live identity row; the successor records this intent. |
+| R128-08 | Recovery deadline implies an eager physical wipe. | Not adopted: the access deadline and lazy buffer removal are already distinguished in the recovery implementation section. | No new retention or erasure guarantee. |
+| R128-09 | Replace strong creation-task ownership with a weak capture. | Not adopted: `confirmConceal` deliberately retains its model through outcome handling and cleanup. | `testInFlightCreationFinishesCleanupBeforeReleasingItsModel` covers the lifetime path; no weak capture reintroduced. |
+| R128-10 | Validate a variable name on every edit before any refusal. | Not adopted: errors update after the first refused save/blur attempt. This is the Refusing context, rather than premature feedback while initially typing. | `ChipRename.edit` and the existing local-refusal regression inspected; successor wording clarified. |
+| R128-11 | Remove the visible pre-seal explanatory line. | Visible consequence retained and presentation improved: native noninteractive section header before Seal Selection on macOS 14+, disabled informational fallback on macOS 13. A tooltip alone is insufficient. | `DocumentOpsWiringTests.testTheContextMenuOffersSealSelectionOverInkOnly` passed in the full suite. macOS 13 fallback inspected in source; actual VoiceOver announcement remains a manual check. |
+| R128-12 | Smaller unused-parameter and performance suggestions. | Deferred as optional cleanup where no correctness defect was established. | Nonmaterial to this UI correction; no additional behavior change recorded. |
+| R128-13 | Remove Unicode provenance marks. | Rejected: a review suggestion is not user authorization to remove attribution. Existing marks remain. | Supported TextProv document editing preserves the exact original marks while marking changed prose. |
 
 
 ## Requested Claude and Greptile review rounds
 
-R󠄁o󠄁u󠄁n󠄁d󠄁 o󠄁n󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁e󠄁d󠄁 `6fb40ab6`.󠄁 R󠄁e󠄁v󠄁i󠄁e󠄁w󠄁e󠄁r󠄁 a󠄁s󠄁s󠄁e󠄁s󠄁s󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 a󠄁r󠄁e󠄁 o󠄁p󠄁i󠄁n󠄁i󠄁o󠄁n󠄁s󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁a󠄁n󠄁
-p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁t󠄁y󠄁.󠄁 E󠄁a󠄁c󠄁h󠄁 t󠄁o󠄁p󠄁i󠄁c󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁 w󠄁a󠄁s󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁e󠄁d󠄁 a󠄁g󠄁a󠄁i󠄁n󠄁s󠄁t󠄁 t󠄁h󠄁e󠄁 o󠄁w󠄁n󠄁i󠄁n󠄁g󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁.󠄁
+Round one reviewed `6fb40ab6`. Reviewer assessments are opinions rather than
+product authority. Each topic below was checked against the owning source.
 
-| I󠄁D󠄁 | R󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 t󠄁o󠄁p󠄁i󠄁c󠄁 | D󠄁i󠄁s󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 |
+| ID | Review topic | Disposition |
 | --- | --- | --- |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁0󠄁1󠄁 | G󠄁r󠄁e󠄁p󠄁t󠄁i󠄁l󠄁e󠄁:󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 i󠄁n󠄁 s󠄁h󠄁o󠄁r󠄁t󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁s󠄁.󠄁 | C󠄁o󠄁n󠄁s󠄁t󠄁r󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁 o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 t󠄁h󠄁e󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁;󠄁 s󠄁c󠄁r󠄁o󠄁l󠄁l󠄁 i󠄁t󠄁s󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁n󠄁t󠄁s󠄁.󠄁 T󠄁e󠄁s󠄁t󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 c󠄁l󠄁i󠄁c󠄁k󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁a󠄁c󠄁h󠄁a󠄁b󠄁l󠄁e󠄁 S󠄁a󠄁v󠄁e󠄁/󠄁C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁0󠄁2󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 1󠄁:󠄁 m󠄁i󠄁s󠄁s󠄁i󠄁n󠄁g󠄁 n󠄁a󠄁r󠄁r󠄁o󠄁w󠄁-󠄁b󠄁l󠄁o󠄁c󠄁k󠄁 n󠄁o󠄁t󠄁e󠄁 i󠄁n󠄁d󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 | P󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 n󠄁o󠄁t󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁c󠄁e󠄁 w󠄁h󠄁e󠄁n󠄁 t󠄁h󠄁e󠄁 N󠄁o󠄁t󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 o󠄁r󠄁 s󠄁t󠄁a󠄁t󠄁u󠄁s󠄁 t󠄁e󠄁x󠄁t󠄁 c󠄁a󠄁n󠄁n󠄁o󠄁t󠄁 f󠄁i󠄁t󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁0󠄁3󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 2󠄁:󠄁 f󠄁i󠄁x󠄁e󠄁d󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁i󠄁z󠄁e󠄁d󠄁 C󠄁o󠄁p󠄁y󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁.󠄁 | M󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁 C󠄁o󠄁p󠄁y󠄁 a󠄁n󠄁d󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁 t󠄁i󠄁t󠄁l󠄁e󠄁s󠄁 f󠄁o󠄁r󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁0󠄁4󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 3󠄁:󠄁 f󠄁i󠄁x󠄁e󠄁d󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁o󠄁n󠄁t󠄁.󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 s󠄁y󠄁s󠄁t󠄁e󠄁m󠄁-󠄁f󠄁o󠄁n󠄁t󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁h󠄁r󠄁o󠄁m󠄁e󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 f󠄁r󠄁o󠄁m󠄁 w󠄁r󠄁i󠄁t󠄁i󠄁n󠄁g󠄁 m󠄁e󠄁t󠄁r󠄁i󠄁c󠄁s󠄁;󠄁 s󠄁e󠄁e󠄁 R󠄁1󠄁2󠄁8󠄁-󠄁0󠄁7󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁0󠄁5󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 4󠄁:󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 u󠄁s󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 h󠄁e󠄁i󠄁g󠄁h󠄁t󠄁.󠄁 | U󠄁s󠄁e󠄁 l󠄁i󠄁v󠄁e󠄁 p󠄁r󠄁e󠄁f󠄁e󠄁r󠄁r󠄁e󠄁d󠄁 h󠄁e󠄁i󠄁g󠄁h󠄁t󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 c󠄁i󠄁t󠄁e󠄁d󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 f󠄁r󠄁a󠄁m󠄁e󠄁s󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁0󠄁6󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 5󠄁:󠄁 w󠄁e󠄁a󠄁k󠄁e󠄁n󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁 o󠄁w󠄁n󠄁e󠄁r󠄁s󠄁h󠄁i󠄁p󠄁.󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 o󠄁w󠄁n󠄁e󠄁r󠄁s󠄁h󠄁i󠄁p󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 o󠄁u󠄁t󠄁c󠄁o󠄁m󠄁e󠄁 a󠄁n󠄁d󠄁 c󠄁l󠄁e󠄁a󠄁n󠄁u󠄁p󠄁;󠄁 s󠄁e󠄁e󠄁 R󠄁E󠄁V󠄁-󠄁0󠄁2󠄁/󠄁R󠄁1󠄁2󠄁8󠄁-󠄁0󠄁9󠄁.󠄁 F󠄁o󠄁r󠄁g󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁 o󠄁r󠄁p󠄁h󠄁a󠄁n󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁 a󠄁l󠄁o󠄁n󠄁e󠄁 o󠄁m󠄁i󠄁t󠄁s󠄁 c󠄁l󠄁i󠄁p󠄁b󠄁o󠄁a󠄁r󠄁d󠄁-󠄁c󠄁l󠄁e󠄁a󠄁n󠄁u󠄁p󠄁 o󠄁w󠄁n󠄁e󠄁r󠄁s󠄁h󠄁i󠄁p󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁0󠄁7󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 6󠄁:󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁 l󠄁o󠄁o󠄁k󠄁u󠄁p󠄁 s󠄁c󠄁a󠄁n󠄁s󠄁 p󠄁a󠄁g󠄁e󠄁s󠄁;󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁 i󠄁s󠄁 s󠄁n󠄁a󠄁p󠄁s󠄁h󠄁o󠄁t󠄁t󠄁e󠄁d󠄁.󠄁 | D󠄁e󠄁f󠄁e󠄁r󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 l󠄁o󠄁o󠄁k󠄁u󠄁p󠄁 o󠄁p󠄁t󠄁i󠄁m󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 S󠄁n󠄁a󠄁p󠄁s󠄁h󠄁o󠄁t󠄁 i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁f󠄁i󠄁e󠄁s󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 a󠄁t󠄁 f󠄁o󠄁r󠄁m󠄁 o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁;󠄁 n󠄁o󠄁 n󠄁e󠄁w󠄁 c󠄁o󠄁r󠄁r󠄁e󠄁c󠄁t󠄁n󠄁e󠄁s󠄁s󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁0󠄁8󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 7󠄁:󠄁 u󠄁n󠄁t󠄁r󠄁a󠄁n󠄁s󠄁l󠄁a󠄁t󠄁e󠄁d󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁.󠄁 | U󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 C󠄁o󠄁m󠄁p󠄁a󠄁n󠄁i󠄁o󠄁n󠄁K󠄁i󠄁t󠄁 s󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 b󠄁u󠄁n󠄁d󠄁l󠄁e󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁0󠄁9󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 8󠄁:󠄁 c󠄁l󠄁i󠄁p󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁 s󠄁h󠄁o󠄁u󠄁l󠄁d󠄁 e󠄁n󠄁d󠄁 r󠄁e󠄁c󠄁o󠄁v󠄁e󠄁r󠄁y󠄁.󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 i󠄁n󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁i󠄁e󠄁s󠄁.󠄁 R󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁s󠄁 r󠄁e󠄁-󠄁c󠄁o󠄁p󠄁y󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 c󠄁l󠄁i󠄁p󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁i󠄁n󠄁g󠄁 w󠄁i󠄁t󠄁h󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁 r󠄁e󠄁c󠄁o󠄁v󠄁e󠄁r󠄁y󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁v󠄁a󠄁l󠄁.󠄁 F󠄁1󠄁6󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁e󠄁s󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁 e󠄁x󠄁p󠄁i󠄁r󠄁y󠄁 f󠄁r󠄁o󠄁m󠄁 l󠄁a󠄁t󠄁e󠄁r󠄁 c󠄁l󠄁e󠄁a󠄁n󠄁u󠄁p󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁1󠄁0󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 9󠄁:󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁 m󠄁a󠄁y󠄁 i󠄁m󠄁p󠄁l󠄁y󠄁 s󠄁e󠄁c󠄁r󠄁e󠄁t󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 | C󠄁o󠄁u󠄁n󠄁t󠄁e󠄁r󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁e󠄁s󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁v󠄁e󠄁 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁i󠄁n󠄁 a󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁e󠄁;󠄁 i󠄁t󠄁 i󠄁s󠄁 n󠄁o󠄁t󠄁 a󠄁n󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁e󠄁c󠄁r󠄁e󠄁t󠄁.󠄁 N󠄁o󠄁 r󠄁a󠄁n󠄁d󠄁o󠄁m󠄁-󠄁c󠄁a󠄁p󠄁a󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 p󠄁r󠄁o󠄁p󠄁e󠄁r󠄁t󠄁y󠄁 i󠄁s󠄁 a󠄁s󠄁s󠄁e󠄁r󠄁t󠄁e󠄁d󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁1󠄁1󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 1󠄁0󠄁:󠄁 a󠄁d󠄁d󠄁 p󠄁a󠄁s󠄁t󠄁e󠄁b󠄁o󠄁a󠄁r󠄁d󠄁-󠄁f󠄁l󠄁a󠄁g󠄁 c󠄁o󠄁m󠄁m󠄁e󠄁n󠄁t󠄁a󠄁r󠄁y󠄁.󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁i󠄁o󠄁n󠄁'󠄁s󠄁 p󠄁a󠄁s󠄁t󠄁e󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁s󠄁;󠄁 n󠄁o󠄁 a󠄁d󠄁d󠄁e󠄁d󠄁 c󠄁o󠄁m󠄁m󠄁e󠄁n󠄁t󠄁 n󠄁e󠄁e󠄁d󠄁e󠄁d󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁1󠄁2󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 1󠄁1󠄁:󠄁 t󠄁r󠄁a󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 o󠄁u󠄁t󠄁l󠄁i󠄁v󠄁e󠄁s󠄁 i󠄁t󠄁s󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁x󠄁t󠄁.󠄁 | C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁 o󠄁n󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁x󠄁t󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁n󠄁 a󠄁r󠄁b󠄁i󠄁t󠄁r󠄁a󠄁r󠄁y󠄁 l󠄁o󠄁n󠄁g󠄁-󠄁p󠄁r󠄁e󠄁s󠄁s󠄁 t󠄁i󠄁m󠄁e󠄁o󠄁u󠄁t󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁1󠄁3󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 1󠄁2󠄁:󠄁 T󠄁e󠄁x󠄁t󠄁K󠄁i󠄁t󠄁 s󠄁i󠄁z󠄁i󠄁n󠄁g󠄁 a󠄁s󠄁s󠄁u󠄁m󠄁e󠄁s󠄁 m󠄁a󠄁i󠄁n󠄁 a󠄁c󠄁t󠄁o󠄁r󠄁.󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁 m󠄁a󠄁i󠄁n󠄁-󠄁t󠄁h󠄁r󠄁e󠄁a󠄁d󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁.󠄁 B󠄁a󠄁c󠄁k󠄁g󠄁r󠄁o󠄁u󠄁n󠄁d󠄁-󠄁l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁 s󠄁u󠄁p󠄁p󠄁o󠄁r󠄁t󠄁 n󠄁e󠄁e󠄁d󠄁s󠄁 a󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 a󠄁c󠄁t󠄁o󠄁r󠄁/󠄁m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 a󠄁u󠄁d󠄁i󠄁t󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁1󠄁4󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 1󠄁3󠄁:󠄁 M󠄁o󠄁r󠄁e󠄁 l󠄁a󠄁c󠄁k󠄁s󠄁 h󠄁i󠄁t󠄁 s󠄁l󠄁o󠄁p󠄁.󠄁 | S󠄁h󠄁a󠄁r󠄁e󠄁 e󠄁x󠄁p󠄁a󠄁n󠄁d󠄁e󠄁d󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁e󠄁d󠄁 b󠄁y󠄁 t󠄁h󠄁e󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁 a󠄁n󠄁d󠄁 d󠄁i󠄁s󠄁j󠄁o󠄁i󠄁n󠄁t󠄁 f󠄁r󠄁o󠄁m󠄁 a󠄁d󠄁j󠄁a󠄁c󠄁e󠄁n󠄁t󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁1󠄁5󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 1󠄁4󠄁:󠄁 s󠄁i󠄁n󠄁g󠄁l󠄁e󠄁-󠄁o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 m󠄁e󠄁n󠄁u󠄁 c󠄁o󠄁l󠄁l󠄁a󠄁p󠄁s󠄁e󠄁s󠄁 m󠄁i󠄁x󠄁e󠄁d󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 s󠄁i󠄁n󠄁g󠄁l󠄁e󠄁-󠄁o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 t󠄁a󠄁r󠄁g󠄁e󠄁t󠄁;󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁-󠄁w󠄁i󠄁d󠄁e󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁1󠄁6󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁:󠄁 d󠄁e󠄁a󠄁d󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁 a󠄁n󠄁d󠄁 d󠄁u󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁e󠄁 p󠄁a󠄁d󠄁d󠄁i󠄁n󠄁g󠄁.󠄁 | R󠄁e󠄁m󠄁o󠄁v󠄁e󠄁 u󠄁n󠄁u󠄁s󠄁e󠄁d󠄁 m󠄁e󠄁t󠄁a󠄁d󠄁a󠄁t󠄁a󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁s󠄁/󠄁f󠄁a󠄁c󠄁e󠄁 e󠄁n󠄁u󠄁m󠄁 a󠄁n󠄁d󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁 h󠄁o󠄁r󠄁i󠄁z󠄁o󠄁n󠄁t󠄁a󠄁l󠄁 p󠄁a󠄁d󠄁d󠄁i󠄁n󠄁g󠄁.󠄁 R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 t󠄁e󠄁s󠄁t󠄁-󠄁u󠄁s󠄁e󠄁d󠄁 r󠄁o󠄁w󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁;󠄁 d󠄁e󠄁f󠄁e󠄁r󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁/󠄁r󠄁a󠄁d󠄁i󠄁u󠄁s󠄁 r󠄁e󠄁n󠄁a󠄁m󠄁i󠄁n󠄁g󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁1󠄁7󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁:󠄁 i󠄁n󠄁v󠄁a󠄁l󠄁i󠄁d󠄁-󠄁n󠄁a󠄁m󠄁e󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁,󠄁 h󠄁i󠄁s󠄁t󠄁o󠄁r󠄁i󠄁c󠄁a󠄁l󠄁 n󠄁a󠄁m󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 m󠄁e󠄁n󠄁u󠄁 c󠄁a󠄁s󠄁e󠄁.󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 a󠄁l󠄁r󠄁e󠄁a󠄁d󠄁y󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁d󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 h󠄁i󠄁s󠄁t󠄁o󠄁r󠄁i󠄁c󠄁a󠄁l󠄁 e󠄁n󠄁t󠄁r󠄁i󠄁e󠄁s󠄁;󠄁 n󠄁o󠄁 n󠄁e󠄁w󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁1󠄁8󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁:󠄁 s󠄁t󠄁r󠄁i󠄁p󠄁 p󠄁r󠄁o󠄁v󠄁e󠄁n󠄁a󠄁n󠄁c󠄁e󠄁 m󠄁a󠄁r󠄁k󠄁s󠄁.󠄁 | P󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁;󠄁 a󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁e󠄁d󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁e󠄁 i󠄁t󠄁s󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁a󠄁l󠄁.󠄁 S󠄁e󠄁e󠄁 R󠄁1󠄁2󠄁8󠄁-󠄁1󠄁3󠄁.󠄁 |
+| ROUND1-01 | Greptile: helper covers the draft in short windows. | Constrain the helper outside the block; scroll its contents. Test draft click access and reachable Save/Cancel. |
+| ROUND1-02 | Claude 1: missing narrow-block note indication. | Preserve visible note presence when the Note control or status text cannot fit. |
+| ROUND1-03 | Claude 2: fixed localized Copy width. | Measure Copy and feedback titles for shared action geometry. |
+| ROUND1-04 | Claude 3: fixed action font. | Retain system-font action chrome separate from writing metrics; see R128-07. |
+| ROUND1-05 | Claude 4: tests use fallback height. | Use live preferred height in the cited fixture frames. |
+| ROUND1-06 | Claude 5: weaken request ownership. | Retain explicit ownership through outcome and cleanup; see REV-02/R128-09. Forgetting an orphan token alone omits clipboard-cleanup ownership. |
+| ROUND1-07 | Claude 6: label lookup scans pages; label is snapshotted. | Defer optional lookup optimization. Snapshot identifies source at form opening; no new correctness defect established. |
+| ROUND1-08 | Claude 7: untranslated reference feedback. | Use the CompanionKit string bundle. |
+| ROUND1-09 | Claude 8: clipboard clear should end recovery. | Retain independent policies. Regression exercises re-copy after clipboard clearing within the initial recovery interval. F16 distinguishes access expiry from later cleanup. |
+| ROUND1-10 | Claude 9: token may imply secret authorization. | Counter distinguishes successive results within a handle; it is not an authorization secret. No random-capability property is asserted. |
+| ROUND1-11 | Claude 10: add pasteboard-flag commentary. | Retain initial completion's pasteboard options; no added comment needed. |
+| ROUND1-12 | Claude 11: tracking outlives its interaction context. | Cancel on context changes without an arbitrary long-press timeout. |
+| ROUND1-13 | Claude 12: TextKit sizing assumes main actor. | Retain current main-thread layout. Background-layout support needs a separate actor/measurement audit. |
+| ROUND1-14 | Claude 13: More lacks hit slop. | Share expanded geometry bounded by the block and disjoint from adjacent actions. |
+| ROUND1-15 | Claude 14: single-object menu collapses mixed selection. | Retain single-object action target; native selection-wide commands remain separate. |
+| ROUND1-16 | Claude: dead geometry and duplicate padding. | Remove unused metadata helpers/face enum and share horizontal padding. Retain test-used row geometry; defer policy/radius renaming. |
+| ROUND1-17 | Claude: invalid-name focus, historical names and menu case. | Retain already recorded scoped decisions and historical entries; no new defect established. |
+| ROUND1-18 | Claude: strip provenance marks. | Preserve existing attribution; automated feedback does not authorize its removal. See R128-13. |
 
 
-R󠄁o󠄁u󠄁n󠄁d󠄁-󠄁o󠄁n󠄁e󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁:󠄁 t󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁 i󠄁s󠄁o󠄁l󠄁a󠄁t󠄁e󠄁d󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 3󠄁9󠄁3󠄁 a󠄁p󠄁p󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁
-2󠄁,󠄁3󠄁4󠄁6󠄁 C󠄁o󠄁m󠄁p󠄁a󠄁n󠄁i󠄁o󠄁n󠄁K󠄁i󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁,󠄁 w󠄁i󠄁t󠄁h󠄁 s󠄁e󠄁v󠄁e󠄁n󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 s󠄁k󠄁i󠄁p󠄁s󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 s󠄁e󠄁v󠄁e󠄁n󠄁
-n󠄁e󠄁w󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁 s󠄁h󠄁o󠄁r󠄁t󠄁-󠄁w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁,󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 n󠄁a󠄁r󠄁r󠄁o󠄁w󠄁-󠄁n󠄁o󠄁t󠄁e󠄁 s󠄁t󠄁a󠄁t󠄁u󠄁s󠄁,󠄁
-l󠄁o󠄁c󠄁a󠄁l󠄁i󠄁z󠄁e󠄁d󠄁 C󠄁o󠄁p󠄁y󠄁 s󠄁i󠄁z󠄁i󠄁n󠄁g󠄁,󠄁 M󠄁o󠄁r󠄁e󠄁 h󠄁i󠄁t󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁,󠄁 n󠄁o󠄁t󠄁e󠄁-󠄁p󠄁o󠄁p󠄁o󠄁v󠄁e󠄁r󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁i󠄁n󠄁g󠄁,󠄁 d󠄁e󠄁t󠄁a󠄁c󠄁h󠄁e󠄁d󠄁-󠄁e󠄁d󠄁i󠄁t󠄁o󠄁r󠄁
-p󠄁r󠄁e󠄁s󠄁s󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁l󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁a󠄁d󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 p󠄁r󠄁e󠄁s󠄁s󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁l󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 S󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁
-r󠄁e󠄁g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁t󠄁e󠄁d󠄁;󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁r󠄁r󠄁o󠄁w󠄁 n󠄁a󠄁m󠄁i󠄁n󠄁g󠄁-󠄁e󠄁r󠄁r󠄁o󠄁r󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁 w󠄁a󠄁s󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁.󠄁 A󠄁D󠄁R󠄁 l󠄁i󠄁n󠄁t󠄁,󠄁 E󠄁n󠄁g󠄁l󠄁i󠄁s󠄁h󠄁
-s󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 s󠄁y󠄁n󠄁t󠄁a󠄁x󠄁 a󠄁n󠄁d󠄁 d󠄁i󠄁f󠄁f󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁.󠄁 R󠄁u󠄁s󠄁t󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁s󠄁 d󠄁i󠄁d󠄁 n󠄁o󠄁t󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁 i󠄁n󠄁 t󠄁h󠄁i󠄁s󠄁 r󠄁o󠄁u󠄁n󠄁d󠄁.󠄁
+Round-one verification: the full isolated Swift suite passed 393 app tests and
+2,346 CompanionKit tests, with seven existing skips and no failures. The seven
+new regressions cover short-window helper placement, visible narrow-note status,
+localized Copy sizing, More hit geometry, note-popover anchoring, detached-editor
+press cancellation and read-only press cancellation. Synthetic previews were
+regenerated; the narrow naming-error render was inspected. ADR lint, English
+string syntax and diff checks passed. Rust sources did not change in this round.
 
 
-R󠄁o󠄁u󠄁n󠄁d󠄁 t󠄁w󠄁o󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁e󠄁d󠄁 `99accb26`.󠄁 G󠄁r󠄁e󠄁p󠄁t󠄁i󠄁l󠄁e󠄁 f󠄁o󠄁u󠄁n󠄁d󠄁 n󠄁o󠄁 c󠄁o󠄁n󠄁c󠄁r󠄁e󠄁t󠄁e󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁i󠄁n󠄁g󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁s󠄁
-a󠄁n󠄁d󠄁 r󠄁a󠄁t󠄁e󠄁d󠄁 c󠄁o󠄁n󠄁f󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁 5󠄁/󠄁5󠄁.󠄁 C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 f󠄁i󠄁x󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 s󠄁u󠄁p󠄁p󠄁l󠄁i󠄁e󠄁d󠄁
-t󠄁h󠄁e󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁i󠄁n󠄁g󠄁 n󠄁e󠄁w󠄁 t󠄁o󠄁p󠄁i󠄁c󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁s󠄁e󠄁 a󠄁s󠄁s󠄁e󠄁s󠄁s󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 a󠄁r󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁,󠄁 n󠄁o󠄁t󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁t󠄁y󠄁.󠄁
+Round two reviewed `99accb26`. Greptile found no concrete remaining defects
+and rated confidence 5/5. Claude verified the first-round fixes and supplied
+the following new topics. These assessments are review evidence, not authority.
 
-| I󠄁D󠄁 | C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 r󠄁o󠄁u󠄁n󠄁d󠄁-󠄁t󠄁w󠄁o󠄁 t󠄁o󠄁p󠄁i󠄁c󠄁 | D󠄁i󠄁s󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 |
+| ID | Claude round-two topic | Disposition |
 | --- | --- | --- |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁1󠄁 | S󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 i󠄁n󠄁d󠄁e󠄁x󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁s󠄁 t󠄁w󠄁o󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁e󠄁s󠄁.󠄁 | C󠄁o󠄁r󠄁r󠄁e󠄁c󠄁t󠄁 t󠄁h󠄁e󠄁 c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 i󠄁n󠄁d󠄁e󠄁x󠄁 t󠄁o󠄁 C󠄁o󠄁p󠄁y󠄁/󠄁M󠄁o󠄁r󠄁e󠄁/󠄁N󠄁o󠄁t󠄁e󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁/󠄁C󠄁u󠄁t󠄁/󠄁P󠄁a󠄁s󠄁t󠄁e󠄁 m󠄁o󠄁v󠄁e󠄁m󠄁e󠄁n󠄁t󠄁;󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 h󠄁i󠄁s󠄁t󠄁o󠄁r󠄁i󠄁c󠄁a󠄁l󠄁 a󠄁m󠄁e󠄁n󠄁d󠄁m󠄁e󠄁n󠄁t󠄁 e󠄁n󠄁t󠄁r󠄁i󠄁e󠄁s󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁2󠄁 | U󠄁n󠄁k󠄁n󠄁o󠄁w󠄁n󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁n󠄁t󠄁 k󠄁i󠄁n󠄁d󠄁s󠄁 a󠄁r󠄁e󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁d󠄁 a󠄁s󠄁 t󠄁e󠄁x󠄁t󠄁.󠄁 | U󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 n󠄁e󠄁u󠄁t󠄁r󠄁a󠄁l󠄁 c󠄁l󠄁a󠄁s󠄁s󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 f󠄁o󠄁r󠄁 a󠄁n󠄁 u󠄁n󠄁k󠄁n󠄁o󠄁w󠄁n󠄁 k󠄁i󠄁n󠄁d󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁3󠄁 | S󠄁e󠄁v󠄁e󠄁r󠄁e󠄁l󠄁y󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁 h󠄁i󠄁d󠄁e󠄁s󠄁 i󠄁t󠄁s󠄁 e󠄁r󠄁r󠄁o󠄁r󠄁/󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 | A󠄁d󠄁d󠄁 a󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁c󠄁t󠄁 e󠄁r󠄁r󠄁o󠄁r󠄁-󠄁f󠄁i󠄁r󠄁s󠄁t󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 a󠄁n󠄁d󠄁 t󠄁e󠄁s󠄁t󠄁 t󠄁i󠄁g󠄁h󠄁t󠄁e󠄁r󠄁 v󠄁i󠄁e󠄁w󠄁p󠄁o󠄁r󠄁t󠄁s󠄁 t󠄁h󠄁a󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 c󠄁a󠄁s󠄁e󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁4󠄁 | U󠄁n󠄁u󠄁s󠄁e󠄁d󠄁 n󠄁a󠄁m󠄁e󠄁-󠄁f󠄁l󠄁o󠄁o󠄁r󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁a󠄁n󠄁t󠄁.󠄁 | U󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁m󠄁e󠄁d󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁a󠄁n󠄁t󠄁 i󠄁n󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁5󠄁 | M󠄁o󠄁r󠄁e󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁a󠄁n󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 d󠄁e󠄁a󠄁d󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁 c󠄁l󠄁e󠄁a󠄁n󠄁u󠄁p󠄁.󠄁 | D󠄁e󠄁f󠄁e󠄁r󠄁 b󠄁r󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 c󠄁o󠄁s󠄁m󠄁e󠄁t󠄁i󠄁c󠄁 r󠄁e󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁u󠄁r󠄁i󠄁n󠄁g󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁 f󠄁l󠄁o󠄁o󠄁r󠄁/󠄁t󠄁e󠄁s󠄁t󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁;󠄁 n󠄁o󠄁 n󠄁e󠄁w󠄁 u󠄁s󠄁e󠄁r󠄁-󠄁v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁6󠄁 | N󠄁o󠄁t󠄁e󠄁 a󠄁n󠄁d󠄁 C󠄁o󠄁p󠄁y󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 d󠄁i󠄁f󠄁f󠄁e󠄁r󠄁e󠄁n󠄁t󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁s󠄁.󠄁 | M󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁 b󠄁o󠄁t󠄁h󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 s󠄁a󠄁m󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 f󠄁o󠄁n󠄁t󠄁 a󠄁n󠄁d󠄁 p󠄁a󠄁d󠄁d󠄁i󠄁n󠄁g󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁7󠄁 | N󠄁o󠄁t󠄁e󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 a󠄁n󠄁d󠄁 s󠄁t󠄁a󠄁t󠄁u󠄁s󠄁 t󠄁r󠄁u󠄁n󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 u󠄁s󠄁e󠄁 d󠄁i󠄁f󠄁f󠄁e󠄁r󠄁e󠄁n󠄁t󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁s󠄁.󠄁 | T󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 n󠄁o󠄁n󠄁i󠄁n󠄁t󠄁e󠄁r󠄁s󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 g󠄁u󠄁a󠄁r󠄁d󠄁 a󠄁v󠄁o󠄁i󠄁d󠄁s󠄁 c󠄁o󠄁l󠄁l󠄁i󠄁s󠄁i󠄁o󠄁n󠄁.󠄁 P󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 t󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁-󠄁s󠄁t󠄁a󠄁t󠄁u󠄁s󠄁 b󠄁a󠄁s󠄁i󠄁s󠄁;󠄁 n󠄁o󠄁 n󠄁e󠄁w󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁8󠄁 | N󠄁o󠄁t󠄁e󠄁-󠄁s󠄁p󠄁e󠄁c󠄁i󠄁f󠄁i󠄁c󠄁 i󠄁n󠄁d󠄁i󠄁c󠄁a󠄁t󠄁o󠄁r󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁.󠄁 | C󠄁l󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁 r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 n󠄁o󠄁t󠄁e󠄁 i󠄁n󠄁d󠄁i󠄁c󠄁a󠄁t󠄁o󠄁r󠄁 w󠄁h󠄁e󠄁n󠄁 i󠄁t󠄁s󠄁 t󠄁e󠄁x󠄁t󠄁/󠄁c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 c󠄁a󠄁n󠄁n󠄁o󠄁t󠄁 f󠄁i󠄁t󠄁;󠄁 o󠄁r󠄁d󠄁i󠄁n󠄁a󠄁r󠄁y󠄁 s󠄁t󠄁a󠄁t󠄁u󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 u󠄁n󠄁d󠄁e󠄁r󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁a󠄁i󠄁n󠄁t󠄁s󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁0󠄁9󠄁 | A󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁t󠄁s󠄁e󠄁l󠄁f󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁s󠄁 a󠄁 p󠄁r󠄁e󠄁s󠄁s󠄁.󠄁 | P󠄁e󠄁r󠄁m󠄁i󠄁t󠄁 p󠄁r󠄁o󠄁m󠄁o󠄁t󠄁i󠄁o󠄁n󠄁 t󠄁o󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁e󠄁/󠄁k󠄁e󠄁y󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁x󠄁t󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁 a󠄁n󠄁y󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁q󠄁u󠄁e󠄁n󠄁t󠄁 l󠄁o󠄁s󠄁s󠄁.󠄁 T󠄁e󠄁s󠄁t󠄁 t󠄁h󠄁e󠄁s󠄁e󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 t󠄁r󠄁a󠄁n󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁 p󠄁e󠄁r󠄁s󠄁o󠄁n󠄁'󠄁s󠄁 a󠄁p󠄁p󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁1󠄁0󠄁 | D󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 o󠄁u󠄁t󠄁c󠄁o󠄁m󠄁e󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁 i󠄁s󠄁 m󠄁u󠄁t󠄁a󠄁b󠄁l󠄁e󠄁.󠄁 | M󠄁a󠄁k󠄁e󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁 i󠄁m󠄁m󠄁u󠄁t󠄁a󠄁b󠄁l󠄁e󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁n󠄁v󠄁e󠄁n󠄁i󠄁e󠄁n󠄁c󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁n󠄁 a󠄁b󠄁s󠄁e󠄁n󠄁t󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁1󠄁1󠄁 | R󠄁e󠄁c󠄁o󠄁v󠄁e󠄁r󠄁y󠄁 c󠄁a󠄁p󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁p󠄁e󠄁a󠄁t󠄁e󠄁d󠄁l󠄁y󠄁 q󠄁u󠄁e󠄁r󠄁i󠄁e󠄁s󠄁 a󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁a󠄁n󠄁t󠄁.󠄁 | C󠄁a󠄁c󠄁h󠄁e󠄁 t󠄁h󠄁e󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁i󠄁z󠄁e󠄁d󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁v󠄁a󠄁l󠄁 t󠄁e󠄁x󠄁t󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁1󠄁2󠄁 | R󠄁e󠄁c󠄁o󠄁v󠄁e󠄁r󠄁y󠄁 c󠄁a󠄁p󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁.󠄁 | H󠄁i󠄁d󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁v󠄁a󠄁l󠄁 g󠄁u󠄁i󠄁d󠄁a󠄁n󠄁c󠄁e󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 r󠄁e󠄁c󠄁o󠄁v󠄁e󠄁r󠄁y󠄁 b󠄁e󠄁c󠄁o󠄁m󠄁e󠄁s󠄁 u󠄁n󠄁a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁 a󠄁n󠄁d󠄁 u󠄁p󠄁d󠄁a󠄁t󠄁e󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁-󠄁b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁 h󠄁e󠄁l󠄁p󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁1󠄁3󠄁 | A󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁r󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁l󠄁o󠄁s󠄁e󠄁s󠄁 a󠄁 n󠄁o󠄁t󠄁e󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 c󠄁h󠄁o󠄁r󠄁d󠄁 o󠄁w󠄁n󠄁e󠄁r󠄁s󠄁h󠄁i󠄁p󠄁.󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 i󠄁n󠄁t󠄁e󠄁n󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 h󠄁a󠄁n󠄁d󠄁o󠄁f󠄁f󠄁:󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁g󠄁e󠄁 b󠄁e󠄁c󠄁o󠄁m󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁d󠄁e󠄁r󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 i󠄁t󠄁s󠄁 c󠄁h󠄁o󠄁r󠄁d󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁.󠄁 N󠄁o󠄁 i󠄁n󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁 p󠄁r󠄁e󠄁m󠄁a󠄁t󠄁u󠄁r󠄁e󠄁-󠄁r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁1󠄁4󠄁 | S󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁-󠄁s󠄁t󠄁a󠄁t󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁a󠄁s󠄁t󠄁 l󠄁a󠄁c󠄁k󠄁s󠄁 i󠄁n󠄁c󠄁r󠄁e󠄁a󠄁s󠄁e󠄁d󠄁-󠄁c󠄁o󠄁n󠄁t󠄁r󠄁a󠄁s󠄁t󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁a󠄁g󠄁e󠄁.󠄁 | A󠄁d󠄁d󠄁 t󠄁h󠄁o󠄁s󠄁e󠄁 a󠄁p󠄁p󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁s󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁-󠄁s󠄁t󠄁a󠄁t󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁a󠄁s󠄁t󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁.󠄁 |
-| R󠄁O󠄁U󠄁N󠄁D󠄁2󠄁-󠄁1󠄁5󠄁 | S󠄁t󠄁r󠄁i󠄁p󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 m󠄁a󠄁r󠄁k󠄁s󠄁.󠄁 | N󠄁o󠄁t󠄁 a󠄁d󠄁o󠄁p󠄁t󠄁e󠄁d󠄁;󠄁 s󠄁e󠄁e󠄁 R󠄁1󠄁2󠄁8󠄁-󠄁1󠄁3󠄁 a󠄁n󠄁d󠄁 R󠄁O󠄁U󠄁N󠄁D󠄁1󠄁-󠄁1󠄁8󠄁.󠄁 |
+| ROUND2-01 | Source index still describes two VoiceOver handles. | Correct the current source index to Copy/More/Note actions and native selection/Cut/Paste movement; preserve historical amendment entries. |
+| ROUND2-02 | Unknown content kinds are described as text. | Use the existing neutral classification fallback for an unknown kind. |
+| ROUND2-03 | Severely constrained helper hides its error/actions. | Add a compact error-first fallback and test tighter viewports than the first-round case. |
+| ROUND2-04 | Unused name-floor constant. | Use the named constant in measurement. |
+| ROUND2-05 | More geometry constants and optional dead geometry cleanup. | Defer broader cosmetic restructuring. The current floor/test helper remains explicit; no new user-visible defect established. |
+| ROUND2-06 | Note and Copy measure through different helpers. | Measure both with the same control font and padding policy. |
+| ROUND2-07 | Note placement and status truncation use different widths. | The existing nonintersection guard avoids collision. Preserve the full-status basis; no new defect established. |
+| ROUND2-08 | Note-specific indicator clearance. | Clearance reserves the note indicator when its text/control cannot fit; ordinary status remains optional under width constraints. |
+| ROUND2-09 | Activation itself cancels a press. | Permit promotion to active/key context, then cancel any subsequent loss. Test these state transitions without activating a person's app. |
+| ROUND2-10 | Decoded outcome token is mutable. | Make the decoded token immutable while retaining convenience initialization with an absent token. |
+| ROUND2-11 | Recovery caption repeatedly queries a constant. | Cache the localized interval text. |
+| ROUND2-12 | Recovery caption remains after disablement. | Hide interval guidance after recovery becomes unavailable and update disabled-button help. |
+| ROUND2-13 | Action preparation closes a note before checking chord ownership. | Retain intentional focus handoff: the page becomes the responder before checking its chord route. No independent premature-refusal defect established. |
+| ROUND2-14 | Selected-state contrast lacks increased-contrast coverage. | Add those appearances to the selected-state contrast check. |
+| ROUND2-15 | Strip existing attribution marks. | Not adopted; see R128-13 and ROUND1-18. |
 
 
-R󠄁o󠄁u󠄁n󠄁d󠄁-󠄁t󠄁w󠄁o󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁:󠄁 t󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁 i󠄁s󠄁o󠄁l󠄁a󠄁t󠄁e󠄁d󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 3󠄁9󠄁3󠄁 a󠄁p󠄁p󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁
-2󠄁,󠄁3󠄁5󠄁2󠄁 C󠄁o󠄁m󠄁p󠄁a󠄁n󠄁i󠄁o󠄁n󠄁K󠄁i󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁,󠄁 w󠄁i󠄁t󠄁h󠄁 s󠄁e󠄁v󠄁e󠄁n󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 s󠄁k󠄁i󠄁p󠄁s󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 s󠄁i󠄁x󠄁
-n󠄁e󠄁w󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁r󠄁o󠄁m󠄁o󠄁t󠄁i󠄁o󠄁n󠄁/󠄁l󠄁o󠄁s󠄁s󠄁,󠄁 n󠄁e󠄁u󠄁t󠄁r󠄁a󠄁l󠄁 u󠄁n󠄁k󠄁n󠄁o󠄁w󠄁n󠄁-󠄁k󠄁i󠄁n󠄁d󠄁 s󠄁t󠄁a󠄁t󠄁u󠄁s󠄁,󠄁
-s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 N󠄁o󠄁t󠄁e󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁,󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁c󠄁t󠄁 e󠄁r󠄁r󠄁o󠄁r󠄁/󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁,󠄁 a󠄁n󠄁d󠄁 e󠄁x󠄁t󠄁r󠄁e󠄁m󠄁e󠄁-󠄁h󠄁e󠄁i󠄁g󠄁h󠄁t󠄁
-b󠄁o󠄁u󠄁n󠄁d󠄁s󠄁/󠄁E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁.󠄁 S󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 a󠄁l󠄁s󠄁o󠄁 p󠄁a󠄁s󠄁s󠄁 b󠄁o󠄁t󠄁h󠄁 i󠄁n󠄁c󠄁r󠄁e󠄁a󠄁s󠄁e󠄁d󠄁-󠄁c󠄁o󠄁n󠄁t󠄁r󠄁a󠄁s󠄁t󠄁 a󠄁p󠄁p󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁s󠄁.󠄁
-S󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁 r󠄁e󠄁g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁t󠄁e󠄁d󠄁.󠄁 R󠄁u󠄁s󠄁t󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁s󠄁 d󠄁i󠄁d󠄁 n󠄁o󠄁t󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁 i󠄁n󠄁 e󠄁i󠄁t󠄁h󠄁e󠄁r󠄁
-r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁e󠄁d󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 r󠄁o󠄁u󠄁n󠄁d󠄁.󠄁 A󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 p󠄁h󠄁y󠄁s󠄁i󠄁c󠄁a󠄁l󠄁-󠄁d󠄁i󠄁s󠄁p󠄁l󠄁a󠄁y󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁
-u󠄁n󠄁p󠄁e󠄁r󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁.󠄁
+Round-two verification: the full isolated Swift suite passed 393 app tests and
+2,352 CompanionKit tests, with seven existing skips and no failures. The six
+new tests exercise activation promotion/loss, neutral unknown-kind status,
+shared Note measurement, compact error/action visibility, and extreme-height
+bounds/Escape. Selected controls also pass both increased-contrast appearances.
+Synthetic previews were regenerated. Rust sources did not change in either
+requested review round. Actual VoiceOver and physical-display checks remain
+unperformed.
