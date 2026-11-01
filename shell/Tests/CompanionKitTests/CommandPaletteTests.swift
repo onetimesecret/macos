@@ -42,5 +42,6 @@ final class CommandPaletteTests: XCTestCase {
             XCTAssertEqual(map.command(for: try Keystroke.parse(chord).get(), in: .editor), .pageClose)
         }
         XCTAssertEqual(map.command(for: try Keystroke.parse("cmd-shift-w").get(), in: .editor), .windowClose)
+        XCTAssertEqual(map.menuKeystroke(for: .pageClose), try Keystroke.parse("cmd-w").get())
     }
 }

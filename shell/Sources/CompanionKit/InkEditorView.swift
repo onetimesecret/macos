@@ -8888,6 +8888,9 @@ public enum InkStyle {
 
 
 extension InkTextView: CommandPaletteResponder {
+    func beginPaletteFocusBorrow() { coordinator?.noteHost?.beginPaletteFocusBorrow() }
+    func endPaletteFocusBorrow() { coordinator?.noteHost?.endPaletteFocusBorrow() }
+
     func prepareForCommandPalette() -> Bool {
         coordinator?.nameEditor?.commit()
         if coordinator?.nameEditor?.isOpen == true {

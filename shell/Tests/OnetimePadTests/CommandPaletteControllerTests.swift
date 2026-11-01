@@ -246,4 +246,118 @@ final class CommandPaletteControllerTests: XCTestCase {
         }
     }
 
+
+    private func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
+
+    func testRealSealedNoteSurvivesQueuedFocusLossAndRestoresBeforePaletteRelease() async throws {
+        for runCommand in [false, true] {
+            let model = try makeModel()
+            model.newPage()
+            let page = try XCTUnwrap(model.selectedPageID)
+            let coordinator = InkEditorView.Coordinator(model: model)
+            let editor = try XCTUnwrap(InkEditorView.makeInkTextView(model: model, sheetID: page, coordinator: coordinator))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+                styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            defer { window.close() }
+            let scroll = InkEditorView.bareScroller()
+            scroll.frame = window.contentLayoutRect
+            InkEditorView.seat(editor, in: scroll)
+            window.contentView = scroll
+            window.orderFront(nil)
+            _ = window.makeFirstResponder(editor)
+            editor.insertText("ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+            editor.setSelectedRange(NSRange(location: 3, length: 6))
+            coordinator.sealSelectionOrLine()
+            editor.layout()
+            editor.layoutManager?.ensureLayout(for: try XCTUnwrap(editor.textContainer))
+            coordinator.beginNote(at: 3)
+            let note = try XCTUnwrap(coordinator.noteEditor)
+            note.textView.insertText("synthetic note", replacementRange: NSRange(location: NSNotFound, length: 0))
+            let selection = NSRange(location: 2, length: 5)
+            note.textView.setSelectedRange(selection)
+            let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+            palette.show(in: window, pageContext: true)
+            await drainMainQueue()
+            XCTAssertTrue(note.isOpen)
+            XCTAssertEqual(note.textView.string, "synthetic note")
+            if runCommand {
+                palette.search.stringValue = "note expansion"
+                palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+                XCTAssertEqual(palette.table.numberOfRows, 1)
+                _ = palette.control(palette.search, textView: NSTextView(),
+                    doCommandBy: #selector(NSResponder.insertNewline(_:)))
+            } else {
+                _ = palette.control(palette.search, textView: NSTextView(),
+                    doCommandBy: #selector(NSResponder.cancelOperation(_:)))
+            }
+            await drainMainQueue()
+            XCTAssertTrue(note.isOpen)
+            XCTAssertEqual(note.isExpanded, runCommand)
+            XCTAssertTrue(window.firstResponder === note.textView)
+            XCTAssertEqual(note.textView.selectedRange(), selection)
+            _ = window.makeFirstResponder(editor)
+            await drainMainQueue()
+            XCTAssertFalse(note.isOpen)
+        }
+    }
+
+    func testPaletteInteriorClicksDoNotDismissButOutsideClicksDo() throws {
+        let model = try makeModel()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false)
+        let overlay = try XCTUnwrap(palette.overlay)
+        let card = try XCTUnwrap(overlay.interactiveRegion)
+        for point in [NSPoint(x: card.frame.minX + 2, y: card.frame.minY + 2),
+                      NSPoint(x: card.frame.midX, y: card.frame.minY + 15)] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown,
+                location: overlay.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+            overlay.mouseDown(with: event)
+            XCTAssertNotNil(palette.overlay)
+        }
+        let event = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown,
+            location: overlay.convert(NSPoint(x: 2, y: 2), to: nil), modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: 1))
+        overlay.mouseDown(with: event)
+        XCTAssertNil(palette.overlay)
+    }
+
+    func testResizeDoesNotTakeFocusFromTheResults() throws {
+        let model = try makeModel()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false)
+        XCTAssertTrue(window.makeFirstResponder(palette.table))
+        window.setContentSize(NSSize(width: 360, height: 480))
+        palette.overlay?.needsLayout = true
+        palette.overlay?.layoutSubtreeIfNeeded()
+        XCTAssertTrue(window.firstResponder === palette.table)
+    }
+
+    func testThePaletteShortcutTogglesAndReopenModeHasABackRoute() throws {
+        let model = try makeModel()
+        let (window, editor) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false)
+        palette.show(in: window, pageContext: false)
+        XCTAssertNil(palette.overlay)
+        XCTAssertTrue(window.firstResponder === editor)
+        palette.show(in: window, pageContext: false, reopen: true)
+        XCTAssertFalse(palette.backButton.isHidden)
+        palette.backButton.performClick(nil)
+        XCTAssertTrue(palette.backButton.isHidden)
+        XCTAssertGreaterThan(palette.table.numberOfRows, 0)
+        XCTAssertTrue(palette.search.nextKeyView === palette.table)
+        XCTAssertTrue(palette.table.nextKeyView === palette.search)
+    }
+
 }

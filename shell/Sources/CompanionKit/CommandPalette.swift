@@ -3,8 +3,15 @@ import AppKit
 @MainActor
 public protocol CommandPaletteResponder: AnyObject {
     func prepareForCommandPalette() -> Bool
+    func beginPaletteFocusBorrow()
+    func endPaletteFocusBorrow()
     func canPerformPaletteCommand(_ command: CommandID) -> Bool
     @discardableResult func performPaletteCommand(_ command: CommandID) -> Bool
+}
+
+public extension CommandPaletteResponder {
+    func beginPaletteFocusBorrow() {}
+    func endPaletteFocusBorrow() {}
 }
 
 public enum CommandPaletteScope: Int, CaseIterable, Sendable {
@@ -64,6 +71,9 @@ public enum CommandPaletteCatalog {
             CommandPaletteEntry(command: command, title: CompanionL10n.string(title),
                 scope: scope, keywords: keywords,
                 shortcut: keymap.hintKeystroke(for: command)?.displaySymbol)
-        }
+        }.enumerated().sorted { left, right in
+            left.element.scope == right.element.scope
+                ? left.offset < right.offset : left.element.scope.rawValue < right.element.scope.rawValue
+        }.map(\.element)
     }
 }

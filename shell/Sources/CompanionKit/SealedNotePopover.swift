@@ -181,6 +181,7 @@ final class SealedNoteEditor: NSObject {
     private(set) var chip: UInt64?
     private(set) var sheet: UInt64?
     private(set) var isExpanded = false
+    private var paletteFocusBorrowCount = 0
     let overlay = NoteOverlayView()
     let popover = NotePopoverView()
     /// The note's own coordinator and surface; the storage is held here,
@@ -299,10 +300,18 @@ final class SealedNoteEditor: NSObject {
         popover.placement = placement
     }
 
+    func beginPaletteFocusBorrow() { paletteFocusBorrowCount += 1 }
+
+    func endPaletteFocusBorrow() {
+        guard paletteFocusBorrowCount > 0 else { return }
+        paletteFocusBorrowCount -= 1
+        if paletteFocusBorrowCount == 0 { keysMayHaveLeft() }
+    }
+
     /// The note gave up the keys: a click elsewhere closes it, on the next turn.
     func keysMayHaveLeft() {
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.isOpen, !self.holdsKeys else { return }
+            guard let self, self.isOpen, self.paletteFocusBorrowCount == 0, !self.holdsKeys else { return }
             self.close(returningKeys: false)
         }
     }

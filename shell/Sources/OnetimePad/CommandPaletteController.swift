@@ -18,6 +18,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     private let returnToPages: () -> Void
     private weak var originalWindow: NSWindow?
     private weak var originalResponder: NSResponder?
+    private nonisolated(unsafe) weak var borrowedFocusResponder: (any CommandPaletteResponder)?
     private weak var originalEditor: NSTextView?
     private weak var originalControl: NSControl?
     private var originalControlSelection: NSRange?
@@ -36,6 +37,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     let table = PaletteTableView()
     private let scroll = NSScrollView()
     private let card = NSView()
+    let backButton = NSButton(title: "", target: nil, action: nil)
     private let footer = NSTextField(labelWithString: "")
 
     init(model: PageModel, performWindowCommand: @escaping (CommandID) -> Void,
@@ -72,6 +74,13 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         card.layer?.shadowOpacity = 0.25
         card.layer?.shadowRadius = 16
+        backButton.image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: nil)
+        backButton.bezelStyle = .inline
+        backButton.setAccessibilityLabel(CompanionL10n.string("Back to Commands"))
+        backButton.toolTip = CompanionL10n.string("Back to Commands")
+        backButton.target = self
+        backButton.action = #selector(showCommands(_:))
+        card.addSubview(backButton)
         card.addSubview(search)
         card.addSubview(scroll)
         footer.font = .systemFont(ofSize: 11)
@@ -81,11 +90,18 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     }
 
     deinit {
+        if let borrowed = borrowedFocusResponder {
+            Task { @MainActor in borrowed.endPaletteFocusBorrow() }
+        }
         if let storageObserver { NotificationCenter.default.removeObserver(storageObserver) }
     }
 
     func show(in window: NSWindow, pageContext: Bool, reopen: Bool = false) {
-        dismiss(restoringFocus: true)
+        if overlay != nil {
+            if reopen { enterReopenMode() }
+            else { dismiss(restoringFocus: true) }
+            return
+        }
         guard let host = window.contentView else { return }
         if pageContext, let editor = model.activeEditor as? CommandPaletteResponder,
            !editor.prepareForCommandPalette() { return }
@@ -117,6 +133,8 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
             (originalResponder as? CommandPaletteResponder)?.canPerformPaletteCommand($0) == true
         })
         hasPageContext = pageContext && originalControl == nil
+        borrowedFocusResponder = originalResponder as? CommandPaletteResponder
+        borrowedFocusResponder?.beginPaletteFocusBorrow()
         reopening = reopen
         search.stringValue = ""
         search.placeholderString = CompanionL10n.string(reopen ? "Search closed pages or tabs…" : "Search commands…")
@@ -124,6 +142,10 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         overlay.autoresizingMask = [.width, .height]
         overlay.onOutsideClick = { [weak self] in self?.dismiss(restoringFocus: true) }
         overlay.onLayout = { [weak self] in self?.layout() }
+        overlay.interactiveRegion = card
+        overlay.setAccessibilityRole(.group)
+        overlay.setAccessibilityLabel(CompanionL10n.string("Command Palette"))
+        overlay.setAccessibilityModal(true)
         overlay.addSubview(card)
         self.overlay = overlay
         host.addSubview(overlay, positioned: .above, relativeTo: nil)
@@ -135,6 +157,9 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
 
     func dismiss(restoringFocus: Bool) {
         guard overlay != nil else { return }
+        let borrowed = borrowedFocusResponder
+        borrowedFocusResponder = nil
+        defer { borrowed?.endPaletteFocusBorrow() }
         overlay?.removeFromSuperview()
         overlay = nil
         if let storageObserver { NotificationCenter.default.removeObserver(storageObserver) }
@@ -180,6 +205,8 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
             dismiss(restoringFocus: true)
         case #selector(NSResponder.insertNewline(_:)):
             runSelected(nil)
+        case #selector(NSResponder.deleteBackward(_:)) where reopening && search.stringValue.isEmpty:
+            showCommands(nil)
         case #selector(NSResponder.moveDown(_:)):
             moveSelection(1)
         case #selector(NSResponder.moveUp(_:)):
@@ -201,10 +228,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         guard rows.indices.contains(index) else { return }
         let row = rows[index]
         if row.command == .pageReopenDated {
-            reopening = true
-            search.stringValue = ""
-            search.placeholderString = CompanionL10n.string("Search closed pages or tabs…")
-            reload()
+            enterReopenMode()
             return
         }
         let validContext = hasPageContext && contextIsCurrent
@@ -228,6 +252,21 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         }
     }
 
+    private func enterReopenMode() {
+        reopening = true
+        search.stringValue = ""
+        search.placeholderString = CompanionL10n.string("Search closed pages or tabs…")
+        reload()
+    }
+
+    @objc private func showCommands(_ sender: Any?) {
+        reopening = false
+        search.stringValue = ""
+        search.placeholderString = CompanionL10n.string("Search commands…")
+        reload()
+        _ = originalWindow?.makeFirstResponder(search)
+    }
+
     private func reload() {
         if reopening {
             rows = model.closedTabs.compactMap { tab in
@@ -246,6 +285,10 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
                     shortcut: entry.shortcut, command: entry.command, scope: entry.scope, tab: nil)
             }
         }
+        backButton.isHidden = !reopening
+        search.nextKeyView = table
+        table.nextKeyView = reopening ? backButton : search
+        backButton.nextKeyView = search
         table.reloadData()
         if !rows.isEmpty { table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
         footer.stringValue = rows.isEmpty
@@ -278,13 +321,9 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         let height = min(max(0, room.height), CGFloat(min(max(rows.count, 1), 8)) * 42 + 86)
         card.frame = NSRect(x: room.midX - width / 2, y: max(room.minY, room.maxY - height - 16),
                             width: width, height: height)
-        let searchWidthChanged = search.frame.width != max(0, width - 24)
-        let searchSelection = (search.currentEditor() as? NSTextView)?.selectedRange()
-        search.frame = NSRect(x: 12, y: max(0, height - 40), width: max(0, width - 24), height: 28)
-        if searchWidthChanged, let searchSelection {
-            search.selectText(nil)
-            (search.currentEditor() as? NSTextView)?.setSelectedRange(searchSelection)
-        }
+        let searchX: CGFloat = reopening ? 44 : 12
+        backButton.frame = NSRect(x: 12, y: max(0, height - 40), width: 28, height: 28)
+        search.frame = NSRect(x: searchX, y: max(0, height - 40), width: max(0, width - searchX - 12), height: 28)
         scroll.frame = NSRect(x: 1, y: 28, width: max(0, width - 2), height: max(0, height - 76))
         scroll.tile()
         table.setFrameSize(NSSize(width: scroll.contentSize.width, height: table.frame.height))
@@ -297,8 +336,13 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
 final class PaletteOverlayView: NSView {
     var onOutsideClick: (() -> Void)?
     var onLayout: (() -> Void)?
+    weak var interactiveRegion: NSView?
     override func layout() { super.layout(); onLayout?() }
-    override func mouseDown(with event: NSEvent) { onOutsideClick?() }
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard interactiveRegion?.frame.contains(point) != true else { return }
+        onOutsideClick?()
+    }
 }
 
 
