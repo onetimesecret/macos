@@ -570,4 +570,52 @@ final class SealedMoveHandleTests: XCTestCase {
         XCTAssertNil(page.textView.copyBeat)
     }
 
+    func testHandlePressAllowsWindowActivationBeforeRelease() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let (_, copy, _) = try handles(page)
+        let point = mid(copy)
+        let release = try mouseEvent(.leftMouseUp, page, at: point)
+        var context = (applicationActive: false, windowKey: false, windowVisible: false)
+        page.textView.handlePressContextSource = { context }
+        page.textView.handlePressEventSource = {
+            context = (true, true, true)
+            return release
+        }
+        defer {
+            page.textView.handlePressContextSource = nil
+            page.textView.handlePressEventSource = nil
+        }
+        page.textView.mouseDown(with: try mouseEvent(.leftMouseDown, page, at: point))
+        XCTAssertEqual(sent(model), ["clipboard"])
+        XCTAssertNotNil(page.textView.copyBeat)
+    }
+
+    func testHandlePressCancelsAfterLosingObservedActivation() throws {
+        for loss in [(false, true, true), (true, false, true), (true, true, false)] {
+            let model = try makeModel()
+            let page = try mountPage(on: model)
+            let (_, copy, _) = try handles(page)
+            let point = mid(copy)
+            let stationary = try mouseEvent(.leftMouseDragged, page, at: point)
+            let release = try mouseEvent(.leftMouseUp, page, at: point)
+            var context = (applicationActive: false, windowKey: false, windowVisible: false)
+            var eventCount = 0
+            page.textView.handlePressContextSource = { context }
+            page.textView.handlePressEventSource = {
+                eventCount += 1
+                context = eventCount == 1 ? (true, true, true) : loss
+                return eventCount == 1 ? stationary : release
+            }
+            defer {
+                page.textView.handlePressContextSource = nil
+                page.textView.handlePressEventSource = nil
+            }
+            page.textView.mouseDown(with: try mouseEvent(.leftMouseDown, page, at: point))
+            XCTAssertEqual(eventCount, 2)
+            XCTAssertTrue(sent(model).isEmpty)
+            XCTAssertNil(page.textView.copyBeat)
+        }
+    }
+
 }

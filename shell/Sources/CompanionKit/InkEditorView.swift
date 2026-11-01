@@ -6117,14 +6117,24 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         onClick: () -> Void, begin: (NSEvent) -> Void
     ) {
         guard let window else { return }
-        let applicationWasActive = NSApp?.isActive ?? false
-        let windowWasKey = window.isKeyWindow
-        let windowWasVisible = window.isVisible
+        func currentContext() -> (applicationActive: Bool, windowKey: Bool, windowVisible: Bool) {
+            #if DEBUG
+            if let handlePressContextSource { return handlePressContextSource() }
+            #endif
+            return (NSApp?.isActive ?? false, window.isKeyWindow, window.isVisible)
+        }
+        var observed = currentContext()
         func contextIsCurrent() -> Bool {
-            self.window === window && isEditable
-                && (NSApp?.isActive ?? false) == applicationWasActive
-                && window.isKeyWindow == windowWasKey
-                && window.isVisible == windowWasVisible
+            let current = currentContext()
+            guard self.window === window, isEditable,
+                  !observed.applicationActive || current.applicationActive,
+                  !observed.windowKey || current.windowKey,
+                  !observed.windowVisible || current.windowVisible
+            else { return false }
+            observed = (observed.applicationActive || current.applicationActive,
+                        observed.windowKey || current.windowKey,
+                        observed.windowVisible || current.windowVisible)
+            return true
         }
         #if DEBUG
         handlePressStarted?()
@@ -6187,6 +6197,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         var dragSessionWitness: (([NSDraggingItem], NSDraggingSource) -> Void)?
         var handlePressStarted: (() -> Void)?
         var handlePressEventSource: (() -> NSEvent?)?
+        var handlePressContextSource: (() -> (applicationActive: Bool, windowKey: Bool, windowVisible: Bool))?
     #endif
 
     /// Every drag this view starts, the page's or the decrypted one, leaves through here.
@@ -7664,7 +7675,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     func doorwayRect(in cellFrame: NSRect) -> NSRect? {
         guard info.hasNote else { return nil }
         let status = statusString(selected: false)
-        let width = Self.seatString(Self.doorwayWord).size().width + 12
+        let width = SealedBlockLayout.controlWidth(for: Self.controlString(Self.doorwayWord).size().width)
         let rect = NSRect(
             x: Self.contentLayout(in: cellFrame).labelOrigin.x + status.size().width + 8,
             y: Self.actionsRect(in: cellFrame).minY, width: width, height: 24)
@@ -7705,7 +7716,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
             name: NSAttributedString(string: name, attributes: attributes).size().width,
             equals: separator.size().width,
             value: NSAttributedString(string: value, attributes: valueAttributes).size().width,
-            nameFloor: NSAttributedString(string: String(name.prefix(4)) + "…", attributes: attributes).size().width)
+            nameFloor: NSAttributedString(string: String(name.prefix(Self.nameFloorCharacters)) + "…", attributes: attributes).size().width)
         let fittedValue = Self.fitted(value, attributes: valueAttributes, width: allotment.value)
         let visibleSeparator = fittedValue.string.isEmpty ? NSAttributedString(string: "") : separator
         let fittedName = Self.fitted(
@@ -7789,9 +7800,9 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     @MainActor
     static var copyControlWidth: CGFloat {
-        SealedBlockLayout.copyWidth(
-            titleWidth: controlString(decryptedDragWords).size().width,
-            feedbackWidth: controlString(copiedWords).size().width)
+        SealedBlockLayout.controlWidth(for:
+            controlString(decryptedDragWords).size().width,
+            controlString(copiedWords).size().width)
     }
 
     @MainActor
@@ -7977,7 +7988,12 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     @MainActor
     private func statusString(selected: Bool, includesNote: Bool = false) -> NSAttributedString {
-        let kind = CompanionL10n.string(info.kind == "image" ? "chip.status.image" : "chip.status.text")
+        let kind: String
+        switch info.kind {
+        case "text": kind = CompanionL10n.string("chip.status.text")
+        case "image": kind = CompanionL10n.string("chip.status.image")
+        default: kind = Self.classification
+        }
         let status = info.available ? kind : CompanionL10n.string("chip.status.elsewhere")
         let text = includesNote && info.hasNote ? CompanionL10n.format("chip.status.has_note", status) : status
         return Self.seatString(text, selected: selected)

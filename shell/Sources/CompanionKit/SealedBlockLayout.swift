@@ -10,8 +10,8 @@ enum SealedBlockLayout {
     static let horizontalPadding: CGFloat = 12
     static let controlHitSlop: CGFloat = 3
 
-    static func copyWidth(titleWidth: CGFloat, feedbackWidth: CGFloat) -> CGFloat {
-        ceil(max(titleWidth, feedbackWidth)) + 8
+    static func controlWidth(for titleWidths: CGFloat...) -> CGFloat {
+        ceil(titleWidths.max() ?? 0) + 8
     }
 
     static func preferredHeight(identityLineHeight: CGFloat) -> CGFloat {

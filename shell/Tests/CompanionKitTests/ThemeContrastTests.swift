@@ -327,7 +327,7 @@ final class ThemeContrastTests: XCTestCase {
 
     func testSelectedSealedControlsKeepTextAndBorderContrastOnTheirFill() {
         let colors = SealedBlockCell.controlColors(selected: true)
-        for appearance in Self.appearances {
+        for appearance in Self.appearances + [.accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua] {
             for ink in [colors.ink, colors.border] {
                 let ratio = Self.contrastRatio(ink, over: {
                     [.windowBackgroundColor, .selectedTextBackgroundColor, colors.fill]

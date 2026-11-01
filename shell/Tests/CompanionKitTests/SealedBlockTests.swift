@@ -298,9 +298,9 @@ final class SealedBlockTests: XCTestCase {
     func testCopyControlMeasureFitsBothLocalizedLabelsWithoutChangingDuringFeedback() throws {
         let copy = "Entschlüsselten Inhalt kopieren"
         let feedback = "Der Inhalt wurde kopiert"
-        let width = SealedBlockLayout.copyWidth(
-            titleWidth: SealedBlockCell.controlString(copy).size().width,
-            feedbackWidth: SealedBlockCell.controlString(feedback).size().width)
+        let width = SealedBlockLayout.controlWidth(for:
+            SealedBlockCell.controlString(copy).size().width,
+            SealedBlockCell.controlString(feedback).size().width)
         let frame = NSRect(x: 0, y: 0, width: 560, height: SealedBlockCell.preferredHeight)
         let button = try XCTUnwrap(SealedBlockLayout.copyRect(in: frame, width: width))
         for title in [copy, feedback] {
@@ -353,6 +353,30 @@ final class SealedBlockTests: XCTestCase {
         XCTAssertEqual(cell.noteAnchorRect(in: narrow), SealedBlockCell.actionsRect(in: narrow))
         let wide = NSRect(x: 10, y: 20, width: 480, height: SealedBlockCell.preferredHeight)
         XCTAssertEqual(cell.noteAnchorRect(in: wide), try XCTUnwrap(cell.doorwayRect(in: wide)))
+    }
+
+    func testUnknownKindsUseNeutralClassificationInsteadOfSealedText() {
+        for available in [true, false] {
+            let cell = SealedBlockCell(info: ChipInfo(
+                chipId: 7, kind: "future-kind", excerpt: "preview", sizeLabel: "small",
+                concealed: false, available: available))
+            let frame = NSRect(x: 0, y: 0, width: 480, height: SealedBlockCell.preferredHeight)
+            let image = NSImage(size: frame.size)
+            image.lockFocus()
+            cell.draw(withFrame: frame, in: nil)
+            image.unlockFocus()
+            XCTAssertEqual(cell.lastDrawnStatus, CompanionL10n.string(
+                available ? "chip.status.classification" : "chip.status.elsewhere"))
+        }
+    }
+
+    func testNoteControlUsesTheSameMeasuredTitleAndInsetsAsCopy() throws {
+        let cell = SealedBlockCell(info: face(note: true))
+        let frame = NSRect(x: 0, y: 0, width: 480, height: SealedBlockCell.preferredHeight)
+        let note = try XCTUnwrap(cell.doorwayRect(in: frame))
+        let title = SealedBlockCell.controlString(SealedBlockCell.doorwayWord)
+        XCTAssertEqual(note.width, SealedBlockLayout.controlWidth(for: title.size().width))
+        XCTAssertEqual(SealedBlockCell.controlTitle(title, in: note).text.string, title.string)
     }
 
 }
