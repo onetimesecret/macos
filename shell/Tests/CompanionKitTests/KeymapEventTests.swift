@@ -193,42 +193,178 @@ final class KeymapEventTests: XCTestCase {
 
     // MARK: The surface route, and what it takes when asked
 
-    /// A surface command bound to a chord without ⌘ is claimed by the
-    /// hidden buttons, and claimed ahead of the page: a key equivalent
-    /// is offered to the view tree before the first responder's
-    /// `keyDown` runs. So an override binding ⌥N to a surface command
-    /// costs the page ⌥N, which on a US layout is the dead key that
-    /// composes ñ.
-    ///
-    /// The page's own route refuses exactly this (`InkTextView`
-    /// answers non-command chords in `keyDown`, so they fire only
-    /// while it holds the keyboard). The surface installs whatever the
-    /// file names, and nothing warns. Pinned here as the fact it is:
-    /// the bundled default names no such chord, and whether the
-    /// validator should say something about one is a question this
-    /// suite is not the place to answer.
-    ///
-    /// The claim is what is asserted, not the effect. The button's
-    /// action needs a key window to run, which a test that must pass
-    /// on a headless runner cannot promise; with one, verified by
-    /// hand, the page is created.
-    func testAnOptionOnlyChordOnTheSurfaceRouteTakesTheKeyFromThePage() throws {
-        let (model, _) = try makeStack(
-            overrideText: """
-                [{ "context": "Editor", "bindings": { "alt-n": "page::New" } }]
-                """)
-        let host = NSHostingView(rootView: PageKeyboardMap(model: model))
-        host.frame = NSRect(x: 0, y: 0, width: 100, height: 100)
-        let window = NSWindow(
-            contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
-        window.contentView?.addSubview(host)
-        window.layoutIfNeeded()
+    func testAnOptionSurfaceShortcutPassesTheHostingKeyEquivalentStageAndRunsInTheEditor() throws {
+        let (model, editor) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"alt-n":"page::New"}}]"#)
+        let (window, host) = mountSurfaceMap(model)
+        defer { window.close() }
+        window.contentView?.addSubview(editor)
+        XCTAssertTrue(window.makeFirstResponder(editor))
+        let event = try press("n", flags: [.option], keyCode: 45)
+        let count = model.tabs.count
 
-        XCTAssertTrue(
-            host.performKeyEquivalent(with: try press("n", flags: [.option], keyCode: 45)),
-            "the surface did not install an option-only chord the file named")
-        XCTAssertFalse(
-            host.performKeyEquivalent(with: try press("m", flags: [.option], keyCode: 46)),
-            "the surface claims keys nothing bound, so the claim above proves nothing")
+        XCTAssertFalse(host.performKeyEquivalent(with: event))
+        XCTAssertEqual(model.tabs.count, count)
+        editor.keyDown(with: event)
+        XCTAssertEqual(model.tabs.count, count + 1)
     }
+
+    func testControlWPassesTheHostingKeyEquivalentStageBeforeTheIMERefusal() throws {
+        let (model, editor) = try makeStack()
+        model.loadStateIfNeeded()
+        let (window, host) = mountSurfaceMap(model)
+        defer { window.close() }
+        window.contentView?.addSubview(editor)
+        XCTAssertTrue(window.makeFirstResponder(editor))
+        editor.setMarkedText("ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        let event = try press("w", flags: [.control], keyCode: 13)
+
+        XCTAssertFalse(host.performKeyEquivalent(with: event))
+        XCTAssertTrue(editor.hasMarkedText())
+        editor.keyDown(with: event)
+        XCTAssertTrue(editor.hasMarkedText())
+        XCTAssertTrue(model.closedTabs.isEmpty)
+        XCTAssertEqual(model.notice, CompanionL10n.string("surface.finish_composition"))
+    }
+
+    private func mountSurfaceMap(_ model: PageModel) -> (NSWindow, NSHostingView<PageKeyboardMap>) {
+        let host = NSHostingView(rootView: PageKeyboardMap(model: model))
+        host.frame = NSRect(x: 0, y: 0, width: 200, height: 100)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let container = NSView(frame: host.frame)
+        container.addSubview(host)
+        window.contentView = container
+        window.layoutIfNeeded()
+        return (window, host)
+    }
+
+    func testOptionNewShortcutWorksAfterTheLastVisiblePageCloses() throws {
+        let (model, _) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"alt-n":"page::New"}}]"#)
+        model.loadStateIfNeeded()
+        model.closeCurrent()
+        XCTAssertTrue(model.navigationTabs.isEmpty)
+        let (window, host) = mountSurfaceMap(model)
+        defer { window.close() }
+        let empty = KeyGrantingClickView()
+        window.contentView?.addSubview(empty)
+        XCTAssertTrue(window.makeFirstResponder(empty))
+
+        XCTAssertTrue(host.performKeyEquivalent(with: try press("n", flags: [.option], keyCode: 45)))
+        XCTAssertEqual(model.navigationTabs.count, 1)
+    }
+
+    func testControlCloseShortcutWorksWhenLedgerChromeHasFocus() throws {
+        let (model, _) = try makeStack()
+        model.loadStateIfNeeded()
+        model.showLedger()
+        XCTAssertTrue(model.showingLedger)
+        let (window, host) = mountSurfaceMap(model)
+        defer { window.close() }
+        let chrome = NSButton(title: "Timeline", target: nil, action: nil)
+        window.contentView?.addSubview(chrome)
+        XCTAssertTrue(window.makeFirstResponder(chrome))
+
+        XCTAssertTrue(host.performKeyEquivalent(with: try press("w", flags: [.control], keyCode: 13)))
+        XCTAssertFalse(model.showingLedger)
+        XCTAssertTrue(model.closedTabs.isEmpty)
+    }
+
+    func testControlCloseShortcutWorksFromNontextFileChrome() throws {
+        let (model, _) = try makeStack()
+        model.loadStateIfNeeded()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("keymap-file-\(UUID().uuidString).txt")
+        try "fixture".write(to: url, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        model.openFile(at: url)
+        XCTAssertNotNil(model.selectedFile)
+        let (window, host) = mountSurfaceMap(model)
+        defer { window.close() }
+        let chrome = NSButton(title: "File", target: nil, action: nil)
+        window.contentView?.addSubview(chrome)
+        XCTAssertTrue(window.makeFirstResponder(chrome))
+
+        XCTAssertTrue(host.performKeyEquivalent(with: try press("w", flags: [.control], keyCode: 13)))
+        XCTAssertNil(model.selectedFile)
+        XCTAssertTrue(model.closedTabs.isEmpty)
+    }
+
+    func testSurfaceFallbackLeavesNativeFieldEditingAndCompositionAlone() throws {
+        let (model, _) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"alt-n":"page::New"}}]"#)
+        model.loadStateIfNeeded()
+        let (window, host) = mountSurfaceMap(model)
+        defer { window.close() }
+        let field = NSTextField(string: "native input")
+        window.contentView?.addSubview(field)
+        XCTAssertTrue(window.makeFirstResponder(field))
+        let editor = try XCTUnwrap(window.firstResponder as? NSTextView)
+        editor.setMarkedText("ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        let count = model.tabs.count
+
+        XCTAssertFalse(host.performKeyEquivalent(with: try press("n", flags: [.option], keyCode: 45)))
+        XCTAssertEqual(model.tabs.count, count)
+        XCTAssertTrue(editor.hasMarkedText())
+    }
+
+    func testControlWClosesThePageInsteadOfDeletingAWord() throws {
+        let (model, editor) = try makeStack()
+        model.loadStateIfNeeded()
+        model.newPage()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        editor.string = "do not delete any words"
+        editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
+        editor.keyDown(with: try press("w", flags: [.control], keyCode: 13))
+        XCTAssertEqual(model.tabs.count, 3)
+        XCTAssertEqual(model.navigationTabs.count, 2)
+        XCTAssertEqual(model.closedTabs.first?.pageID, page)
+        XCTAssertEqual(editor.string, "do not delete any words")
+    }
+
+
+    func testAConfiguredControlShortcutDispatchesAnySurfaceCommand() throws {
+        let (model, editor) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-n":"page::New"}}]"#)
+        model.loadStateIfNeeded()
+        let count = model.tabs.count
+        editor.keyDown(with: try press("n", flags: [.control], keyCode: 45))
+        XCTAssertEqual(model.tabs.count, count + 1)
+    }
+
+    func testControlWDoesNotCloseOrUnmarkAnIMEComposition() throws {
+        let (model, editor) = try makeStack()
+        model.loadStateIfNeeded()
+        let tab = try XCTUnwrap(model.selection)
+        editor.setMarkedText("ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(editor.hasMarkedText())
+
+        editor.keyDown(with: try press("w", flags: [.control], keyCode: 13))
+
+        XCTAssertTrue(editor.hasMarkedText())
+        XCTAssertEqual(model.navigationTabs.map(\.id), [tab])
+        XCTAssertTrue(model.closedTabs.isEmpty)
+        XCTAssertEqual(model.notice, CompanionL10n.string("surface.finish_composition"))
+    }
+
+    func testAConfiguredSurfaceShortcutWaitsForIMEComposition() throws {
+        let (model, editor) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-n":"page::New"}}]"#)
+        model.loadStateIfNeeded()
+        let count = model.tabs.count
+        editor.setMarkedText("ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(editor.hasMarkedText())
+
+        editor.keyDown(with: try press("n", flags: [.control], keyCode: 45))
+
+        XCTAssertEqual(model.tabs.count, count)
+        XCTAssertTrue(editor.hasMarkedText())
+        XCTAssertEqual(model.notice, CompanionL10n.string("surface.finish_composition"))
+    }
+
 }

@@ -81,6 +81,8 @@
       // the file on the surface, and Settings, About or Send Feedback
       // when one of those has the keyboard, as in Safari and Terminal.
       "cmd-w": "page::Close",
+      // Requested page-dismissal alias; the editor resolves it through the JSON surface-command route.
+      "ctrl-w": "page::Close",
 
       // cmd-shift-w closes the window the keyboard is in, the editor
       // window and Settings alike (issue #201). The Window menu's item
@@ -137,6 +139,7 @@
       // The app around the page.
       "cmd-s": "state::SaveNow",
       "cmd-,": "app::Settings",
+      "cmd-shift-p": "app::CommandPalette",
       // The Help menu's product help item fires cmd-? app-wide (issue #294).
       "cmd-?": "app::Help",
       "escape": "surface::HandBackKeys",

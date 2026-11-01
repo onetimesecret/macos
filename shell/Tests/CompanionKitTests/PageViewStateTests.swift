@@ -149,10 +149,8 @@ final class PageViewStateTests: XCTestCase {
         XCTAssertEqual(states.keys, [1], "a file's place goes when the roster drops it by name")
     }
 
-    /// The model prunes the table where it prunes the storage cache, so
-    /// a page that dies takes its place with it whether or not any
-    /// editor is mounted to notice.
-    func testAClosedPagesPlaceIsPrunedByTheModelsRefresh() throws {
+    /// Hiding a page preserves its caret for reopening the same item.
+    func testAHiddenPagesPlaceRemainsAvailableForReopen() throws {
         let model = try makeModel()
         let kept = try mintPage(in: model)
         let closed = try mintPage(in: model)
@@ -160,12 +158,13 @@ final class PageViewStateTests: XCTestCase {
         model.viewStates.saveCaret(NSRange(location: 1, length: 0), for: closed)
         let tab = try XCTUnwrap(model.tabs.first { $0.pageID == closed }?.id)
 
+        model.loadStateIfNeeded()
         model.close(tab)
 
         XCTAssertNotNil(model.viewStates.carets[kept])
-        XCTAssertNil(
-            model.viewStates.carets[closed],
-            "a dead page's caret would be waiting for whatever page took its slot")
+        XCTAssertEqual(model.viewStates.carets[closed], NSRange(location: 1, length: 0))
+        XCTAssertTrue(model.reopenClosedTab(tab))
+        XCTAssertEqual(model.selectedPageID, closed)
     }
 
     // MARK: From one editor to another

@@ -392,7 +392,7 @@ struct SheetTab: View {
                 }
             }
             Divider()
-            Button("Close Tab", role: .destructive) { model.close(sheet.id) }
+            Button("Close Tab") { model.close(sheet.id) }
         }
     }
 

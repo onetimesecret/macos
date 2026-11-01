@@ -5,7 +5,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 # ADR-0017: Durable tabs, expiring pages
 
 - **Status:** accepted
-- **Superseded in part by:** [ADR-0039](0039-pad-selection-and-associations.md), numbered shortcut ownership when multiple pads are enabled
+- **Superseded in part by:** [ADR-0039](0039-pad-selection-and-associations.md), numbered shortcut ownership when multiple pads are e󠄁n󠄁a󠄁b󠄁l󠄁e󠄁d󠄁;󠄁 [A󠄁D󠄁R󠄁-󠄁0󠄁0󠄁6󠄁1󠄁](0061-close-hides-saved-page-navigation.md),󠄁 u󠄁s󠄁e󠄁r󠄁-󠄁f󠄁a󠄁c󠄁i󠄁n󠄁g󠄁 C󠄁l󠄁o󠄁s󠄁e󠄁 h󠄁i󠄁d󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 R󠄁e󠄁o󠄁p󠄁e󠄁n󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁e󠄁s󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁t󠄁e󠄁m󠄁s󠄁
 - **Date:** 2026-08-20
 - **Depends on:** [ADR-0016](0016-content-persists-across-restart.md). The object-graph change shipped in the same persistence format break.
 - **Supersedes in part:** [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md), specifically its object-graph portions and the title-ownership portions its Supersession section names: the user-set title and the `MMDD-HHmm` placeholder stamp become properties of the durable Tab, and `title_is_user_set` disappears. Title derivation, its 80 character cap, and its documented exception stand, page-side.
@@ -104,3 +104,6 @@ removes the state file.
   use ⌘1–⌘9. With pads disabled, the existing map remains. Slot neighbour
   navigation and configurable direct-selection commands remain available.
   Tab/Page identity, lifetime, and expiry decisions are unchanged.
+
+- **2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁0󠄁-󠄁3󠄁1󠄁:󠄁** A󠄁D󠄁R󠄁-󠄁0󠄁0󠄁6󠄁1󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁s󠄁 u󠄁s󠄁e󠄁r󠄁-󠄁f󠄁a󠄁c󠄁i󠄁n󠄁g󠄁 C󠄁l󠄁o󠄁s󠄁e󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁a󠄁l󠄁 w󠄁i󠄁t󠄁h󠄁 h󠄁i󠄁d󠄁e󠄁/󠄁r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁
+  b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 i󠄁n󠄁 T󠄁i󠄁m󠄁e󠄁l󠄁i󠄁n󠄁e󠄁 a󠄁n󠄁d󠄁 T󠄁a󠄁b󠄁s󠄁.󠄁 O󠄁t󠄁h󠄁e󠄁r󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁n󠄁t󠄁 l󠄁i󠄁f󠄁e󠄁t󠄁i󠄁m󠄁e󠄁 a󠄁n󠄁d󠄁 e󠄁x󠄁p󠄁i󠄁r󠄁y󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁.󠄁

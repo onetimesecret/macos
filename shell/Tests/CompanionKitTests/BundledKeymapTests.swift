@@ -37,6 +37,8 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-alt-left": .pagePrevious,
         "cmd-alt-right": .pageNext,
         "cmd-w": .pageClose,
+        "ctrl-w": .pageClose,
+        "cmd-shift-p": .appCommandPalette,
         // ⇧⌘W closes the window the keyboard is in (issue #201): the
         // editor window and Settings alike. Carried by the Window
         // menu's item app-wide, never by the surface installer.
@@ -122,13 +124,13 @@ final class BundledKeymapTests: XCTestCase {
             ])
     }
 
-    /// Everything else is carried by the surface's hidden buttons, and
-    /// every one of them has to be installable.
-    func testEverySurfaceChordCanBeInstalled() throws {
+    func testControlWUsesTheEditorRouteWhileCommandWAndEscapeRemainSurfaceShortcuts() throws {
         let resolved = try bundled()
-        XCTAssertEqual(
-            resolved.surfaceShortcuts().count,
-            resolved.bindings(in: .editor, dispatch: .surface).count)
+        let installed = Set(resolved.surfaceShortcuts().map { $0.keystroke.canonical })
+        XCTAssertFalse(installed.contains("ctrl-w"))
+        XCTAssertTrue(installed.contains("cmd-w"))
+        XCTAssertTrue(installed.contains("escape"))
+        XCTAssertEqual(resolved.command(for: try parse("ctrl-w"), in: .editor), .pageClose)
     }
 
     /// New is the one command the default file puts two chords on, and
@@ -313,4 +315,13 @@ final class BundledKeymapTests: XCTestCase {
         case .failure(let failure): throw failure
         }
     }
+
+    func testCloseMenuKeepsCommandWWhileControlWRemainsAnEditorAlias() throws {
+        let resolved = try bundled()
+        XCTAssertEqual(resolved.menuKeystroke(for: .pageClose)?.canonical, "cmd-w")
+        XCTAssertTrue(resolved.bindings.contains {
+            $0.command == .pageClose && $0.keystroke.canonical == "ctrl-w"
+        })
+    }
+
 }

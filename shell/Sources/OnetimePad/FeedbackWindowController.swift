@@ -121,7 +121,8 @@ final class FeedbackWindowController: NSObject {
                     DiagnosticsActions.export(report, attachedTo: window, completion: completion)
                 }
             )
-            let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+            let hosted = NSHostingController(rootView: view)
+            let window = NSWindow(contentViewController: PresentationContentContainerController(content: hosted))
             window.title = "Send Feedback"
             window.styleMask = [.titled, .closable, .resizable]
             window.isReleasedWhenClosed = false

@@ -128,9 +128,9 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
                     window?.sharingType = allow ? .readOnly : .none
                 }
         }
-        window.contentView = NSHostingView(
+        window.contentView = PresentationContentContainer(content: NSHostingView(
             rootView: PrimaryEditorRootView(pages: model.pages)
-        )
+        ))
         window.delegate = self
         // Centre first, autosave second: setting the name restores a
         // saved frame over the centred one, and a first run keeps the

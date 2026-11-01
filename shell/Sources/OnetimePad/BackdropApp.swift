@@ -118,6 +118,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
     private var controller: BackdropWindowController?
     private var mainMenu: MainMenuController?
+    private lazy var commandPalette = CommandPaletteController(model: pages,
+        performWindowCommand: { [weak self] command in
+            guard let self else { return }
+            if command == .appHelp { self.openHelp(nil) }
+            else if command == .windowClose { self.sendToResponder(#selector(NSWindow.performClose(_:))) }
+        }, returnToPages: { [weak self] in self?.returnToOwner() })
     private var statusItem: NSStatusItem?
     private var summonKey: BackdropHotKey?
     private var summonKeyFailure: BackdropHotKey.RegistrationFailure?
@@ -283,6 +289,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         model.pages.onHandBackKeys = { [weak model] in model?.handBackKeys() }
         model.onOpenEditorWindow = { [weak self] in self?.openEditorPresentation() }
         model.pages.onOpenSettings = { [weak self] in self?.openSettings() }
+        model.pages.onReopenDatedTabs = { [weak self] in self?.showCommandPalette(reopen: true) }
         model.pages.onOpenSettingsPane = { [weak self] pane in self?.openSettingsTab(SettingsTab(pane)) }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -703,6 +710,22 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         } else {
             applySummon(.statusItem)
         }
+    }
+
+    var commandPaletteIsShowing: Bool { commandPalette.isShowing(in: NSApp.keyWindow) }
+
+    func dismissCommandPaletteForClose() -> Bool {
+        commandPalette.dismissForClose(in: NSApp.keyWindow)
+    }
+
+    func dismissCommandPaletteForAction() {
+        commandPalette.dismiss(restoringFocus: true)
+    }
+
+    func showCommandPalette(reopen: Bool = false) {
+        guard let window = NSApp.keyWindow, window.sheetParent == nil,
+              window.attachedSheet == nil, !ModalSession.isRunning else { return }
+        commandPalette.show(in: window, pageContext: isOwnerWindow(window), reopen: reopen)
     }
 
     var ambientPanelEnabled: Bool { model.ambientPanelEnabled }

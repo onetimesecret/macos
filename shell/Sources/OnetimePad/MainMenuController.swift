@@ -5,7 +5,11 @@ import CompanionKit
 final class MainMenuController: NSObject, NSMenuDelegate {
     private unowned let app: BackdropAppDelegate
     private weak var closeItem: NSMenuItem?
+    private weak var fileMenu: NSMenu?
+    private weak var viewMenu: NSMenu?
     private weak var languageMenu: NSMenu?
+    private weak var timelineItem: NSMenuItem?
+    private weak var tabsItem: NSMenuItem?
 
     init(app: BackdropAppDelegate) {
         self.app = app
@@ -49,6 +53,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     private func makeFileMenu(in main: NSMenu) {
         let file = submenu(CompanionL10n.string("File"), in: main)
         file.delegate = self
+        fileMenu = file
         file.addItem(action(CompanionL10n.string("New Page"), command: .pageNew) { [app] in
             app.pages.perform(.pageNew)
             if !app.pages.holdsKeys { app.returnToOwner() }
@@ -58,13 +63,25 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         file.addItem(action(CompanionL10n.string("Save"), command: .stateSaveNow, enabled: onFile) { [app] in app.pages.perform(.stateSaveNow) })
         file.addItem(action(CompanionL10n.string("Save As…"), command: .fileSaveAs, enabled: onFile) { [app] in app.pages.perform(.fileSaveAs) })
         file.addItem(.separator())
-        let close = action(CompanionL10n.string("Close"), command: .pageClose, enabled: { [weak self] in self?.closeChoice.isEnabled ?? false }) { [app] in
+        let close = action(CompanionL10n.string("Close"), command: .pageClose, enabled: { [weak self] in
+            guard let self else { return false }
+            return self.app.commandPaletteIsShowing || self.closeChoice.isEnabled
+        }) { [app] in
+            if app.dismissCommandPaletteForClose() { return }
             app.pages.closeWhatIsShowing(app.keyWindow.closeTarget) {
                 app.sendToResponder(#selector(NSWindow.performClose(_:)))
             }
         }
         closeItem = close
         file.addItem(close)
+        file.addItem(action(CompanionL10n.string("Reopen Last Closed Page or Tab"), command: .pageReopenLast,
+                            enabled: { [app] in app.pages.hasClosedTabs }) { [app] in
+            app.pages.perform(.pageReopenLast)
+            app.returnToOwner()
+        })
+        file.addItem(action(CompanionL10n.string("Reopen Dated Tabs…"), command: .pageReopenDated) { [app] in
+            app.showCommandPalette(reopen: true)
+        })
     }
 
     private func makeEditMenu(in main: NSMenu) {
@@ -122,6 +139,25 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     private func makeViewMenu(in main: NSMenu) {
         let view = submenu(CompanionL10n.string("View"), in: main)
+        view.delegate = self
+        viewMenu = view
+        view.addItem(action(CompanionL10n.string("Command Palette…"), command: .appCommandPalette) { [app] in
+            app.showCommandPalette()
+        })
+        view.addItem(.separator())
+        let timeline = action(CompanionL10n.string("Open Timeline"), command: .appOpenTimeline) { [app] in
+            app.pages.perform(.appOpenTimeline)
+            app.returnToOwner()
+        }
+        timelineItem = timeline
+        view.addItem(timeline)
+        let tabs = action(CompanionL10n.string("Switch to Tabs View"), command: .appSwitchToTabs) { [app] in
+            app.pages.perform(.appSwitchToTabs)
+            app.returnToOwner()
+        }
+        tabsItem = tabs
+        view.addItem(tabs)
+        view.addItem(.separator())
         view.addItem(responder(CompanionL10n.string("Enter Full Screen"), #selector(NSWindow.toggleFullScreen(_:)), key: "f", modifiers: [.command, .control]))
     }
 
@@ -151,7 +187,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     }
 
     private var onFile: () -> Bool {
-        { [app] in if case .file = app.pages.activeTarget { true } else { false } }
+        { [app] in CommandPalettePresentation.canSave(app.pages.activeTarget) }
     }
 
     private var closeChoice: CloseMenuItem {
@@ -160,7 +196,13 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        closeItem?.title = CompanionL10n.string(closeChoice.title)
+        if menu === fileMenu {
+            closeItem?.title = CompanionL10n.string(app.commandPaletteIsShowing ? "Close Command Palette" : closeChoice.title)
+        }
+        if menu === viewMenu {
+            timelineItem?.state = app.pages.showsTimeUnits ? .on : .off
+            tabsItem?.state = app.pages.showsTimeUnits ? .off : .on
+        }
         if menu === languageMenu { updateLanguages(in: menu) }
     }
 
@@ -214,7 +256,12 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     private func action(_ title: String, command: CommandID? = nil,
                         enabled: @escaping () -> Bool = { true }, _ run: @escaping () -> Void) -> NSMenuItem {
-        let item = MenuActionItem(title: title, enabled: enabled, run: run)
+        let item = MenuActionItem(title: title, enabled: enabled) { [app] in
+            if command != .pageClose && command != .appCommandPalette && command != .pageReopenDated {
+                app.dismissCommandPaletteForAction()
+            }
+            run()
+        }
         if let command { bind(command, to: item) }
         return item
     }

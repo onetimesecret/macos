@@ -6570,6 +6570,14 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
     /// receive as this view has to steal it. Scoped here, it only fires
     /// while the page itself holds the keyboard.
     override func keyDown(with event: NSEvent) {
+        if answersChords, let coordinator,
+           let command = coordinator.model.keymap.textAwareSurfaceCommand(for: event) {
+            guard !hasMarkedText() else {
+                coordinator.model.flash(CompanionL10n.string("surface.finish_composition"), tone: .actionable)
+                return
+            }
+            if coordinator.model.perform(command) { return }
+        }
         if let command = editorCommand(for: event), !command.modifiers.contains(.command),
            dispatch(command.id) {
             return
@@ -8730,5 +8738,40 @@ public enum InkStyle {
     public nonisolated static func classify(lines: [String]) -> [LineKind] {
         var scanner = FenceScanner()
         return lines.map { scanner.classify($0) }
+    }
+}
+
+
+extension InkTextView: CommandPaletteResponder {
+    func beginPaletteFocusBorrow() { coordinator?.noteHost?.beginPaletteFocusBorrow() }
+    func endPaletteFocusBorrow() { coordinator?.noteHost?.endPaletteFocusBorrow() }
+
+    func prepareForCommandPalette() -> Bool {
+        coordinator?.nameEditor?.commit()
+        if coordinator?.nameEditor?.isOpen == true {
+            coordinator?.nameEditor?.focusDraft()
+            return false
+        }
+        return true
+    }
+
+    func canPerformPaletteCommand(_ command: CommandID) -> Bool {
+        guard let coordinator, isEditable, answersChords else { return false }
+        switch command {
+        case .clipboardSeal, .clipboardSealSelection: return coordinator.sealsHere
+        case .chipCopyDecrypted: return coordinator.selectedChipIndex != nil
+        case .editorUndo, .editorRedo:
+            guard let document = coordinator.document else { return false }
+            return coordinator.model.canStepEdit(document, back: command == .editorUndo)
+        case .editorDetectCodeLanguage: return canDetectCodeLanguage
+        case .noteToggleExpanded: return coordinator.noteHost != nil
+        case .editorToggleWrap: return !coordinator.writesNote
+        default: return false
+        }
+    }
+
+    func performPaletteCommand(_ command: CommandID) -> Bool {
+        guard canPerformPaletteCommand(command) else { return false }
+        return dispatch(command)
     }
 }

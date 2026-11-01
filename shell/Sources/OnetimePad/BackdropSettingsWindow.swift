@@ -117,7 +117,7 @@ final class BackdropSettingsWindowController: NSObject {
     func show(tab requested: SettingsTab? = nil) {
         if window == nil {
             let tabs = makeTabs()
-            let window = NSWindow(contentViewController: tabs)
+            let window = SettingsPaletteWindow(contentViewController: tabs)
             // The title stands only until a tab is selected; from then
             // on the toolbar tab style takes it from the selected item
             // (`makeTabs`).
@@ -225,5 +225,17 @@ final class BackdropSettingsWindowController: NSObject {
         hosted.sizingOptions = []
         hosted.preferredContentSize = NSSize(width: Self.width, height: Self.height(of: tab))
         return hosted
+    }
+}
+
+@MainActor
+final class SettingsPaletteWindow: NSWindow {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if let host = contentView,
+           let overlay = host.subviews.reversed().compactMap({ $0 as? PaletteOverlayView }).first {
+            if overlay.performKeyEquivalent(with: event) { return true }
+            if overlay.superview === host { return false }
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }

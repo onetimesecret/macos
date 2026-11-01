@@ -140,6 +140,56 @@
 "editor.content" = "Editor content";
 "Rendering preview…" = "Rendering preview…";
 
+"Application" = "Application";
+"Current Page or Tab" = "Current Page or Tab";
+"Editor and Selection" = "Editor and Selection";
+"Open Timeline" = "Open Timeline";
+"Switch to Tabs View" = "Switch to Tabs View";
+"Reopen Dated Tabs…" = "Reopen Dated Tabs…";
+"Reopen Last Closed Page or Tab" = "Reopen Last Closed Page or Tab";
+"Open File…" = "Open File…";
+"Close Page or Tab" = "Close Page or Tab";
+"Previous Page or Tab" = "Previous Page or Tab";
+"Next Page or Tab" = "Next Page or Tab";
+"Toggle Line Wrapping" = "Toggle Line Wrapping";
+"Seal Clipboard" = "Seal Clipboard";
+"Toggle Note Expansion" = "Toggle Note Expansion";
+"Search commands…" = "Search commands…";
+"Command Palette" = "Command Palette";
+"Command Palette…" = "Command Palette…";
+"Commands" = "Commands";
+"Search closed pages or tabs…" = "Search closed pages or tabs…";
+"Saved tab" = "Saved tab";
+"No closed pages or tabs" = "No closed pages or tabs";
+"No matching commands" = "No matching commands";
+"↑↓ Select · Return Run · Esc Cancel" = "↑↓ Select · Return Run · Esc Cancel";
+"page.close.save_failed" = "the page could not be saved; it remains open";
+"page.reopen.expired" = "the page expired; showing its saved empty tab in Tabs view";
+
+"Save" = "Save";
+"Save As…" = "Save As…";
+"New Page" = "New Page";
+"Settings…" = "Settings…";
+"Close Window" = "Close Window";
+"Seal Selected Content" = "Seal Selected Content";
+"Copy Decrypted Contents" = "Copy Decrypted Contents";
+"Undo" = "Undo";
+"Redo" = "Redo";
+"Detect Code Language" = "Detect Code Language";
+"View" = "View";
+"Back to Commands" = "Back to Commands";
+"page.close.unavailable" = "saved state is unavailable in this session; the page remains open";
+"page.close.identity_unavailable" = "this page cannot be closed because its saved identity is unavailable";
+"page.close.finish_name" = "finish or cancel the variable name before closing this page";
+"page.close.finish_composition" = "finish composing text before closing this page";
+"surface.finish_composition" = "finish composing text before running this command";
+"layout.switch.pendingClose" = "finish the file close decision before changing page views";
+"Close File" = "Close File";
+"Close Page" = "Close Page";
+"Close Ledger" = "Close Ledger";
+"Help" = "Help";
+"Close Command Palette" = "Close Command Palette";
+"page.close.pendingFileDecision" = "finish the file close decision before closing another page";
 /* Sealed-content helper, actions, and status. */
 "chip.name.title" = "variable name · e.g. API_KEY";
 "chip.name.help" = "use a recognizable name for similar excerpts. 1–64 characters: A–Z, a–z, 0–9 and _. start with a letter or _. leave empty to remove the name";
@@ -202,3 +252,11 @@
 "seal.selection.help" = "Sealing cannot be undone. To change the contents, use Copy Decrypted, edit the text, then seal a replacement.";
 
 "chip.reference.copied" = "copied the sealed reference; paste it into OnetimePad";
+
+"palette.context_changed" = "the page changed; reopen the command palette to use page commands";
+
+"palette.reopen_unavailable" = "this page is no longer available to reopen";
+
+"Current File" = "Current File";
+
+"Current View" = "Current View";

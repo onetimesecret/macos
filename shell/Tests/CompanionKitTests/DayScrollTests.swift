@@ -83,7 +83,7 @@ final class DayScrollTests: XCTestCase {
     /// entry per slot, in strip order.
     private func filed(_ model: PageModel, under days: [Int]) -> [TabSummary] {
         var tabs: [TabSummary] = []
-        for (index, tab) in model.tabs.enumerated() {
+        for (index, tab) in model.navigationTabs.enumerated() {
             tabs.append(onDay(tab, index < days.count ? days[index] : 0))
         }
         return tabs
@@ -2031,6 +2031,7 @@ final class DayScrollTests: XCTestCase {
         scroll(roll, to: NSPoint(x: width - roll.scroll.contentView.bounds.width, y: 0))
         XCTAssertGreaterThan(roll.scroll.contentView.bounds.minX, editor.textContainerOrigin.x
                              + (try textMetrics(editor)).used.maxX)
+        model.loadStateIfNeeded()
         model.close(closing)
         roll.stack.update(projection: spreadOverDays(model, selecting: selected),
                           selectedPage: selected, readOnly: false)
@@ -2820,6 +2821,7 @@ final class DayScrollTests: XCTestCase {
         model.openFile(at: try scratchFile())
         let file = try XCTUnwrap(model.selectedFile)
         DayScrollView.dismantleNSView(roll.scroll, coordinator: roll.coordinator)
+        model.loadStateIfNeeded()
         model.close(try XCTUnwrap(model.tabs.first { $0.pageID == middle }?.id))
         XCTAssertNil(model.readingPlace(for: PadCatalog.scratchID))
         model.closeFile(file)

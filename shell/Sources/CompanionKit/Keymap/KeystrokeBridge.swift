@@ -140,6 +140,14 @@ extension ResolvedKeymap {
         bindings.first { $0.context == context && $0.keystroke.matches(event: event) }?.command
     }
 
+    func textAwareSurfaceCommand(for event: NSEvent) -> CommandID? {
+        guard let binding = bindings.first(where: {
+            $0.context == .editor && $0.command.dispatch == .surface
+                && $0.keystroke.usesTextAwareSurfaceRoute && $0.keystroke.matches(event: event)
+        }) else { return nil }
+        return binding.command
+    }
+
     /// One chord the surface will carry as a hidden button.
     public struct InstalledShortcut: Identifiable, Sendable {
         /// The chord itself is the identity: a surface cannot install
@@ -160,10 +168,17 @@ extension ResolvedKeymap {
     /// rather than towards a chord that does the wrong thing.
     public func surfaceShortcuts(in context: KeymapContext = .editor) -> [InstalledShortcut] {
         bindings(in: context, dispatch: .surface).compactMap { binding in
-            binding.keystroke.keyboardShortcut.map {
+            if binding.keystroke.usesTextAwareSurfaceRoute { return nil }
+            return binding.keystroke.keyboardShortcut.map {
                 InstalledShortcut(
                     keystroke: binding.keystroke, command: binding.command, shortcut: $0)
             }
         }
+    }
+}
+
+extension Keystroke {
+    var usesTextAwareSurfaceRoute: Bool {
+        !modifiers.contains(.command) && !modifiers.intersection([.control, .option]).isEmpty
     }
 }

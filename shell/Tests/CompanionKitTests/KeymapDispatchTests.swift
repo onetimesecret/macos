@@ -36,11 +36,14 @@ final class KeymapDispatchTests: XCTestCase {
     /// arm belongs to this route". This is the second half.
     func testEverySurfaceCommandIsTheModelsToRun() throws {
         let model = try makeModel()
+        var datedPickerRequests = 0
+        model.onReopenDatedTabs = { datedPickerRequests += 1 }
         for command in CommandID.allCases where command.dispatch == .surface {
             XCTAssertTrue(
                 model.perform(command),
                 "\(command.rawValue) is dispatched by the surface but the model refused it")
         }
+        XCTAssertEqual(datedPickerRequests, 1)
     }
 
     /// These commands are refused by the model on purpose: the selection,
@@ -105,10 +108,12 @@ final class KeymapDispatchTests: XCTestCase {
         model.reportKeys(true, from: .panel)
 
         var windowCloses = 0
+        model.loadStateIfNeeded()
         model.closeWhatIsShowing(.surface) { windowCloses += 1 }
 
         XCTAssertEqual(windowCloses, 0)
-        XCTAssertEqual(model.tabs.count, 1)
+        XCTAssertEqual(model.navigationTabs.count, 1)
+        XCTAssertEqual(model.tabs.count, 2)
     }
 
     /// The surface target closes the page whether or not the owner has
@@ -120,10 +125,12 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertFalse(model.holdsKeys)
 
         var windowCloses = 0
+        model.loadStateIfNeeded()
         model.closeWhatIsShowing(.surface) { windowCloses += 1 }
 
         XCTAssertEqual(windowCloses, 0)
-        XCTAssertEqual(model.tabs.count, 1)
+        XCTAssertEqual(model.navigationTabs.count, 1)
+        XCTAssertEqual(model.tabs.count, 2)
     }
 
     /// With the ledger up, the surface's ⌘W hides the ledger and closes no
@@ -186,6 +193,7 @@ final class KeymapDispatchTests: XCTestCase {
         let model = try makeModel()
         XCTAssertTrue(model.tabs.isEmpty)
         model.perform(.pageNew)
+        XCTAssertEqual(model.navigationTabs.count, 1)
         XCTAssertEqual(model.tabs.count, 1)
     }
 
@@ -202,6 +210,7 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertEqual(command, .pageNew)
         XCTAssertTrue(model.tabs.isEmpty)
         XCTAssertTrue(model.perform(command))
+        XCTAssertEqual(model.navigationTabs.count, 1)
         XCTAssertEqual(model.tabs.count, 1)
         XCTAssertEqual(
             TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)),
