@@ -260,6 +260,10 @@ char *companion_test_wire_last_json(CompanionHandle *handle);
  * companion_new_ephemeral() above. */
 bool companion_test_memory_pasteboard(CompanionHandle *handle);
 
+/* Test-util only: read in-memory pasteboard text; null for other boards/items.
+ * Free a non-null result with companion_string_free(). */
+char *companion_test_memory_pasteboard_text(CompanionHandle *handle);
+
 /* Write `text` as ink at UTF-16 offset `pos_u16` of page `sheet`,
  * below the guard that refuses U+FFFC and outside the undo stack, as
  * a page an earlier build saved or a peer's batch lands it. Returns
@@ -1387,6 +1391,15 @@ char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
  */
 char *companion_sheet_conceal(CompanionHandle *handle, uint64_t sheet,
                               const char *opts_json);
+
+/* Availability interval for a completed link's copy-again session. */
+uint32_t companion_conceal_link_recovery_seconds(void);
+/* Copy or forget a token-scoped link recovery session. */
+bool companion_conceal_link_can_copy(CompanionHandle *handle, uint64_t token);
+uint64_t companion_conceal_link_remaining_ms(CompanionHandle *handle, uint64_t token);
+bool companion_conceal_link_copy(CompanionHandle *handle, uint64_t token);
+/* End the matching recovery session. */
+void companion_conceal_link_forget(CompanionHandle *handle, uint64_t token);
 
 /* ------------------------------------------------------------------ */
 /* Sync sign-in (issue #98): account auth for the relay channel       */

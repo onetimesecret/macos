@@ -194,7 +194,7 @@ final class ContinuousPadCanvas: NSView {
             savePosition()
             let outgoing = document
             document.onChange = nil
-            coordinator.keepNaming()
+            coordinator.finishNaming()
             coordinator.closeNote()
             InkEditorView.discardComposition(in: editor)
             editor.textStorage?.delegate = nil

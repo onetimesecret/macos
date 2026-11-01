@@ -278,8 +278,7 @@ final class ThemeContrastTests: XCTestCase {
                     let ratio = Self.contrastRatio(
                         SealedBlockCell.quietInk(selected: true),
                         over: {
-                            [.windowBackgroundColor, .selectedTextBackgroundColor,
-                             NSColor.textBackgroundColor.withAlphaComponent(0.34)]
+                            [.windowBackgroundColor, .selectedTextBackgroundColor]
                         }, appearance: appearance)
                     XCTAssertGreaterThanOrEqual(
                         ratio, Self.bar,
@@ -307,4 +306,35 @@ final class ThemeContrastTests: XCTestCase {
             }
         }
     }
+    func testRestingSealedControlTextAndBordersContrastWithTheirActualSurfaces() throws {
+        let colors = SealedBlockCell.controlColors(selected: false)
+        let title = SealedBlockCell.controlString(SealedBlockCell.decryptedDragWords)
+        let ink = try XCTUnwrap(title.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor)
+        for appearance in Self.appearances + [.accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua] {
+            let text = Self.contrastRatio(ink, over: {
+                [.windowBackgroundColor, NSColor.controlBackgroundColor.withAlphaComponent(0.5), colors.fill]
+            }, appearance: appearance)
+            XCTAssertGreaterThanOrEqual(text, Self.bar, "resting control title under \(appearance.rawValue)")
+            for inside in [false, true] {
+                let border = Self.contrastRatio(colors.border, over: {
+                    let block: [NSColor] = [.windowBackgroundColor, NSColor.controlBackgroundColor.withAlphaComponent(0.5)]
+                    return inside ? block + [colors.fill] : block
+                }, appearance: appearance)
+                XCTAssertGreaterThanOrEqual(border, 3, "control border under \(appearance.rawValue), inside=\(inside)")
+            }
+        }
+    }
+
+    func testSelectedSealedControlsKeepTextAndBorderContrastOnTheirFill() {
+        let colors = SealedBlockCell.controlColors(selected: true)
+        for appearance in Self.appearances + [.accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua] {
+            for ink in [colors.ink, colors.border] {
+                let ratio = Self.contrastRatio(ink, over: {
+                    [.windowBackgroundColor, .selectedTextBackgroundColor, colors.fill]
+                }, appearance: appearance)
+                XCTAssertGreaterThanOrEqual(ratio, Self.bar)
+            }
+        }
+    }
+
 }

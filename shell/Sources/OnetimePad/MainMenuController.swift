@@ -93,10 +93,12 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         edit.addItem(responder(CompanionL10n.string("Delete"), #selector(NSText.delete(_:))))
         edit.addItem(responder(CompanionL10n.string("Select All"), #selector(NSText.selectAll(_:)), key: "a"))
         edit.addItem(.separator())
-        edit.addItem(action(CompanionL10n.string(SealSelectionMenu.editMenuTitle), command: SealSelectionMenu.command,
+        let seal = action(CompanionL10n.string(SealSelectionMenu.editMenuTitle), command: SealSelectionMenu.command,
                             enabled: { [app] in app.sealActions.canSeal }) { [app] in
             app.sendToResponder(#selector(SealResponder.sealSelectedContent(_:)))
-        })
+        }
+        seal.toolTip = SealSelectionMenu.help
+        edit.addItem(seal)
         if PageModel.languageDetectionFeaturesAvailable { addLanguageItems(to: edit) }
         edit.addItem(.separator())
         let find = submenu(CompanionL10n.string("Find"), in: edit)

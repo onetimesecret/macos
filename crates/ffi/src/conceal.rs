@@ -75,7 +75,7 @@ impl ConcealOpts {
 /// Seven days, independent of the page (ADR-0011 §5, ADR-0026).
 pub(crate) const LINK_DEFAULT_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 
-/// The link goes to the clipboard; only `receipt_id` is retained.
+/// The response before its bounded core-side copy session is prepared.
 #[derive(Debug)]
 pub(crate) struct Concealed {
     pub link: String,

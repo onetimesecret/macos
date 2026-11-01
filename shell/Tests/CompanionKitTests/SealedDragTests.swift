@@ -257,6 +257,8 @@ final class SealedDragTests: XCTestCase {
             "the control: AppKit's own image draws the excerpt")
 
         XCTAssertEqual(try dragImage(secret), try dragImage(other), "the image drew an excerpt")
+        XCTAssertEqual(secret.textView.chipCell(at: 3)?.lastDrawnShowsControls, false)
+        XCTAssertEqual(secret.textView.chipCell(at: 3)?.lastDrawnSelected, false)
         XCTAssertNotEqual(try dragImage(secret), try dragImage(ink), "the image drew no ink")
 
         let unnamed = try dragImage(secret)

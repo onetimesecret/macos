@@ -128,14 +128,13 @@
 "pad.settings.layout" = "Tabs shows named pages along the bottom at full page width. Timeline groups live pages by day with independent day and checkpoint ordering, taking %ld points from the page. Lines wrap and older blank pages are hidden.";
 "pad.remove.failed" = "The pad could not be removed. Finish any pending file decision and try again.";
 
-/* A sealed object's name field, and its refusals in the line under the page (Law 0007, ADR-0042 point 1). */
-"chip.name.field" = "Name";
-"chip.name.long" = "Use 64 characters or fewer for the name.";
-"chip.name.charset" = "Use the letters A to Z, digits and underscores for the name, and start it with a letter or an underscore.";
+/* Variable-name field, its helper, and local validation. */
+"chip.name.field" = "Variable name";
+"chip.name.long" = "use 64 characters or fewer for the variable name";
+"chip.name.charset" = "use A–Z, a–z, digits and underscores, starting with a letter or underscore";
 
-/* The two handles on a sealed block's top row, as VoiceOver names them (Law 0001, move drag and decrypted drag rows). */
-"chip.handle.move" = "Move";
-"chip.handle.decrypted" = "Drag decrypted";
+/* Sealed-content accessibility action names. */
+"chip.handle.decrypted" = "Copy Decrypted Contents";
 
 /* The page editor, as VoiceOver names it. */
 "editor.content" = "Editor content";
@@ -192,3 +191,67 @@
 "Help" = "Help";
 "Close Command Palette" = "Close Command Palette";
 "page.close.pendingFileDecision" = "finish the file close decision before closing another page";
+/* Sealed-content helper, actions, and status. */
+"chip.name.title" = "variable name · e.g. API_KEY";
+"chip.name.help" = "use a recognizable name for similar excerpts. 1–64 characters: A–Z, a–z, 0–9 and _. start with a letter or _. leave empty to remove the name";
+"chip.name.hint" = "Return saves · Esc cancels";
+"chip.name.save" = "Save";
+"chip.name.cancel" = "Cancel";
+"chip.name.save.help" = "save the variable name; Return also saves";
+"chip.name.cancel.help" = "cancel the name edit; Escape also cancels";
+"chip.name.field.help" = "for example, API_KEY; use A–Z, a–z, digits and underscores, starting with a letter or underscore; Return saves; Escape cancels";
+"chip.name.failed" = "the variable name could not be saved; try again";
+"chip.menu.copy_reference" = "Copy Sealed Reference";
+"chip.menu.copy_name" = "Copy Variable Name";
+"chip.menu.copy_decrypted" = "Copy Decrypted Contents";
+"chip.menu.copy_name_value" = "Copy NAME=Value (Unquoted)";
+"chip.menu.create_link" = "Create One-Time Link…";
+"chip.menu.name" = "Set Variable Name…";
+"chip.menu.rename" = "Edit Variable Name…";
+"chip.menu.note" = "Add Note…";
+"chip.menu.edit_note" = "Edit Note…";
+"chip.menu.remove" = "Remove from Document";
+"chip.menu.copy_reference.help" = "copy this sealed object for use in OnetimePad; other apps receive a placeholder";
+"chip.menu.copy_decrypted.help" = "copy the decrypted contents; to change them, edit the copy and seal a replacement";
+"chip.menu.copy_name_value.help" = "copy the variable name, =, and decrypted value without quotes or escaping";
+"chip.control.copy" = "Copy Decrypted";
+"chip.control.copied" = "Copied";
+"chip.control.note" = "Note";
+"chip.control.move.help" = "drag to move this sealed object; Option-drag to duplicate it";
+"chip.control.copy.help" = "copy decrypted contents; drag to copy into another app";
+"chip.control.actions.help" = "open the menu to copy, name, share or remove this sealed object";
+"chip.control.note.help" = "edit note";
+"chip.status.classification" = "sealed content";
+"chip.status.text" = "sealed text";
+"chip.status.image" = "sealed image";
+"chip.status.elsewhere" = "on another device";
+"chip.status.has_note" = "%@ · has note";
+"chip.accessibility.actions" = "Sealed Content Actions";
+"chip.accessibility.note" = "Edit Note";
+"chip.accessibility.note_presence" = "has note";
+
+/* Sharing recovery. */
+"sharing.recovery.copy" = "Copy Link Again";
+"sharing.recovery.done" = "Done";
+"sharing.recovery.success" = "link created and copied; copy it again below.";
+"sharing.recovery.unavailable" = "link created; copying it again is no longer available.";
+"sharing.recovery.copy_failed" = "this link is no longer available to copy again.";
+"sharing.recovery.delete_chip" = "Delete Local Sealed Content";
+"sharing.recovery.discard_page" = "Discard Local Page";
+"sharing.recovery.delete_chip.help" = "delete this local sealed item; this cannot be undone";
+"sharing.recovery.discard_page.help" = "discard this page's contents; keep its timeline position";
+"sharing.recovery.help" = "available for up to %u seconds after creation";
+"sharing.recovery.target" = "Sharing: %@";
+
+"chip.status.value_elsewhere" = "value on another device";
+
+/* Sealing guidance. */
+"seal.clipboard.action" = "Seal Clipboard";
+"seal.clipboard.offer" = "Clipboard content is ready to seal";
+"seal.clipboard.accessibility" = "Seal the clipboard's content onto this page";
+"seal.selection.consequence" = "Sealing cannot be undone.";
+"seal.selection.help" = "Sealing cannot be undone. To change the contents, use Copy Decrypted, edit the text, then seal a replacement.";
+
+"chip.reference.copied" = "copied the sealed reference; paste it into OnetimePad";
+
+"palette.context_changed" = "the page changed; reopen the command palette to use page commands";

@@ -771,10 +771,19 @@ public struct ConcealOutcome: Codable, Hashable, Sendable {
     public let ok: Bool
     public let receiptId: String?
     public let error: String?
+    public let copyToken: UInt64?
+
+    init(ok: Bool, receiptId: String?, error: String?, copyToken: UInt64? = nil) {
+        self.ok = ok
+        self.receiptId = receiptId
+        self.error = error
+        self.copyToken = copyToken
+    }
 
     enum CodingKeys: String, CodingKey {
         case ok, error
         case receiptId = "receipt_id"
+        case copyToken = "copy_token"
     }
 }
 
@@ -1766,6 +1775,27 @@ public class CompanionClient: @unchecked Sendable {
         conceal(id: id, ttlSecs: ttlSecs, passphrase: passphrase, recipient: recipient) {
             companion_sheet_conceal($0, $1, $2)
         }
+    }
+
+    public static func concealLinkRecoverySeconds() -> UInt32 {
+        companion_conceal_link_recovery_seconds()
+    }
+
+    public func canCopyConcealedLink(token: UInt64) -> Bool {
+        companion_conceal_link_can_copy(handle, token)
+    }
+
+    public func concealedLinkCopyRemainingMilliseconds(token: UInt64) -> UInt64 {
+        companion_conceal_link_remaining_ms(handle, token)
+    }
+
+    @discardableResult
+    public func copyConcealedLink(token: UInt64) -> Bool {
+        companion_conceal_link_copy(handle, token)
+    }
+
+    public func forgetConcealedLink(token: UInt64) {
+        companion_conceal_link_forget(handle, token)
     }
 
     private func conceal(

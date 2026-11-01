@@ -118,7 +118,7 @@ final class WrappingGeometryTests: XCTestCase {
             XCTAssertEqual(container.capturedEditorMeasure, measure)
             XCTAssertEqual(
                 layout.attachmentSize(forGlyphAt: glyph).width,
-                floor(measure - container.lineFragmentPadding * 2), accuracy: 0.5
+                min(SealedBlockLayout.minimumWidth, floor(measure - container.lineFragmentPadding * 2)), accuracy: 0.5
             )
             XCTAssertEqual(text.frame, frame)
         }

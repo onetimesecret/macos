@@ -237,24 +237,15 @@ final class SealedNoteTests: XCTestCase {
     /// Once a note exists the seat reads `small · note`, size class first;
     /// a hovered zone or a copy takes the seat whole.
     func testTheSeatOpensADoorwayOnceANoteExists() {
-        XCTAssertEqual(
-            SealedBlockCell.seatText(sizeLabel: "small", hasNote: true, hovered: nil, copied: false),
-            "small · note")
-        XCTAssertEqual(
-            SealedBlockCell.seatText(sizeLabel: "small", hasNote: false, hovered: nil, copied: false),
-            "small")
-        XCTAssertEqual(
-            SealedBlockCell.seatText(
-                sizeLabel: "small", hasNote: true, hovered: .value, copied: false),
-            "copies the value, decrypted")
-        let frame = NSRect(x: 0, y: 0, width: 480, height: SealedBlockCell.blockHeight)
+        let frame = NSRect(x: 0, y: 0, width: 480, height: SealedBlockCell.preferredHeight)
         let face = ChipInfo(
             chipId: 1, kind: "text", excerpt: "ab…cd", sizeLabel: "small", concealed: false,
             hasNote: true)
         let doorway = SealedBlockCell(info: face).doorwayRect(in: frame)
         let layout = SealedBlockCell.contentLayout(in: frame)
-        XCTAssertEqual(doorway?.maxX ?? 0, layout.metadataRight, accuracy: 0.5)
-        XCTAssertEqual(doorway?.minY, layout.metadataY)
+        XCTAssertNotNil(doorway)
+        XCTAssertTrue(frame.contains(try! XCTUnwrap(doorway)))
+        XCTAssertFalse(doorway?.intersects(SealedBlockCell.actionsRect(in: frame)) ?? true)
         XCTAssertNil(
             SealedBlockCell(info: ChipInfo(
                 chipId: 1, kind: "text", excerpt: "ab…cd", sizeLabel: "small", concealed: false)
@@ -267,12 +258,12 @@ final class SealedNoteTests: XCTestCase {
         for named in [false, true] {
             XCTAssertEqual(
                 InkTextView.chipClick(
-                    named: named, zone: nil, inRow: true, onDoorway: true, clickCount: 1,
+                    onDoorway: true, clickCount: 1,
                     modifierFlags: []),
                 .openNote)
             XCTAssertEqual(
                 InkTextView.chipClick(
-                    named: named, zone: nil, inRow: true, onDoorway: true, clickCount: 2,
+                    onDoorway: true, clickCount: 2,
                     modifierFlags: []),
                 .ignore, "a double click on the doorway opened the name field")
         }
@@ -286,7 +277,7 @@ final class SealedNoteTests: XCTestCase {
     func testTheMenusVerbOpensTheNoteInThePagesOwnWindow() throws {
         let page = try makePage()
         let menu = try XCTUnwrap(page.coordinator.chipMenu(at: 3))
-        let verb = try XCTUnwrap(menu.items.first { $0.title == "Note…" })
+        let verb = try XCTUnwrap(menu.items.first { $0.title == "Add Note…" })
         _ = (verb.target as? NSObject)?.perform(verb.action, with: verb)
         let editor = try note(page)
 
@@ -319,7 +310,7 @@ final class SealedNoteTests: XCTestCase {
 
         let menu = try XCTUnwrap(page.coordinator.chipMenu(at: 3))
         XCTAssertNotNil(menu.items.first { $0.title == "Edit Note…" })
-        XCTAssertFalse(menu.items.contains { $0.title == "Note…" })
+        XCTAssertFalse(menu.items.contains { $0.title == "Add Note…" })
 
         page.textView.layout()
         let frame = try XCTUnwrap(page.textView.chipFrame(at: 3))
@@ -387,7 +378,7 @@ final class SealedNoteTests: XCTestCase {
         page.coordinator.beginNote(at: 3)
         page.coordinator.beginNaming(at: 3)
         XCTAssertFalse(editor.isOpen, "the name field and the note stood together")
-        page.coordinator.keepNaming()
+        page.coordinator.nameEditor?.keep(returningKeys: true)
 
         page.coordinator.beginNote(at: 3)
         let other = page.model.storage(for: try XCTUnwrap({ () -> UInt64? in

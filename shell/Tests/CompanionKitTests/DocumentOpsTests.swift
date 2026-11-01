@@ -527,28 +527,28 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: false, kind: "text"),
             [
-                "Copy Decrypted Contents", "Create One-Time Link…", nil, "Name", "Note…", nil,
-                "Remove Sealed Content",
+                "Copy Sealed Reference", "Copy Decrypted Contents", "Create One-Time Link…", nil,
+                "Set Variable Name…", "Add Note…", nil, "Remove from Document",
             ])
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: true, kind: "text"),
             [
-                "Copy Name", "Copy Decrypted Contents", "Copy Name=Value, Decrypted",
-                "Create One-Time Link…", nil, "Rename", "Edit Note…", nil,
-                "Remove Sealed Content",
+                "Copy Sealed Reference", "Copy Variable Name", "Copy Decrypted Contents", "Copy NAME=Value (Unquoted)",
+                "Create One-Time Link…", nil, "Edit Variable Name…", "Edit Note…", nil,
+                "Remove from Document",
             ])
         XCTAssertEqual(
-            InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: false, kind: "text")[5...6],
-            ["Rename", "Note…"])
+            InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: false, kind: "text")[6...7],
+            ["Edit Variable Name…", "Add Note…"])
         XCTAssertEqual(
-            InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: true, kind: "text")[3...4],
-            ["Name", "Edit Note…"])
+            InkEditorView.Coordinator.chipMenuTitles(named: false, hasNote: true, kind: "text")[4...5],
+            ["Set Variable Name…", "Edit Note…"])
         // The core composes `NAME=value` for text alone (Law 0001, `=` zone row).
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(named: true, hasNote: false, kind: "image"),
             [
-                "Copy Name", "Copy Decrypted Contents", "Create One-Time Link…", nil, "Rename",
-                "Note…", nil, "Remove Sealed Content",
+                "Copy Sealed Reference", "Copy Variable Name", "Copy Decrypted Contents", "Create One-Time Link…", nil,
+                "Edit Variable Name…", "Add Note…", nil, "Remove from Document",
             ])
         makeEditor()
         textView.insertText(
@@ -571,7 +571,7 @@ final class DocumentOpsWiringTests: XCTestCase {
         let link = try XCTUnwrap(
             menu.items.first { $0.title == "Create One-Time Link…" })
         let remove = try XCTUnwrap(
-            menu.items.first { $0.title == "Remove Sealed Content" })
+            menu.items.first { $0.title == "Remove from Document" })
         XCTAssertTrue(menu.items.contains { $0.isSeparatorItem })
         // The two egresses come first, in the order D-41 renders them,
         // and the separator keeps the removal below both.
@@ -612,8 +612,19 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertTrue(model.sealActions.canSeal)
         let offered = NSMenu()
         coordinator.appendSealItem(to: offered)
-        XCTAssertEqual(offered.items.map(\.title), [SealSelectionMenu.contextMenuTitle])
-        XCTAssertTrue(offered.items[0].target === coordinator)
+        XCTAssertEqual(offered.items.map(\.title), [
+            SealSelectionMenu.consequence, SealSelectionMenu.contextMenuTitle,
+        ])
+        XCTAssertNil(offered.items[0].action)
+        XCTAssertNil(offered.items[0].target)
+        if #available(macOS 14, *) {
+            XCTAssertTrue(offered.items[0].isSectionHeader)
+            XCTAssertFalse(offered.items[1].isSectionHeader)
+        } else {
+            XCTAssertFalse(offered.items[0].isEnabled)
+        }
+        XCTAssertTrue(offered.items[1].target === coordinator)
+        XCTAssertEqual(offered.items[1].toolTip, SealSelectionMenu.help)
         coordinator.sealSelectionOrLine()
 
         // A selection holding the chip: the row is withheld, because
@@ -935,6 +946,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     /// table it rebuilds whenever it rebuilds the rects.
     func testTheRowsTooltipSurvivesTheLoopThatRegisteredIt() {
         makeEditor()
+        textView.setFrameSize(NSSize(width: 400, height: 300))
         type("alpha")
         coordinator.layOutBlockLabels(forMetas: [
             BlockInfo(id: "alpha", createdS: 1_000, modifiedS: 300_000, paragraphs: 1)
@@ -959,6 +971,7 @@ final class DocumentOpsWiringTests: XCTestCase {
 
     func testRepositioningRetainsUnchangedTooltipsAndRemovesOnlyBlockRegistrations() {
         makeEditor()
+        textView.setFrameSize(NSSize(width: 400, height: 300))
         let unrelatedTag = textView.addToolTip(NSRect(x: 350, y: 0, width: 20, height: 20),
                                                owner: self, userData: nil)
         type("alpha")

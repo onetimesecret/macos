@@ -90,3 +90,7 @@ Menus and buttons are worded as the platform words them.
   that still said *conceal* as a noun or a UI verb (issue #295): the
   Connection and Sync settings, the conceal sheet's server tooltip and
   error line, and the strip's ↗ page tab. The API token is named as such.
+- 2026-10-31: The [sealed-interface revision](../spec/design/2026-1031-sealed-content-ux-revision.md)
+  replaces the sealed menu and sharing labels, and records scoped exceptions
+  for compact sentence-case controls, instructional guidance and the ellipsis
+  on Set/Edit Variable Name…. Other interfaces retain this ADR's wording rules.
