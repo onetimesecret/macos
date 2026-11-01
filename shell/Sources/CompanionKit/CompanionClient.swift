@@ -771,7 +771,14 @@ public struct ConcealOutcome: Codable, Hashable, Sendable {
     public let ok: Bool
     public let receiptId: String?
     public let error: String?
-    public var copyToken: UInt64? = nil
+    public let copyToken: UInt64?
+
+    init(ok: Bool, receiptId: String?, error: String?, copyToken: UInt64? = nil) {
+        self.ok = ok
+        self.receiptId = receiptId
+        self.error = error
+        self.copyToken = copyToken
+    }
 
     enum CodingKeys: String, CodingKey {
         case ok, error

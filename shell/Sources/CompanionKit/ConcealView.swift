@@ -238,10 +238,12 @@ public struct ConcealView: View {
                 }
             }
             .controlSize(.small)
-            Text(Self.recoveryHelp)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if draft.canCopyLink {
+                Text(Self.recoveryHelp)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Divider().padding(.vertical, 4)
             deleteLocalButton
         }
@@ -250,7 +252,7 @@ public struct ConcealView: View {
     private var copyLinkButton: some View {
         Button(CompanionL10n.string("sharing.recovery.copy")) { model.copyConcealedLink() }
             .disabled(!draft.canCopyLink)
-            .help(Self.recoveryHelp)
+            .help(draft.canCopyLink ? Self.recoveryHelp : Self.successLine(canCopyLink: false))
     }
 
     private var deleteLocalButton: some View {
@@ -263,9 +265,8 @@ public struct ConcealView: View {
         Button(CompanionL10n.string("sharing.recovery.done")) { model.dismissConceal() }
     }
 
-    nonisolated static var recoveryHelp: String {
-        CompanionL10n.format("sharing.recovery.help", CompanionClient.concealLinkRecoverySeconds())
-    }
+    nonisolated static let recoveryHelp = CompanionL10n.format(
+        "sharing.recovery.help", CompanionClient.concealLinkRecoverySeconds())
 
     nonisolated static func sharingTargetLabel(_ label: String) -> String {
         CompanionL10n.format("sharing.recovery.target", label)
