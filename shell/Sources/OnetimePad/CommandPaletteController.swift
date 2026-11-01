@@ -197,7 +197,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
                 self.dismiss(restoringFocus: true)
                 return true
             }
-            if command.dispatch != .window { self.dismiss(restoringFocus: true) }
+            if command.dispatch == .surface { self.dismiss(restoringFocus: true) }
             return false
         }
         overlay.interactiveRegion = card

@@ -35,6 +35,15 @@ private final class PaletteEventSink: NSResponder {
 }
 
 @MainActor
+private final class PaletteKeyEquivalentSink: NSView {
+    private(set) var received = 0
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        received += 1
+        return true
+    }
+}
+
+@MainActor
 final class CommandPaletteControllerTests: XCTestCase {
     private func makeModel() throws -> PageModel {
         let tag = "palette-\(UUID().uuidString)"
@@ -693,6 +702,62 @@ final class CommandPaletteControllerTests: XCTestCase {
         _ = palette.control(palette.search, textView: NSTextView(),
             doCommandBy: #selector(NSResponder.insertNewline(_:)))
         XCTAssertEqual(model.wrapsLines, !wrapped)
+    }
+
+    func testSettingsTabContentCannotPreemptPaletteCloseAndKeepsItsController() throws {
+        let model = try makeModel()
+        _ = NSApplication.shared
+        let tabs = NSTabViewController()
+        tabs.tabStyle = .toolbar
+        var sinks: [PaletteKeyEquivalentSink] = []
+        for index in 0..<2 {
+            let controller = NSViewController()
+            let sink = PaletteKeyEquivalentSink(frame: NSRect(x: 0, y: 0, width: 480, height: 360))
+            controller.view = sink
+            controller.title = "Synthetic settings \(index)"
+            controller.preferredContentSize = sink.frame.size
+            tabs.addTabViewItem(NSTabViewItem(viewController: controller))
+            sinks.append(sink)
+        }
+        let window = SettingsPaletteWindow(contentViewController: tabs)
+        window.isReleasedWhenClosed = false
+        window.styleMask = [.titled, .closable]
+        window.toolbarStyle = .preference
+        defer { window.close() }
+        window.orderFront(nil)
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        let close = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: [.command], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, characters: "w", charactersIgnoringModifiers: "w", isARepeat: false, keyCode: 13))
+        for index in 0..<2 {
+            tabs.selectedTabViewItemIndex = index
+            palette.show(in: window, pageContext: false)
+            XCTAssertTrue(window.contentViewController === tabs)
+            XCTAssertTrue(palette.overlay?.superview === window.contentView)
+            XCTAssertTrue(window.contentView?.subviews.last === palette.overlay)
+            XCTAssertTrue(window.performKeyEquivalent(with: close))
+            XCTAssertNil(palette.overlay)
+            XCTAssertEqual(tabs.selectedTabViewItemIndex, index)
+            XCTAssertEqual(sinks.reduce(0) { $0 + $1.received }, 0)
+        }
+    }
+
+    func testUndoAndRedoKeepTheSearchResponderAndPaletteOpen() throws {
+        let model = try makeModel()
+        let (window, originalEditor) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        let searchEditor = try XCTUnwrap(palette.search.currentEditor())
+        for modifiers in [NSEvent.ModifierFlags.command, [.command, .shift]] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                modifierFlags: modifiers, timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, characters: "z", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6))
+            XCTAssertFalse(try XCTUnwrap(palette.overlay).performKeyEquivalent(with: event))
+            XCTAssertNotNil(palette.overlay)
+            XCTAssertTrue(window.firstResponder === searchEditor)
+            XCTAssertFalse(window.firstResponder === originalEditor)
+        }
     }
 
 }
