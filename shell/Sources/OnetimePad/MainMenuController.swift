@@ -5,6 +5,8 @@ import CompanionKit
 final class MainMenuController: NSObject, NSMenuDelegate {
     private unowned let app: BackdropAppDelegate
     private weak var closeItem: NSMenuItem?
+    private weak var fileMenu: NSMenu?
+    private weak var viewMenu: NSMenu?
     private weak var languageMenu: NSMenu?
     private weak var timelineItem: NSMenuItem?
     private weak var tabsItem: NSMenuItem?
@@ -51,6 +53,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     private func makeFileMenu(in main: NSMenu) {
         let file = submenu(CompanionL10n.string("File"), in: main)
         file.delegate = self
+        fileMenu = file
         file.addItem(action(CompanionL10n.string("New Page"), command: .pageNew) { [app] in
             app.pages.perform(.pageNew)
             if !app.pages.holdsKeys { app.returnToOwner() }
@@ -137,6 +140,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     private func makeViewMenu(in main: NSMenu) {
         let view = submenu(CompanionL10n.string("View"), in: main)
         view.delegate = self
+        viewMenu = view
         view.addItem(action(CompanionL10n.string("Command Palette…"), command: .appCommandPalette) { [app] in
             app.showCommandPalette()
         })
@@ -192,9 +196,13 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        closeItem?.title = CompanionL10n.string(app.commandPaletteIsShowing ? "Close Command Palette" : closeChoice.title)
-        timelineItem?.state = app.pages.showsTimeUnits ? .on : .off
-        tabsItem?.state = app.pages.showsTimeUnits ? .off : .on
+        if menu === fileMenu {
+            closeItem?.title = CompanionL10n.string(app.commandPaletteIsShowing ? "Close Command Palette" : closeChoice.title)
+        }
+        if menu === viewMenu {
+            timelineItem?.state = app.pages.showsTimeUnits ? .on : .off
+            tabsItem?.state = app.pages.showsTimeUnits ? .off : .on
+        }
         if menu === languageMenu { updateLanguages(in: menu) }
     }
 
@@ -248,7 +256,12 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     private func action(_ title: String, command: CommandID? = nil,
                         enabled: @escaping () -> Bool = { true }, _ run: @escaping () -> Void) -> NSMenuItem {
-        let item = MenuActionItem(title: title, enabled: enabled, run: run)
+        let item = MenuActionItem(title: title, enabled: enabled) { [app] in
+            if command != .pageClose && command != .appCommandPalette && command != .pageReopenDated {
+                app.dismissCommandPaletteForAction()
+            }
+            run()
+        }
         if let command { bind(command, to: item) }
         return item
     }

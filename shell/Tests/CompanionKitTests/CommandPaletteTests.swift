@@ -21,6 +21,14 @@ final class CommandPaletteTests: XCTestCase {
         let entries = CommandPaletteCatalog.entries(keymap: map)
         XCTAssertEqual(entries.map(\.scope.rawValue), entries.map(\.scope.rawValue).sorted())
         XCTAssertEqual(Set(entries.map(\.command)).count, entries.count)
+        XCTAssertEqual(entries.map(\.command), [
+            .appOpenTimeline, .appSwitchToTabs, .pageReopenDated, .pageReopenLast,
+            .pageNew, .fileOpen, .appSettings, .appHelp, .windowClose,
+            .stateSaveNow, .fileSaveAs, .pageClose, .pagePrevious, .pageNext, .editorToggleWrap,
+            .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorUndo, .editorRedo,
+            .editorDetectCodeLanguage, .noteToggleExpanded
+        ])
+        XCTAssertEqual(Set(entries.map(\.command)), Set(CommandID.allCases.filter { $0.paletteDefinition != nil }))
         for command in [CommandID.appOpenTimeline, .appSwitchToTabs, .pageReopenLast, .pageReopenDated] {
             XCTAssertEqual(entries.first { $0.command == command }?.scope, .application)
         }

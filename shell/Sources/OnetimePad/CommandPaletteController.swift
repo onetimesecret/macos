@@ -28,12 +28,23 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     private nonisolated(unsafe) var storageObserver: NSObjectProtocol?
     private nonisolated(unsafe) var windowCloseObserver: NSObjectProtocol?
     private nonisolated(unsafe) var windowResignObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var dateFormatObservers: [NSObjectProtocol] = []
     private var originalTarget: SurfaceTarget?
     private var originalPage: UInt64?
     private var originalLedger = false
     private var availableEditorCommands: Set<CommandID> = []
     private var hasPageContext = false
     private var rows: [Row] = []
+    private var datedSource: [TabSummary] = []
+    private var datedRows: [Row] = []
+    private var datedLocale: String?
+    private var datedTimeZone: String?
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
     private var reopening = false
     private(set) var overlay: PaletteOverlayView?
     let search = NSSearchField()
@@ -90,6 +101,17 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         footer.textColor = .secondaryLabelColor
         footer.lineBreakMode = .byTruncatingTail
         card.addSubview(footer)
+        for name in [NSLocale.currentLocaleDidChangeNotification, NSNotification.Name.NSSystemTimeZoneDidChange] {
+            dateFormatObservers.append(NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: nil
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.datedLocale = nil
+                    if self.overlay != nil, self.reopening { self.reload() }
+                }
+            })
+        }
     }
 
     deinit {
@@ -99,6 +121,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         if let storageObserver { NotificationCenter.default.removeObserver(storageObserver) }
         if let windowCloseObserver { NotificationCenter.default.removeObserver(windowCloseObserver) }
         if let windowResignObserver { NotificationCenter.default.removeObserver(windowResignObserver) }
+        for observer in dateFormatObservers { NotificationCenter.default.removeObserver(observer) }
     }
 
     func show(in window: NSWindow, pageContext: Bool, reopen: Bool = false) {
@@ -108,11 +131,11 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
                 else { dismiss(restoringFocus: true) }
                 return
             }
-            dismiss(restoringFocus: false)
         }
         guard let host = window.contentView else { return }
         if pageContext, let editor = model.activeEditor as? CommandPaletteResponder,
            !editor.prepareForCommandPalette() { return }
+        if overlay != nil { dismiss(restoringFocus: false) }
         originalWindow = window
         windowCloseObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: nil
@@ -122,7 +145,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         windowResignObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification, object: window, queue: nil
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.dismiss(restoringFocus: false) }
+            MainActor.assumeIsolated { self?.dismiss(restoringFocus: true) }
         }
         originalResponder = window.firstResponder
         originalControl = nil
@@ -142,7 +165,10 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
             storageObserver = NotificationCenter.default.addObserver(
                 forName: NSTextStorage.didProcessEditingNotification, object: originalStorage, queue: nil
             ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.sourceWasEdited = true }
+                MainActor.assumeIsolated {
+                    guard self?.originalStorage?.editedMask.contains(.editedCharacters) == true else { return }
+                    self?.sourceWasEdited = true
+                }
             }
         }
         originalTarget = model.activeTarget
@@ -163,11 +189,15 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         overlay.onLayout = { [weak self] in self?.layout() }
         overlay.onKeyEquivalent = { [weak self] event in
             guard let self, let command = self.model.keymap.command(for: event, in: .editor) else { return false }
-            if command == .pageClose || command == .appCommandPalette || command == .surfaceHandBackKeys {
+            if command == .surfaceHandBackKeys {
+                self.cancelSearchOrDismiss()
+                return true
+            }
+            if command == .pageClose || command == .appCommandPalette {
                 self.dismiss(restoringFocus: true)
                 return true
             }
-            if command.dispatch == .surface { self.dismiss(restoringFocus: true) }
+            if command.dispatch != .window { self.dismiss(restoringFocus: true) }
             return false
         }
         overlay.interactiveRegion = card
@@ -239,7 +269,11 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard rows.indices.contains(row) else { return nil }
         let item = rows[row]
-        let view = PaletteCommandCell(title: item.title, detail: item.detail, shortcut: item.shortcut)
+        let identifier = NSUserInterfaceItemIdentifier("paletteCommand")
+        let view = (tableView.makeView(withIdentifier: identifier, owner: self) as? PaletteCommandCell)
+            ?? PaletteCommandCell(title: "", detail: "", shortcut: nil)
+        view.identifier = identifier
+        view.configure(title: item.title, detail: item.detail, shortcut: item.shortcut)
         view.frame = NSRect(x: 0, y: 0, width: tableColumn?.width ?? tableView.bounds.width, height: 42)
         view.setAccessibilityLabel([item.title, item.detail, item.shortcut].compactMap { $0 }.joined(separator: ", "))
         return view
@@ -250,7 +284,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         switch commandSelector {
         case #selector(NSResponder.cancelOperation(_:)):
-            dismiss(restoringFocus: true)
+            cancelSearchOrDismiss()
         case #selector(NSResponder.insertNewline(_:)):
             runSelected(nil)
         case #selector(NSResponder.deleteBackward(_:)) where reopening && search.stringValue.isEmpty:
@@ -262,6 +296,15 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         default: return false
         }
         return true
+    }
+
+    private func cancelSearchOrDismiss() {
+        if !search.stringValue.isEmpty {
+            search.stringValue = ""
+            reload()
+        } else {
+            dismiss(restoringFocus: true)
+        }
     }
 
     private func moveSelection(_ delta: Int) {
@@ -289,15 +332,25 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         if command.dispatch == .window {
             performWindowCommand(command)
         } else if command.dispatch == .editor {
-            guard validContext, let editor = originalResponder as? CommandPaletteResponder else { return }
-            _ = editor.performPaletteCommand(command)
+            guard validContext, let editor = originalResponder as? CommandPaletteResponder else {
+                refuseStaleContext()
+                return
+            }
+            if !editor.performPaletteCommand(command) { refuseStaleContext() }
         } else {
-            guard row.scope == .application || validContext else { return }
+            guard row.scope == .application || validContext else {
+                refuseStaleContext()
+                return
+            }
             model.perform(command)
             if [.appOpenTimeline, .appSwitchToTabs, .pageReopenLast, .pageNew].contains(command) {
                 returnToPages()
             }
         }
+    }
+
+    private func refuseStaleContext() {
+        model.flash(CompanionL10n.string("palette.context_changed"), tone: .actionable)
     }
 
     private func enterReopenMode() {
@@ -318,14 +371,25 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
 
     private func reload() {
         if reopening {
-            rows = model.closedTabs.compactMap { tab in
-                let date = tab.pageCreatedMs.map { Date(timeIntervalSince1970: Double($0) / 1000) }
-                let stamp = date.map { DateFormatter.localizedString(from: $0, dateStyle: .medium, timeStyle: .short) }
-                    ?? CompanionL10n.string("Saved tab")
-                let text = tab.title + " " + stamp
-                guard search.stringValue.split(whereSeparator: { $0.isWhitespace })
-                    .allSatisfy({ text.localizedStandardContains(String($0)) }) else { return nil }
-                return Row(title: tab.title, detail: stamp, shortcut: nil, command: nil, scope: nil, tab: tab.id)
+            let source = model.closedTabs
+            let locale = Locale.current.identifier
+            let timeZone = TimeZone.current.identifier
+            if source != datedSource || locale != datedLocale || timeZone != datedTimeZone {
+                dateFormatter.locale = .current
+                dateFormatter.timeZone = .current
+                datedSource = source
+                datedLocale = locale
+                datedTimeZone = timeZone
+                datedRows = source.map { tab in
+                    let date = tab.pageCreatedMs.map { Date(timeIntervalSince1970: Double($0) / 1000) }
+                    let stamp = date.map { dateFormatter.string(from: $0) } ?? CompanionL10n.string("Saved tab")
+                    return Row(title: tab.title, detail: stamp, shortcut: nil, command: nil, scope: nil, tab: tab.id)
+                }
+            }
+            rows = datedRows.filter { row in
+                let text = row.title + " " + row.detail
+                return search.stringValue.split(whereSeparator: { $0.isWhitespace })
+                    .allSatisfy { text.localizedStandardContains(String($0)) }
             }
         } else {
             rows = CommandPaletteCatalog.entries(keymap: model.keymap).compactMap { entry in
@@ -452,6 +516,12 @@ final class PaletteCommandCell: NSTableCellView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("command cells are created in code") }
+
+    func configure(title: String, detail: String, shortcut: String?) {
+        titleLabel.stringValue = title
+        detailLabel.stringValue = detail
+        shortcutLabel.stringValue = shortcut ?? ""
+    }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)

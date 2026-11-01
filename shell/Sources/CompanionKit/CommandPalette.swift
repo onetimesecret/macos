@@ -42,17 +42,22 @@ public struct CommandPaletteEntry: Identifiable, Equatable, Sendable {
 }
 
 public enum CommandPaletteCatalog {
+    private static let order: [CommandID] = [
+        .appOpenTimeline, .appSwitchToTabs, .pageReopenDated, .pageReopenLast,
+        .pageNew, .fileOpen, .appSettings, .appHelp, .windowClose,
+        .stateSaveNow, .fileSaveAs, .pageClose, .pagePrevious, .pageNext, .editorToggleWrap,
+        .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorUndo, .editorRedo,
+        .editorDetectCodeLanguage, .noteToggleExpanded
+    ]
+
     public static func entries(keymap: ResolvedKeymap) -> [CommandPaletteEntry] {
-        CommandID.allCases.compactMap { command in
+        order.compactMap { command in
             guard let definition = command.paletteDefinition else { return nil }
             return CommandPaletteEntry(command: command, title: CompanionL10n.string(definition.title),
                 scope: definition.scope, keywords: definition.keywords,
                 shortcut: (command.dispatch == .window
                     ? keymap.menuKeystroke(for: command) : keymap.hintKeystroke(for: command))?.displaySymbol)
-        }.enumerated().sorted { left, right in
-            left.element.scope == right.element.scope
-                ? left.offset < right.offset : left.element.scope.rawValue < right.element.scope.rawValue
-        }.map(\.element)
+        }
     }
 }
 

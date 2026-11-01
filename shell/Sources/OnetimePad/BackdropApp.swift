@@ -718,6 +718,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         commandPalette.dismissForClose(in: NSApp.keyWindow)
     }
 
+    func dismissCommandPaletteForAction() {
+        commandPalette.dismiss(restoringFocus: true)
+    }
+
     func showCommandPalette(reopen: Bool = false) {
         guard let window = NSApp.keyWindow, window.sheetParent == nil,
               window.attachedSheet == nil, !ModalSession.isRunning else { return }

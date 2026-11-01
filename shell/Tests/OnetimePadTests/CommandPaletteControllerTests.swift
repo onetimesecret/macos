@@ -15,7 +15,8 @@ private final class PaletteEditorProbe: NSTextView, CommandPaletteResponder {
     private(set) var borrowEnds = 0
     func beginPaletteFocusBorrow() { borrowBegins += 1 }
     func endPaletteFocusBorrow() { borrowEnds += 1 }
-    func prepareForCommandPalette() -> Bool { true }
+    var allowsPreparation = true
+    func prepareForCommandPalette() -> Bool { allowsPreparation }
     func canPerformPaletteCommand(_ command: CommandID) -> Bool { command == .clipboardSealSelection }
     func performPaletteCommand(_ command: CommandID) -> Bool {
         performed.append(command)
@@ -155,6 +156,7 @@ final class CommandPaletteControllerTests: XCTestCase {
             doCommandBy: #selector(NSResponder.insertNewline(_:)))
         XCTAssertTrue(editor.performed.isEmpty)
         XCTAssertEqual(editor.selectedRange(), NSRange(location: 0, length: 0))
+        XCTAssertEqual(model.notice, CompanionL10n.string("palette.context_changed"))
     }
 
     func testCloseWindowIsSeparateAndPageCloseIsAbsentWithoutAPage() throws {
@@ -220,6 +222,10 @@ final class CommandPaletteControllerTests: XCTestCase {
         let searchEditor = try XCTUnwrap(palette.search.currentEditor() as? NSTextView)
         searchEditor.insertText("timeline", replacementRange: NSRange(location: 0, length: searchEditor.string.utf16.count))
         palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        _ = palette.control(palette.search, textView: searchEditor,
+            doCommandBy: #selector(NSResponder.cancelOperation(_:)))
+        XCTAssertNotNil(palette.overlay)
+        XCTAssertEqual(palette.search.stringValue, "")
         _ = palette.control(palette.search, textView: searchEditor,
             doCommandBy: #selector(NSResponder.cancelOperation(_:)))
         XCTAssertNil(palette.overlay)
@@ -486,7 +492,8 @@ final class CommandPaletteControllerTests: XCTestCase {
         NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
         XCTAssertNil(palette.overlay)
         XCTAssertEqual(editor.borrowEnds, 1)
-        XCTAssertFalse(window.firstResponder === editor)
+        XCTAssertTrue(window.firstResponder === editor)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 3, length: 5))
     }
 
     func testViewMenuChecksTheCurrentLayout() throws {
@@ -604,6 +611,88 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertTrue(palette.dismissForClose(in: window))
         XCTAssertFalse(palette.dismissForClose(in: window))
         XCTAssertEqual(model.navigationTabs.map(\.id), original)
+    }
+
+    func testRestylingAttributesKeepsTheCapturedSelectionCommandUsable() throws {
+        let model = try makeModel()
+        let (window, editor) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        palette.search.stringValue = "seal selected"
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        editor.textStorage?.addAttribute(.foregroundColor, value: NSColor.systemRed,
+            range: NSRange(location: 0, length: editor.string.utf16.count))
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertEqual(editor.performed, [.clipboardSealSelection])
+        XCTAssertEqual(editor.selectionAtExecution, NSRange(location: 3, length: 5))
+    }
+
+    func testEscapeClearsTheSearchBeforeDismissingThePalette() throws {
+        let model = try makeModel()
+        let (window, editor) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        palette.search.stringValue = "seal selected"
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.cancelOperation(_:)))
+        XCTAssertEqual(palette.search.stringValue, "")
+        XCTAssertNotNil(palette.overlay)
+        XCTAssertGreaterThan(palette.table.numberOfRows, 1)
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.cancelOperation(_:)))
+        XCTAssertNil(palette.overlay)
+        XCTAssertTrue(window.firstResponder === editor)
+    }
+
+    func testARefusedOtherWindowRequestLeavesTheExistingPaletteOpen() throws {
+        let model = try makeModel()
+        let (first, firstEditor) = makeWindow()
+        let (second, secondEditor) = makeWindow()
+        defer { first.close(); second.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: first, pageContext: false)
+        let overlay = try XCTUnwrap(palette.overlay)
+        secondEditor.allowsPreparation = false
+        model.mountEditor(secondEditor, from: model.owner)
+        palette.show(in: second, pageContext: true)
+        XCTAssertTrue(palette.overlay === overlay)
+        XCTAssertTrue(overlay.window === first)
+        XCTAssertEqual(firstEditor.borrowEnds, 0)
+        XCTAssertEqual(secondEditor.borrowBegins, 0)
+    }
+
+    func testSealedNameRestylingDoesNotInvalidatePageCommands() throws {
+        let model = try makeModel()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let editor = try XCTUnwrap(InkEditorView.makeInkTextView(model: model, sheetID: page, coordinator: coordinator))
+        let (window, placeholder) = makeWindow()
+        defer { window.close() }
+        placeholder.removeFromSuperview()
+        let scroll = InkEditorView.bareScroller()
+        scroll.frame = window.contentLayoutRect
+        InkEditorView.seat(editor, in: scroll)
+        window.contentView = scroll
+        _ = window.makeFirstResponder(editor)
+        editor.insertText("ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+        editor.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.sealSelectionOrLine()
+        let chip = try XCTUnwrap(editor.chipCell(at: 3)?.info.chipId)
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        palette.search.stringValue = "Toggle Line Wrapping"
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        XCTAssertEqual(palette.table.numberOfRows, 1)
+        XCTAssertTrue(model.setChipName("API_KEY", chip: chip, sheet: page))
+        let wrapped = model.wrapsLines
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertEqual(model.wrapsLines, !wrapped)
     }
 
 }
