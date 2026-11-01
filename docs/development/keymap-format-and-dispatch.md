@@ -170,21 +170,21 @@ log show --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.
 | registry | `Keymap/KeymapRegistry.swift` | `PageModel.perform(_:)`, one exhaustive switch. |
 | frameworks | `Keymap/KeystrokeBridge.swift` | `KeyboardShortcut`, menu equivalents, matching an `NSEvent`. |
 
-Three dispatch c󠄁a󠄁t󠄁e󠄁g󠄁o󠄁r󠄁i󠄁e󠄁s󠄁 (󠄁`CommandID.Dispatch`)󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁'󠄁s󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁.󠄁
-`PageKeyboardMap` i󠄁n󠄁s󠄁t󠄁a󠄁l󠄁l󠄁s󠄁 s󠄁u󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 b󠄁i󠄁n󠄁d󠄁i󠄁n󠄁g󠄁s󠄁 o󠄁n󠄁l󠄁y󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 t󠄁h󠄁a󠄁t󠄁 o󠄁w󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁
-p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 C󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁-󠄁b󠄁e󠄁a󠄁r󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 b󠄁a󠄁r󠄁e󠄁 s󠄁u󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 b󠄁i󠄁n󠄁d󠄁i󠄁n󠄁g󠄁s󠄁 u󠄁s󠄁e󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁U󠄁I󠄁 h󠄁i󠄁d󠄁d󠄁e󠄁n󠄁
-b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁s󠄁.󠄁 C󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁/󠄁O󠄁p󠄁t󠄁i󠄁o󠄁n󠄁 b󠄁i󠄁n󠄁d󠄁i󠄁n󠄁g󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 C󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁 u󠄁s󠄁e󠄁 a󠄁 t󠄁e󠄁x󠄁t󠄁-󠄁a󠄁w󠄁a󠄁r󠄁e󠄁 A󠄁p󠄁p󠄁K󠄁i󠄁t󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁:󠄁
-`InkTextView.keyDown` d󠄁i󠄁s󠄁p󠄁a󠄁t󠄁c󠄁h󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁m󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁g󠄁e󠄁 e󠄁d󠄁i󠄁t󠄁o󠄁r󠄁 h󠄁a󠄁s󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁,󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁
-r󠄁e󠄁f󠄁u󠄁s󠄁i󠄁n󠄁g󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁;󠄁 a󠄁 m󠄁o󠄁u󠄁n󠄁t󠄁e󠄁d󠄁 `SurfaceShortcutFallbackView` a󠄁n󠄁s󠄁w󠄁e󠄁r󠄁s󠄁
-t󠄁h󠄁e󠄁m󠄁 f󠄁r󠄁o󠄁m󠄁 e󠄁m󠄁p󠄁t󠄁y󠄁-󠄁s󠄁t󠄁a󠄁t󠄁e󠄁 a󠄁n󠄁d󠄁 o󠄁t󠄁h󠄁e󠄁r󠄁 n󠄁o󠄁n󠄁t󠄁e󠄁x󠄁t󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁d󠄁e󠄁r󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 s󠄁k󠄁i󠄁p󠄁s󠄁 e󠄁v󠄁e󠄁r󠄁y󠄁
-`NSTextView`,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 e󠄁d󠄁i󠄁t󠄁o󠄁r󠄁s󠄁,󠄁 s󠄁o󠄁 s󠄁e󠄁a󠄁r󠄁c󠄁h󠄁,󠄁 n󠄁a󠄁m󠄁i󠄁n󠄁g󠄁,󠄁 n󠄁o󠄁t󠄁e󠄁 a󠄁n󠄁d󠄁 o󠄁t󠄁h󠄁e󠄁r󠄁
-t󠄁e󠄁x󠄁t󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁s󠄁 k󠄁e󠄁e󠄁p󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 e󠄁d󠄁i󠄁t󠄁i󠄁n󠄁g󠄁 k󠄁e󠄁y󠄁s󠄁.󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 m󠄁o󠄁u󠄁n󠄁t󠄁 a󠄁 s󠄁u󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 m󠄁a󠄁p󠄁.󠄁
+Three dispatch categories (`CommandID.Dispatch`) select the command's route.
+`PageKeyboardMap` installs surface bindings only in the window that owns the
+presentation. Command-bearing and bare surface bindings use SwiftUI hidden
+buttons. Control/Option bindings without Command use a text-aware AppKit route:
+`InkTextView.keyDown` dispatches them while the page editor has focus, after
+refusing active composition; a mounted `SurfaceShortcutFallbackView` answers
+them from empty-state and other nontext responders. The fallback skips every
+`NSTextView`, including native field editors, so search, naming, note and other
+text fields keep their editing keys. Settings does not mount a surface map.
 
-E󠄁d󠄁i󠄁t󠄁o󠄁r󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁s󠄁 r󠄁u󠄁n󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁g󠄁e󠄁 t󠄁e󠄁x󠄁t󠄁 v󠄁i󠄁e󠄁w󠄁,󠄁 w󠄁h󠄁i󠄁c󠄁h󠄁 o󠄁w󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 c󠄁a󠄁r󠄁e󠄁t󠄁 a󠄁n󠄁d󠄁
-s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 W󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁s󠄁 (󠄁`window::Close`,󠄁 `app::Help` a󠄁n󠄁d󠄁
-`app::CommandPalette`)󠄁 u󠄁s󠄁e󠄁 m󠄁a󠄁i󠄁n󠄁-󠄁m󠄁e󠄁n󠄁u󠄁 e󠄁q󠄁u󠄁i󠄁v󠄁a󠄁l󠄁e󠄁n󠄁t󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁o󠄁r󠄁 r󠄁e󠄁p󠄁o󠄁r󠄁t󠄁s󠄁 a󠄁
-w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁 o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 a󠄁 `use_key_equivalents` s󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁s󠄁
-`windowCommandWithoutKeyEquivalents`.󠄁
+Editor commands run through the page text view, which owns their caret and
+selection. Window commands (`window::Close`, `app::Help` and
+`app::CommandPalette`) use main-menu equivalents. The validator reports a
+window command bound outside a `use_key_equivalents` section as
+`windowCommandWithoutKeyEquivalents`.
 
 ## What is not in the map
 

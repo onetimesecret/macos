@@ -1,151 +1,151 @@
 # Markdown image loading: review and validation scope
 
-P󠄁R󠄁 D󠄁 i󠄁s󠄁 [#󠄁3󠄁3󠄁6󠄁](https://github.com/onetimesecret/macos/pull/336),󠄁 b󠄁a󠄁s󠄁e󠄁d󠄁 o󠄁n󠄁
-`b5240e27`.󠄁 T󠄁h󠄁e󠄁 [r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁](../spec/design/2026-1028-preview-image-loading.md)
-i󠄁s󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁s󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁b󠄁s󠄁e󠄁r󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁
-a󠄁n󠄁d󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁;󠄁 i󠄁t󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁 n󠄁e󠄁w󠄁 p󠄁r󠄁o󠄁j󠄁e󠄁c󠄁t󠄁 r󠄁e󠄁q󠄁u󠄁i󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁s󠄁.󠄁
+PR D is [#336](https://github.com/onetimesecret/macos/pull/336), based on
+`b5240e27`. The [request policy](../spec/design/2026-1028-preview-image-loading.md)
+is proposed for review. This record describes implementation observations
+and validation scope; it does not establish new project requirements.
 
 ## First Claude review dispositions
 
-T󠄁h󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 o󠄁n󠄁 `56398375` i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁f󠄁i󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁i󠄁n󠄁g󠄁 w󠄁o󠄁r󠄁k󠄁:󠄁
+The review on `56398375` identified the following work:
 
-| I󠄁t󠄁e󠄁m󠄁 | D󠄁i󠄁s󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 |
+| Item | Disposition |
 | --- | --- |
-| 1󠄁:󠄁 M󠄁a󠄁i󠄁n󠄁-󠄁t󠄁h󠄁r󠄁e󠄁a󠄁d󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 t󠄁r󠄁a󠄁n󠄁s󠄁i󠄁e󠄁n󠄁t󠄁 p󠄁i󠄁x󠄁e󠄁l󠄁s󠄁 | I󠄁m󠄁a󠄁g󠄁e󠄁I󠄁O󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁i󠄁n󠄁g󠄁 u󠄁s󠄁e󠄁s󠄁 a󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 s󠄁e󠄁r󠄁i󠄁a󠄁l󠄁 a󠄁c󠄁t󠄁o󠄁r󠄁.󠄁 N󠄁S󠄁I󠄁m󠄁a󠄁g󠄁e󠄁 i󠄁n󠄁s󠄁t󠄁a󠄁l󠄁l󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁t󠄁u󠄁r󠄁n󠄁s󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 m󠄁a󠄁i󠄁n󠄁 a󠄁c󠄁t󠄁o󠄁r󠄁.󠄁 T󠄁h󠄁e󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁s󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 1󠄁6󠄁-󠄁m󠄁i󠄁l󠄁l󠄁i󠄁o󠄁n󠄁-󠄁p󠄁i󠄁x󠄁e󠄁l󠄁 c󠄁e󠄁i󠄁l󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 a󠄁p󠄁p󠄁r󠄁o󠄁x󠄁i󠄁m󠄁a󠄁t󠄁e󠄁 R󠄁G󠄁B󠄁A󠄁 f󠄁r󠄁a󠄁m󠄁e󠄁 s󠄁i󠄁z󠄁e󠄁.󠄁 |
-| 2󠄁:󠄁 R󠄁e󠄁p󠄁l󠄁a󠄁c󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 w󠄁h󠄁o󠄁l󠄁e󠄁 s󠄁t󠄁o󠄁r󠄁a󠄁g󠄁e󠄁 d󠄁u󠄁r󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁s󠄁i󠄁z󠄁e󠄁 | E󠄁a󠄁c󠄁h󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 h󠄁a󠄁s󠄁 t󠄁w󠄁o󠄁 s󠄁t󠄁a󠄁b󠄁l󠄁e󠄁 a󠄁t󠄁t󠄁a󠄁c󠄁h󠄁m󠄁e󠄁n󠄁t󠄁 p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 L󠄁o󠄁a󠄁d󠄁,󠄁 u󠄁n󠄁l󠄁o󠄁a󠄁d󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁s󠄁i󠄁z󠄁e󠄁 u󠄁p󠄁d󠄁a󠄁t󠄁e󠄁 a󠄁t󠄁t󠄁a󠄁c󠄁h󠄁m󠄁e󠄁n󠄁t󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁s󠄁 a󠄁t󠄁 t󠄁h󠄁o󠄁s󠄁e󠄁 p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁;󠄁 f󠄁u󠄁l󠄁l󠄁 s󠄁t󠄁o󠄁r󠄁a󠄁g󠄁e󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 i󠄁s󠄁 r󠄁e󠄁s󠄁t󠄁r󠄁i󠄁c󠄁t󠄁e󠄁d󠄁 t󠄁o󠄁 s󠄁e󠄁e󠄁d󠄁i󠄁n󠄁g󠄁.󠄁 |
-| 3󠄁:󠄁 S󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁a󠄁d󠄁i󠄁n󠄁g󠄁-󠄁p󠄁l󠄁a󠄁c󠄁e󠄁 d󠄁r󠄁i󠄁f󠄁t󠄁 | I󠄁m󠄁a󠄁g󠄁e󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 t󠄁h󠄁e󠄁 t󠄁e󠄁x󠄁t󠄁'󠄁s󠄁 U󠄁T󠄁F󠄁-󠄁1󠄁6󠄁 p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 R󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 t󠄁r󠄁a󠄁c󠄁k󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 a󠄁 s󠄁e󠄁n󠄁t󠄁i󠄁n󠄁e󠄁l󠄁 o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 r󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁e󠄁d󠄁 r󠄁e󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 l󠄁i󠄁n󠄁e󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁,󠄁 u󠄁n󠄁l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁s󠄁i󠄁z󠄁i󠄁n󠄁g󠄁.󠄁 |
-| 4󠄁:󠄁 S󠄁p󠄁e󠄁c󠄁i󠄁a󠄁l󠄁-󠄁u󠄁s󠄁e󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 p󠄁o󠄁r󠄁t󠄁 s󠄁p󠄁e󠄁l󠄁l󠄁i󠄁n󠄁g󠄁 | T󠄁h󠄁e󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 A󠄁R󠄁P󠄁A󠄁 s󠄁u󠄁f󠄁f󠄁i󠄁x󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁r󠄁m󠄁a󠄁l󠄁i󠄁z󠄁e󠄁s󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 p󠄁o󠄁r󠄁t󠄁 4󠄁4󠄁3󠄁.󠄁 F󠄁o󠄁u󠄁n󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁'󠄁s󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 i󠄁s󠄁 t󠄁e󠄁s󠄁t󠄁e󠄁d󠄁:󠄁 U󠄁n󠄁i󠄁c󠄁o󠄁d󠄁e󠄁 a󠄁n󠄁d󠄁 p󠄁u󠄁n󠄁y󠄁c󠄁o󠄁d󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁i󠄁z󠄁e󠄁d󠄁 n󠄁a󠄁m󠄁e󠄁s󠄁 a󠄁r󠄁e󠄁 c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁l󠄁y󠄁 u󠄁n󠄁a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁.󠄁 |
-| 5󠄁:󠄁 D󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁 h󠄁e󠄁a󠄁d󠄁e󠄁r󠄁s󠄁 | R󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁s󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁 s󠄁e󠄁t󠄁 U󠄁s󠄁e󠄁r󠄁-󠄁A󠄁g󠄁e󠄁n󠄁t󠄁 t󠄁o󠄁 O󠄁n󠄁e󠄁t󠄁i󠄁m󠄁e󠄁P󠄁a󠄁d󠄁-󠄁I󠄁m󠄁a󠄁g󠄁e󠄁P󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 a󠄁n󠄁d󠄁 A󠄁c󠄁c󠄁e󠄁p󠄁t󠄁-󠄁L󠄁a󠄁n󠄁g󠄁u󠄁a󠄁g󠄁e󠄁 t󠄁o󠄁 a󠄁 w󠄁i󠄁l󠄁d󠄁c󠄁a󠄁r󠄁d󠄁.󠄁 T󠄁e󠄁s󠄁t󠄁s󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁 b󠄁o󠄁t󠄁h󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁s󠄁.󠄁 |
-| 6󠄁:󠄁 E󠄁n󠄁g󠄁l󠄁i󠄁s󠄁h󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 e󠄁n󠄁t󠄁r󠄁i󠄁e󠄁s󠄁 | I󠄁m󠄁a󠄁g󠄁e󠄁 s󠄁t󠄁r󠄁i󠄁n󠄁g󠄁s󠄁 h󠄁a󠄁v󠄁e󠄁 E󠄁n󠄁g󠄁l󠄁i󠄁s󠄁h󠄁 r󠄁e󠄁s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 e󠄁n󠄁t󠄁r󠄁i󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 s󠄁e󠄁m󠄁a󠄁n󠄁t󠄁i󠄁c󠄁 f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁 k󠄁e󠄁y󠄁s󠄁 f󠄁o󠄁r󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁/󠄁d󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁s󠄁.󠄁 |
-| 7󠄁:󠄁 M󠄁u󠄁t󠄁a󠄁b󠄁l󠄁e󠄁 s󠄁h󠄁i󠄁p󠄁p󠄁i󠄁n󠄁g󠄁 l󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 s󠄁e󠄁a󠄁m󠄁 | A󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁e󠄁d󠄁 P󠄁a󠄁g󠄁e󠄁M󠄁o󠄁d󠄁e󠄁l󠄁.󠄁S󠄁e󠄁a󠄁m󠄁s󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁i󠄁z󠄁e󠄁r󠄁 a󠄁r󠄁g󠄁u󠄁m󠄁e󠄁n󠄁t󠄁 r󠄁e󠄁s󠄁o󠄁l󠄁v󠄁e󠄁s󠄁 o󠄁n󠄁c󠄁e󠄁 t󠄁o󠄁 a󠄁n󠄁 i󠄁m󠄁m󠄁u󠄁t󠄁a󠄁b󠄁l󠄁e󠄁 m󠄁o󠄁d󠄁e󠄁l󠄁 l󠄁o󠄁a󠄁d󠄁e󠄁r󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁'󠄁 i󠄁m󠄁m󠄁u󠄁t󠄁a󠄁b󠄁l󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁i󠄁z󠄁e󠄁r󠄁 d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁c󠄁y󠄁.󠄁 T󠄁h󠄁e󠄁 m󠄁u󠄁t󠄁a󠄁b󠄁l󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁r󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁s󠄁 o󠄁n󠄁l󠄁y󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁 t󠄁a󠄁r󠄁g󠄁e󠄁t󠄁.󠄁 |
-| 8󠄁:󠄁 C󠄁o󠄁n󠄁s󠄁e󠄁n󠄁t󠄁 b󠄁a󠄁s󠄁e󠄁d󠄁 o󠄁n󠄁l󠄁y󠄁 o󠄁n󠄁 p󠄁l󠄁a󠄁i󠄁n󠄁 t󠄁e󠄁x󠄁t󠄁 | C󠄁o󠄁n󠄁s󠄁e󠄁n󠄁t󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁r󠄁e󠄁s󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁o󠄁r󠄁 d󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁,󠄁 o󠄁c󠄁c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁a󠄁n󠄁g󠄁e󠄁s󠄁.󠄁 T󠄁e󠄁s󠄁t󠄁s󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁r󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 r󠄁a󠄁n󠄁g󠄁e󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 k󠄁e󠄁e󠄁p󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 t󠄁e󠄁x󠄁t󠄁 i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁c󠄁a󠄁l󠄁.󠄁 |
-| 9󠄁:󠄁 D󠄁e󠄁c󠄁o󠄁r󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 a󠄁l󠄁t󠄁 t󠄁e󠄁x󠄁t󠄁 e󠄁n󠄁t󠄁e󠄁r󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁p󠄁i󠄁e󠄁s󠄁 | E󠄁m󠄁p󠄁t󠄁y󠄁 a󠄁l󠄁t󠄁 t󠄁e󠄁x󠄁t󠄁 u󠄁s󠄁e󠄁s󠄁 a󠄁 n󠄁o󠄁n󠄁p󠄁r󠄁i󠄁n󠄁t󠄁i󠄁n󠄁g󠄁 p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 m󠄁a󠄁r󠄁k󠄁e󠄁r󠄁 s󠄁o󠄁l󠄁e󠄁l󠄁y󠄁 f󠄁o󠄁r󠄁 l󠄁o󠄁c󠄁a󠄁t󠄁i󠄁n󠄁g󠄁 i󠄁t󠄁s󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁;󠄁 t󠄁h󠄁a󠄁t󠄁 m󠄁a󠄁r󠄁k󠄁e󠄁r󠄁 i󠄁s󠄁 e󠄁x󠄁c󠄁l󠄁u󠄁d󠄁e󠄁d󠄁 f󠄁r󠄁o󠄁m󠄁 c󠄁o󠄁p󠄁i󠄁e󠄁d󠄁 i󠄁n󠄁k󠄁.󠄁 I󠄁t󠄁 a󠄁d󠄁d󠄁s󠄁 n󠄁o󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 s󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 a󠄁l󠄁t󠄁 t󠄁e󠄁x󠄁t󠄁.󠄁 |
-| 1󠄁0󠄁:󠄁 K󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 a󠄁n󠄁d󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 | H󠄁u󠄁m󠄁a󠄁n󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 o󠄁u󠄁t󠄁s󠄁t󠄁a󠄁n󠄁d󠄁i󠄁n󠄁g󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 T󠄁a󠄁b󠄁/󠄁S󠄁p󠄁a󠄁c󠄁e󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 p󠄁e󠄁r󠄁s󠄁o󠄁n󠄁'󠄁s󠄁 k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁-󠄁n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁,󠄁 t󠄁h󠄁e󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁s󠄁'󠄁 r󠄁e󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁d󠄁e󠄁r󠄁,󠄁 a󠄁n󠄁d󠄁 a󠄁n󠄁n󠄁o󠄁u󠄁n󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 o󠄁f󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁/󠄁f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁s󠄁.󠄁 A󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁e󠄁d󠄁 m󠄁e󠄁t󠄁a󠄁d󠄁a󠄁t󠄁a󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 d󠄁o󠄁 n󠄁o󠄁t󠄁 c󠄁e󠄁r󠄁t󠄁i󠄁f󠄁y󠄁 t󠄁h󠄁o󠄁s󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 |
-| 1󠄁1󠄁:󠄁 R󠄁e󠄁m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 d󠄁u󠄁r󠄁i󠄁n󠄁g󠄁 a󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁 p󠄁a󠄁s󠄁s󠄁 | I󠄁m󠄁a󠄁g󠄁e󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 s󠄁c󠄁h󠄁e󠄁d󠄁u󠄁l󠄁e󠄁 r󠄁o󠄁l󠄁l󠄁 r󠄁e󠄁m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 o󠄁n󠄁 t󠄁h󠄁e󠄁 n󠄁e󠄁x󠄁t󠄁 m󠄁a󠄁i󠄁n󠄁-󠄁a󠄁c󠄁t󠄁o󠄁r󠄁 t󠄁u󠄁r󠄁n󠄁 i󠄁n󠄁s󠄁t󠄁e󠄁a󠄁d󠄁 o󠄁f󠄁 d󠄁r󠄁o󠄁p󠄁p󠄁i󠄁n󠄁g󠄁 i󠄁t󠄁 w󠄁h󠄁e󠄁n󠄁 a󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁 i󠄁s󠄁 a󠄁l󠄁r󠄁e󠄁a󠄁d󠄁y󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁e󠄁.󠄁 |
+| 1: Main-thread decoding and transient pixels | ImageIO decoding uses a shared serial actor. NSImage installation returns to the main actor. The policy records the retained 16-million-pixel ceiling and approximate RGBA frame size. |
+| 2: Replacing the whole storage during resize | Each image has two stable attachment positions. Load, unload and resize update attachment attributes at those positions; full storage replacement is restricted to seeding. |
+| 3: Selection and reading-place drift | Image state changes preserve the text's UTF-16 positions. Regression tests track selection, a sentinel outside image ranges and a restored reading line through loading, unloading and resizing. |
+| 4: Special-use hostnames and port spelling | The policy refuses the ARPA suffix and normalizes explicit port 443. Foundation's decoded hostname behavior is tested: Unicode and punycode internationalized names are currently unavailable. |
+| 5: Default request headers | Requests explicitly set User-Agent to OnetimePad-ImagePreview and Accept-Language to a wildcard. Tests inspect both values. |
+| 6: English localization entries | Image strings have English resource entries and semantic format keys for action/destination and accessibility labels. |
+| 7: Mutable shipping loader seam | A defaulted PageModel.Seams initializer argument resolves once to an immutable model loader, then to the controls' immutable initializer dependency. The mutable recorder exists only in the test target. |
+| 8: Consent based only on plain text | Consent preservation compares descriptor destinations, occurrences and ranges. Tests change the destination or image range while keeping rendered text identical. |
+| 9: Decorative alt text entering copies | Empty alt text uses a nonprinting position marker solely for locating its control; that marker is excluded from copied ink. It adds no visible synthetic alt text. |
+| 10: Keyboard and VoiceOver navigation | Human validation remains outstanding, including Tab/Space with the person's keyboard-navigation settings, the image buttons' reading order, and announcement of loading/failure states. Automated metadata checks do not certify those interactions. |
+| 11: Remeasurement during a layout pass | Image state changes schedule roll remeasurement on the next main-actor turn instead of dropping it when a layout is already active. |
 
-T󠄁h󠄁e󠄁 l󠄁o󠄁c󠄁k󠄁 i󠄁s󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁d󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 r󠄁e󠄁s󠄁u󠄁m󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 U󠄁R󠄁L󠄁S󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 t󠄁a󠄁s󠄁k󠄁;󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁o󠄁r󠄁 e󠄁n󠄁u󠄁m󠄁e󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
-s󠄁t󠄁o󠄁p󠄁s󠄁 a󠄁t󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁;󠄁 c󠄁o󠄁n󠄁f󠄁i󠄁g󠄁u󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁p󠄁i󠄁e󠄁s󠄁 h󠄁a󠄁v󠄁e󠄁 a󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁a󠄁n󠄁
-f󠄁o󠄁r󠄁c󠄁e󠄁d󠄁 c󠄁a󠄁s󠄁t󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 p󠄁i󠄁x󠄁e󠄁l󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁r󠄁i󠄁s󠄁o󠄁n󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁s󠄁 d󠄁i󠄁v󠄁i󠄁s󠄁i󠄁o󠄁n󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁v󠄁e󠄁 d󠄁i󠄁m󠄁e󠄁n󠄁s󠄁i󠄁o󠄁n󠄁s󠄁
-a󠄁r󠄁e󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁.󠄁 F󠄁i󠄁x󠄁e󠄁d󠄁-󠄁w󠄁i󠄁d󠄁t󠄁h󠄁,󠄁 m󠄁i󠄁d󠄁d󠄁l󠄁e󠄁-󠄁t󠄁r󠄁u󠄁n󠄁c󠄁a󠄁t󠄁e󠄁d󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁s󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁
-d󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 t󠄁o󠄁o󠄁l󠄁t󠄁i󠄁p󠄁 a󠄁n󠄁d󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 h󠄁e󠄁l󠄁p󠄁.󠄁
+The lock is released before resuming the URLSession task; descriptor enumeration
+stops at the control budget; configuration copies have a fallback rather than
+forced casts. The pixel comparison retains division after positive dimensions
+are established. Fixed-width, middle-truncated buttons retain the complete
+destination in their tooltip and accessibility help.
 
 ## Updated Claude review dispositions
 
-T󠄁h󠄁e󠄁 t󠄁w󠄁o󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 o󠄁f󠄁 `f7f57df1` r󠄁a󠄁i󠄁s󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 s󠄁a󠄁m󠄁e󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁-󠄁u󠄁p󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁 U󠄁R󠄁L󠄁 n󠄁o󠄁w󠄁
-u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁a󠄁c󠄁t󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁e󠄁d󠄁,󠄁 l󠄁o󠄁w󠄁e󠄁r󠄁c󠄁a󠄁s󠄁e󠄁d󠄁 A󠄁S󠄁C󠄁I󠄁I󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁;󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁c󠄁e󠄁p󠄁t󠄁e󠄁d󠄁 t󠄁r󠄁a󠄁n󠄁s󠄁p󠄁o󠄁r󠄁t󠄁
-t󠄁e󠄁s󠄁t󠄁s󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁 p󠄁e󠄁r󠄁c󠄁e󠄁n󠄁t󠄁-󠄁e󠄁n󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 h󠄁o󠄁s󠄁t󠄁 s󠄁p󠄁e󠄁l󠄁l󠄁i󠄁n󠄁g󠄁.󠄁 D󠄁i󠄁s󠄁c󠄁a󠄁r󠄁d󠄁i󠄁n󠄁g󠄁 p󠄁i󠄁x󠄁e󠄁l󠄁s󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁s󠄁 a󠄁
-d󠄁e󠄁f󠄁e󠄁r󠄁r󠄁e󠄁d󠄁 r󠄁e󠄁m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 a󠄁n󠄁d󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁 n󠄁o󠄁t󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 O󠄁w󠄁n󠄁e󠄁r󠄁s󠄁h󠄁i󠄁p󠄁 a󠄁n󠄁d󠄁
-w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 d󠄁e󠄁t󠄁e󠄁r󠄁m󠄁i󠄁n󠄁e󠄁 w󠄁h󠄁e󠄁t󠄁h󠄁e󠄁r󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 a󠄁r󠄁e󠄁 e󠄁n󠄁a󠄁b󠄁l󠄁e󠄁d󠄁,󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 r󠄁u󠄁n󠄁n󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁
-p󠄁a󠄁g󠄁e󠄁'󠄁s󠄁 s󠄁e󠄁t󠄁t󠄁l󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁a󠄁d󠄁 g󠄁a󠄁t󠄁e󠄁 d󠄁u󠄁r󠄁i󠄁n󠄁g󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁;󠄁 a󠄁n󠄁 a󠄁t󠄁t󠄁e󠄁m󠄁p󠄁t󠄁e󠄁d󠄁 e󠄁x󠄁p󠄁i󠄁r󠄁e󠄁d󠄁-󠄁p󠄁a󠄁g󠄁e󠄁 l󠄁o󠄁a󠄁d󠄁
-u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 l󠄁i󠄁n󠄁e󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁n󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁.󠄁
+The two reviews of `f7f57df1` raised the same follow-ups. The request URL now
+uses the exact validated, lowercased ASCII hostname; intercepted transport
+tests include percent-encoded host spelling. Discarding pixels requests a
+deferred remeasurement and accessibility layout notification. Ownership and
+window state determine whether controls are enabled, without running the
+page's settling read gate during layout; an attempted expired-page load
+uses the existing refusal line and then disables the control.
 
-T󠄁h󠄁e󠄁 l󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁c󠄁y󠄁 i󠄁s󠄁 c󠄁a󠄁p󠄁t󠄁u󠄁r󠄁e󠄁d󠄁 a󠄁t󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 A󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁
-h󠄁i󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 t󠄁h󠄁e󠄁 m󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁r󠄁e󠄁a󠄁d󠄁 f󠄁a󠄁l󠄁l󠄁 b󠄁a󠄁c󠄁k󠄁 t󠄁o󠄁 A󠄁p󠄁p󠄁K󠄁i󠄁t󠄁.󠄁 A󠄁 r󠄁e󠄁e󠄁n󠄁t󠄁r󠄁a󠄁n󠄁t󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁
-p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁s󠄁 a󠄁n󠄁o󠄁t󠄁h󠄁e󠄁r󠄁 p󠄁a󠄁s󠄁s󠄁,󠄁 a󠄁n󠄁d󠄁 a󠄁 g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁-󠄁m󠄁a󠄁t󠄁c󠄁h󠄁e󠄁d󠄁 t󠄁a󠄁s󠄁k󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁i󠄁o󠄁n󠄁
-r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁s󠄁 a󠄁n󠄁y󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁i󠄁n󠄁g󠄁 c󠄁a󠄁p󠄁a󠄁c󠄁i󠄁t󠄁y󠄁 r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 T󠄁e󠄁s󠄁t󠄁s󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁 d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁 d󠄁i󠄁s󠄁c󠄁a󠄁r󠄁d󠄁
-h󠄁e󠄁i󠄁g󠄁h󠄁t󠄁,󠄁 e󠄁x󠄁p󠄁i󠄁r󠄁y󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁,󠄁 s󠄁e󠄁l󠄁f󠄁-󠄁c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁l󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁e󠄁n󠄁t󠄁r󠄁a󠄁n󠄁t󠄁 d󠄁i󠄁s󠄁c󠄁a󠄁r󠄁d󠄁.󠄁
+The loader dependency is captured at preview initialization. Accessibility
+hit tests outside the main thread fall back to AppKit. A reentrant image
+presentation requests another pass, and a generation-matched task completion
+releases any remaining capacity reservation. Tests cover direct discard
+height, expiry feedback, self-cancellation and reentrant discard.
 
-T󠄁h󠄁e󠄁 d󠄁e󠄁c󠄁o󠄁r󠄁a󠄁t󠄁i󠄁v󠄁e󠄁-󠄁i󠄁m󠄁a󠄁g󠄁e󠄁 p󠄁a󠄁r󠄁a󠄁g󠄁r󠄁a󠄁p󠄁h󠄁 a󠄁n󠄁d󠄁 u󠄁n󠄁d󠄁e󠄁r󠄁l󠄁y󠄁i󠄁n󠄁g󠄁 A󠄁p󠄁p󠄁K󠄁i󠄁t󠄁 m󠄁a󠄁r󠄁k󠄁e󠄁r󠄁 p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁r󠄁e󠄁
-d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁e󠄁d󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁.󠄁 S󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 p󠄁i󠄁x󠄁e󠄁l󠄁s󠄁 a󠄁r󠄁e󠄁 t󠄁r󠄁e󠄁a󠄁t󠄁e󠄁d󠄁 a󠄁s󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁
-b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 f󠄁i󠄁t󠄁t󠄁i󠄁n󠄁g󠄁 t󠄁o󠄁 d󠄁i󠄁s󠄁p󠄁l󠄁a󠄁y󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 t󠄁r󠄁a󠄁n󠄁s󠄁f󠄁e󠄁r󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁
-a󠄁d󠄁v󠄁e󠄁r󠄁t󠄁i󠄁s󠄁e󠄁d󠄁 l󠄁e󠄁n󠄁g󠄁t󠄁h󠄁 f󠄁r󠄁o󠄁m󠄁 d󠄁a󠄁t󠄁a󠄁 d󠄁e󠄁l󠄁i󠄁v󠄁e󠄁r󠄁e󠄁d󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 T󠄁e󠄁x󠄁t󠄁P󠄁r󠄁o󠄁v󠄁 m󠄁a󠄁r󠄁k󠄁s󠄁
-a󠄁r󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁n󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁.󠄁 M󠄁o󠄁u󠄁n󠄁t󠄁e󠄁d󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 s󠄁e󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁
-t󠄁e󠄁a󠄁r󠄁d󠄁o󠄁w󠄁n󠄁;󠄁 t󠄁h󠄁e󠄁 t󠄁e󠄁a󠄁r󠄁d󠄁o󠄁w󠄁n󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁o󠄁r󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 a󠄁d󠄁d󠄁 a󠄁 n󠄁e󠄁w󠄁 l󠄁o󠄁a󠄁d󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁.󠄁
+The decorative-image paragraph and underlying AppKit marker positions are
+documented in the proposed policy. Source image pixels are treated as points
+before fitting to display bounds. The transfer policy distinguishes the
+advertised length from data delivered to the application. TextProv marks
+are intentional and retained. Mounted previews seed their controls before
+teardown; the teardown accessor does not add a new load route.
 
 ## Final Claude review dispositions
 
-T󠄁h󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 o󠄁f󠄁 `66597eb8` f󠄁o󠄁u󠄁n󠄁d󠄁 n󠄁o󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁.󠄁 R󠄁e󠄁s󠄁i󠄁z󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁s󠄁
-c󠄁o󠄁a󠄁l󠄁e󠄁s󠄁c󠄁e󠄁d󠄁 o󠄁n󠄁t󠄁o󠄁 a󠄁 l󠄁a󠄁t󠄁e󠄁r󠄁 m󠄁a󠄁i󠄁n󠄁-󠄁a󠄁c󠄁t󠄁o󠄁r󠄁 t󠄁u󠄁r󠄁n󠄁,󠄁 a󠄁n󠄁d󠄁 c󠄁l󠄁o󠄁s󠄁i󠄁n󠄁g󠄁 a󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁s󠄁
-i󠄁t󠄁s󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 w󠄁o󠄁r󠄁k󠄁.󠄁 E󠄁n󠄁t󠄁r󠄁y󠄁 d󠄁e󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁l󠄁s󠄁o󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁s󠄁 i󠄁t󠄁s󠄁 t󠄁a󠄁s󠄁k󠄁.󠄁 I󠄁d󠄁l󠄁e󠄁 d󠄁i󠄁s󠄁c󠄁a󠄁r󠄁d󠄁 u󠄁p󠄁d󠄁a󠄁t󠄁e󠄁s󠄁
-b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁 e󠄁l󠄁i󠄁g󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁n󠄁 u󠄁n󠄁n󠄁e󠄁c󠄁e󠄁s󠄁s󠄁a󠄁r󠄁y󠄁 r󠄁o󠄁l󠄁l󠄁 p󠄁a󠄁s󠄁s󠄁 o󠄁r󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁
-a󠄁n󠄁n󠄁o󠄁u󠄁n󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁.󠄁 A󠄁p󠄁p󠄁r󠄁o󠄁v󠄁e󠄁d󠄁 a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 s󠄁p󠄁o󠄁k󠄁e󠄁n󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁s󠄁 a󠄁r󠄁e󠄁 c󠄁a󠄁c󠄁h󠄁e󠄁d󠄁 a󠄁t󠄁 s󠄁e󠄁e󠄁d󠄁i󠄁n󠄁g󠄁;󠄁
-s󠄁p󠄁o󠄁k󠄁e󠄁n󠄁 a󠄁l󠄁t󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁s󠄁 a󠄁r󠄁e󠄁 c󠄁a󠄁p󠄁p󠄁e󠄁d󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 a󠄁l󠄁t󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁.󠄁
+The review of `66597eb8` found no blocking defect. Resize presentation is
+coalesced onto a later main-actor turn, and closing a retained window cancels
+its image work. Entry destruction also cancels its task. Idle discard updates
+button eligibility without an unnecessary roll pass or accessibility layout
+announcement. Approved addresses and spoken labels are cached at seeding;
+spoken alt labels are capped while the complete rendered alt remains available.
 
-I󠄁n󠄁v󠄁a󠄁l󠄁i󠄁d󠄁 s󠄁t󠄁o󠄁r󠄁a󠄁g󠄁e󠄁 r󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 h󠄁i󠄁d󠄁e󠄁 t󠄁h󠄁e󠄁 a󠄁s󠄁s󠄁o󠄁c󠄁i󠄁a󠄁t󠄁e󠄁d󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁s󠄁e󠄁r󠄁v󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁
-p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁 a󠄁l󠄁s󠄁o󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁s󠄁 o󠄁n󠄁i󠄁o󠄁n󠄁,󠄁 i󠄁2󠄁p󠄁,󠄁 a󠄁l󠄁t󠄁 a󠄁n󠄁d󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁d󠄁o󠄁m󠄁a󠄁i󠄁n󠄁 s󠄁u󠄁f󠄁f󠄁i󠄁x󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 s󠄁y󠄁n󠄁c󠄁h󠄁r󠄁o󠄁n󠄁o󠄁u󠄁s󠄁
-d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 l󠄁i󠄁v󠄁e󠄁s󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁 t󠄁a󠄁r󠄁g󠄁e󠄁t󠄁,󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 s󠄁i󠄁d󠄁e󠄁-󠄁e󠄁f󠄁f󠄁e󠄁c󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁
-i󠄁s󠄁 n󠄁a󠄁m󠄁e󠄁d󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁e󠄁I󠄁m󠄁a󠄁g󠄁e󠄁L󠄁o󠄁a󠄁d󠄁.󠄁 T󠄁e󠄁x󠄁t󠄁P󠄁r󠄁o󠄁v󠄁 m󠄁a󠄁r󠄁k󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 i󠄁n󠄁t󠄁e󠄁n󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁.󠄁 D󠄁e󠄁c󠄁o󠄁r󠄁a󠄁t󠄁i󠄁v󠄁e󠄁
-c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 r󠄁o󠄁w󠄁s󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 r󠄁e󠄁q󠄁u󠄁i󠄁r󠄁e󠄁 t󠄁h󠄁e󠄁 p󠄁l󠄁a󠄁n󠄁n󠄁e󠄁d󠄁 h󠄁u󠄁m󠄁a󠄁n󠄁 U󠄁X󠄁 p󠄁a󠄁s󠄁s󠄁.󠄁
+Invalid storage ranges hide the associated buttons. The conservative hostname
+policy also refuses onion, i2p, alt and localdomain suffixes. The synchronous
+decode fixture lives in the test target, and the side-effecting action check
+is named authorizeImageLoad. TextProv marks remain intentional. Decorative
+control rows still require the planned human UX pass.
 
-P󠄁l󠄁a󠄁t󠄁f󠄁o󠄁r󠄁m󠄁 T󠄁L󠄁S󠄁-󠄁v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁,󠄁 c󠄁o󠄁n󠄁n󠄁e󠄁c󠄁t󠄁i󠄁v󠄁i󠄁t󠄁y󠄁 a󠄁n󠄁d󠄁 n󠄁e󠄁t󠄁w󠄁o󠄁r󠄁k󠄁-󠄁c󠄁o󠄁s󠄁t󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁.󠄁
-T󠄁h󠄁e󠄁 p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 l󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 u󠄁s󠄁e󠄁s󠄁 a󠄁n󠄁 e󠄁p󠄁h󠄁e󠄁m󠄁e󠄁r󠄁a󠄁l󠄁 c󠄁o󠄁n󠄁f󠄁i󠄁g󠄁u󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁;󠄁 U󠄁R󠄁L󠄁P󠄁r󠄁o󠄁t󠄁o󠄁c󠄁o󠄁l󠄁 i󠄁n󠄁j󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁
-s󠄁u󠄁p󠄁p󠄁o󠄁r󠄁t󠄁s󠄁 d󠄁e󠄁t󠄁e󠄁r󠄁m󠄁i󠄁n󠄁i󠄁s󠄁t󠄁i󠄁c󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁.󠄁 N󠄁o󠄁 b󠄁r󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 g󠄁u󠄁a󠄁r󠄁a󠄁n󠄁t󠄁e󠄁e󠄁 a󠄁b󠄁o󠄁u󠄁t󠄁 a󠄁r󠄁b󠄁i󠄁t󠄁r󠄁a󠄁r󠄁y󠄁 i󠄁n󠄁-󠄁p󠄁r󠄁o󠄁c󠄁e󠄁s󠄁s󠄁
-c󠄁o󠄁n󠄁f󠄁i󠄁g󠄁u󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁s󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁.󠄁
+Platform TLS-version, connectivity and network-cost defaults remain unchanged.
+The production loader uses an ephemeral configuration; URLProtocol injection
+supports deterministic tests. No broader guarantee about arbitrary in-process
+configuration is proposed.
 
 ## Small final review follow-ups
 
-T󠄁h󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 o󠄁f󠄁 `3b2d8d01` f󠄁o󠄁u󠄁n󠄁d󠄁 n󠄁o󠄁 i󠄁n󠄁d󠄁i󠄁v󠄁i󠄁d󠄁u󠄁a󠄁l󠄁 m󠄁e󠄁r󠄁g󠄁e󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁e󠄁r󠄁.󠄁 A󠄁C󠄁E󠄁-󠄁p󠄁r󠄁e󠄁f󠄁i󠄁x󠄁e󠄁d󠄁
-h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁s󠄁 a󠄁r󠄁e󠄁 n󠄁o󠄁w󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁d󠄁,󠄁 e󠄁m󠄁p󠄁t󠄁y󠄁-󠄁i󠄁m󠄁a󠄁g󠄁e󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 s󠄁k󠄁i󠄁p󠄁 r󠄁e󠄁s󠄁i󠄁z󠄁e󠄁
-w󠄁o󠄁r󠄁k󠄁,󠄁 a󠄁n󠄁d󠄁 h󠄁i󠄁d󠄁d󠄁e󠄁n󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 a󠄁r󠄁e󠄁 e󠄁x󠄁c󠄁l󠄁u󠄁d󠄁e󠄁d󠄁 f󠄁r󠄁o󠄁m󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 c󠄁h󠄁i󠄁l󠄁d󠄁r󠄁e󠄁n󠄁 a󠄁n󠄁d󠄁 h󠄁i󠄁t󠄁
-t󠄁e󠄁s󠄁t󠄁i󠄁n󠄁g󠄁.󠄁 H󠄁e󠄁a󠄁d󠄁 t󠄁r󠄁u󠄁n󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁u󠄁f󠄁f󠄁i󠄁x󠄁 i󠄁n󠄁 n󠄁a󠄁r󠄁r󠄁o󠄁w󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁.󠄁
-T󠄁h󠄁e󠄁 n󠄁o󠄁-󠄁c󠄁o󠄁o󠄁r󠄁d󠄁i󠄁n󠄁a󠄁t󠄁o󠄁r󠄁 l󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁s󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁s󠄁,󠄁 a󠄁n󠄁d󠄁 i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁c󠄁a󠄁l󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁s󠄁 a󠄁v󠄁o󠄁i󠄁d󠄁
-c󠄁o󠄁p󠄁y󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 s󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 a󠄁 t󠄁e󠄁m󠄁p󠄁l󠄁a󠄁t󠄁e󠄁 r󠄁e󠄁u󠄁s󠄁e󠄁.󠄁
+The review of `3b2d8d01` found no individual merge blocker. ACE-prefixed
+hostname labels are now explicitly refused, empty-image previews skip resize
+work, and hidden controls are excluded from accessibility children and hit
+testing. Head truncation preserves the destination suffix in narrow controls.
+The no-coordinator loader refuses requests, and identical image sources avoid
+copying their rendered string before a template reuse.
 
-W󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 n󠄁o󠄁t󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 k󠄁e󠄁e󠄁p󠄁 a󠄁 w󠄁e󠄁a󠄁k󠄁-󠄁w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 m󠄁a󠄁t󠄁c󠄁h󠄁 t󠄁o󠄁 a󠄁v󠄁o󠄁i󠄁d󠄁 c󠄁o󠄁u󠄁p󠄁l󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁'󠄁s󠄁
-l󠄁i󠄁f󠄁e󠄁t󠄁i󠄁m󠄁e󠄁 t󠄁o󠄁 i󠄁t󠄁s󠄁 p󠄁u󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁r󠄁 f󠄁i󠄁l󠄁t󠄁e󠄁r󠄁.󠄁 T󠄁h󠄁e󠄁 n󠄁o󠄁-󠄁i󠄁m󠄁a󠄁g󠄁e󠄁 e󠄁a󠄁r󠄁l󠄁y󠄁 r󠄁e󠄁t󠄁u󠄁r󠄁n󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁s󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁
-l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁 a󠄁n󠄁d󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 a󠄁n󠄁n󠄁o󠄁u󠄁n󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 f󠄁o󠄁r󠄁 o󠄁r󠄁d󠄁i󠄁n󠄁a󠄁r󠄁y󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁.󠄁 F󠄁i󠄁x󠄁e󠄁d󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁
-m󠄁e󠄁t󠄁r󠄁i󠄁c󠄁s󠄁 a󠄁n󠄁d󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁 t󠄁r󠄁a󠄁v󠄁e󠄁r󠄁s󠄁a󠄁l󠄁 o󠄁r󠄁d󠄁e󠄁r󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 p󠄁a󠄁r󠄁t󠄁 o󠄁f󠄁 t󠄁h󠄁e󠄁 h󠄁u󠄁m󠄁a󠄁n󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁.󠄁
+Window notifications keep a weak-window match to avoid coupling the window's
+lifetime to its publisher filter. The no-image early return removes image
+layout and accessibility announcements for ordinary previews. Fixed control
+metrics and button traversal order remain part of the human validation scope.
 
 <a id="routing-policy-follow-up"></a>
 
-### R󠄁o󠄁u󠄁t󠄁i󠄁n󠄁g󠄁 policy follow-up
+### Routing policy follow-up
 
-T󠄁h󠄁e󠄁 [p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 r󠄁o󠄁u󠄁t󠄁i󠄁n󠄁g󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁](../spec/design/2026-1028-preview-image-loading.md#routing-decision-after-pr-d)
-u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 s󠄁y󠄁s󠄁t󠄁e󠄁m󠄁'󠄁s󠄁 D󠄁N󠄁S󠄁 a󠄁n󠄁d󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁 r󠄁o󠄁u󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 U󠄁R󠄁L󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 P󠄁r󠄁i󠄁v󠄁a󠄁t󠄁e󠄁,󠄁
-l󠄁o󠄁o󠄁p󠄁b󠄁a󠄁c󠄁k󠄁,󠄁 l󠄁i󠄁n󠄁k󠄁-󠄁l󠄁o󠄁c󠄁a󠄁l󠄁 a󠄁n󠄁d󠄁 s󠄁p󠄁l󠄁i󠄁t󠄁-󠄁h󠄁o󠄁r󠄁i󠄁z󠄁o󠄁n󠄁 D󠄁N󠄁S󠄁 a󠄁n󠄁s󠄁w󠄁e󠄁r󠄁s󠄁 a󠄁r󠄁e󠄁 p󠄁e󠄁r󠄁m󠄁i󠄁t󠄁t󠄁e󠄁d󠄁 w󠄁h󠄁e󠄁n󠄁 p󠄁l󠄁a󠄁t󠄁f󠄁o󠄁r󠄁m󠄁
-T󠄁L󠄁S󠄁 e󠄁v󠄁a󠄁l󠄁u󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁e󠄁d󠄁s󠄁.󠄁 L󠄁o󠄁c󠄁a󠄁l󠄁-󠄁n󠄁a󠄁m󠄁e󠄁 U󠄁R󠄁L󠄁s󠄁 a󠄁n󠄁d󠄁 I󠄁P󠄁-󠄁l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 U󠄁R󠄁L󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁d󠄁.󠄁
-T󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁'󠄁s󠄁 p󠄁r󠄁e󠄁-󠄁a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 t󠄁o󠄁o󠄁l󠄁t󠄁i󠄁p󠄁 a󠄁n󠄁d󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 h󠄁e󠄁l󠄁p󠄁 n󠄁o󠄁w󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁 s󠄁a󠄁y󠄁
-t󠄁h󠄁a󠄁t󠄁 t󠄁h󠄁e󠄁 h󠄁o󠄁s󠄁t󠄁n󠄁a󠄁m󠄁e󠄁 m󠄁a󠄁y󠄁 r󠄁e󠄁a󠄁c󠄁h󠄁 a󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 n󠄁e󠄁t󠄁w󠄁o󠄁r󠄁k󠄁.󠄁 R󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 c󠄁o󠄁p󠄁y󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁e󠄁s󠄁 U󠄁R󠄁L󠄁
-s󠄁y󠄁n󠄁t󠄁a󠄁x󠄁 f󠄁r󠄁o󠄁m󠄁 D󠄁N󠄁S󠄁 r󠄁o󠄁u󠄁t󠄁i󠄁n󠄁g󠄁.󠄁 S󠄁c󠄁h󠄁e󠄁m󠄁e󠄁 s󠄁p󠄁e󠄁l󠄁l󠄁i󠄁n󠄁g󠄁 i󠄁s󠄁 c󠄁a󠄁n󠄁o󠄁n󠄁i󠄁c󠄁a󠄁l󠄁i󠄁z󠄁e󠄁d󠄁 t󠄁o󠄁 l󠄁o󠄁w󠄁e󠄁r󠄁c󠄁a󠄁s󠄁e󠄁.󠄁
+The [proposed routing decision](../spec/design/2026-1028-preview-image-loading.md#routing-decision-after-pr-d)
+uses the system's DNS and proxy routing after explicit URL activation. Private,
+loopback, link-local and split-horizon DNS answers are permitted when platform
+TLS evaluation succeeds. Local-name URLs and IP-literal URLs remain refused.
+The control's pre-activation tooltip and accessibility help now explicitly say
+that the hostname may reach a local network. Refusal copy distinguishes URL
+syntax from DNS routing. Scheme spelling is canonicalized to lowercase.
 
-T󠄁h󠄁e󠄁r󠄁e󠄁 i󠄁s󠄁 n󠄁o󠄁 D󠄁N󠄁S󠄁 p󠄁r󠄁e󠄁f󠄁l󠄁i󠄁g󠄁h󠄁t󠄁,󠄁 p󠄁o󠄁s󠄁t󠄁-󠄁r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁e󠄁 a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁 f󠄁i󠄁l󠄁t󠄁e󠄁r󠄁,󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁-󠄁I󠄁P󠄁 a󠄁s󠄁s󠄁e󠄁r󠄁t󠄁i󠄁o󠄁n󠄁
-f󠄁r󠄁o󠄁m󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁 m󠄁e󠄁t󠄁r󠄁i󠄁c󠄁s󠄁,󠄁 o󠄁r󠄁 a󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁i󠄁c󠄁 d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁.󠄁 P󠄁u󠄁b󠄁l󠄁i󠄁c󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 r󠄁o󠄁u󠄁t󠄁i󠄁n󠄁g󠄁 i󠄁s󠄁 n󠄁o󠄁t󠄁
-i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁e󠄁d󠄁 o󠄁r󠄁 p󠄁r󠄁o󠄁m󠄁i󠄁s󠄁e󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 d󠄁e󠄁s󠄁i󠄁g󠄁n󠄁 l󠄁i󠄁n󠄁k󠄁s󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁i󠄁m󠄁a󠄁r󠄁y󠄁 A󠄁p󠄁p󠄁l󠄁e󠄁 A󠄁P󠄁I󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁i󠄁o󠄁n󠄁s󠄁
-t󠄁h󠄁a󠄁t󠄁 i󠄁n󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁 t󠄁h󠄁i󠄁s󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁a󠄁l󠄁,󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 t󠄁r󠄁e󠄁a󠄁t󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁i󠄁s󠄁 Q󠄁A󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 a󠄁s󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁t󠄁y󠄁 f󠄁o󠄁r󠄁
-a󠄁n󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 g󠄁u󠄁a󠄁r󠄁a󠄁n󠄁t󠄁e󠄁e󠄁.󠄁
+There is no DNS preflight, post-response address filter, origin-IP assertion
+from proxy metrics, or automatic direct fallback. Public-only routing is not
+implemented or promised. The design links the primary Apple API descriptions
+that informed this proposal, without treating this QA record as authority for
+an application guarantee.
 
 `PREVIEW_NETWORK_TESTS=1 scripts/test-shell.sh --filter PreviewImageNetworkTests`
-r󠄁u󠄁n󠄁s󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 r󠄁e󠄁a󠄁l󠄁-󠄁s󠄁o󠄁c󠄁k󠄁e󠄁t󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁a󠄁g󠄁e󠄁.󠄁 A󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 l󠄁o󠄁o󠄁p󠄁b󠄁a󠄁c󠄁k󠄁 C󠄁O󠄁N󠄁N󠄁E󠄁C󠄁T󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁
-a󠄁u󠄁t󠄁h󠄁e󠄁n󠄁t󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁 c󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁,󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 o󠄁f󠄁 a󠄁n󠄁 u󠄁n󠄁t󠄁r󠄁u󠄁s󠄁t󠄁e󠄁d󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 T󠄁L󠄁S󠄁
-c󠄁e󠄁r󠄁t󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁e󠄁,󠄁 a󠄁n󠄁d󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁f󠄁u󠄁l󠄁 P󠄁N󠄁G󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 a󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁 t󠄁u󠄁n󠄁n󠄁e󠄁l󠄁 t󠄁o󠄁 a󠄁 p󠄁u󠄁b󠄁l󠄁i󠄁c󠄁
-H󠄁T󠄁T󠄁P󠄁S󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁 w󠄁i󠄁t󠄁h󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 p󠄁l󠄁a󠄁t󠄁f󠄁o󠄁r󠄁m󠄁 t󠄁r󠄁u󠄁s󠄁t󠄁.󠄁 I󠄁t󠄁 n󠄁e󠄁i󠄁t󠄁h󠄁e󠄁r󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 s󠄁y󠄁s󠄁t󠄁e󠄁m󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁
-s󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 n󠄁o󠄁r󠄁 i󠄁n󠄁s󠄁t󠄁a󠄁l󠄁l󠄁s󠄁 c󠄁e󠄁r󠄁t󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁s󠄁 u󠄁s󠄁e󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 f󠄁i󠄁l󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁
-s󠄁i󠄁n󠄁g󠄁l󠄁e󠄁 l󠄁o󠄁o󠄁p󠄁b󠄁a󠄁c󠄁k󠄁 l󠄁i󠄁s󠄁t󠄁e󠄁n󠄁e󠄁r󠄁,󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 k󠄁e󠄁y󠄁 a󠄁n󠄁d󠄁 c󠄁e󠄁r󠄁t󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁e󠄁.󠄁
+runs opt-in real-socket coverage. A temporary loopback CONNECT proxy tests proxy
+authentication refusal without a credential, refusal of an untrusted local TLS
+certificate, and successful PNG loading through a proxy tunnel to a public
+HTTPS origin with unchanged platform trust. It neither changes system proxy
+settings nor installs certificates. The fixtures use temporary files and a
+single loopback listener, and remove their temporary key and certificate.
 
-A󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁f󠄁u󠄁l󠄁 p󠄁r󠄁i󠄁v󠄁a󠄁t󠄁e󠄁-󠄁o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁 l󠄁o󠄁a󠄁d󠄁 r󠄁e󠄁q󠄁u󠄁i󠄁r󠄁e󠄁s󠄁 a󠄁n󠄁 e󠄁n󠄁d󠄁p󠄁o󠄁i󠄁n󠄁t󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁 c󠄁e󠄁r󠄁t󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁e󠄁 t󠄁h󠄁e󠄁
-p󠄁l󠄁a󠄁t󠄁f󠄁o󠄁r󠄁m󠄁 a󠄁l󠄁r󠄁e󠄁a󠄁d󠄁y󠄁 t󠄁r󠄁u󠄁s󠄁t󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 s󠄁e󠄁l󠄁f󠄁-󠄁s󠄁i󠄁g󠄁n󠄁e󠄁d󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁s󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁,󠄁
-n󠄁o󠄁t󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁a󠄁n󠄁c󠄁e󠄁 o󠄁f󠄁 s󠄁u󠄁c󠄁h󠄁 a󠄁 c󠄁e󠄁r󠄁t󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁e󠄁;󠄁 n󠄁o󠄁 s󠄁h󠄁i󠄁p󠄁p󠄁i󠄁n󠄁g󠄁 T󠄁L󠄁S󠄁 b󠄁y󠄁p󠄁a󠄁s󠄁s󠄁 i󠄁s󠄁 i󠄁n󠄁t󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁d󠄁
-t󠄁o󠄁 m󠄁a󠄁n󠄁u󠄁f󠄁a󠄁c󠄁t󠄁u󠄁r󠄁e󠄁 t󠄁h󠄁a󠄁t󠄁 p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁v󠄁e󠄁 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁.󠄁 S󠄁p󠄁l󠄁i󠄁t󠄁-󠄁h󠄁o󠄁r󠄁i󠄁z󠄁o󠄁n󠄁 o󠄁r󠄁 t󠄁r󠄁u󠄁s󠄁t󠄁e󠄁d󠄁-󠄁p󠄁r󠄁i󠄁v󠄁a󠄁t󠄁e󠄁-󠄁o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁
-a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁a󠄁n󠄁c󠄁e󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 n󠄁e󠄁e󠄁d󠄁s󠄁 t󠄁h󠄁a󠄁t󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁l󠄁e󠄁d󠄁 e󠄁n󠄁d󠄁p󠄁o󠄁i󠄁n󠄁t󠄁.󠄁 T󠄁h󠄁e󠄁 p󠄁u󠄁b󠄁l󠄁i󠄁c󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁 t󠄁u󠄁n󠄁n󠄁e󠄁l󠄁 t󠄁e󠄁s󠄁t󠄁
-r󠄁e󠄁q󠄁u󠄁i󠄁r󠄁e󠄁s󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁n󠄁e󠄁t󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁 a󠄁n󠄁d󠄁 i󠄁s󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁,󠄁 s󠄁o󠄁 o󠄁r󠄁d󠄁i󠄁n󠄁a󠄁r󠄁y󠄁 u󠄁n󠄁i󠄁t󠄁 r󠄁u󠄁n󠄁s󠄁 s󠄁t󠄁a󠄁y󠄁 d󠄁e󠄁t󠄁e󠄁r󠄁m󠄁i󠄁n󠄁i󠄁s󠄁t󠄁i󠄁c󠄁.󠄁
+A successful private-origin load requires an endpoint with a certificate the
+platform already trusts. The local self-signed fixture exercises refusal,
+not acceptance of such a certificate; no shipping TLS bypass is introduced
+to manufacture that positive result. Split-horizon or trusted-private-origin
+acceptance still needs that controlled endpoint. The public proxy tunnel test
+requires internet access and is opt-in, so ordinary unit runs stay deterministic.
 
 ## Automated scope
 
-T󠄁h󠄁e󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 s󠄁o󠄁c󠄁k󠄁e󠄁t󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 a󠄁l󠄁l󠄁 t󠄁h󠄁r󠄁e󠄁e󠄁 c󠄁a󠄁s󠄁e󠄁s󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁l󠄁y󠄁 o󠄁n󠄁 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁0󠄁-󠄁2󠄁9󠄁,󠄁 u󠄁s󠄁i󠄁n󠄁g󠄁
-t󠄁h󠄁e󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 p󠄁l󠄁a󠄁t󠄁f󠄁o󠄁r󠄁m󠄁 T󠄁L󠄁S󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁i󠄁n󠄁g󠄁 i󠄁n󠄁 `PreviewImageLoader`.󠄁 T󠄁h󠄁e󠄁 p󠄁r󠄁i󠄁v󠄁a󠄁t󠄁e󠄁-󠄁o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁
-a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁a󠄁n󠄁c󠄁e󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁b󠄁o󠄁v󠄁e󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁;󠄁 a󠄁 p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁v󠄁e󠄁 p󠄁u󠄁b󠄁l󠄁i󠄁c󠄁-󠄁o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁 p󠄁r󠄁o󠄁x󠄁y󠄁 t󠄁e󠄁s󠄁t󠄁 d󠄁o󠄁e󠄁s󠄁
-n󠄁o󠄁t󠄁 c󠄁e󠄁r󠄁t󠄁i󠄁f󠄁y󠄁 a󠄁 t󠄁r󠄁u󠄁s󠄁t󠄁e󠄁d󠄁 p󠄁r󠄁i󠄁v󠄁a󠄁t󠄁e󠄁-󠄁o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁 d󠄁e󠄁p󠄁l󠄁o󠄁y󠄁m󠄁e󠄁n󠄁t󠄁.󠄁
+The opt-in socket suite passed all three cases locally on 2026-10-29, using
+the unchanged platform TLS handling in `PreviewImageLoader`. The private-origin
+acceptance limitation above remains; a positive public-origin proxy test does
+not certify a trusted private-origin deployment.
 
-R󠄁u󠄁n󠄁 `scripts/test-shell.sh` f󠄁o󠄁r󠄁 t󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁.󠄁 T󠄁h󠄁e󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁
-e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁s󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁c󠄁e󠄁p󠄁t󠄁e󠄁d󠄁 H󠄁T󠄁T󠄁P󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁e󠄁s󠄁,󠄁 s󠄁e󠄁r󠄁i󠄁a󠄁l󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁i󠄁n󠄁g󠄁,󠄁
-e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 p󠄁e󠄁r󠄁-󠄁o󠄁c󠄁c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁,󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁l󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 s󠄁t󠄁a󠄁l󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁i󠄁o󠄁n󠄁s󠄁,󠄁
-o󠄁w󠄁n󠄁e󠄁r󠄁s󠄁h󠄁i󠄁p󠄁/󠄁e󠄁x󠄁p󠄁i󠄁r󠄁y󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁s󠄁,󠄁 r󠄁e󠄁s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁s󠄁,󠄁 s󠄁t󠄁y󠄁l󠄁e󠄁/󠄁w󠄁i󠄁d󠄁t󠄁h󠄁 r󠄁e󠄁f󠄁r󠄁e󠄁s󠄁h󠄁e󠄁s󠄁,󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁
-c󠄁o󠄁p󠄁y󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 s󠄁e󠄁a󠄁l󠄁e󠄁d󠄁-󠄁r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 o󠄁r󠄁d󠄁e󠄁r󠄁.󠄁 T󠄁e󠄁s󠄁t󠄁 m󠄁o󠄁d󠄁e󠄁l󠄁s󠄁 i󠄁n󠄁j󠄁e󠄁c󠄁t󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁
-d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁o󠄁r󠄁i󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 t󠄁e󠄁s󠄁t󠄁-󠄁u󠄁t󠄁i󠄁l󠄁 i󠄁n󠄁-󠄁m󠄁e󠄁m󠄁o󠄁r󠄁y󠄁 c󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁 c󠄁l󠄁i󠄁e󠄁n󠄁t󠄁s󠄁.󠄁
+Run `scripts/test-shell.sh` for the full Swift suite. The image suites and
+existing preview suites cover intercepted HTTP responses, serial decoding,
+explicit per-occurrence loading, cancellation and stale completions,
+ownership/expiry refusals, resource limits, style/width refreshes, rendered
+copying and sealed-reference order. Test models inject temporary state
+directories and test-util in-memory credential clients.
 
-`PREVIEW_QA_ARTIFACTS` o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁l󠄁y󠄁 s󠄁a󠄁v󠄁e󠄁s󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 l󠄁i󠄁g󠄁h󠄁t󠄁/󠄁d󠄁a󠄁r󠄁k󠄁 b󠄁i󠄁t󠄁m󠄁a󠄁p󠄁s󠄁 a󠄁t󠄁 3󠄁2󠄁0󠄁 a󠄁n󠄁d󠄁
-6󠄁4󠄁0󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁,󠄁 u󠄁s󠄁i󠄁n󠄁g󠄁 s󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁s󠄁e󠄁 a󠄁r󠄁e󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁,󠄁 n󠄁o󠄁t󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁 o󠄁f󠄁
-r󠄁e󠄁a󠄁l󠄁 n󠄁e󠄁t󠄁w󠄁o󠄁r󠄁k󠄁/󠄁T󠄁L󠄁S󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 o󠄁r󠄁 s󠄁p󠄁o󠄁k󠄁e󠄁n󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁.󠄁 E󠄁x󠄁a󠄁c󠄁t󠄁-󠄁h󠄁e󠄁a󠄁d󠄁 t󠄁e󠄁s󠄁t󠄁 a󠄁n󠄁d󠄁
-C󠄁I󠄁 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁s󠄁 a󠄁r󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 P󠄁R󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁i󠄁o󠄁n󠄁.󠄁
+`PREVIEW_QA_ARTIFACTS` optionally saves native light/dark bitmaps at 320 and
+640 points, using synthetic images. These are layout checks, not evidence of
+real network/TLS behavior or spoken accessibility output. Exact-head test and
+CI results are recorded in the PR description.
 
 ## Human validation still required before merge
 
-- L󠄁o󠄁a󠄁d󠄁,󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁,󠄁 r󠄁e󠄁t󠄁r󠄁y󠄁 a󠄁n󠄁d󠄁 u󠄁n󠄁l󠄁o󠄁a󠄁d󠄁 a󠄁n󠄁 a󠄁u󠄁t󠄁h󠄁o󠄁r󠄁i󠄁z󠄁e󠄁d󠄁 t󠄁e󠄁s󠄁t󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁;󠄁 c󠄁o󠄁n󠄁f󠄁i󠄁r󠄁m󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁
-  d󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁a󠄁n󠄁 b󠄁e󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁
-- E󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁 k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 r󠄁e󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁d󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 a󠄁n󠄁n󠄁o󠄁u󠄁n󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁s󠄁,󠄁
-  i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 d󠄁e󠄁c󠄁o󠄁r󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁s󠄁,󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁,󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 n󠄁a󠄁r󠄁r󠄁o󠄁w󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁
-  c󠄁e󠄁l󠄁l󠄁s󠄁.󠄁
-- C󠄁h󠄁e󠄁c󠄁k󠄁 r󠄁e󠄁s󠄁i󠄁z󠄁e󠄁,󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 c󠄁o󠄁p󠄁y󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁a󠄁d󠄁i󠄁n󠄁g󠄁-󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 i󠄁n󠄁 a󠄁n󠄁 i󠄁s󠄁o󠄁l󠄁a󠄁t󠄁e󠄁d󠄁
-  t󠄁e󠄁s󠄁t󠄁 h󠄁o󠄁s󠄁t󠄁.󠄁 D󠄁o󠄁 n󠄁o󠄁t󠄁 u󠄁s󠄁e󠄁 o󠄁r󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁 a󠄁 p󠄁e󠄁r󠄁s󠄁o󠄁n󠄁'󠄁s󠄁 r󠄁u󠄁n󠄁n󠄁i󠄁n󠄁g󠄁 a󠄁p󠄁p󠄁 f󠄁o󠄁r󠄁 a󠄁 p󠄁r󠄁o󠄁b󠄁e󠄁.󠄁
-- E󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁 r󠄁e󠄁a󠄁l󠄁 T󠄁L󠄁S󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁,󠄁 r󠄁e󠄁d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 a󠄁n󠄁d󠄁 a󠄁u󠄁t󠄁h󠄁e󠄁n󠄁t󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 w󠄁i󠄁t󠄁h󠄁
-  c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁l󠄁e󠄁d󠄁 e󠄁n󠄁d󠄁p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁;󠄁 t󠄁h󠄁e󠄁 a󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁e󠄁d󠄁 n󠄁e󠄁t󠄁w󠄁o󠄁r󠄁k󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 u󠄁s󠄁e󠄁 U󠄁R󠄁L󠄁P󠄁r󠄁o󠄁t󠄁o󠄁c󠄁o󠄁l󠄁.󠄁
+- Load, cancel, retry and unload an authorized test image; confirm the complete
+  destination can be inspected before activation.
+- Exercise keyboard navigation and VoiceOver reading order and announcements,
+  including decorative images, disabled controls, failures and narrow table
+  cells.
+- Check resize, selection, copy and reading-position behavior in an isolated
+  test host. Do not use or replace a person's running app for a probe.
+- Exercise real TLS success, redirect refusal and authentication refusal with
+  controlled endpoints; the automated network tests use URLProtocol.

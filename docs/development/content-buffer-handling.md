@@ -109,7 +109,7 @@ This changes the final allocation; it does not retroactively wipe earlier
 | F13 | `sheet_document_json` | All ink, object excerpts/names; **Z + W**, borrowed `DocumentRuns` | Implemented output without content `Value` copies; projection owners C02/C03 now wipe, while upstream Loro allocations remain C01. |
 | F14 | `sheet_meta_json`, `sheet_blocks_json` | Stamps, block ids and counts; **N + W** | Implemented content-free shape as inspected; not permission to add block text to these serializers. |
 | F15 | `connection_json`, `connection_test` | Connection state and result/error metadata; **N + W** | Implemented; no page text in the inspected output. |
-| F16 | `chip_conceal`, `sheet_conceal` | Receipt id or refusal/error; **N + W** output | Implemented output; concealed link is written separately to pasteboard under a zeroizing Rust owner, with the AppKit limits in C46. The latest completed link also has a core-only `CachedConcealLink` owner keyed by a recovery token. `LINK_RECOVERY_SECONDS` sets its access deadline o󠄁n󠄁 t󠄁h󠄁e󠄁 s󠄁t󠄁o󠄁r󠄁e󠄁'󠄁s󠄁 s󠄁l󠄁e󠄁e󠄁p󠄁-󠄁i󠄁n󠄁c󠄁l󠄁u󠄁s󠄁i󠄁v󠄁e󠄁 c󠄁l󠄁o󠄁c󠄁k󠄁 i󠄁n󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁l󠄁y󠄁 o󠄁f󠄁 c󠄁l󠄁i󠄁p󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁i󠄁n󠄁g󠄁.󠄁 A󠄁c󠄁c󠄁e󠄁s󠄁s󠄁 i󠄁s󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁d󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 t󠄁h󠄁a󠄁t󠄁 d󠄁e󠄁a󠄁d󠄁l󠄁i󠄁n󠄁e󠄁;󠄁 t󠄁h󠄁e󠄁 b󠄁u󠄁f󠄁f󠄁e󠄁r󠄁 i󠄁s󠄁 d󠄁r󠄁o󠄁p󠄁p󠄁e󠄁d󠄁 b󠄁y󠄁 a󠄁 l󠄁a󠄁t󠄁e󠄁r󠄁 q󠄁u󠄁e󠄁r󠄁y󠄁,󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 f󠄁o󠄁r󠄁g󠄁e󠄁t󠄁/󠄁d󠄁r󠄁a󠄁f󠄁t󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁/󠄁m󠄁o󠄁d󠄁e󠄁l󠄁 t󠄁e󠄁a󠄁r󠄁d󠄁o󠄁w󠄁n󠄁,󠄁 supersession, or handle drop. There is no eager core wipe at the deadline. |
+| F16 | `chip_conceal`, `sheet_conceal` | Receipt id or refusal/error; **N + W** output | Implemented output; concealed link is written separately to pasteboard under a zeroizing Rust owner, with the AppKit limits in C46. The latest completed link also has a core-only `CachedConcealLink` owner keyed by a recovery token. `LINK_RECOVERY_SECONDS` sets its access deadline on the store's sleep-inclusive clock independently of clipboard clearing. Access is refused after that deadline; the buffer is dropped by a later query, explicit forget/draft dismissal/model teardown, supersession, or handle drop. There is no eager core wipe at the deadline. |
 | F17 | `sync_status_json`, `sync_gate` | State, progress and gate token; **N + W** | Implemented page-content-free output. |
 | F18 | `sync_signin_begin`, `sync_signin_finish` | Authorize URL or refusal/result; **N + W** for page content | Implemented output; OAuth URL/state is not a page-origin URL and remains authentication-sensitive. |
 | F19 | `sync_attach`, `sync_pump`, `sync_devices_json` | Epochs, event kinds, UUIDs, fingerprints, device labels; **N + W** | Implemented page-content-free output; labels are not reclassified as secret page ink. |
@@ -327,7 +327,7 @@ companion-ffi` with and without `test-util`, and the focused Swift suites
 The full gate for this round is left to CI on the pushed branch.
 
 **Final gate at `fe03c8cb`:** all commands below passed after the Rust and Swift
-changes were c󠄁o󠄁m󠄁m󠄁i󠄁t󠄁t󠄁e󠄁d󠄁 (󠄁t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁t󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁 n󠄁o󠄁w󠄁 a󠄁v󠄁o󠄁i󠄁d󠄁s󠄁 t󠄁h󠄁e󠄁 v󠄁e󠄁n󠄁d󠄁o󠄁r󠄁e󠄁d󠄁 p󠄁a󠄁t󠄁h󠄁 d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁c󠄁y󠄁)󠄁:󠄁
+changes were committed (the formatting command below now avoids the vendored path dependency):
 
 ```sh
 cargo fmt --check

@@ -1,6 +1,6 @@
 # Sealed row, note and handles
 
-Historical presentation, replaced by the [2026-10-31 i󠄁n󠄁t󠄁e󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁](../../design/2026-1031-sealed-content-ux-revision.md).󠄁
+Historical presentation, replaced by the [2026-10-31 interface record](../../design/2026-1031-sealed-content-ux-revision.md).
 The older interaction details below describe the previous implementation.
 
 Status: details as built on `feature/editing-seals`, 2026-10-14, and the

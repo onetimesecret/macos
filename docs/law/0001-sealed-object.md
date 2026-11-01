@@ -764,8 +764,8 @@ aside while a field or the note holds the keys),
 provided decrypted drag's `sent` arm a write; a refused read arms
 nothing, and past a deadline only its settle's sweep appends).
 
-By hand: the [sealed c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁t󠄁e󠄁](../qa/verification-procedures/sealed-zones-and-note.md)
-p󠄁r󠄁o󠄁c󠄁e󠄁d󠄁u󠄁r󠄁e󠄁,󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 u󠄁n󠄁d󠄁e󠄁r󠄁 a󠄁 r󠄁e󠄁a󠄁l󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁e󠄁r󠄁,󠄁 c󠄁o󠄁p󠄁y󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁 on a display,
+By hand: the [sealed controls and note](../qa/verification-procedures/sealed-zones-and-note.md)
+procedure, for the controls under a real pointer, copy feedback on a display,
 the note on the raised card and VoiceOver naming a block inside the
 page by `SealedBlockCell`'s label; the [sealed fragment](../qa/verification-procedures/sealed-fragment.md)
 procedure, for what another app and a real drag receive. Neither has
@@ -781,7 +781,7 @@ pinned the removal line without its Undo was rewritten as
 `burning_a_chip_takes_the_stack_with_it` stands, since a burn is not a
 removal.
 
-Owed: a first run of the sealed c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 and note procedure and of the
+Owed: a first run of the sealed controls and note procedure and of the
 sealed fragment procedure, which alone sees the decrypted drag's handle
 and its open hand under a real pointer and its drop into another app,
 a page's drag image as it passes over another app, a page that comes

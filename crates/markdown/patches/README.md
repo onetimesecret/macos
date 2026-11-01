@@ -15,20 +15,20 @@ Its `.cargo_vcs_info.json` identifies upstream revision
 - `comrak-0.57.0-reference-sourcepos.patch` advances surviving paragraph/heading
   source positions and their inline line-offset table after consuming reference
   definitions. It clears the title when a next-line title is rejected and the
-  scanner rewinds. T󠄁h󠄁i󠄁s󠄁 a󠄁l󠄁s󠄁o󠄁 c󠄁o󠄁r󠄁r󠄁e󠄁c󠄁t󠄁s󠄁 c󠄁o󠄁m󠄁r󠄁a󠄁k󠄁 l󠄁i󠄁n󠄁k󠄁-󠄁t󠄁i󠄁t󠄁l󠄁e󠄁/󠄁H󠄁T󠄁M󠄁L󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁a󠄁t󠄁
-  r󠄁e󠄁j󠄁e󠄁c󠄁t󠄁e󠄁d󠄁-󠄁t󠄁i󠄁t󠄁l󠄁e󠄁 c󠄁a󠄁s󠄁e󠄁.󠄁 It adds four direct AST regression tests.
+  scanner rewinds. This also corrects comrak link-title/HTML output for that
+  rejected-title case. It adds four direct AST regression tests.
 - `comrak-0.57.0-runtime-manifest.patch` removes unused CLI, example and benchmark
   targets and upstream development dependencies. Library unit tests and doctests
-  are d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁,󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁c󠄁y󠄁-󠄁l󠄁o󠄁c󠄁a󠄁l󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁 i󠄁s󠄁 o󠄁m󠄁i󠄁t󠄁t󠄁e󠄁d󠄁;󠄁 t󠄁h󠄁e󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁
-  s󠄁u󠄁b󠄁s󠄁e󠄁t󠄁 o󠄁m󠄁i󠄁t󠄁s󠄁 u󠄁p󠄁s󠄁t󠄁r󠄁e󠄁a󠄁m󠄁 t󠄁e󠄁s󠄁t󠄁 modules and fixtures. The four
+  are disabled, and the dependency-local release profile is omitted; the source
+  subset omits upstream test modules and fixtures. The four
   direct regressions run through the explicit `comrak_reference_sourcepos` test
   target in `crates/markdown/Cargo.toml`.
 
 The inventory `comrak-0.57.0-vendor.json` records both patch hashes and every
-vendored file hash. I󠄁t󠄁 a󠄁l󠄁s󠄁o󠄁 l󠄁i󠄁s󠄁t󠄁s󠄁 a󠄁l󠄁l󠄁 1󠄁0󠄁2󠄁 e󠄁x󠄁c󠄁l󠄁u󠄁d󠄁e󠄁d󠄁 u󠄁p󠄁s󠄁t󠄁r󠄁e󠄁a󠄁m󠄁 f󠄁i󠄁l󠄁e󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 o󠄁f󠄁f󠄁i󠄁c󠄁i󠄁a󠄁l󠄁
-a󠄁r󠄁c󠄁h󠄁i󠄁v󠄁e󠄁 h󠄁a󠄁s󠄁 1󠄁3󠄁4󠄁 f󠄁i󠄁l󠄁e󠄁s󠄁:󠄁 3󠄁2󠄁 a󠄁r󠄁e󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁,󠄁 1󠄁0󠄁2󠄁 a󠄁r󠄁e󠄁 e󠄁x󠄁c󠄁l󠄁u󠄁d󠄁e󠄁d󠄁,󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁t󠄁c󠄁h󠄁 a󠄁d󠄁d󠄁s󠄁 o󠄁n󠄁e󠄁
-r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 f󠄁i󠄁l󠄁e󠄁.󠄁 R󠄁e󠄁p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁a󠄁c󠄁t󠄁 e󠄁x󠄁c󠄁l󠄁u󠄁s󠄁i󠄁o󠄁n󠄁 s󠄁e󠄁t󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 a󠄁p󠄁p󠄁l󠄁y󠄁i󠄁n󠄁g󠄁
-t󠄁h󠄁e󠄁 p󠄁a󠄁t󠄁c󠄁h󠄁e󠄁s󠄁.󠄁 Apart from the parser and manifest patches and the new test
+vendored file hash. It also lists all 102 excluded upstream files. The official
+archive has 134 files: 32 are retained, 102 are excluded, and the patch adds one
+regression file. Reproduction checks the exact exclusion set before applying
+the patches. Apart from the parser and manifest patches and the new test
 file, retained files match the published archive byte for byte. `COPYING` is
 retained in full; its exact text is also in `THIRD_PARTY_NOTICES.md`.
 
@@ -72,14 +72,14 @@ EOF-only definitions; and rejected next-line titles.
 
 All five issue-332 source-position goals are enabled in
 `src/tests/definitions.rs`. The six tests that expected the old misplaced-object
-or stale-title behavior were removed. The parser suite passes 9󠄁6󠄁 tests, with only
+or stale-title behavior were removed. The parser suite passes 96 tests, with only
 the manual synthetic profile skipped, and the four direct AST tests pass. The
 CommonMark/GFM corpus comparisons pass. The real FFI regression checks the full
 repeated-reference document: one definition object before the subsequent text,
 and two reference destinations containing its inert stand-in. The FFI Markdown
 subset passes 13 tests, with its manual profile skipped.
 
-## Registry-origin p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁 coverage
+## Registry-origin policy coverage
 
 Cargo-deny 0.19.9's [`Report::generate`](https://github.com/EmbarkStudios/cargo-deny/blob/0.19.9/src/advisories/helpers/db.rs#L315)
 uses this expression while matching advisories:
@@ -98,15 +98,15 @@ CI therefore also checks the official registry origin at the exact version from
 the verified archive. Its temporary workspace starts with comrak's dependency
 closure from the application lockfile. Cargo normalizes feature-specific lock
 edges there; the script compares package versions, sources and checksums before
-and after normalization and refuses changed pins. T󠄁h󠄁e󠄁 w󠄁o󠄁r󠄁k󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁g󠄁i󠄁s󠄁t󠄁r󠄁y󠄁-󠄁o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 b󠄁o󠄁t󠄁h󠄁 u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁
-r󠄁e󠄁p󠄁o󠄁s󠄁i󠄁t󠄁o󠄁r󠄁y󠄁 `deny.toml`.󠄁 T󠄁h󠄁e󠄁 r󠄁e󠄁g󠄁i󠄁s󠄁t󠄁r󠄁y󠄁-󠄁o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁 r󠄁u󠄁n󠄁s󠄁 a󠄁l󠄁l󠄁 f󠄁o󠄁u󠄁r󠄁 c󠄁a󠄁t󠄁e󠄁g󠄁o󠄁r󠄁i󠄁e󠄁s󠄁:󠄁
-a󠄁d󠄁v󠄁i󠄁s󠄁o󠄁r󠄁i󠄁e󠄁s󠄁,󠄁 b󠄁a󠄁n󠄁s󠄁,󠄁 l󠄁i󠄁c󠄁e󠄁n󠄁s󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁s󠄁.󠄁 I󠄁t󠄁s󠄁 u󠄁n󠄁p󠄁u󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁 p󠄁r󠄁o󠄁b󠄁e󠄁 p󠄁a󠄁c󠄁k󠄁a󠄁g󠄁e󠄁 u󠄁s󠄁e󠄁s󠄁
-t󠄁h󠄁e󠄁 w󠄁o󠄁r󠄁k󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 M󠄁I󠄁T󠄁 l󠄁i󠄁c󠄁e󠄁n󠄁s󠄁e󠄁 m󠄁e󠄁t󠄁a󠄁d󠄁a󠄁t󠄁a󠄁.󠄁 C󠄁I󠄁 p󠄁i󠄁n󠄁s󠄁 c󠄁a󠄁r󠄁g󠄁o󠄁-󠄁d󠄁e󠄁n󠄁y󠄁-󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁m󠄁m󠄁i󠄁t󠄁
-`3c6349835b2b7b196a839186cb8b78e02f7b5f25`,󠄁 w󠄁h󠄁o󠄁s󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁a󠄁i󠄁n󠄁e󠄁r󠄁 u󠄁s󠄁e󠄁s󠄁 c󠄁a󠄁r󠄁g󠄁o󠄁-󠄁d󠄁e󠄁n󠄁y󠄁
-0󠄁.󠄁2󠄁0󠄁.󠄁2󠄁.󠄁 I󠄁n󠄁 t󠄁h󠄁a󠄁t󠄁 v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁 `--config` i󠄁s󠄁 a󠄁 g󠄁l󠄁o󠄁b󠄁a󠄁l󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 `check`;󠄁 0󠄁.󠄁1󠄁9󠄁.󠄁9󠄁
-u󠄁s󠄁e󠄁d󠄁 a󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁-󠄁l󠄁o󠄁c󠄁a󠄁l󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁 u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 C󠄁I󠄁 v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁.󠄁 S󠄁e󠄁e󠄁 t󠄁h󠄁e󠄁
-[p󠄁i󠄁n󠄁n󠄁e󠄁d󠄁 A󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 D󠄁o󠄁c󠄁k󠄁e󠄁r󠄁f󠄁i󠄁l󠄁e󠄁](https://github.com/EmbarkStudios/cargo-deny-action/blob/3c6349835b2b7b196a839186cb8b78e02f7b5f25/Dockerfile)
-a󠄁n󠄁d󠄁 [0󠄁.󠄁2󠄁0󠄁.󠄁2󠄁 g󠄁r󠄁a󠄁p󠄁h󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁s󠄁](https://github.com/EmbarkStudios/cargo-deny/blob/0.20.2/src/cargo-deny/main.rs#L107-L126).󠄁
+and after normalization and refuses changed pins. The workspace and registry-origin checks both use the
+repository `deny.toml`. The registry-origin check runs all four categories:
+advisories, bans, licenses and sources. Its unpublished probe package uses
+the workspace MIT license metadata. CI pins cargo-deny-action commit
+`3c6349835b2b7b196a839186cb8b78e02f7b5f25`, whose container uses cargo-deny
+0.20.2. In that version `--config` is a global option before `check`; 0.19.9
+used a check-local option. The command below uses the CI version. See the
+[pinned Action Dockerfile](https://github.com/EmbarkStudios/cargo-deny-action/blob/3c6349835b2b7b196a839186cb8b78e02f7b5f25/Dockerfile)
+and [0.20.2 graph options](https://github.com/EmbarkStudios/cargo-deny/blob/0.20.2/src/cargo-deny/main.rs#L107-L126).
 
 ```sh
 scripts/verify-vendored-comrak.py --advisory-workspace target/comrak-advisories-new
@@ -116,16 +116,16 @@ cargo deny --manifest-path target/comrak-advisories-new/Cargo.toml --locked \
 
 Use a new destination directory for each preparation. Cargo may download the
 pinned registry package when it is not cached. The application dependency stays
-on the vendored source. This check a󠄁p󠄁p󠄁l󠄁i󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁p󠄁o󠄁s󠄁i󠄁t󠄁o󠄁r󠄁y󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 u󠄁p󠄁s󠄁t󠄁r󠄁e󠄁a󠄁m󠄁 r󠄁e󠄁g󠄁i󠄁s󠄁t󠄁r󠄁y󠄁 p󠄁a󠄁c󠄁k󠄁a󠄁g󠄁e󠄁
-a󠄁n󠄁d󠄁 m󠄁a󠄁t󠄁c󠄁h󠄁e󠄁s󠄁 p󠄁u󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁 a󠄁d󠄁v󠄁i󠄁s󠄁o󠄁r󠄁i󠄁e󠄁s󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁a󠄁t󠄁 v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁;󠄁 i󠄁t󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 a󠄁n󠄁a󠄁l󠄁y󠄁z󠄁e󠄁 t󠄁h󠄁e󠄁
+on the vendored source. This check applies the repository policy to the upstream registry package
+and matches published advisories for that version; it does not analyze the
 local patch for new defects.
 
-## S󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁-󠄁s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 l󠄁i󠄁b󠄁r󠄁a󠄁r󠄁y󠄁 t󠄁e󠄁s󠄁t󠄁 r󠄁u󠄁n󠄁
+## Separate full-source library test run
 
-U󠄁p󠄁s󠄁t󠄁r󠄁e󠄁a󠄁m󠄁 t󠄁e󠄁s󠄁t󠄁 m󠄁o󠄁d󠄁u󠄁l󠄁e󠄁s󠄁 a󠄁r󠄁e󠄁 a󠄁b󠄁s󠄁e󠄁n󠄁t󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 s󠄁h󠄁i󠄁p󠄁p󠄁e󠄁d󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁t󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁r󠄁m󠄁a󠄁l󠄁 w󠄁o󠄁r󠄁k󠄁s󠄁p󠄁a󠄁c󠄁e󠄁
-u󠄁n󠄁i󠄁t󠄁-󠄁t󠄁e󠄁s󠄁t󠄁 t󠄁a󠄁r󠄁g󠄁e󠄁t󠄁s󠄁.󠄁 A󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 c󠄁o󠄁p󠄁y󠄁 o󠄁f󠄁 t󠄁h󠄁e󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁e󠄁d󠄁 f󠄁u󠄁l󠄁l󠄁 a󠄁r󠄁c󠄁h󠄁i󠄁v󠄁e󠄁,󠄁 w󠄁i󠄁t󠄁h󠄁
-o󠄁n󠄁l󠄁y󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 p󠄁a󠄁t󠄁c󠄁h󠄁,󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 a󠄁l󠄁l󠄁 5󠄁5󠄁6󠄁 l󠄁i󠄁b󠄁r󠄁a󠄁r󠄁y󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 u󠄁n󠄁d󠄁e󠄁r󠄁
-`cargo test --no-default-features --locked --lib`.󠄁 T󠄁h󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁e󠄁d󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 f󠄁i󠄁l󠄁e󠄁 m󠄁a󠄁t󠄁c󠄁h󠄁e󠄁s󠄁
-`vendor/comrak/src/parser/mod.rs` b󠄁y󠄁t󠄁e󠄁 f󠄁o󠄁r󠄁 b󠄁y󠄁t󠄁e󠄁.󠄁 O󠄁p󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁-󠄁f󠄁e󠄁a󠄁t󠄁u󠄁r󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁
-d󠄁o󠄁c󠄁t󠄁e󠄁s󠄁t󠄁s󠄁 a󠄁r󠄁e󠄁 n󠄁o󠄁t󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁e󠄁d󠄁 b󠄁y󠄁 t󠄁h󠄁a󠄁t󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁r󠄁p󠄁u󠄁s󠄁 a󠄁n󠄁d󠄁 f󠄁o󠄁u󠄁r󠄁
-d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁 A󠄁S󠄁T󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 n󠄁o󠄁r󠄁m󠄁a󠄁l󠄁 i󠄁n󠄁-󠄁r󠄁e󠄁p󠄁o󠄁s󠄁i󠄁t󠄁o󠄁r󠄁y󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁.󠄁
+Upstream test modules are absent from the shipped subset and normal workspace
+unit-test targets. A separate temporary copy of the verified full archive, with
+only the parser patch, passed all 556 library tests under
+`cargo test --no-default-features --locked --lib`. The tested parser file matches
+`vendor/comrak/src/parser/mod.rs` byte for byte. Optional-feature tests and
+doctests are not covered by that command. The application corpus and four
+direct AST regressions remain the normal in-repository checks.

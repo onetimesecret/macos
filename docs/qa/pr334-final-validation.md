@@ -1,55 +1,55 @@
 # PR 334 final feedback and UI validation
 
-T󠄁h󠄁i󠄁s󠄁 i󠄁s󠄁 a󠄁n󠄁 e󠄁x󠄁e󠄁c󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 f󠄁o󠄁r󠄁 P󠄁R󠄁 3󠄁3󠄁4󠄁,󠄁 n󠄁o󠄁t󠄁 a󠄁 s󠄁p󠄁e󠄁c󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁r󠄁 a󠄁 n󠄁e󠄁w󠄁 p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁 g󠄁u󠄁a󠄁r󠄁a󠄁n󠄁t󠄁e󠄁e󠄁.󠄁
+This is an execution record for PR 334, not a specification or a new product guarantee.
 
 ## Final Claude review dispositions
 
-T󠄁h󠄁e󠄁 r󠄁e󠄁a󠄁d󠄁y󠄁-󠄁f󠄁o󠄁r󠄁-󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 r󠄁u󠄁n󠄁 [4󠄁0󠄁5󠄁7󠄁6󠄁8󠄁5󠄁9󠄁8󠄁0󠄁6󠄁](https://github.com/onetimesecret/macos/actions/runs/40576859806)
-c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁d󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁f󠄁u󠄁l󠄁l󠄁y󠄁 o󠄁n󠄁 `9c3305c7`.󠄁 I󠄁t󠄁s󠄁 s󠄁u󠄁g󠄁g󠄁e󠄁s󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁e󠄁d󠄁 a󠄁g󠄁a󠄁i󠄁n󠄁s󠄁t󠄁 c󠄁o󠄁d󠄁e󠄁 a󠄁n󠄁d󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁.󠄁
+The ready-for-review run [40576859806](https://github.com/onetimesecret/macos/actions/runs/40576859806)
+completed successfully on `9c3305c7`. Its suggestions were checked against code and tests.
 
-| F󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁 | D󠄁i󠄁s󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 |
+| Feedback | Disposition |
 | --- | --- |
-| U󠄁n󠄁c󠄁l󠄁o󠄁s󠄁e󠄁d󠄁 i󠄁n󠄁l󠄁i󠄁n󠄁e󠄁 H󠄁T󠄁M󠄁L󠄁 f󠄁r󠄁a󠄁m󠄁e󠄁s󠄁 c󠄁o󠄁n󠄁s󠄁u󠄁m󠄁e󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁b󠄁i󠄁n󠄁e󠄁d󠄁 d󠄁e󠄁p󠄁t󠄁h󠄁 b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁e󠄁d󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁-󠄁p󠄁a󠄁g󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁.󠄁 A󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁-󠄁l󠄁i󠄁m󠄁i󠄁t󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁s󠄁 6󠄁4󠄁 u󠄁n󠄁c󠄁l󠄁o󠄁s󠄁e󠄁d󠄁 s󠄁p󠄁a󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁s󠄁 6󠄁5󠄁/󠄁1󠄁0󠄁0󠄁 a󠄁c󠄁r󠄁o󠄁s󠄁s󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁s󠄁 i󠄁n󠄁 b󠄁o󠄁t󠄁h󠄁 d󠄁i󠄁a󠄁l󠄁e󠄁c󠄁t󠄁s󠄁.󠄁 D󠄁r󠄁o󠄁p󠄁p󠄁i󠄁n󠄁g󠄁 o󠄁l󠄁d󠄁e󠄁r󠄁 f󠄁r󠄁a󠄁m󠄁e󠄁s󠄁 c󠄁o󠄁u󠄁l󠄁d󠄁 s󠄁i󠄁l󠄁e󠄁n󠄁t󠄁l󠄁y󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁 l󠄁i󠄁n󠄁k󠄁/󠄁f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁t󠄁i󠄁n󠄁g󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁s󠄁.󠄁 |
-| E󠄁n󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 d󠄁e󠄁l󠄁i󠄁m󠄁i󠄁t󠄁e󠄁r󠄁s󠄁/󠄁c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁s󠄁 i󠄁n󠄁 w󠄁e󠄁b󠄁 h󠄁o󠄁s󠄁t󠄁s󠄁 | D󠄁e󠄁c󠄁o󠄁d󠄁e󠄁 t󠄁h󠄁e󠄁 e󠄁n󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 h󠄁o󠄁s󠄁t󠄁 o󠄁n󠄁c󠄁e󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁 t󠄁h󠄁o󠄁s󠄁e󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁s󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁v󠄁e󠄁 l󠄁i󠄁n󠄁k󠄁.󠄁 V󠄁a󠄁l󠄁i󠄁d󠄁 I󠄁P󠄁v󠄁6󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁s󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁d󠄁 a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁e󠄁s󠄁,󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁e󠄁d󠄁.󠄁 |
-| R󠄁e󠄁p󠄁e󠄁a󠄁t󠄁e󠄁d󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁 h󠄁r󠄁e󠄁f󠄁/󠄁s󠄁r󠄁c󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁i󠄁n󠄁g󠄁 | D󠄁e󠄁c󠄁o󠄁d󠄁e󠄁 m󠄁a󠄁t󠄁c󠄁h󠄁i󠄁n󠄁g󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁s󠄁 i󠄁n󠄁 o󠄁n󠄁e󠄁 p󠄁a󠄁s󠄁s󠄁,󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁 d󠄁e󠄁s󠄁t󠄁i󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁i󠄁n󠄁g󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁-󠄁b󠄁e󠄁a󠄁r󠄁i󠄁n󠄁g󠄁 d󠄁u󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁e󠄁s󠄁.󠄁 |
-| E󠄁q󠄁u󠄁a󠄁l󠄁i󠄁t󠄁y󠄁 e󠄁x󠄁c󠄁l󠄁u󠄁d󠄁e󠄁s󠄁 o󠄁c󠄁c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 b󠄁o󠄁o󠄁k󠄁k󠄁e󠄁e󠄁p󠄁i󠄁n󠄁g󠄁 | S󠄁y󠄁n󠄁t󠄁h󠄁e󠄁s󠄁i󠄁z󠄁e󠄁d󠄁 e󠄁q󠄁u󠄁a󠄁l󠄁i󠄁t󠄁y󠄁 n󠄁o󠄁w󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 o󠄁c󠄁c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁c󠄁e󠄁.󠄁 T󠄁e󠄁s󠄁t󠄁s󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁 r󠄁e󠄁p󠄁e󠄁a󠄁t󠄁e󠄁d󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁f󠄁 t󠄁h󠄁e󠄁 s󠄁a󠄁m󠄁e󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁.󠄁 |
-| N󠄁e󠄁w󠄁l󠄁i󠄁n󠄁e󠄁s󠄁 i󠄁n󠄁h󠄁e󠄁r󠄁i󠄁t󠄁 a󠄁n󠄁 u󠄁n󠄁c󠄁l󠄁o󠄁s󠄁e󠄁d󠄁 l󠄁i󠄁n󠄁k󠄁 | G󠄁e󠄁n󠄁e󠄁r󠄁a󠄁t󠄁e󠄁d󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁o󠄁r󠄁s󠄁 h󠄁a󠄁v󠄁e󠄁 n󠄁o󠄁 l󠄁i󠄁n󠄁k󠄁;󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁q󠄁u󠄁e󠄁n󠄁t󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁n󠄁t󠄁 r󠄁e󠄁s󠄁u󠄁m󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁e󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁.󠄁 |
-| D󠄁u󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁e󠄁 o󠄁w󠄁n󠄁e󠄁d󠄁-󠄁J󠄁S󠄁O󠄁N󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁 c󠄁a󠄁l󠄁l󠄁 | R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 s󠄁m󠄁a󠄁l󠄁l󠄁 b󠄁r󠄁a󠄁n󠄁c󠄁h󠄁.󠄁 B󠄁o󠄁t󠄁h󠄁 p󠄁a󠄁t󠄁h󠄁s󠄁 d󠄁e󠄁l󠄁e󠄁g󠄁a󠄁t󠄁e󠄁 o󠄁w󠄁n󠄁e󠄁r󠄁s󠄁h󠄁i󠄁p󠄁 a󠄁n󠄁d󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁;󠄁 n󠄁o󠄁 n󠄁e󠄁w󠄁 c󠄁o󠄁r󠄁e󠄁-󠄁s󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 f󠄁r󠄁e󠄁e󠄁 s󠄁i󠄁t󠄁e󠄁 i󠄁s󠄁 i󠄁n󠄁t󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁d󠄁.󠄁 |
-| D󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁 p󠄁e󠄁r󠄁f󠄁o󠄁r󠄁m󠄁a󠄁n󠄁c󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 p󠄁r󠄁i󠄁n󠄁t󠄁 t󠄁i󠄁m󠄁i󠄁n󠄁g󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁u󠄁n󠄁 l󠄁a󠄁r󠄁g󠄁e󠄁 s󠄁p󠄁e󠄁c󠄁i󠄁m󠄁e󠄁n󠄁s󠄁 | D󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 s󠄁m󠄁a󠄁l󠄁l󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁/󠄁c󠄁a󠄁c󠄁h󠄁e󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 L󠄁a󠄁r󠄁g󠄁e󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 n󠄁o󠄁w󠄁 r󠄁e󠄁q󠄁u󠄁i󠄁r󠄁e󠄁 `PREVIEW_PROFILE=1`.󠄁 |
-| O󠄁r󠄁d󠄁e󠄁r󠄁e󠄁d󠄁-󠄁l󠄁i󠄁s󠄁t󠄁 a󠄁r󠄁i󠄁t󠄁h󠄁m󠄁e󠄁t󠄁i󠄁c󠄁 r󠄁e󠄁l󠄁i󠄁e󠄁s󠄁 o󠄁n󠄁 c󠄁o󠄁m󠄁r󠄁a󠄁k󠄁'󠄁s󠄁 n󠄁u󠄁m󠄁b󠄁e󠄁r󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁s󠄁 | V󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁e󠄁 o󠄁r󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 r󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 r󠄁e󠄁c󠄁u󠄁r󠄁s󠄁i󠄁v󠄁e󠄁l󠄁y󠄁 d󠄁u󠄁r󠄁i󠄁n󠄁g󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁 m󠄁a󠄁l󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁e󠄁s󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁.󠄁 B󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁/󠄁o󠄁v󠄁e󠄁r󠄁f󠄁l󠄁o󠄁w󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁s󠄁 a󠄁l󠄁s󠄁o󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁y󠄁 o󠄁n󠄁e󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁.󠄁 |
-| T󠄁w󠄁o󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁r󠄁 o󠄁b󠄁s󠄁e󠄁r󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁l󠄁o󠄁s󠄁u󠄁r󠄁e󠄁s󠄁 | U󠄁s󠄁e󠄁 o󠄁n󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁n󠄁a󠄁l󠄁 d󠄁i󠄁a󠄁g󠄁n󠄁o󠄁s󠄁t󠄁i󠄁c󠄁 c󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁y󠄁p󠄁e󠄁d󠄁 c󠄁a󠄁s󠄁e󠄁s󠄁.󠄁 |
-| G󠄁F󠄁M󠄁-󠄁f󠄁i󠄁l󠄁t󠄁e󠄁r󠄁e󠄁d󠄁 s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁-󠄁b󠄁o󠄁d󠄁y󠄁 s󠄁t󠄁y󠄁l󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 u󠄁n󠄁c󠄁l󠄁o󠄁s󠄁e󠄁d󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁s󠄁 a󠄁c󠄁r󠄁o󠄁s󠄁s󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁s󠄁 | E󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁-󠄁c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁i󠄁e󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁.󠄁 T󠄁e󠄁s󠄁t󠄁s󠄁 p󠄁i󠄁n󠄁 b󠄁o󠄁t󠄁h󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁s󠄁;󠄁 n󠄁o󠄁 s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁 e󠄁x󠄁e󠄁c󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁a󠄁t󠄁h󠄁 i󠄁s󠄁 a󠄁d󠄁d󠄁e󠄁d󠄁.󠄁 |
-| A󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁n󠄁 n󠄁o󠄁t󠄁i󠄁c󠄁e󠄁s󠄁/󠄁p󠄁r󠄁o󠄁s󠄁e󠄁 | P󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁n󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 T󠄁e󠄁x󠄁t󠄁P󠄁r󠄁o󠄁v󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 l󠄁i󠄁c󠄁e󠄁n󠄁s󠄁e󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁s󠄁.󠄁 C󠄁a󠄁r󠄁g󠄁o󠄁.󠄁l󠄁o󠄁c󠄁k󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁t󠄁i󠄁c󠄁e󠄁 h󠄁e󠄁a󠄁d󠄁i󠄁n󠄁g󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁 a󠄁s󠄁 v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁.󠄁 |
+| Unclosed inline HTML frames consume the combined depth budget | Retain the bounded original-page fallback. A default-limit regression accepts 64 unclosed spans and refuses 65/100 across block events in both dialects. Dropping older frames could silently change link/formatting scopes. |
+| Encoded delimiters/control characters in web hosts | Decode the encoded host once and refuse those values before producing an interactive link. Valid IPv6 literals, including scoped addresses, remain covered. |
+| Repeated first href/src decoding | Decode matching attributes in one pass, retaining the first destination and refusing object-bearing duplicates. |
+| Equality excludes occurrence bookkeeping | Synthesized equality now includes the occurrence. Tests distinguish repeated scopes and restoration of the same scope. |
+| Newlines inherit an unclosed link | Generated block separators have no link; subsequent content resumes the active scope. |
+| Duplicate owned-JSON helper call | Retain the small branch. Both paths delegate ownership and default release to the shared helper; no new core-string free site is introduced. |
+| Default performance tests print timings and run large specimens | Default tests retain small output/cache regressions. Large measurements now require `PREVIEW_PROFILE=1`. |
+| Ordered-list arithmetic relies on comrak's number limits | Validate ordered ranges recursively during decoding and refuse malformed responses before rendering. Boundary/overflow fixtures also verify one release. |
+| Two renderer observation closures | Use one internal diagnostic callback with typed cases. |
+| GFM-filtered script-body styling and unclosed anchors across blocks | Existing explicit native-composition policies remain. Tests pin both behaviors; no script execution path is added. |
+| Attribution in notices/prose | Preserve intentional TextProv attribution and unchanged license blocks. Cargo.lock and notice headings remain available as version references. |
 
 ## UI and accessibility execution
 
-T󠄁e󠄁s󠄁t󠄁s󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 o󠄁w󠄁n󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 o󠄁r󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁m󠄁 o󠄁n󠄁 s󠄁c󠄁r󠄁e󠄁e󠄁n󠄁.󠄁 E󠄁v󠄁e󠄁r󠄁y󠄁 m󠄁o󠄁d󠄁e󠄁l󠄁 u󠄁s󠄁e󠄁s󠄁
-a󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁o󠄁r󠄁y󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁-󠄁u󠄁t󠄁i󠄁l󠄁 i󠄁n󠄁-󠄁m󠄁e󠄁m󠄁o󠄁r󠄁y󠄁 c󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁 c󠄁l󠄁i󠄁e󠄁n󠄁t󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁
-`PageModel.Seams(stateDirectory:client:)`.󠄁 C󠄁o󠄁p󠄁y󠄁/󠄁l󠄁i󠄁n󠄁k󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁s󠄁 u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 o󠄁w󠄁n󠄁 p󠄁a󠄁s󠄁t󠄁e󠄁b󠄁o󠄁a󠄁r󠄁d󠄁s󠄁
-a󠄁n󠄁d󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁 U󠄁R󠄁L󠄁-󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 c󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁s󠄁.󠄁 N󠄁o󠄁 i󠄁n󠄁s󠄁t󠄁a󠄁l󠄁l󠄁e󠄁d󠄁 a󠄁p󠄁p󠄁 i󠄁s󠄁 l󠄁a󠄁u󠄁n󠄁c󠄁h󠄁e󠄁d󠄁,󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁d󠄁,󠄁 q󠄁u󠄁i󠄁t󠄁 o󠄁r󠄁 r󠄁e󠄁s󠄁e󠄁t󠄁.󠄁
+Tests construct their own windows without ordering them on screen. Every model uses
+a temporary state directory and the test-util in-memory credential client through
+`PageModel.Seams(stateDirectory:client:)`. Copy/link fixtures use their own pasteboards
+and recorded URL-opening callbacks. No installed app is launched, replaced, quit or reset.
 
-T󠄁h󠄁e󠄁 n󠄁e󠄁w󠄁 r󠄁u󠄁n󠄁t󠄁i󠄁m󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁n󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 t󠄁o󠄁g󠄁g󠄁l󠄁e󠄁,󠄁
-t󠄁e󠄁x󠄁t󠄁-󠄁a󠄁r󠄁e󠄁a󠄁 r󠄁o󠄁l󠄁e󠄁,󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁 c󠄁o󠄁u󠄁n󠄁t󠄁,󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 t󠄁e󠄁x󠄁t󠄁,󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁d󠄁 t󠄁e󠄁x󠄁t󠄁,󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 t󠄁e󠄁x󠄁t󠄁/󠄁r󠄁a󠄁n󠄁g󠄁e󠄁s󠄁,󠄁
-k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 e󠄁x󠄁t󠄁e󠄁n󠄁s󠄁i󠄁o󠄁n󠄁,󠄁 s󠄁c󠄁r󠄁e󠄁e󠄁n󠄁-󠄁f󠄁r󠄁a󠄁m󠄁e󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁,󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 t󠄁r󠄁a󠄁n󠄁s󠄁f󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁
-A󠄁 s󠄁e󠄁a󠄁l󠄁e󠄁d󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 e󠄁x󠄁p󠄁o󠄁s󠄁e󠄁s󠄁 i󠄁t󠄁s󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁'󠄁s󠄁 s󠄁e󠄁a󠄁l󠄁e󠄁d󠄁 t󠄁e󠄁x󠄁t󠄁.󠄁
-E󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 m󠄁o󠄁u󠄁n󠄁t󠄁e󠄁d󠄁-󠄁r󠄁o󠄁l󠄁l󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁 c󠄁o󠄁p󠄁y󠄁,󠄁 l󠄁i󠄁n󠄁k󠄁s󠄁,󠄁 e󠄁x󠄁p󠄁i󠄁r󠄁y󠄁,󠄁 n󠄁o󠄁-󠄁d󠄁r󠄁a󠄁g󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁,󠄁 p󠄁r󠄁o󠄁m󠄁o󠄁t󠄁i󠄁o󠄁n󠄁,󠄁
-t󠄁a󠄁b󠄁l󠄁e󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 p󠄁a󠄁g󠄁e󠄁 t󠄁r󠄁a󠄁n󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 t󠄁o󠄁g󠄁g󠄁l󠄁e󠄁/󠄁s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁
+The new runtime checks exercise the native accessibility action on the preview toggle,
+text-area role, character count, rendered text, attributed text, selected text/ranges,
+keyboard selection extension, screen-frame geometry, focus transfer and source restoration.
+A sealed fixture exposes its rendered object character without the fixture's sealed text.
+Existing mounted-roll tests exercise copy, links, expiry, no-drag behavior, promotion,
+table selection, page transitions and toggle/source restoration.
 
-F󠄁o󠄁u󠄁r󠄁 b󠄁i󠄁t󠄁m󠄁a󠄁p󠄁 s󠄁p󠄁e󠄁c󠄁i󠄁m󠄁e󠄁n󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 a󠄁t󠄁 3󠄁2󠄁0󠄁 a󠄁n󠄁d󠄁 6󠄁4󠄁0󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁 i󠄁n󠄁 A󠄁q󠄁u󠄁a󠄁 a󠄁n󠄁d󠄁 D󠄁a󠄁r󠄁k󠄁 A󠄁q󠄁u󠄁a󠄁:󠄁
-h󠄁e󠄁a󠄁d󠄁i󠄁n󠄁g󠄁s󠄁,󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 H󠄁T󠄁M󠄁L󠄁 t󠄁r󠄁a󠄁i󠄁t󠄁s󠄁,󠄁 U󠄁n󠄁i󠄁c󠄁o󠄁d󠄁e󠄁 t󠄁e󠄁x󠄁t󠄁,󠄁 o󠄁r󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 t󠄁a󠄁s󠄁k󠄁s󠄁,󠄁 a󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁,󠄁 a󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁/󠄁l󠄁i󠄁n󠄁k󠄁,󠄁
-i󠄁m󠄁a󠄁g󠄁e󠄁 a󠄁l󠄁t󠄁 t󠄁e󠄁x󠄁t󠄁 a󠄁n󠄁d󠄁 f󠄁e󠄁n󠄁c󠄁e󠄁d󠄁 c󠄁o󠄁d󠄁e󠄁.󠄁 T󠄁h󠄁a󠄁t󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁o󠄁u󠄁n󠄁d󠄁 a󠄁 r󠄁e󠄁a󠄁l󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁:󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁
-N󠄁S󠄁T󠄁e󠄁x󠄁t󠄁B󠄁l󠄁o󠄁c󠄁k󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁s󠄁 c󠄁o󠄁l󠄁l󠄁a󠄁p󠄁s󠄁e󠄁d󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁/󠄁c󠄁o󠄁d󠄁e󠄁 l󠄁i󠄁n󠄁e󠄁s󠄁 t󠄁o󠄁 r󠄁o󠄁u󠄁g󠄁h󠄁l󠄁y󠄁 o󠄁n󠄁e󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 a󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁.󠄁
-Q󠄁u󠄁o󠄁t󠄁e󠄁/󠄁c󠄁o󠄁d󠄁e󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁s󠄁 n󠄁o󠄁w󠄁 u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁.󠄁 A󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 l󠄁i󠄁n󠄁e󠄁-󠄁f󠄁r󠄁a󠄁g󠄁m󠄁e󠄁n󠄁t󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁s󠄁,󠄁
-n󠄁e󠄁s󠄁t󠄁e󠄁d󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁s󠄁,󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁 t󠄁r󠄁a󠄁n󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 n󠄁a󠄁r󠄁r󠄁o󠄁w󠄁/󠄁w󠄁i󠄁d󠄁e󠄁/󠄁n󠄁a󠄁r󠄁r󠄁o󠄁w󠄁 r󠄁e󠄁s󠄁i󠄁z󠄁i󠄁n󠄁g󠄁.󠄁
+Four bitmap specimens were inspected at 320 and 640 points in Aqua and Dark Aqua:
+headings, native HTML traits, Unicode text, ordered tasks, a table, a quote/link,
+image alt text and fenced code. That inspection found a real layout defect: default
+NSTextBlock widths collapsed quote/code lines to roughly one character after a table.
+Quote/code blocks now use the available width. A regression checks line-fragment widths,
+nested quotes, table transitions and narrow/wide/narrow resizing.
 
-T󠄁h󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁 n󠄁e󠄁w󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 a󠄁s󠄁s󠄁u󠄁m󠄁e󠄁d󠄁 a󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁'󠄁s󠄁 B󠄁o󠄁o󠄁l󠄁e󠄁a󠄁n󠄁 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁 r󠄁e󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁d󠄁
-i󠄁t󠄁s󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 a󠄁n󠄁d󠄁 a󠄁 d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁-󠄁m󠄁o󠄁v󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁 r󠄁e󠄁s󠄁e󠄁t󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁a󠄁d󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 I󠄁t󠄁 n󠄁o󠄁w󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 t󠄁h󠄁e󠄁
-a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 t󠄁o󠄁g󠄁g󠄁l󠄁e󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁/󠄁f󠄁o󠄁c󠄁u󠄁s󠄁 a󠄁n󠄁d󠄁 s󠄁e󠄁t󠄁s󠄁 a󠄁n󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 i󠄁n󠄁s󠄁e󠄁r󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 e󠄁x󠄁t󠄁e󠄁n󠄁d󠄁i󠄁n󠄁g󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁.󠄁
-N󠄁o󠄁 p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 w󠄁a󠄁s󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 t󠄁o󠄁 s󠄁a󠄁t󠄁i󠄁s󠄁f󠄁y󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁.󠄁
+The first new accessibility fixture assumed a button action's Boolean result represented
+its state and a document-movement command reset the read-only selection. It now checks the
+actual toggle state/focus and sets an explicit insertion point before extending selection.
+No production accessibility behavior was changed to satisfy the fixture.
 
-T󠄁h󠄁i󠄁s󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 s󠄁p󠄁e󠄁e󠄁c󠄁h󠄁/󠄁r󠄁o󠄁t󠄁o󠄁r󠄁 o󠄁p󠄁e󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁r󠄁 a󠄁n󠄁 i󠄁n󠄁s󠄁t󠄁a󠄁l󠄁l󠄁e󠄁d󠄁-󠄁a󠄁p󠄁p󠄁
-w󠄁a󠄁l󠄁k󠄁t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁.󠄁 I󠄁m󠄁a󠄁g󠄁e󠄁-󠄁l󠄁o󠄁a󠄁d󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 a󠄁n󠄁d󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁-󠄁s󠄁p󠄁e󠄁c󠄁i󠄁f󠄁i󠄁c󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 r󠄁o󠄁l󠄁e󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁
-R󠄁4󠄁/󠄁R󠄁5󠄁 w󠄁o󠄁r󠄁k󠄁;󠄁 t󠄁h󠄁i󠄁s󠄁 P󠄁R󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁s󠄁 a󠄁l󠄁t󠄁 t󠄁e󠄁x󠄁t󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁e󠄁r󠄁t󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁o󠄁r󠄁s󠄁.󠄁
+This validation does not include VoiceOver speech/rotor operation or an installed-app
+walkthrough. Image-load controls and image-specific accessible roles remain the separate
+R4/R5 work; this PR renders alt text and inert descriptors.
 
 ```sh
 PREVIEW_QA_ARTIFACTS=/tmp/pr334-ui scripts/test-shell.sh --filter 'PreviewComposerTests|MarkdownPreviewRenderingTests|MarkdownBridgeTests|CheckpointMarkdownPreviewTests|MarkdownIntegrationPerformanceTests'
@@ -59,125 +59,125 @@ git diff --check
 python3 scripts/lint-adrs.py docs/adr
 ```
 
-T󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 2󠄁,󠄁5󠄁4󠄁9󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁:󠄁 3󠄁9󠄁3󠄁 O󠄁n󠄁e󠄁t󠄁i󠄁m󠄁e󠄁P󠄁a󠄁d󠄁 a󠄁n󠄁d󠄁 2󠄁,󠄁1󠄁5󠄁6󠄁 C󠄁o󠄁m󠄁p󠄁a󠄁n󠄁i󠄁o󠄁n󠄁K󠄁i󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁;󠄁
-t󠄁w󠄁o󠄁 a󠄁d󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁 s󠄁k󠄁i󠄁p󠄁p󠄁e󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁/󠄁p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 r󠄁u󠄁n󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 2󠄁5󠄁5󠄁
-t󠄁e󠄁s󠄁t󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁 s󠄁k󠄁i󠄁p󠄁p󠄁e󠄁d󠄁.󠄁 B󠄁o󠄁t󠄁h󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 w󠄁h󠄁e󠄁n󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁e󠄁d󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁.󠄁
-W󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁l󠄁l󠄁 5󠄁3󠄁 A󠄁D󠄁R󠄁 l󠄁i󠄁n󠄁t󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁.󠄁 C󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁-󠄁h󠄁e󠄁a󠄁d󠄁 r󠄁e󠄁m󠄁o󠄁t󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 a󠄁r󠄁e󠄁
-r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 P󠄁R󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁i󠄁o󠄁n󠄁.󠄁
-T󠄁h󠄁e󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁s󠄁 a󠄁r󠄁e󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 a󠄁r󠄁t󠄁i󠄁f󠄁a󠄁c󠄁t󠄁s󠄁 u󠄁n󠄁d󠄁e󠄁r󠄁 `/tmp/pr334-ui`;󠄁 t󠄁h󠄁e󠄁y󠄁 a󠄁r󠄁e󠄁 n󠄁o󠄁t󠄁 s󠄁h󠄁i󠄁p󠄁p󠄁e󠄁d󠄁 a󠄁s󠄁s󠄁e󠄁t󠄁s󠄁.󠄁
+The full local suite passed 2,549 tests: 393 OnetimePad and 2,156 CompanionKit tests;
+two additional opt-in profiles were skipped. The focused native/preview run passed 255
+tests with the native profile skipped. Both opt-in profiles passed when requested explicitly.
+Whitespace checks and all 53 ADR lint checks passed. Current-head remote checks are
+recorded separately in the PR description.
+The inspected images are local artifacts under `/tmp/pr334-ui`; they are not shipped assets.
 
 ## Final-head review decisions
 
-T󠄁h󠄁e󠄁 [r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 o󠄁n󠄁 4󠄁1󠄁2󠄁7󠄁4󠄁9󠄁0󠄁a󠄁](https://github.com/onetimesecret/macos/actions/runs/40615156351)
-c󠄁o󠄁n󠄁f󠄁i󠄁r󠄁m󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 f󠄁i󠄁x󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁a󠄁i󠄁s󠄁e󠄁d󠄁 a󠄁d󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 n󠄁o󠄁n󠄁-󠄁b󠄁l󠄁o󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁-󠄁u󠄁p󠄁s󠄁.󠄁
+The [review on 4127490a](https://github.com/onetimesecret/macos/actions/runs/40615156351)
+confirmed the earlier fixes and raised additional non-blocking follow-ups.
 
-- K󠄁e󠄁e󠄁p󠄁 s󠄁y󠄁n󠄁c󠄁h󠄁r󠄁o󠄁n󠄁o󠄁u󠄁s󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁 w󠄁i󠄁t󠄁h󠄁i󠄁n󠄁 P󠄁R󠄁 B󠄁'󠄁s󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 p󠄁e󠄁r󠄁-󠄁p󠄁a󠄁g󠄁e󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁s󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 i󠄁s󠄁 a󠄁n󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁
-  i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 t󠄁r󠄁a󠄁d󠄁e󠄁o󠄁f󠄁f󠄁:󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁s󠄁 a󠄁r󠄁e󠄁 r󠄁e󠄁u󠄁s󠄁e󠄁d󠄁,󠄁 b󠄁u󠄁t󠄁 s󠄁e󠄁v󠄁e󠄁r󠄁a󠄁l󠄁 n󠄁e󠄁w󠄁l󠄁y󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁
-  l󠄁a󠄁r󠄁g󠄁e󠄁 p󠄁a󠄁g󠄁e󠄁s󠄁 c󠄁a󠄁n󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 p󠄁a󠄁u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 m󠄁a󠄁i󠄁n󠄁 a󠄁c󠄁t󠄁o󠄁r󠄁 f󠄁o󠄁r󠄁 a󠄁b󠄁o󠄁u󠄁t󠄁 h󠄁a󠄁l󠄁f󠄁 a󠄁 s󠄁e󠄁c󠄁o󠄁n󠄁d󠄁.󠄁 B󠄁a󠄁c󠄁k󠄁g󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁
-  a󠄁n󠄁d󠄁 a󠄁 l󠄁a󠄁t󠄁e󠄁n󠄁c󠄁y󠄁-󠄁b󠄁a󠄁s󠄁e󠄁d󠄁 r󠄁o󠄁l󠄁l󠄁 b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁 n󠄁e󠄁e󠄁d󠄁 a󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 d󠄁e󠄁s󠄁i󠄁g󠄁n󠄁;󠄁 n󠄁o󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁i󠄁v󠄁e󠄁n󠄁e󠄁s󠄁s󠄁 g󠄁u󠄁a󠄁r󠄁a󠄁n󠄁t󠄁e󠄁e󠄁 i󠄁s󠄁
-  i󠄁n󠄁f󠄁e󠄁r󠄁r󠄁e󠄁d󠄁 f󠄁r󠄁o󠄁m󠄁 s󠄁c󠄁a󠄁l󠄁a󠄁r󠄁 c󠄁e󠄁i󠄁l󠄁i󠄁n󠄁g󠄁s󠄁 o󠄁r󠄁 c󠄁a󠄁c󠄁h󠄁e󠄁 c󠄁o󠄁u󠄁n󠄁t󠄁s󠄁.󠄁
-- C󠄁a󠄁c󠄁h󠄁e󠄁 h󠄁e󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 s󠄁i󠄁z󠄁i󠄁n󠄁g󠄁,󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁-󠄁h󠄁e󠄁a󠄁d󠄁e󠄁r󠄁 t󠄁r󠄁a󠄁i󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 b󠄁a󠄁s󠄁e󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁s󠄁 a󠄁s󠄁 w󠄁e󠄁l󠄁l󠄁 a󠄁s󠄁 i󠄁n󠄁l󠄁i󠄁n󠄁e󠄁 f󠄁o󠄁n󠄁t󠄁s󠄁.󠄁
-  H󠄁o󠄁i󠄁s󠄁t󠄁 i󠄁m󠄁m󠄁u󠄁t󠄁a󠄁b󠄁l󠄁e󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁 s󠄁e󠄁t󠄁s󠄁.󠄁 L󠄁i󠄁s󠄁t󠄁 m󠄁a󠄁r󠄁k󠄁e󠄁r󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 o󠄁n󠄁e󠄁 o󠄁p󠄁e󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁e󠄁r󠄁 i󠄁t󠄁e󠄁m󠄁,󠄁
-  n󠄁e󠄁e󠄁d󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 h󠄁a󠄁n󠄁g󠄁i󠄁n󠄁g󠄁-󠄁i󠄁n󠄁d󠄁e󠄁n󠄁t󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁;󠄁 o󠄁r󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 m󠄁a󠄁r󠄁k󠄁e󠄁r󠄁 s󠄁t󠄁r󠄁i󠄁n󠄁g󠄁s󠄁 g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁l󠄁l󠄁y󠄁 d󠄁i󠄁f󠄁f󠄁e󠄁r󠄁.󠄁
-- K󠄁e󠄁e󠄁p󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁s󠄁 i󠄁n󠄁 a󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 u󠄁n󠄁c󠄁l󠄁o󠄁s󠄁e󠄁d󠄁 C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 r󠄁a󠄁w󠄁-󠄁t󠄁e󠄁x󠄁t󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁.󠄁 R󠄁e󠄁f󠄁u󠄁s󠄁i󠄁n󠄁g󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁
-  t󠄁e󠄁x󠄁t󠄁/󠄁b󠄁r󠄁e󠄁a󠄁k󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁s󠄁 a󠄁v󠄁o󠄁i󠄁d󠄁s󠄁 r󠄁e󠄁c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁n󠄁g󠄁 l󠄁o󠄁s󠄁t󠄁 r󠄁a󠄁w󠄁 s󠄁p󠄁e󠄁l󠄁l󠄁i󠄁n󠄁g󠄁;󠄁 a󠄁n󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 a󠄁l󠄁r󠄁e󠄁a󠄁d󠄁y󠄁 h󠄁a󠄁s󠄁 e󠄁x󠄁a󠄁c󠄁t󠄁
-  i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁.󠄁 B󠄁o󠄁t󠄁h󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁e󠄁r󠄁-󠄁s󠄁t󠄁r󠄁e󠄁a󠄁m󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁a󠄁l󠄁-󠄁p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁 a󠄁n󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 t󠄁a󠄁i󠄁l󠄁.󠄁
-- R󠄁e󠄁t󠄁a󠄁i󠄁n󠄁 f󠄁a󠄁u󠄁l󠄁t󠄁 c󠄁l󠄁a󠄁s󠄁s󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁o󠄁r󠄁 m󠄁a󠄁l󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁 b󠄁r󠄁i󠄁d󠄁g󠄁e󠄁 d󠄁a󠄁t󠄁a󠄁 a󠄁n󠄁d󠄁 d󠄁u󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁e󠄁r󠄁 i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁t󠄁i󠄁e󠄁s󠄁.󠄁
-  T󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁a󠄁l󠄁 r󠄁e󠄁p󠄁e󠄁a󠄁t󠄁e󠄁d󠄁-󠄁r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁 o󠄁b󠄁s󠄁e󠄁r󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 R󠄁u󠄁s󠄁t󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁'󠄁s󠄁
-  d󠄁u󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁e󠄁O󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁e󠄁s󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁-󠄁p󠄁a󠄁g󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 w󠄁i󠄁t󠄁h󠄁
-  t󠄁h󠄁e󠄁 s󠄁a󠄁m󠄁e󠄁 a󠄁t󠄁t󠄁a󠄁c󠄁h󠄁m󠄁e󠄁n󠄁t󠄁 o󠄁n󠄁c󠄁e󠄁.󠄁 P󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 d󠄁u󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁e󠄁O󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 i󠄁s󠄁 a󠄁l󠄁r󠄁e󠄁a󠄁d󠄁y󠄁 l󠄁o󠄁g󠄁g󠄁e󠄁d󠄁 a󠄁t󠄁 i󠄁n󠄁f󠄁o󠄁 l󠄁e󠄁v󠄁e󠄁l󠄁.󠄁
-  T󠄁h󠄁i󠄁s󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 p󠄁r󠄁o󠄁v󠄁e󠄁 e󠄁v󠄁e󠄁r󠄁y󠄁 p󠄁o󠄁s󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁e󠄁r󠄁 i󠄁n󠄁v󠄁a󠄁r󠄁i󠄁a󠄁n󠄁t󠄁 u󠄁n󠄁r󠄁e󠄁a󠄁c󠄁h󠄁a󠄁b󠄁l󠄁e󠄁;󠄁 i󠄁t󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁
-  d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁e󠄁d󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 f󠄁r󠄁o󠄁m󠄁 a󠄁n󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁n󠄁a󠄁l󠄁 c󠄁o󠄁n󠄁s󠄁i󠄁s󠄁t󠄁e󠄁n󠄁c󠄁y󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁.󠄁
-- A󠄁n󠄁 e󠄁m󠄁p󠄁t󠄁y󠄁-󠄁a󠄁l󠄁t󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 c󠄁a󠄁n󠄁 h󠄁a󠄁v󠄁e󠄁 n󠄁o󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 t󠄁e󠄁x󠄁t󠄁 r󠄁a󠄁n󠄁g󠄁e󠄁.󠄁 T󠄁r󠄁i󠄁m󠄁m󠄁i󠄁n󠄁g󠄁 a󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 H󠄁T󠄁M󠄁L󠄁
-  b󠄁l󠄁o󠄁c󠄁k󠄁 c󠄁a󠄁n󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁 i󠄁t󠄁s󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁o󠄁r󠄁,󠄁 l󠄁e󠄁a󠄁v󠄁i󠄁n󠄁g󠄁 a󠄁 g󠄁a󠄁p󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 t󠄁h󠄁e󠄁 n󠄁e󠄁x󠄁t󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 o󠄁c󠄁c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁c󠄁e󠄁.󠄁
-  A󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁s󠄁 t󠄁h󠄁a󠄁t󠄁 n󠄁u󠄁m󠄁b󠄁e󠄁r󠄁i󠄁n󠄁g󠄁.󠄁 R󠄁4󠄁/󠄁R󠄁5󠄁 m󠄁u󠄁s󠄁t󠄁 i󠄁n󠄁t󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁d󠄁d󠄁i󠄁n󠄁g󠄁
-  s󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 c󠄁o󠄁p󠄁i󠄁e󠄁d󠄁 i󠄁n󠄁k󠄁;󠄁 t󠄁h󠄁i󠄁s󠄁 P󠄁R󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁.󠄁
-- I󠄁P󠄁v󠄁6󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 c󠄁o󠄁n󠄁t󠄁i󠄁n󠄁u󠄁e󠄁 t󠄁o󠄁 r󠄁e󠄁q󠄁u󠄁i󠄁r󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁v󠄁e󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁 a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁e󠄁s󠄁.󠄁 L󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁s󠄁
-  b󠄁r󠄁a󠄁c󠄁k󠄁e󠄁t󠄁e󠄁d󠄁 a󠄁n󠄁d󠄁 u󠄁n󠄁b󠄁r󠄁a󠄁c󠄁k󠄁e󠄁t󠄁e󠄁d󠄁 h󠄁o󠄁s󠄁t󠄁 r󠄁e󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁a󠄁n󠄁 r󠄁e󠄁l󠄁y󠄁i󠄁n󠄁g󠄁 o󠄁n󠄁 o󠄁n󠄁e󠄁 F󠄁o󠄁u󠄁n󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
-  r󠄁e󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁;󠄁 t󠄁h󠄁i󠄁s󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 r󠄁e󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁 a󠄁 r󠄁u󠄁n󠄁t󠄁i󠄁m󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁 o󠄁n󠄁 m󠄁a󠄁c󠄁O󠄁S󠄁 1󠄁3󠄁 h󠄁a󠄁r󠄁d󠄁w󠄁a󠄁r󠄁e󠄁.󠄁
-- E󠄁n󠄁t󠄁i󠄁t󠄁y󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁i󠄁n󠄁g󠄁 u󠄁s󠄁e󠄁s󠄁 a󠄁 f󠄁i󠄁x󠄁e󠄁d󠄁 s󠄁m󠄁a󠄁l󠄁l󠄁 n󠄁a󠄁m󠄁e󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁,󠄁 n󠄁o󠄁t󠄁 t󠄁h󠄁e󠄁 H󠄁T󠄁M󠄁L󠄁5󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁,󠄁 a󠄁n󠄁d󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁e󠄁d󠄁 l󠄁o󠄁o󠄁k󠄁a󠄁h󠄁e󠄁a󠄁d󠄁:󠄁
-  a󠄁t󠄁 m󠄁o󠄁s󠄁t󠄁 3󠄁1󠄁 n󠄁a󠄁m󠄁e󠄁 s󠄁c󠄁a󠄁l󠄁a󠄁r󠄁s󠄁 b󠄁e󠄁t󠄁w󠄁e󠄁e󠄁n󠄁 a󠄁m󠄁p󠄁e󠄁r󠄁s󠄁a󠄁n󠄁d󠄁 a󠄁n󠄁d󠄁 s󠄁e󠄁m󠄁i󠄁c󠄁o󠄁l󠄁o󠄁n󠄁.󠄁 T󠄁i󠄁g󠄁h󠄁t󠄁 a󠄁n󠄁d󠄁 l󠄁o󠄁o󠄁s󠄁e󠄁 l󠄁i󠄁s󠄁t󠄁s󠄁 c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁t󠄁l󠄁y󠄁
-  s󠄁h󠄁a󠄁r󠄁e󠄁 s󠄁p󠄁a󠄁c󠄁i󠄁n󠄁g󠄁.󠄁 T󠄁h󠄁e󠄁s󠄁e󠄁 a󠄁r󠄁e󠄁 f󠄁i󠄁d󠄁e󠄁l󠄁i󠄁t󠄁y󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁s󠄁;󠄁 n󠄁o󠄁 c󠄁o󠄁n󠄁f󠄁o󠄁r󠄁m󠄁a󠄁n󠄁c󠄁e󠄁 b󠄁e󠄁y󠄁o󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁e󠄁d󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁t󠄁 i󠄁s󠄁 a󠄁s󠄁s󠄁e󠄁r󠄁t󠄁e󠄁d󠄁.󠄁
-- S󠄁w󠄁i󠄁f󠄁t󠄁'󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁C󠄁S󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 a󠄁n󠄁d󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 r󠄁e󠄁c󠄁e󠄁i󠄁v󠄁e󠄁 n󠄁o󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 w󠄁i󠄁p󠄁e󠄁.󠄁
-  T󠄁h󠄁e󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁 D󠄁a󠄁t󠄁a󠄁 v󠄁i󠄁e󠄁w󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 R󠄁u󠄁s󠄁t󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁e󠄁 b󠄁u󠄁f󠄁f󠄁e󠄁r󠄁 u󠄁n󠄁t󠄁i󠄁l󠄁 t󠄁h󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 h󠄁e󠄁l󠄁p󠄁e󠄁r󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁s󠄁
-  i󠄁t󠄁;󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁 a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁e󠄁d󠄁 F󠄁o󠄁u󠄁n󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁r󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁i󠄁e󠄁s󠄁 a󠄁r󠄁e󠄁 n󠄁o󠄁t󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁 w󠄁i󠄁p󠄁e󠄁d󠄁 h󠄁e󠄁r󠄁e󠄁.󠄁
-  R󠄁u󠄁s󠄁t󠄁 z󠄁e󠄁r󠄁o󠄁i󠄁z󠄁i󠄁n󠄁g󠄁 o󠄁w󠄁n󠄁e󠄁r󠄁s󠄁 d󠄁o󠄁 n󠄁o󠄁t󠄁 e󠄁x󠄁t󠄁e󠄁n󠄁d󠄁 t󠄁o󠄁 i󠄁n󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 c󠄁o󠄁p󠄁i󠄁e󠄁s󠄁.󠄁 A󠄁v󠄁o󠄁i󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁 U󠄁T󠄁F󠄁-󠄁8󠄁 c󠄁o󠄁p󠄁y󠄁
-  w󠄁o󠄁u󠄁l󠄁d󠄁 n󠄁o󠄁t󠄁 w󠄁i󠄁p󠄁e󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁 S󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 t󠄁r󠄁e󠄁e󠄁.󠄁
-- P󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁n󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 T󠄁e󠄁x󠄁t󠄁P󠄁r󠄁o󠄁v󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁l󠄁o󠄁g󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁t󠄁i󠄁c󠄁e󠄁 p󠄁r󠄁o󠄁s󠄁e󠄁.󠄁
+- Keep synchronous rendering within PR B's existing per-page limits. This is an explicit
+  implementation tradeoff: unchanged renderings are reused, but several newly changed
+  large pages can still pause the main actor for about half a second. Background rendering
+  and a latency-based roll budget need a separate design; no responsiveness guarantee is
+  inferred from scalar ceilings or cache counts.
+- Cache heading sizing, table-header traits and base attributes as well as inline fonts.
+  Hoist immutable character sets. List marker measurement remains one operation per item,
+  needed for actual hanging-indent width; ordered marker strings generally differ.
+- Keep original objects in a final unclosed CommonMark raw-text scope. Refusing decoded
+  text/break events avoids reconstructing lost raw spelling; an object already has exact
+  identity. Both composer-stream and real-parser regressions cover an object-only tail.
+- Retain fault classification for malformed bridge data and duplicate composer identities.
+  The existing real repeated-reference regression explicitly observes the Rust parser's
+  duplicateObject refusal before composition, then verifies original-page fallback with
+  the same attachment once. Parser duplicateObject is already logged at info level.
+  This does not prove every possible composer invariant unreachable; it distinguishes the
+  documented parser refusal from an internal consistency failure.
+- An empty-alt image can have no rendered text range. Trimming a whitespace-only HTML
+  block can remove its descriptor, leaving a gap before the next visible source occurrence.
+  A regression records that numbering. R4/R5 must introduce image anchors without adding
+  synthetic copied ink; this PR does not implement image loading or accessible image controls.
+- IPv6 tests continue to require interactive valid addresses. Literal validation accepts
+  bracketed and unbracketed host representations rather than relying on one Foundation
+  representation; this does not represent a runtime test on macOS 13 hardware.
+- Entity decoding uses a fixed small name table, not the HTML5 table, and bounded lookahead:
+  at most 31 name scalars between ampersand and semicolon. Tight and loose lists currently
+  share spacing. These are fidelity limits; no conformance beyond the tested subset is asserted.
+- Swift's withCString temporary and decoded Swift documents receive no explicit wipe.
+  The input Data view references the Rust response buffer until the shared helper releases
+  it; separately allocated Foundation decoder temporaries are not explicitly wiped here.
+  Rust zeroizing owners do not extend to independent Swift copies. Avoiding a UTF-8 copy
+  would not wipe the input String or decoded tree.
+- Preserve intentional TextProv attribution in the changelog and notice prose.
 
 ## Final tokenizer follow-up
 
-T󠄁h󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 o󠄁n󠄁 9󠄁c󠄁1󠄁e󠄁1󠄁0󠄁e󠄁e󠄁 f󠄁o󠄁u󠄁n󠄁d󠄁 o󠄁n󠄁e󠄁 a󠄁d󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 f󠄁i󠄁d󠄁e󠄁l󠄁i󠄁t󠄁y󠄁 d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁:󠄁 s󠄁c󠄁a󠄁n󠄁n󠄁i󠄁n󠄁g󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁s󠄁 i󠄁m󠄁m󠄁e󠄁d󠄁i󠄁a󠄁t󠄁e󠄁l󠄁y󠄁
-a󠄁f󠄁t󠄁e󠄁r󠄁 a󠄁 s󠄁t󠄁r󠄁a󠄁y󠄁 l󠄁e󠄁s󠄁s󠄁-󠄁t󠄁h󠄁a󠄁n󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁 c󠄁o󠄁u󠄁l󠄁d󠄁 c󠄁o󠄁n󠄁s󠄁u󠄁m󠄁e󠄁 l󠄁a󠄁t󠄁e󠄁r󠄁 c󠄁l󠄁o󠄁s󠄁i󠄁n󠄁g󠄁/󠄁f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁t󠄁i󠄁n󠄁g󠄁 t󠄁a󠄁g󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁i󠄁z󠄁e󠄁r󠄁
-n󠄁o󠄁w󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁e󠄁s󠄁 a󠄁 p󠄁l󠄁a󠄁u󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 m󠄁a󠄁r󠄁k󠄁u󠄁p󠄁 p󠄁r󠄁e󠄁f󠄁i󠄁x󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 e󠄁n󠄁t󠄁e󠄁r󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁-󠄁a󠄁w󠄁a󠄁r󠄁e󠄁 t󠄁a󠄁g󠄁 s󠄁c󠄁a󠄁n󠄁.󠄁
-T󠄁o󠄁k󠄁e󠄁n󠄁-󠄁l󠄁e󠄁v󠄁e󠄁l󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁a󠄁l󠄁-󠄁p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁s󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 t󠄁h󠄁e󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁r󠄁i󠄁s󠄁o󠄁n󠄁/󠄁a󠄁p󠄁o󠄁s󠄁t󠄁r󠄁o󠄁p󠄁h󠄁e󠄁 a󠄁n󠄁d󠄁 a󠄁p󠄁p󠄁l󠄁y󠄁
-s󠄁u󠄁b󠄁s󠄁e󠄁q󠄁u󠄁e󠄁n󠄁t󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁t󠄁i󠄁n󠄁g󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁v󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁.󠄁
+The review on 9c1e10ee found one additional fidelity defect: scanning quotes immediately
+after a stray less-than character could consume later closing/formatting tags. The tokenizer
+now distinguishes a plausible markup prefix before entering the quote-aware tag scan.
+Token-level and real-parser fixtures preserve the literal comparison/apostrophe and apply
+subsequent native formatting, including an intervening original object.
 
-C󠄁o󠄁m󠄁p󠄁a󠄁c󠄁t󠄁 s󠄁t󠄁o󠄁r󠄁a󠄁g󠄁e󠄁 n󠄁o󠄁w󠄁 b󠄁r󠄁a󠄁n󠄁c󠄁h󠄁e󠄁s󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁 o󠄁n󠄁 t󠄁h󠄁e󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁-󠄁m󠄁a󠄁r󠄁k󠄁e󠄁r󠄁 r󠄁a󠄁n󠄁g󠄁e󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 s󠄁u󠄁b󠄁t󠄁r󠄁a󠄁c󠄁t󠄁i󠄁n󠄁g󠄁 i󠄁t󠄁s󠄁
-b󠄁a󠄁s󠄁e󠄁.󠄁 U󠄁T󠄁F󠄁-󠄁8󠄁 l󠄁e󠄁n󠄁g󠄁t󠄁h󠄁 i󠄁s󠄁 c󠄁o󠄁m󠄁p󠄁u󠄁t󠄁e󠄁d󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 t󠄁h󠄁e󠄁 F󠄁F󠄁I󠄁 s󠄁t󠄁r󠄁i󠄁n󠄁g󠄁 c󠄁l󠄁o󠄁s󠄁u󠄁r󠄁e󠄁.󠄁 T󠄁h󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁
-b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁 i󠄁s󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 c󠄁h󠄁a󠄁r󠄁g󠄁e󠄁d󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 e󠄁a󠄁c󠄁h󠄁 r󠄁a󠄁w󠄁-󠄁H󠄁T󠄁M󠄁L󠄁 l󠄁e󠄁a󠄁f󠄁 u󠄁s󠄁e󠄁s󠄁 i󠄁t󠄁s󠄁 o󠄁w󠄁n󠄁 t󠄁o󠄁k󠄁e󠄁n󠄁i󠄁z󠄁e󠄁r󠄁 c󠄁e󠄁i󠄁l󠄁i󠄁n󠄁g󠄁;󠄁 t󠄁h󠄁e󠄁
-e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 e󠄁x󠄁a󠄁c󠄁t󠄁-󠄁l󠄁i󠄁m󠄁i󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁e󠄁c󠄁u󠄁t󠄁a󠄁b󠄁l󠄁e󠄁 e󠄁x󠄁p󠄁l󠄁a󠄁n󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁a󠄁t󠄁 a󠄁r󠄁r󠄁a󠄁n󠄁g󠄁e󠄁m󠄁e󠄁n󠄁t󠄁.󠄁
+Compact storage now branches explicitly on the object-marker range before subtracting its
+base. UTF-8 length is computed before the FFI string closure. The shared document input
+budget is still charged before each raw-HTML leaf uses its own tokenizer ceiling; the
+existing exact-limit tests remain the executable explanation for that arrangement.
 
-N󠄁o󠄁 t󠄁i󠄁m󠄁i󠄁n󠄁g󠄁 a󠄁s󠄁s󠄁e󠄁r󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁s󠄁 a󠄁d󠄁d󠄁e󠄁d󠄁:󠄁 t󠄁h󠄁e󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 a󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁a󠄁n󠄁 a󠄁
-m󠄁a󠄁c󠄁h󠄁i󠄁n󠄁e󠄁-󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁a󠄁n󠄁c󠄁e󠄁 g󠄁a󠄁t󠄁e󠄁.󠄁 T󠄁h󠄁e󠄁 1󠄁0󠄁0󠄁,󠄁0󠄁0󠄁0󠄁-󠄁c󠄁e󠄁l󠄁l󠄁 A󠄁p󠄁p󠄁K󠄁i󠄁t󠄁 c󠄁a󠄁s󠄁e󠄁 i󠄁s󠄁 n󠄁o󠄁 l󠄁o󠄁n󠄁g󠄁e󠄁r󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁e󠄁d󠄁:󠄁
-n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁s󠄁 n󠄁o󠄁w󠄁 u󠄁s󠄁e󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 c󠄁o󠄁l󠄁u󠄁m󠄁n󠄁/󠄁c󠄁e󠄁l󠄁l󠄁 b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁s󠄁;󠄁 b󠄁a󠄁c󠄁k󠄁g󠄁r󠄁o󠄁u󠄁n󠄁d󠄁/󠄁l󠄁a󠄁t󠄁e󠄁n󠄁c󠄁y󠄁 w󠄁o󠄁r󠄁k󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁.󠄁
-T󠄁h󠄁e󠄁r󠄁e󠄁 i󠄁s󠄁 n󠄁o󠄁 n󠄁e󠄁w󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 a󠄁f󠄁f󠄁o󠄁r󠄁d󠄁a󠄁n󠄁c󠄁e󠄁:󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 d󠄁i󠄁s󠄁p󠄁l󠄁a󠄁y󠄁s󠄁 t󠄁h󠄁e󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁 p󠄁a󠄁g󠄁e󠄁 a󠄁n󠄁d󠄁 c󠄁o󠄁p󠄁y󠄁i󠄁n󠄁g󠄁
-u󠄁s󠄁e󠄁s󠄁 w󠄁h󠄁a󠄁t󠄁 t󠄁h󠄁a󠄁t󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 s󠄁h󠄁o󠄁w󠄁s󠄁.󠄁 T󠄁h󠄁a󠄁t󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 f󠄁o󠄁r󠄁 f󠄁u󠄁t󠄁u󠄁r󠄁e󠄁
-p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁-󠄁s󠄁t󠄁a󠄁t󠄁e󠄁 d󠄁e󠄁s󠄁i󠄁g󠄁n󠄁.󠄁 N󠄁o󠄁 n󠄁o󠄁t󠄁i󠄁c󠄁e󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁s󠄁 s󠄁t󠄁r󠄁i󠄁p󠄁p󠄁e󠄁d󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁 c󠄁o󠄁m󠄁m󠄁e󠄁n󠄁t󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁
-t󠄁h󠄁e󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 o󠄁r󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁i󠄁e󠄁s󠄁.󠄁
+No timing assertion is added: the opt-in profile remains a measurement rather than a
+machine-dependent acceptance gate. The 100,000-cell AppKit case is no longer accepted:
+native tables now use separate column/cell budgets; background/latency work remains.
+There is no new visible refusal affordance: fallback displays the original page and copying
+uses what that fallback shows. That interaction distinction remains explicit for future
+preview-state design. No notice attribution is stripped and no comment-only changes replace
+the regressions or the recorded policies.
 
 ## Attribute-state and address coverage follow-up
 
-T󠄁h󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 o󠄁f󠄁 1󠄁3󠄁7󠄁3󠄁d󠄁0󠄁7󠄁6󠄁 f󠄁o󠄁u󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁s󠄁i󠄁d󠄁u󠄁a󠄁l󠄁 m󠄁a󠄁l󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁-󠄁a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 o󠄁f󠄁 t󠄁h󠄁e󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁-󠄁s󠄁c󠄁a󠄁n󠄁n󠄁i󠄁n󠄁g󠄁
-d󠄁e󠄁f󠄁e󠄁c󠄁t󠄁.󠄁 T󠄁h󠄁e󠄁 t󠄁a󠄁g󠄁 p󠄁r󠄁e󠄁-󠄁s󠄁c󠄁a󠄁n󠄁 n󠄁o󠄁w󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁s󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁-󠄁n󠄁a󠄁m󠄁e󠄁/󠄁v󠄁a󠄁l󠄁u󠄁e󠄁 g󠄁r󠄁a󠄁m󠄁m󠄁a󠄁r󠄁,󠄁 s󠄁h󠄁a󠄁r󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 u󠄁n󠄁q󠄁u󠄁o󠄁t󠄁e󠄁d󠄁-󠄁v󠄁a󠄁l󠄁u󠄁e󠄁
-p󠄁r󠄁e󠄁d󠄁i󠄁c󠄁a󠄁t󠄁e󠄁 w󠄁i󠄁t󠄁h󠄁 p󠄁a󠄁r󠄁s󠄁i󠄁n󠄁g󠄁.󠄁 O󠄁n󠄁l󠄁y󠄁 a󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁 e󠄁q󠄁u󠄁a󠄁l󠄁s󠄁/󠄁v󠄁a󠄁l󠄁u󠄁e󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁 c󠄁a󠄁n󠄁 b󠄁e󠄁g󠄁i󠄁n󠄁 a󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁d󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁.󠄁
-M󠄁a󠄁l󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁 n󠄁a󠄁m󠄁e󠄁s󠄁 o󠄁r󠄁 u󠄁n󠄁q󠄁u󠄁o󠄁t󠄁e󠄁d󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁s󠄁 u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁 g󠄁r󠄁e󠄁a󠄁t󠄁e󠄁r󠄁-󠄁t󠄁h󠄁a󠄁n󠄁 d󠄁e󠄁l󠄁i󠄁m󠄁i󠄁t󠄁e󠄁r󠄁;󠄁
-v󠄁a󠄁l󠄁i󠄁d󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁d󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁s󠄁 c󠄁a󠄁n󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁 g󠄁r󠄁e󠄁a󠄁t󠄁e󠄁r󠄁-󠄁t󠄁h󠄁a󠄁n󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁s󠄁.󠄁 D󠄁e󠄁c󠄁l󠄁a󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁/󠄁P󠄁I󠄁 s󠄁c󠄁a󠄁n󠄁n󠄁i󠄁n󠄁g󠄁
-r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁.󠄁 T󠄁o󠄁k󠄁e󠄁n󠄁-󠄁l󠄁e󠄁v󠄁e󠄁l󠄁 m󠄁a󠄁t󠄁r󠄁i󠄁c󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁 r󠄁e󠄁a󠄁l󠄁-󠄁p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁s󠄁
-a󠄁n󠄁d󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁q󠄁u󠄁e󠄁n󠄁t󠄁 f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁t󠄁i󠄁n󠄁g󠄁.󠄁
+The review of 1373d076 found the residual malformed-attribute form of the quote-scanning
+defect. The tag pre-scan now follows attribute-name/value grammar, sharing the unquoted-value
+predicate with parsing. Only a valid equals/value boundary can begin a quoted value.
+Malformed attribute names or unquoted values use the first greater-than delimiter;
+valid quoted values can still include greater-than characters. Declaration/PI scanning
+remains separate. Token-level matrices and a real-parser fixture include original objects
+and subsequent formatting.
 
-T󠄁h󠄁e󠄁 p󠄁r󠄁i󠄁v󠄁a󠄁t󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁c󠄁t󠄁 r󠄁e󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 k󠄁e󠄁e󠄁p󠄁s󠄁 f󠄁o󠄁u󠄁r󠄁-󠄁b󠄁y󠄁t󠄁e󠄁 u󠄁n󠄁i󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁w󠄁 s󠄁u󠄁b󠄁s󠄁t󠄁i󠄁t󠄁u󠄁t󠄁e󠄁s󠄁 U󠄁+󠄁F󠄁F󠄁F󠄁D󠄁 f󠄁o󠄁r󠄁
-a󠄁n󠄁 i󠄁n󠄁v󠄁a󠄁l󠄁i󠄁d󠄁 s󠄁c󠄁a󠄁l󠄁a󠄁r󠄁 u󠄁n󠄁i󠄁t󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁a󠄁n󠄁 a󠄁b󠄁o󠄁r󠄁t󠄁i󠄁n󠄁g󠄁.󠄁 N󠄁o󠄁r󠄁m󠄁a󠄁l󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 s󠄁t󠄁a󠄁r󠄁t󠄁s󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁y󠄁p󠄁e󠄁d󠄁
-U󠄁n󠄁i󠄁c󠄁o󠄁d󠄁e󠄁 s󠄁c󠄁a󠄁l󠄁a󠄁r󠄁s󠄁;󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁/󠄁s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁-󠄁r󠄁e󠄁c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁a󠄁s󠄁e󠄁s󠄁 c󠄁o󠄁n󠄁t󠄁i󠄁n󠄁u󠄁e󠄁 t󠄁o󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁 i󠄁t󠄁.󠄁
+The private compact representation keeps four-byte units and now substitutes U+FFFD for
+an invalid scalar unit rather than aborting. Normal construction still starts from typed
+Unicode scalars; the existing boundary/source-reconstruction cases continue to exercise it.
 
-A󠄁 3󠄁2󠄁8󠄁-󠄁c󠄁a󠄁s󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 m󠄁a󠄁t󠄁r󠄁i󠄁x󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 r󠄁a󠄁w󠄁/󠄁e󠄁n󠄁c󠄁o󠄁d󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁s󠄁 i󠄁n󠄁 w󠄁e󠄁b󠄁 h󠄁o󠄁s󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 m󠄁a󠄁i󠄁l󠄁t󠄁o󠄁
-a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁e󠄁s󠄁,󠄁 b󠄁o󠄁t󠄁h󠄁 s󠄁y󠄁n󠄁t󠄁a󠄁x󠄁e󠄁s󠄁/󠄁d󠄁i󠄁a󠄁l󠄁e󠄁c󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁l󠄁l󠄁o󠄁w󠄁e󠄁d󠄁 n󠄁o󠄁n󠄁-󠄁A󠄁S󠄁C󠄁I󠄁I󠄁 e󠄁x󠄁a󠄁m󠄁p󠄁l󠄁e󠄁s󠄁.󠄁 E󠄁v󠄁e󠄁r󠄁y󠄁 c󠄁a󠄁s󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁
-o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁 a󠄁n󠄁d󠄁 a󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁 e󠄁v󠄁a󠄁l󠄁u󠄁a󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 s󠄁o󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 u󠄁n󠄁p󠄁a󠄁r󠄁s󠄁e󠄁d󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁 c󠄁a󠄁n󠄁n󠄁o󠄁t󠄁 s󠄁a󠄁t󠄁i󠄁s󠄁f󠄁y󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁.󠄁
-U󠄁n󠄁r󠄁e󠄁a󠄁c󠄁h󠄁a󠄁b󠄁l󠄁e󠄁 H󠄁T󠄁M󠄁L󠄁/󠄁c󠄁o󠄁d󠄁e󠄁 m󠄁a󠄁r󠄁k󠄁e󠄁r󠄁 p󠄁a󠄁t󠄁h󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁d󠄁u󠄁n󠄁d󠄁a󠄁n󠄁t󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁-󠄁l󠄁o󠄁o󠄁p󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁 r󠄁e󠄁s󠄁e󠄁t󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁.󠄁
+A 328-case rendered matrix checks raw/encoded format characters in web hosts and mailto
+addresses, both syntaxes/dialects and allowed non-ASCII examples. Every case checks label
+output and a policy evaluation, so literal unparsed input cannot satisfy the regression.
+Unreachable HTML/code marker paths and redundant object-loop block resets were removed.
 
-T󠄁h󠄁e󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 d󠄁e󠄁s󠄁i󠄁g󠄁n󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁 n󠄁o󠄁w󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁s󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁/󠄁f󠄁i󠄁l󠄁t󠄁e󠄁r󠄁e󠄁d󠄁 e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁,󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁
-b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁i󠄁e󠄁s󠄁,󠄁 d󠄁u󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁e󠄁-󠄁a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁 m󠄁e󠄁t󠄁a󠄁d󠄁a󠄁t󠄁a󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁.󠄁 T󠄁h󠄁e󠄁 a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
-r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 b󠄁o󠄁r󠄁r󠄁o󠄁w󠄁e󠄁d󠄁 D󠄁a󠄁t󠄁a󠄁 v󠄁i󠄁e󠄁w󠄁 o󠄁v󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁 R󠄁u󠄁s󠄁t󠄁 r󠄁e󠄁s󠄁p󠄁o󠄁n󠄁s󠄁e󠄁 f󠄁r󠄁o󠄁m󠄁 i󠄁n󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁
-a󠄁n󠄁d󠄁 F󠄁o󠄁u󠄁n󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁 b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁i󠄁n󠄁g󠄁 i󠄁s󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁d󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁;󠄁 b󠄁a󠄁c󠄁k󠄁g󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁-󠄁s󠄁t󠄁a󠄁t󠄁e󠄁 d󠄁e󠄁s󠄁i󠄁g󠄁n󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁-󠄁u󠄁p󠄁s󠄁.󠄁
+The proposed design table now states literal/filtered entity behavior, literal whitespace
+boundaries, duplicate-address attributes and object scope metadata explicitly. The allocation
+record distinguishes the borrowed Data view over the Rust response from independent Swift
+and Foundation allocations. Native table budgeting is measured below; background rendering and visible refusal-state design remain follow-ups.
 
 ## Native table budget and boundary measurement
 
-N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁P󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁L󠄁i󠄁m󠄁i󠄁t󠄁s󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁s󠄁 t󠄁o󠄁 e󠄁i󠄁g󠄁h󠄁t󠄁 c󠄁o󠄁l󠄁u󠄁m󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 1󠄁,󠄁0󠄁2󠄁4󠄁 c󠄁u󠄁m󠄁u󠄁l󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 c󠄁e󠄁l󠄁l󠄁s󠄁 p󠄁e󠄁r󠄁 p󠄁a󠄁g󠄁e󠄁.󠄁
-H󠄁e󠄁a󠄁d󠄁e󠄁r󠄁s󠄁 a󠄁n󠄁d󠄁 p󠄁a󠄁d󠄁d󠄁e󠄁d󠄁 e󠄁m󠄁p󠄁t󠄁y󠄁 c󠄁e󠄁l󠄁l󠄁s󠄁 c󠄁o󠄁u󠄁n󠄁t󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 c󠄁e󠄁l󠄁l󠄁s󠄁 i󠄁n󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁s󠄁.󠄁 C󠄁h󠄁e󠄁c󠄁k󠄁e󠄁d󠄁
-m󠄁u󠄁l󠄁t󠄁i󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁/󠄁a󠄁d󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁r󠄁e󠄁c󠄁e󠄁d󠄁e󠄁s󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁 a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 A󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁d󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁 u󠄁s󠄁e󠄁s󠄁
-t󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁-󠄁p󠄁a󠄁g󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁f󠄁o󠄁-󠄁l󠄁e󠄁v󠄁e󠄁l󠄁 l󠄁o󠄁g󠄁g󠄁i󠄁n󠄁g󠄁.󠄁 P󠄁a󠄁r󠄁s󠄁e󠄁r󠄁/󠄁c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁s󠄁
-a󠄁r󠄁e󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁;󠄁 t󠄁h󠄁i󠄁s󠄁 n󠄁e󠄁w󠄁 g󠄁u󠄁a󠄁r󠄁d󠄁 a󠄁p󠄁p󠄁l󠄁i󠄁e󠄁s󠄁 o󠄁n󠄁l󠄁y󠄁 t󠄁o󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁s󠄁.󠄁
+NativePreviewLimits defaults to eight columns and 1,024 cumulative cells per page.
+Headers and padded empty cells count, including cells in separate tables. Checked
+multiplication/addition precedes native table allocation. A refused native budget uses
+the complete original-page fallback and info-level logging. Parser/composition budgets
+are unchanged; this new guard applies only to actual native tables.
 
-S󠄁i󠄁x󠄁 r󠄁e󠄁g󠄁u󠄁l󠄁a󠄁r󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁s󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁 e󠄁x󠄁a󠄁c󠄁t󠄁/󠄁o󠄁v󠄁e󠄁r󠄁-󠄁l󠄁i󠄁m󠄁i󠄁t󠄁 c󠄁e󠄁l󠄁l󠄁s󠄁,󠄁 c󠄁o󠄁l󠄁u󠄁m󠄁n󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁s󠄁,󠄁 m󠄁u󠄁l󠄁t󠄁i󠄁p󠄁l󠄁e󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁s󠄁,󠄁
-o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁/󠄁o󠄁r󠄁d󠄁e󠄁r󠄁,󠄁 n󠄁o󠄁n󠄁-󠄁t󠄁a󠄁b󠄁l󠄁e󠄁/󠄁C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁 a󠄁n󠄁d󠄁 a󠄁r󠄁i󠄁t󠄁h󠄁m󠄁e󠄁t󠄁i󠄁c󠄁 o󠄁v󠄁e󠄁r󠄁f󠄁l󠄁o󠄁w󠄁.󠄁
-T󠄁h󠄁e󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁 u󠄁s󠄁e󠄁s󠄁 a󠄁 P󠄁a󠄁g󠄁e󠄁M󠄁o󠄁d󠄁e󠄁l󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁-󠄁m󠄁e󠄁m󠄁o󠄁r󠄁y󠄁 c󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁s󠄁.󠄁
-I󠄁t󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁s󠄁 a󠄁n󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁e󠄁d󠄁 e󠄁i󠄁g󠄁h󠄁t󠄁-󠄁c󠄁o󠄁l󠄁u󠄁m󠄁n󠄁,󠄁 1󠄁2󠄁8󠄁-󠄁r󠄁o󠄁w󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁 (󠄁1󠄁,󠄁0󠄁2󠄁4󠄁 c󠄁e󠄁l󠄁l󠄁s󠄁;󠄁 5󠄁,󠄁5󠄁6󠄁1󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 b󠄁y󠄁t󠄁e󠄁s󠄁)󠄁.󠄁
-R󠄁e󠄁s󠄁e󠄁e󠄁d󠄁i󠄁n󠄁g󠄁 t󠄁o󠄁o󠄁k󠄁 5󠄁1󠄁.󠄁4󠄁6󠄁 m󠄁s󠄁 a󠄁t󠄁 3󠄁2󠄁0󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁;󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁i󠄁n󠄁g󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁 t󠄁o󠄁o󠄁k󠄁 0󠄁.󠄁0󠄁0󠄁3󠄁 m󠄁s󠄁.󠄁
-R󠄁e󠄁s󠄁i󠄁z󠄁i󠄁n󠄁g󠄁/󠄁l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁 a󠄁t󠄁 6󠄁4󠄁0󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁 t󠄁o󠄁o󠄁k󠄁 4󠄁0󠄁.󠄁3󠄁1󠄁 m󠄁s󠄁.󠄁 R󠄁e󠄁s󠄁e󠄁e󠄁d󠄁i󠄁n󠄁g󠄁 c󠄁a󠄁n󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁 e󠄁a󠄁g󠄁e󠄁r󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁.󠄁
-U󠄁s󠄁e󠄁d󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁 2󠄁8󠄁5󠄁.󠄁5󠄁/󠄁6󠄁0󠄁5󠄁.󠄁5󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁i󠄁n󠄁 2󠄁9󠄁6󠄁/󠄁6󠄁1󠄁6󠄁-󠄁p󠄁o󠄁i󠄁n󠄁t󠄁 t󠄁e󠄁x󠄁t󠄁 c󠄁o󠄁n󠄁t󠄁a󠄁i󠄁n󠄁e󠄁r󠄁s󠄁;󠄁 g󠄁l󠄁y󠄁p󠄁h󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁
-c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁.󠄁 B󠄁o󠄁t󠄁h󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁 b󠄁i󠄁t󠄁m󠄁a󠄁p󠄁 s󠄁p󠄁e󠄁c󠄁i󠄁m󠄁e󠄁n󠄁s󠄁 w󠄁e󠄁r󠄁e󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁,󠄁 i󠄁n󠄁 a󠄁d󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁u󠄁r󠄁
-g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁l󠄁 l󠄁i󠄁g󠄁h󠄁t󠄁/󠄁d󠄁a󠄁r󠄁k󠄁 s󠄁p󠄁e󠄁c󠄁i󠄁m󠄁e󠄁n󠄁s󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 i󠄁s󠄁 a󠄁 s󠄁a󠄁m󠄁p󠄁l󠄁e󠄁 o󠄁n󠄁 o󠄁n󠄁e󠄁 M󠄁a󠄁c󠄁,󠄁 n󠄁o󠄁t󠄁 a󠄁 t󠄁i󠄁m󠄁i󠄁n󠄁g󠄁 g󠄁a󠄁t󠄁e󠄁.󠄁
+Six regular regressions cover exact/over-limit cells, column limits, multiple tables,
+original object identity/order, non-table/CommonMark input and arithmetic overflow.
+The opt-in profile uses a PageModel with temporary state and in-memory credentials.
+It constructs an accepted eight-column, 128-row table (1,024 cells; 5,561 source bytes).
+Reseeding took 51.46 ms at 320 points; the following explicit layout took 0.003 ms.
+Resizing/layout at 640 points took 40.31 ms. Reseeding can include eager layout.
+Used widths were 285.5/605.5 points within 296/616-point text containers; glyph geometry
+checks passed. Both boundary bitmap specimens were inspected, in addition to the four
+general light/dark specimens. This is a sample on one Mac, not a timing gate.
 
-T󠄁h󠄁e󠄁 p󠄁r󠄁o󠄁f󠄁i󠄁l󠄁e󠄁 r󠄁a󠄁n󠄁 u󠄁n󠄁d󠄁e󠄁r󠄁 a󠄁n󠄁 i󠄁s󠄁o󠄁l󠄁a󠄁t󠄁e󠄁d󠄁 9󠄁0󠄁-󠄁s󠄁e󠄁c󠄁o󠄁n󠄁d󠄁 p󠄁r󠄁o󠄁c󠄁e󠄁s󠄁s󠄁 t󠄁i󠄁m󠄁e󠄁o󠄁u󠄁t󠄁 a󠄁n󠄁d󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁d󠄁 n󠄁o󠄁r󠄁m󠄁a󠄁l󠄁l󠄁y󠄁.󠄁
-T󠄁h󠄁e󠄁 1󠄁0󠄁0󠄁,󠄁0󠄁0󠄁0󠄁-󠄁c󠄁e󠄁l󠄁l󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 w󠄁a󠄁s󠄁 n󠄁o󠄁t󠄁 a󠄁t󠄁t󠄁e󠄁m󠄁p󠄁t󠄁e󠄁d󠄁;󠄁 i󠄁t󠄁 i󠄁s󠄁 o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 t󠄁h󠄁e󠄁 n󠄁e󠄁w󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁
-b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁.󠄁 L󠄁a󠄁r󠄁g󠄁e󠄁 o󠄁r󠄁d󠄁i󠄁n󠄁a󠄁r󠄁y󠄁 p󠄁a󠄁g󠄁e󠄁s󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁 s󠄁y󠄁n󠄁c󠄁h󠄁r󠄁o󠄁n󠄁o󠄁u󠄁s󠄁l󠄁y󠄁,󠄁 s󠄁o󠄁 b󠄁a󠄁c󠄁k󠄁g󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 w󠄁o󠄁r󠄁k󠄁 a󠄁n󠄁d󠄁 a󠄁
-g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁l󠄁 l󠄁a󠄁t󠄁e󠄁n󠄁c󠄁y󠄁 b󠄁u󠄁d󠄁g󠄁e󠄁t󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 d󠄁e󠄁s󠄁i󠄁g󠄁n󠄁 w󠄁o󠄁r󠄁k󠄁.󠄁
+The profile ran under an isolated 90-second process timeout and completed normally.
+The 100,000-cell native allocation was not attempted; it is outside the new native
+budget. Large ordinary pages still render synchronously, so background work and a
+general latency budget remain separate design work.
 
 ```sh
 PREVIEW_NATIVE_TABLE_PROFILE=1 PREVIEW_QA_ARTIFACTS=/tmp/pr334-native-table-ui scripts/test-shell.sh --filter MarkdownPreviewRenderingTests/testOptInNativeTableRenderAndLayoutProfile
 ```
 
-T󠄁h󠄁e󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 f󠄁i󠄁d󠄁e󠄁l󠄁i󠄁t󠄁y󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁 a󠄁l󠄁s󠄁o󠄁 n󠄁a󠄁m󠄁e󠄁s󠄁 s󠄁e󠄁l󠄁f󠄁-󠄁c󠄁l󠄁o󠄁s󠄁i󠄁n󠄁g󠄁 s󠄁l󠄁a󠄁s󠄁h󠄁 s󠄁p󠄁a󠄁c󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁
-t󠄁i󠄁t󠄁l󠄁e󠄁/󠄁t󠄁e󠄁x󠄁t󠄁a󠄁r󠄁e󠄁a󠄁 R󠄁C󠄁D󠄁A󠄁T󠄁A󠄁 e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁i󠄁n󠄁g󠄁.󠄁 E󠄁n󠄁c󠄁o󠄁d󠄁e󠄁d󠄁-󠄁h󠄁o󠄁s󠄁t󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁/󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 k󠄁e󠄁e󠄁p󠄁s󠄁 i󠄁t󠄁s󠄁
-r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁a󠄁c󠄁h󠄁e󠄁d󠄁 e󠄁m󠄁p󠄁t󠄁y󠄁-󠄁t󠄁r󠄁a󠄁i󠄁t󠄁 f󠄁o󠄁n󠄁t󠄁 c󠄁o󠄁n󠄁v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁e󠄁d󠄁 o󠄁p󠄁t󠄁-󠄁i󠄁n󠄁 t󠄁e󠄁s󠄁t󠄁
-c󠄁o󠄁u󠄁n󠄁t󠄁e󠄁r󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 s󠄁m󠄁a󠄁l󠄁l󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 n󠄁o󠄁t󠄁e󠄁s󠄁;󠄁 n󠄁o󠄁 p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁u󠄁n󠄁t󠄁e󠄁r󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁 i󠄁s󠄁 n󠄁e󠄁e󠄁d󠄁e󠄁d󠄁.󠄁
+The proposed fidelity table also names self-closing slash spacing and CommonMark
+title/textarea RCDATA entity handling. Encoded-host validation/opening keeps its
+recorded policy. The cached empty-trait font conversion and bounded opt-in test
+counter remain small implementation notes; no production counter change is needed.

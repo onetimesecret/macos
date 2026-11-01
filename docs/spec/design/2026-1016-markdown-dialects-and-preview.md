@@ -236,76 +236,76 @@ result is recorded by this document.
 
 ## PR B delivery record for review
 
-T󠄁h󠄁i󠄁s󠄁 i󠄁s󠄁 a󠄁n󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁,󠄁 n󠄁o󠄁t󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁a󠄁n󠄁c󠄁e󠄁 o󠄁f󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁'󠄁s󠄁 o󠄁p󠄁e󠄁n󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁s󠄁.󠄁
-P󠄁R󠄁 B󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁s󠄁 t󠄁h󠄁e󠄁 R󠄁u󠄁s󠄁t󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 f󠄁o󠄁u󠄁n󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 m󠄁e󠄁r󠄁g󠄁e󠄁d󠄁 i󠄁n󠄁 P󠄁R󠄁 3󠄁3󠄁3󠄁.󠄁 I󠄁t󠄁 r󠄁e󠄁u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁
-c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 w󠄁o󠄁r󠄁k󠄁 f󠄁r󠄁o󠄁m󠄁 P󠄁R󠄁 3󠄁2󠄁8󠄁 a󠄁t󠄁 `439bf529417429c58e30562bd5da58416e6134c3` a󠄁n󠄁d󠄁
-r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁s󠄁 i󠄁t󠄁s󠄁 C󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 a󠄁d󠄁a󠄁p󠄁t󠄁e󠄁r󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁 R󠄁u󠄁s󠄁t󠄁 J󠄁S󠄁O󠄁N󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁r󠄁.󠄁 T󠄁h󠄁e󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 p󠄁a󠄁c󠄁k󠄁a󠄁g󠄁e󠄁 n󠄁o󠄁
-l󠄁o󠄁n󠄁g󠄁e󠄁r󠄁 d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁s󠄁 o󠄁n󠄁 s󠄁w󠄁i󠄁f󠄁t󠄁-󠄁m󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 o󠄁r󠄁 s󠄁w󠄁i󠄁f󠄁t󠄁-󠄁c󠄁m󠄁a󠄁r󠄁k󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁t󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁s󠄁 n󠄁o󠄁 v󠄁e󠄁n󠄁d󠄁o󠄁r󠄁e󠄁d󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁.󠄁
+This is an implementation record, not acceptance of the draft's open decisions.
+PR B follows the Rust parser foundation merged in PR 333. It reuses the native
+composition work from PR 328 at `439bf529417429c58e30562bd5da58416e6134c3` and
+replaces its C parser adapter with a Rust JSON decoder. The Swift package no
+longer depends on swift-markdown or swift-cmark and introduces no vendored parser.
 
-R󠄁1󠄁 n󠄁o󠄁w󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 `companion_markdown_parse_json` u󠄁s󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁m󠄁r󠄁a󠄁k󠄁 0󠄁.󠄁5󠄁7󠄁.󠄁0󠄁.󠄁 C󠄁o󠄁r󠄁p󠄁u󠄁s󠄁
-c󠄁o󠄁m󠄁p󠄁a󠄁r󠄁i󠄁s󠄁o󠄁n󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 i󠄁n󠄁 R󠄁u󠄁s󠄁t󠄁:󠄁 6󠄁5󠄁2󠄁/󠄁6󠄁5󠄁2󠄁 C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 e󠄁x󠄁a󠄁m󠄁p󠄁l󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 6󠄁6󠄁4󠄁/󠄁6󠄁7󠄁7󠄁 c󠄁o󠄁m󠄁b󠄁i󠄁n󠄁e󠄁d󠄁
-G󠄁F󠄁M󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁/󠄁w󠄁r󠄁i󠄁t󠄁e󠄁r󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁s󠄁,󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁l󠄁l󠄁 d󠄁i󠄁f󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 e󠄁n󠄁u󠄁m󠄁e󠄁r󠄁a󠄁t󠄁e󠄁d󠄁 b󠄁y󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁.󠄁
-T󠄁h󠄁e󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 a󠄁d󠄁a󠄁p󠄁t󠄁e󠄁r󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 g󠄁o󠄁l󠄁d󠄁e󠄁n󠄁 d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁,󠄁 e󠄁v󠄁e󠄁r󠄁y󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 s󠄁h󠄁a󠄁p󠄁e󠄁,󠄁 e󠄁m󠄁b󠄁e󠄁d󠄁d󠄁e󠄁d󠄁
-N󠄁U󠄁L󠄁s󠄁,󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁 U󠄁T󠄁F󠄁-󠄁1󠄁6󠄁 o󠄁f󠄁f󠄁s󠄁e󠄁t󠄁s󠄁,󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁-󠄁b󠄁u󠄁f󠄁f󠄁e󠄁r󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁 a󠄁n󠄁d󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁-󠄁p󠄁a󠄁g󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁.󠄁
-F󠄁i󠄁v󠄁e󠄁 u󠄁p󠄁s󠄁t󠄁r󠄁e󠄁a󠄁m󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁-󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 g󠄁o󠄁a󠄁l󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 i󠄁g󠄁n󠄁o󠄁r󠄁e󠄁d󠄁 a󠄁n󠄁d󠄁 p󠄁a󠄁i󠄁r󠄁e󠄁d󠄁 w󠄁i󠄁t󠄁h󠄁 s󠄁t󠄁o󠄁c󠄁k󠄁-󠄁b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁
-t󠄁e󠄁s󠄁t󠄁s󠄁;󠄁 i󠄁n󠄁t󠄁e󠄁g󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 s󠄁i󠄁l󠄁e󠄁n󠄁t󠄁l󠄁y󠄁 t󠄁r󠄁e󠄁a󠄁t󠄁 t󠄁h󠄁o󠄁s󠄁e󠄁 g󠄁o󠄁a󠄁l󠄁s󠄁 a󠄁s󠄁 f󠄁i󠄁x󠄁e󠄁d󠄁.󠄁
+R1 now parses through `companion_markdown_parse_json` using comrak 0.57.0. Corpus
+comparisons remain in Rust: 652/652 CommonMark examples and 664/677 combined
+GFM parser/writer outputs, with all differences enumerated by the existing tests.
+The Swift adapter tests the shared golden document, every refusal shape, embedded
+NULs, original UTF-16 offsets, output-buffer release and original-page fallback.
+Five upstream source-position goals remain ignored and paired with stock-behavior
+tests; integration does not silently treat those goals as fixed.
 
-R󠄁3󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 A󠄁S󠄁T󠄁'󠄁s󠄁 r󠄁a󠄁w󠄁 H󠄁T󠄁M󠄁L󠄁 i󠄁n󠄁t󠄁o󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁e󠄁x󠄁t󠄁 u󠄁n󠄁d󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 e󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁.󠄁
-I󠄁t󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁s󠄁 a󠄁t󠄁t󠄁a󠄁c󠄁h󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 k󠄁e󠄁e󠄁p󠄁s󠄁 r󠄁e󠄁s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁o󠄁r󠄁s󠄁 i󠄁n󠄁e󠄁r󠄁t󠄁,󠄁
-a󠄁n󠄁d󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁s󠄁 s󠄁i󠄁g󠄁n󠄁i󠄁f󠄁i󠄁c󠄁a󠄁n󠄁t󠄁 s󠄁p󠄁a󠄁c󠄁e󠄁s󠄁 a󠄁t󠄁 H󠄁T󠄁M󠄁L󠄁-󠄁b󠄁l󠄁o󠄁c󠄁k󠄁 e󠄁d󠄁g󠄁e󠄁s󠄁.󠄁 G󠄁F󠄁M󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁;󠄁
-C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 i󠄁s󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁d󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁 c󠄁a󠄁l󠄁l󠄁s󠄁.󠄁 R󠄁2󠄁'󠄁s󠄁 d󠄁i󠄁a󠄁l󠄁e󠄁c󠄁t󠄁 s󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁
-R󠄁4󠄁/󠄁R󠄁5󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 w󠄁o󠄁r󠄁k󠄁.󠄁
+R3 composes the AST's raw HTML into native text under the proposed element policy.
+It preserves attachments through composition, keeps resource descriptors inert,
+and preserves significant spaces at HTML-block edges. GFM remains the default;
+CommonMark is exercised through explicit test calls. R2's dialect setting and
+R4/R5 image loading remain separate work.
 
-T󠄁h󠄁e󠄁 [i󠄁n󠄁t󠄁e󠄁g󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 Q󠄁A󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁](../../qa/markdown-preview-rust-integration.md) l󠄁i󠄁s󠄁t󠄁s󠄁
-t󠄁h󠄁e󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 a󠄁l󠄁l󠄁o󠄁w󠄁l󠄁i󠄁s󠄁t󠄁,󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 r󠄁e󠄁b󠄁a󠄁s󠄁e󠄁l󠄁i󠄁n󠄁e󠄁s󠄁,󠄁 k󠄁n󠄁o󠄁w󠄁n󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁-󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁,󠄁
-a󠄁l󠄁l󠄁o󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 l󠄁i󠄁f󠄁e󠄁t󠄁i󠄁m󠄁e󠄁s󠄁,󠄁 r󠄁e󠄁p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁i󠄁b󠄁l󠄁e󠄁 p󠄁e󠄁r󠄁f󠄁o󠄁r󠄁m󠄁a󠄁n󠄁c󠄁e󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁s󠄁 a󠄁n󠄁d󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁s󠄁.󠄁
+The [integration QA record](../../qa/markdown-preview-rust-integration.md) lists
+the proposed allowlist, fixture rebaselines, known source-position limitations,
+allocation lifetimes, reproducible performance commands and validation results.
 
 ### Native HTML fidelity recorded for review
 
-| C󠄁a󠄁s󠄁e󠄁 | I󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁e󠄁d󠄁 r󠄁e󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 |
+| Case | Implemented representation |
 | --- | --- |
-| U󠄁n󠄁s󠄁u󠄁p󠄁p󠄁o󠄁r󠄁t󠄁e󠄁d󠄁 o󠄁r󠄁 m󠄁a󠄁l󠄁f󠄁o󠄁r󠄁m󠄁e󠄁d󠄁 t󠄁a󠄁g󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 | P󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 e󠄁n󠄁t󠄁i󠄁t󠄁y󠄁 s󠄁p󠄁e󠄁l󠄁l󠄁i󠄁n󠄁g󠄁s󠄁 a󠄁n󠄁d󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁.󠄁 A󠄁 s󠄁t󠄁r󠄁a󠄁y󠄁 l󠄁e󠄁s󠄁s󠄁-󠄁t󠄁h󠄁a󠄁n󠄁 p󠄁r󠄁e󠄁f󠄁i󠄁x󠄁 i󠄁s󠄁 o󠄁r󠄁d󠄁i󠄁n󠄁a󠄁r󠄁y󠄁 d󠄁a󠄁t󠄁a󠄁,󠄁 s󠄁o󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁q󠄁u󠄁e󠄁n󠄁t󠄁 r󠄁e󠄁a󠄁l󠄁 t󠄁a󠄁g󠄁s󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁e󠄁.󠄁 |
-| G󠄁F󠄁M󠄁-󠄁f󠄁i󠄁l󠄁t󠄁e󠄁r󠄁e󠄁d󠄁 t󠄁a󠄁g󠄁 | D󠄁e󠄁c󠄁o󠄁d󠄁e󠄁 t󠄁h󠄁e󠄁 s󠄁u󠄁p󠄁p󠄁o󠄁r󠄁t󠄁e󠄁d󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 o󠄁n󠄁c󠄁e󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 t󠄁a󠄁g󠄁'󠄁s󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁.󠄁 I󠄁t󠄁s󠄁 b󠄁o󠄁d󠄁y󠄁 c󠄁a󠄁n󠄁 c󠄁o󠄁n󠄁t󠄁a󠄁i󠄁n󠄁 i󠄁n󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁l󠄁y󠄁 s󠄁t󠄁y󠄁l󠄁e󠄁d󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 H󠄁T󠄁M󠄁L󠄁.󠄁 |
-| L󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁 | L󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁/󠄁f󠄁i󠄁l󠄁t󠄁e󠄁r󠄁e󠄁d󠄁 t󠄁e󠄁x󠄁t󠄁 i󠄁s󠄁 n󠄁o󠄁t󠄁 c󠄁o󠄁l󠄁l󠄁a󠄁p󠄁s󠄁e󠄁d󠄁.󠄁 A󠄁 t󠄁r󠄁a󠄁i󠄁l󠄁i󠄁n󠄁g󠄁 t󠄁a󠄁b󠄁 o󠄁r󠄁 c󠄁a󠄁r󠄁r󠄁i󠄁a󠄁g󠄁e󠄁 r󠄁e󠄁t󠄁u󠄁r󠄁n󠄁 n󠄁e󠄁e󠄁d󠄁 n󠄁o󠄁t󠄁 s󠄁u󠄁p󠄁p󠄁r󠄁e󠄁s󠄁s󠄁 a󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁l󠄁l󠄁a󠄁p󠄁s󠄁e󠄁d󠄁 s󠄁p󠄁a󠄁c󠄁e󠄁;󠄁 t󠄁h󠄁i󠄁s󠄁 d󠄁i󠄁f󠄁f󠄁e󠄁r󠄁s󠄁 f󠄁r󠄁o󠄁m󠄁 b󠄁r󠄁o󠄁w󠄁s󠄁e󠄁r󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁i󠄁n󠄁g󠄁.󠄁 |
-| D󠄁u󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁e󠄁 h󠄁r󠄁e󠄁f󠄁/󠄁s󠄁r󠄁c󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁s󠄁 | U󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁 e󠄁m󠄁p󠄁t󠄁y󠄁 o󠄁n󠄁e󠄁;󠄁 a󠄁n󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 i󠄁n󠄁 a󠄁n󠄁y󠄁 m󠄁a󠄁t󠄁c󠄁h󠄁i󠄁n󠄁g󠄁 d󠄁u󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁e󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 w󠄁h󠄁o󠄁l󠄁e󠄁 a󠄁d󠄁d󠄁r󠄁e󠄁s󠄁s󠄁.󠄁 |
-| O󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁 m󠄁e󠄁t󠄁a󠄁d󠄁a󠄁t󠄁a󠄁 | C󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁a󠄁n󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁 s󠄁t󠄁y󠄁l󠄁e󠄁 o󠄁n󠄁 a󠄁n󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁.󠄁 N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 a󠄁t󠄁t󠄁a󠄁c󠄁h󠄁m󠄁e󠄁n󠄁t󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁 u󠄁s󠄁e󠄁s󠄁 i󠄁n󠄁d󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁t󠄁 b󠄁a󠄁s󠄁e󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 o󠄁m󠄁i󠄁t󠄁s󠄁 l󠄁i󠄁n󠄁k󠄁 s󠄁t󠄁y󠄁l󠄁i󠄁n󠄁g󠄁.󠄁 |
-| S󠄁e󠄁l󠄁f󠄁-󠄁c󠄁l󠄁o󠄁s󠄁i󠄁n󠄁g󠄁 s󠄁l󠄁a󠄁s󠄁h󠄁 s󠄁p󠄁a󠄁c󠄁i󠄁n󠄁g󠄁 | T󠄁h󠄁e󠄁 s󠄁l󠄁a󠄁s󠄁h󠄁 m󠄁u󠄁s󠄁t󠄁 b󠄁e󠄁 a󠄁d󠄁j󠄁a󠄁c󠄁e󠄁n󠄁t󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 t󠄁a󠄁g󠄁 e󠄁n󠄁d󠄁:󠄁 `<br />` p󠄁a󠄁r󠄁s󠄁e󠄁s󠄁;󠄁 `<br/ >` a󠄁n󠄁d󠄁 `<a href="x" / >` s󠄁t󠄁a󠄁y󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁.󠄁 |
-| C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 r󠄁a󠄁w󠄁-󠄁H󠄁T󠄁M󠄁L󠄁 t󠄁i󠄁t󠄁l󠄁e󠄁/󠄁t󠄁e󠄁x󠄁t󠄁a󠄁r󠄁e󠄁a󠄁 b󠄁o󠄁d󠄁i󠄁e󠄁s󠄁 | T󠄁a󠄁g󠄁s󠄁 s󠄁t󠄁a󠄁y󠄁 l󠄁i󠄁t󠄁e󠄁r󠄁a󠄁l󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 R󠄁C󠄁D󠄁A󠄁T󠄁A󠄁 b󠄁o󠄁d󠄁y󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁 o󠄁n󠄁c󠄁e󠄁.󠄁 I󠄁n󠄁l󠄁i󠄁n󠄁e󠄁 s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁u󠄁r󠄁e󠄁d󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁s󠄁 t󠄁h󠄁a󠄁t󠄁 l󠄁o󠄁s󠄁t󠄁 r󠄁a󠄁w󠄁 s󠄁p󠄁e󠄁l󠄁l󠄁i󠄁n󠄁g󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁-󠄁p󠄁a󠄁g󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁.󠄁 |
+| Unsupported or malformed tag literal | Preserve entity spellings and whitespace. A stray less-than prefix is ordinary data, so subsequent real tags still compose. |
+| GFM-filtered tag | Decode the supported references once while preserving the literal tag's whitespace. Its body can contain independently styled native HTML. |
+| Literal whitespace boundary | Literal/filtered text is not collapsed. A trailing tab or carriage return need not suppress a following collapsed space; this differs from browser whitespace handling. |
+| Duplicate href/src attributes | Use the first value, including an empty one; an object in any matching duplicate refuses the whole address. |
+| Object scope metadata | Composition can record scope style on an object. Native attachment output uses independent base attributes and omits link styling. |
+| Self-closing slash spacing | The slash must be adjacent to the tag end: `<br />` parses; `<br/ >` and `<a href="x" / >` stay literal. |
+| CommonMark raw-HTML title/textarea bodies | Tags stay literal while RCDATA body references decode once. Inline structured events that lost raw spelling still use the original-page fallback. |
 
-T󠄁h󠄁e󠄁 [f󠄁i󠄁n󠄁a󠄁l󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁](../../qa/pr334-final-validation.md) d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 i󠄁s󠄁o󠄁l󠄁a󠄁t󠄁e󠄁d󠄁
-A󠄁p󠄁p󠄁K󠄁i󠄁t󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 v󠄁i󠄁s󠄁u󠄁a󠄁l󠄁 s󠄁p󠄁e󠄁c󠄁i󠄁m󠄁e󠄁n󠄁s󠄁.󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁
-s󠄁p󠄁e󠄁e󠄁c󠄁h󠄁/󠄁r󠄁o󠄁t󠄁o󠄁r󠄁 o󠄁p󠄁e󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 a󠄁n󠄁 i󠄁n󠄁s󠄁t󠄁a󠄁l󠄁l󠄁e󠄁d󠄁-󠄁a󠄁p󠄁p󠄁 w󠄁a󠄁l󠄁k󠄁t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 w󠄁e󠄁r󠄁e󠄁 n󠄁o󠄁t󠄁 e󠄁x󠄁e󠄁r󠄁c󠄁i󠄁s󠄁e󠄁d󠄁.󠄁
+The [final validation record](../../qa/pr334-final-validation.md) describes the isolated
+AppKit accessibility and interaction checks and inspected visual specimens. VoiceOver
+speech/rotor operation and an installed-app walkthrough were not exercised.
 
 ### Known integration limits for review
 
-N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 h󠄁a󠄁s󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁s󠄁 o󠄁f󠄁 e󠄁i󠄁g󠄁h󠄁t󠄁 c󠄁o󠄁l󠄁u󠄁m󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 1󠄁,󠄁0󠄁2󠄁4󠄁 c󠄁u󠄁m󠄁u󠄁l󠄁a󠄁t󠄁i󠄁v󠄁e󠄁
-c󠄁e󠄁l󠄁l󠄁s󠄁 p󠄁e󠄁r󠄁 p󠄁a󠄁g󠄁e󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 h󠄁e󠄁a󠄁d󠄁e󠄁r󠄁s󠄁 a󠄁n󠄁d󠄁 p󠄁a󠄁d󠄁d󠄁e󠄁d󠄁 e󠄁m󠄁p󠄁t󠄁y󠄁 c󠄁e󠄁l󠄁l󠄁s󠄁 a󠄁c󠄁r󠄁o󠄁s󠄁s󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁s󠄁.󠄁 E󠄁x󠄁c󠄁e󠄁e󠄁d󠄁i󠄁n󠄁g󠄁 e󠄁i󠄁t󠄁h󠄁e󠄁r󠄁
-u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁-󠄁p󠄁a󠄁g󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁.󠄁 P󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁e󠄁i󠄁l󠄁i󠄁n󠄁g󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁.󠄁
-T󠄁h󠄁e󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁e󠄁d󠄁 1󠄁,󠄁0󠄁2󠄁4󠄁-󠄁c󠄁e󠄁l󠄁l󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁a󠄁r󠄁y󠄁 w󠄁a󠄁s󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁d󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 a󠄁t󠄁 3󠄁2󠄁0󠄁/󠄁6󠄁4󠄁0󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁s󠄁;󠄁 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁s󠄁
-a󠄁n󠄁d󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁s󠄁 a󠄁r󠄁e󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁s󠄁e󠄁 m󠄁e󠄁a󠄁s󠄁u󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 a󠄁r󠄁e󠄁 n󠄁o󠄁t󠄁 l󠄁a󠄁t󠄁e󠄁n󠄁c󠄁y󠄁 g󠄁a󠄁t󠄁e󠄁s󠄁.󠄁
+Native table construction has separate defaults of eight columns and 1,024 cumulative
+cells per page, including headers and padded empty cells across tables. Exceeding either
+uses the complete original-page fallback. Parser and composition ceilings remain separate.
+The accepted 1,024-cell boundary was measured and inspected at 320/640 points; results
+and commands are in the final validation record. These measurements are not latency gates.
 
-R󠄁e󠄁s󠄁e󠄁e󠄁d󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 s󠄁y󠄁n󠄁c󠄁h󠄁r󠄁o󠄁n󠄁o󠄁u󠄁s󠄁 o󠄁n󠄁 t󠄁h󠄁e󠄁 m󠄁a󠄁i󠄁n󠄁 a󠄁c󠄁t󠄁o󠄁r󠄁:󠄁 R󠄁u󠄁s󠄁t󠄁 p󠄁a󠄁r󠄁s󠄁i󠄁n󠄁g󠄁,󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁i󠄁n󠄁g󠄁
-a󠄁n󠄁d󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 a󠄁t󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁d󠄁-󠄁t󠄁e󠄁x󠄁t󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 h󠄁a󠄁p󠄁p󠄁e󠄁n󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁 p󠄁a󠄁t󠄁h󠄁.󠄁 A󠄁 s󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁
-b󠄁a󠄁t󠄁c󠄁h󠄁 o󠄁f󠄁 f󠄁o󠄁u󠄁r󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 6󠄁2󠄁 K󠄁B󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 t󠄁o󠄁o󠄁k󠄁 a󠄁b󠄁o󠄁u󠄁t󠄁 0󠄁.󠄁5󠄁 s󠄁e󠄁c󠄁o󠄁n󠄁d󠄁s󠄁 o󠄁n󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁v󠄁e󠄁l󠄁o󠄁p󠄁m󠄁e󠄁n󠄁t󠄁
-M󠄁a󠄁c󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 i󠄁s󠄁 a󠄁 k󠄁n󠄁o󠄁w󠄁n󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁-󠄁l󠄁a󠄁t󠄁e󠄁n󠄁c󠄁y󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 C󠄁a󠄁c󠄁h󠄁e󠄁d󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁s󠄁
-a󠄁v󠄁o󠄁i󠄁d󠄁 r󠄁e󠄁s󠄁e󠄁e󠄁d󠄁i󠄁n󠄁g󠄁;󠄁 t󠄁h󠄁i󠄁s󠄁 P󠄁R󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 i󠄁n󠄁t󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁 b󠄁a󠄁c󠄁k󠄁g󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 p󠄁a󠄁r󠄁s󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁l󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁
+Reseeding remains synchronous on the main actor: Rust parsing, Swift decoding
+and native attributed-text composition happen in the layout path. A synthetic
+batch of four changed 62 KB previews took about 0.5 seconds on the development
+Mac. This is a known interaction-latency limitation. Cached unchanged renderings
+avoid reseeding; this PR does not introduce background parsing or cancellation.
 
-T󠄁h󠄁e󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁'󠄁s󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁-󠄁s󠄁c󠄁a󠄁l󠄁a󠄁r󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁e󠄁r󠄁'󠄁s󠄁 d󠄁e󠄁c󠄁o󠄁d󠄁e󠄁d󠄁-󠄁e󠄁v󠄁e󠄁n󠄁t󠄁 i󠄁n󠄁p󠄁u󠄁t󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁
-a󠄁r󠄁e󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 c󠄁e󠄁i󠄁l󠄁i󠄁n󠄁g󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 s󠄁a󠄁m󠄁e󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁 v󠄁a󠄁l󠄁u󠄁e󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁e󠄁r󠄁 a󠄁l󠄁s󠄁o󠄁 c󠄁h󠄁a󠄁r󠄁g󠄁e󠄁s󠄁
-e󠄁m󠄁p󠄁t󠄁y󠄁 f󠄁r󠄁a󠄁g󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁 i󠄁d󠄁e󠄁n󠄁t󠄁i󠄁t󠄁i󠄁e󠄁s󠄁;󠄁 p󠄁a󠄁s󠄁s󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 i󠄁m󠄁p󠄁l󠄁y󠄁 t󠄁h󠄁a󠄁t󠄁
-c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁i󠄁t󠄁s󠄁 i󠄁t󠄁s󠄁 l󠄁i󠄁m󠄁i󠄁t󠄁s󠄁.󠄁 T󠄁o󠄁k󠄁e󠄁n󠄁i󠄁z󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 h󠄁a󠄁s󠄁 i󠄁t󠄁s󠄁 o󠄁w󠄁n󠄁 p󠄁e󠄁r󠄁-󠄁l󠄁e󠄁a󠄁f󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁
-s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁h󠄁a󠄁r󠄁g󠄁e󠄁.󠄁 R󠄁a󠄁w󠄁 H󠄁T󠄁M󠄁L󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 s󠄁u󠄁p󠄁p󠄁o󠄁r󠄁t󠄁e󠄁d󠄁
-n󠄁a󠄁m󠄁e󠄁d󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁t󠄁 a󠄁n󠄁d󠄁 a󠄁 3󠄁2󠄁-󠄁s󠄁c󠄁a󠄁l󠄁a󠄁r󠄁 l󠄁o󠄁o󠄁k󠄁a󠄁h󠄁e󠄁a󠄁d󠄁 c󠄁a󠄁p󠄁,󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁a󠄁n󠄁 H󠄁T󠄁M󠄁L󠄁5󠄁'󠄁s󠄁 f󠄁u󠄁l󠄁l󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁.󠄁
+The parser's source-scalar limit and the composer's decoded-event input limit
+are separate ceilings with the same default value. The composer also charges
+empty fragments and object identities; passing the parser does not imply that
+composition fits its limits. Tokenization has its own per-leaf check after the
+shared composition charge. Raw HTML character references use the supported
+named subset and a 32-scalar lookahead cap, rather than HTML5's full table.
 
-E󠄁m󠄁p󠄁t󠄁y󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 i󠄁n󠄁v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 a󠄁n󠄁d󠄁 h󠄁a󠄁v󠄁e󠄁 n󠄁o󠄁 t󠄁e󠄁x󠄁t󠄁-󠄁r󠄁a󠄁n󠄁g󠄁e󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁o󠄁r󠄁,󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁
-t󠄁h󠄁e󠄁i󠄁r󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 o󠄁c󠄁c󠄁u󠄁r󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 i󠄁s󠄁 c󠄁o󠄁u󠄁n󠄁t󠄁e󠄁d󠄁.󠄁 A󠄁n󠄁c󠄁h󠄁o󠄁r󠄁/󠄁p󠄁l󠄁a󠄁c󠄁e󠄁h󠄁o󠄁l󠄁d󠄁e󠄁r󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 a󠄁n󠄁d󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁-󠄁s󠄁p󠄁e󠄁c󠄁i󠄁f󠄁i󠄁c󠄁
-a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 R󠄁4󠄁/󠄁R󠄁5󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 N󠄁o󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁
-i󠄁s󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁.󠄁 C󠄁o󠄁p󠄁y󠄁 o󠄁u󠄁t󠄁p󠄁u󠄁t󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁s󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 l󠄁i󠄁s󠄁t󠄁 m󠄁a󠄁r󠄁k󠄁e󠄁r󠄁s󠄁/󠄁t󠄁a󠄁b󠄁s󠄁,󠄁 l󠄁i󠄁n󠄁e󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁o󠄁r󠄁s󠄁 a󠄁n󠄁d󠄁
-t󠄁h󠄁e󠄁 t󠄁h󠄁e󠄁m󠄁a󠄁t󠄁i󠄁c󠄁-󠄁b󠄁r󠄁e󠄁a󠄁k󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁;󠄁 t󠄁h󠄁o󠄁s󠄁e󠄁 r󠄁e󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁l󠄁s󠄁o󠄁 a󠄁p󠄁p󠄁e󠄁a󠄁r󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁r󠄁
-a󠄁t󠄁 m󠄁a󠄁i󠄁n󠄁 r󠄁e󠄁v󠄁i󠄁s󠄁i󠄁o󠄁n󠄁 `3373e56f5344879b4c72db4bf522ee3d64e23d31`.󠄁
+Empty image fallbacks remain invisible and have no text-range descriptor, while
+their source occurrence is counted. Anchor/placeholder behavior and image-specific
+accessibility presentation remain R4/R5 decisions. No VoiceOver validation result
+is recorded. Copy output includes rendered list markers/tabs, line separators and
+the thematic-break character; those representations also appear in the renderer
+at main revision `3373e56f5344879b4c72db4bf522ee3d64e23d31`.
 
-T󠄁h󠄁e󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁e󠄁d󠄁 [L󠄁a󠄁w󠄁 0󠄁0󠄁0󠄁1󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁-󠄁c󠄁o󠄁p󠄁y󠄁 r󠄁o󠄁w󠄁](../../law/0001-sealed-object.md#appkits-text-routes)
-s󠄁t󠄁a󠄁t󠄁e󠄁s󠄁 e󠄁x󠄁a󠄁c󠄁t󠄁l󠄁y󠄁:󠄁 "󠄁t󠄁h󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁 t󠄁e󠄁x󠄁t󠄁 b󠄁e󠄁t󠄁w󠄁e󠄁e󠄁n󠄁 t󠄁h󠄁e󠄁 o󠄁b󠄁j󠄁e󠄁c󠄁t󠄁s󠄁 i󠄁s󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁k󠄁,󠄁 n󠄁e󠄁v󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 m󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁"󠄁.󠄁
-T󠄁h󠄁e󠄁 o󠄁b󠄁s󠄁e󠄁r󠄁v󠄁e󠄁d󠄁 r󠄁e󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁b󠄁o󠄁v󠄁e󠄁 i󠄁s󠄁 n󠄁o󠄁t󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁 o󠄁f󠄁 a󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁e󠄁d󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁
-a󠄁b󠄁o󠄁u󠄁t󠄁 e󠄁v󠄁e󠄁r󠄁y󠄁 s󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 c󠄁h󠄁a󠄁r󠄁a󠄁c󠄁t󠄁e󠄁r󠄁 o󠄁r󠄁 i󠄁t󠄁s󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 T󠄁h󠄁o󠄁s󠄁e󠄁 d󠄁e󠄁t󠄁a󠄁i󠄁l󠄁s󠄁
-r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 t󠄁o󠄁p󠄁i󠄁c󠄁s󠄁.󠄁
+The accepted [Law 0001 preview-copy row](../../law/0001-sealed-object.md#appkits-text-routes)
+states exactly: "the rendered text between the objects is the ink, never the source markdown".
+The observed representation above is not evidence of a separate accepted decision
+about every synthetic character or its accessibility presentation. Those details
+remain explicit review topics.
