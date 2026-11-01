@@ -83,9 +83,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         self.model = model
         panel = BackdropPanel()
         altitude = BackdropAltitudeKeeper(window: panel)
-        panel.contentView = NSHostingView(
+        panel.contentView = PresentationContentContainer(content: NSHostingView(
             rootView: BackdropRootView(model: model, onCardClick: onCardClick)
-        )
+        ))
         super.init()
         panel.delegate = self
         // The stance is the single source of truth; the window follows.

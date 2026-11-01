@@ -60,7 +60,11 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         file.addItem(action(CompanionL10n.string("Save"), command: .stateSaveNow, enabled: onFile) { [app] in app.pages.perform(.stateSaveNow) })
         file.addItem(action(CompanionL10n.string("Save As…"), command: .fileSaveAs, enabled: onFile) { [app] in app.pages.perform(.fileSaveAs) })
         file.addItem(.separator())
-        let close = action(CompanionL10n.string("Close"), command: .pageClose, enabled: { [weak self] in self?.closeChoice.isEnabled ?? false }) { [app] in
+        let close = action(CompanionL10n.string("Close"), command: .pageClose, enabled: { [weak self] in
+            guard let self else { return false }
+            return self.app.commandPaletteIsShowing || self.closeChoice.isEnabled
+        }) { [app] in
+            if app.dismissCommandPaletteForClose() { return }
             app.pages.closeWhatIsShowing(app.keyWindow.closeTarget) {
                 app.sendToResponder(#selector(NSWindow.performClose(_:)))
             }
@@ -186,7 +190,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        closeItem?.title = CompanionL10n.string(closeChoice.title)
+        closeItem?.title = CompanionL10n.string(app.commandPaletteIsShowing ? "Close Command Palette" : closeChoice.title)
         timelineItem?.state = app.pages.showsTimeUnits ? .on : .off
         tabsItem?.state = app.pages.showsTimeUnits ? .off : .on
         if menu === languageMenu { updateLanguages(in: menu) }

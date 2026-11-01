@@ -47,7 +47,8 @@ public enum CommandPaletteCatalog {
             guard let definition = command.paletteDefinition else { return nil }
             return CommandPaletteEntry(command: command, title: CompanionL10n.string(definition.title),
                 scope: definition.scope, keywords: definition.keywords,
-                shortcut: keymap.hintKeystroke(for: command)?.displaySymbol)
+                shortcut: (command.dispatch == .window
+                    ? keymap.menuKeystroke(for: command) : keymap.hintKeystroke(for: command))?.displaySymbol)
         }.enumerated().sorted { left, right in
             left.element.scope == right.element.scope
                 ? left.offset < right.offset : left.element.scope.rawValue < right.element.scope.rawValue
@@ -65,7 +66,7 @@ extension CommandID {
         case .pageNew: ("New Page", .application, "new tab")
         case .fileOpen: ("Open File…", .application, "document")
         case .appSettings: ("Settings…", .application, "preferences")
-        case .appHelp: ("OnetimePad Help", .application, "documentation")
+        case .appHelp: ("Help", .application, "documentation")
         case .windowClose: ("Close Window", .application, "window dismiss")
         case .stateSaveNow: ("Save", .page, "disk state document")
         case .fileSaveAs: ("Save As…", .page, "file document")

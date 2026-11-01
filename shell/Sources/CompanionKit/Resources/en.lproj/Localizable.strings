@@ -189,3 +189,6 @@
 "Close File" = "Close File";
 "Close Page" = "Close Page";
 "Close Ledger" = "Close Ledger";
+"Help" = "Help";
+"Close Command Palette" = "Close Command Palette";
+"page.close.pendingFileDecision" = "finish the file close decision before closing another page";

@@ -712,6 +712,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    var commandPaletteIsShowing: Bool { commandPalette.isShowing(in: NSApp.keyWindow) }
+
+    func dismissCommandPaletteForClose() -> Bool {
+        commandPalette.dismissForClose(in: NSApp.keyWindow)
+    }
+
     func showCommandPalette(reopen: Bool = false) {
         guard let window = NSApp.keyWindow, window.sheetParent == nil,
               window.attachedSheet == nil, !ModalSession.isRunning else { return }

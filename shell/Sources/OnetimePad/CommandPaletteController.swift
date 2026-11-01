@@ -115,12 +115,12 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
            !editor.prepareForCommandPalette() { return }
         originalWindow = window
         windowCloseObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.willCloseNotification, object: window, queue: .main
+            forName: NSWindow.willCloseNotification, object: window, queue: nil
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.dismiss(restoringFocus: false) }
         }
         windowResignObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResignKeyNotification, object: window, queue: .main
+            forName: NSWindow.didResignKeyNotification, object: window, queue: nil
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.dismiss(restoringFocus: false) }
         }
@@ -140,7 +140,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         sourceWasEdited = false
         if let originalStorage {
             storageObserver = NotificationCenter.default.addObserver(
-                forName: NSTextStorage.didProcessEditingNotification, object: originalStorage, queue: .main
+                forName: NSTextStorage.didProcessEditingNotification, object: originalStorage, queue: nil
             ) { [weak self] _ in
                 MainActor.assumeIsolated { self?.sourceWasEdited = true }
             }
@@ -161,6 +161,15 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         overlay.autoresizingMask = [.width, .height]
         overlay.onOutsideClick = { [weak self] in self?.dismiss(restoringFocus: true) }
         overlay.onLayout = { [weak self] in self?.layout() }
+        overlay.onKeyEquivalent = { [weak self] event in
+            guard let self, let command = self.model.keymap.command(for: event, in: .editor) else { return false }
+            if command == .pageClose || command == .appCommandPalette {
+                self.dismiss(restoringFocus: true)
+                return true
+            }
+            if command.dispatch == .surface { self.dismiss(restoringFocus: true) }
+            return false
+        }
         overlay.interactiveRegion = card
         overlay.setAccessibilityRole(.group)
         overlay.setAccessibilityLabel(CompanionL10n.string("Command Palette"))
@@ -213,6 +222,16 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
             }
         }
         _ = window.makeFirstResponder(responder)
+    }
+
+    func dismissForClose(in window: NSWindow?) -> Bool {
+        guard overlay != nil, originalWindow === window else { return false }
+        dismiss(restoringFocus: true)
+        return true
+    }
+
+    func isShowing(in window: NSWindow?) -> Bool {
+        overlay != nil && originalWindow === window
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
@@ -375,8 +394,15 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
 final class PaletteOverlayView: NSView {
     var onOutsideClick: (() -> Void)?
     var onLayout: (() -> Void)?
+    var onKeyEquivalent: ((NSEvent) -> Bool)?
     weak var interactiveRegion: NSView?
     override func layout() { super.layout(); onLayout?() }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        onKeyEquivalent?(event) == true
+    }
+    override func scrollWheel(with event: NSEvent) {}
+    override func rightMouseDown(with event: NSEvent) {}
+    override func otherMouseDown(with event: NSEvent) {}
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard interactiveRegion?.frame.contains(point) != true else { return }

@@ -1,5 +1,6 @@
 import AppKit
 import CompanionCore
+import SwiftUI
 import XCTest
 
 @testable import CompanionKit
@@ -22,6 +23,14 @@ private final class PaletteEditorProbe: NSTextView, CommandPaletteResponder {
         wasFirstResponder = window?.firstResponder === self
         return true
     }
+}
+
+@MainActor
+private final class PaletteEventSink: NSResponder {
+    private(set) var scrolls = 0
+    private(set) var rightPresses = 0
+    override func scrollWheel(with event: NSEvent) { scrolls += 1 }
+    override func rightMouseDown(with event: NSEvent) { rightPresses += 1 }
 }
 
 @MainActor
@@ -509,6 +518,81 @@ final class CommandPaletteControllerTests: XCTestCase {
             XCTAssertEqual(timeline.state, showsTimeline ? .on : .off)
             XCTAssertEqual(tabs.state, showsTimeline ? .off : .on)
         }
+    }
+
+
+    func testPaletteRemainsAboveHostedContentAcrossSwiftUIUpdatesAndResizes() async throws {
+        let model = try makeModel()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let hosted = NSHostingView(rootView: Text("synthetic before"))
+        let container = PresentationContentContainer(content: hosted)
+        window.contentView = container
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false)
+        let overlay = try XCTUnwrap(palette.overlay)
+        for width in [CGFloat(640), 360] {
+            hosted.rootView = Text("synthetic update at \(width)")
+            window.setContentSize(NSSize(width: width, height: 480))
+            await drainMainQueue()
+            container.layoutSubtreeIfNeeded()
+            hosted.layoutSubtreeIfNeeded()
+            XCTAssertTrue(window.contentView === container)
+            XCTAssertTrue(overlay.superview === container)
+            XCTAssertTrue(container.subviews.last === overlay)
+            XCTAssertTrue(hosted.superview === container)
+            XCTAssertEqual(hosted.frame, container.bounds)
+            XCTAssertEqual(overlay.frame, container.bounds)
+        }
+    }
+
+    func testPaletteShieldsBackgroundScrollingAndContextClicks() throws {
+        let model = try makeModel()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false)
+        let overlay = try XCTUnwrap(palette.overlay)
+        let sink = PaletteEventSink()
+        let previous = overlay.nextResponder
+        defer { overlay.nextResponder = previous }
+        overlay.nextResponder = sink
+        let cgScroll = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
+            wheelCount: 1, wheel1: 12, wheel2: 0, wheel3: 0))
+        let scroll = try XCTUnwrap(NSEvent(cgEvent: cgScroll))
+        overlay.scrollWheel(with: scroll)
+        let right = try XCTUnwrap(NSEvent.mouseEvent(with: .rightMouseDown,
+            location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+        overlay.rightMouseDown(with: right)
+        XCTAssertEqual(sink.scrolls, 0)
+        XCTAssertEqual(sink.rightPresses, 0)
+        XCTAssertNotNil(palette.overlay)
+    }
+
+    func testCloseKeyEquivalentDismissesThePaletteBeforeTheUnderlyingPage() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        let original = model.navigationTabs.map(\.id)
+        let (window, editor) = makeWindow()
+        defer { window.close() }
+        let content = try XCTUnwrap(window.contentView)
+        let container = PresentationContentContainer(content: content)
+        window.contentView = container
+        _ = window.makeFirstResponder(editor)
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: [.command], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, characters: "w", charactersIgnoringModifiers: "w", isARepeat: false, keyCode: 13))
+        XCTAssertTrue(container.performKeyEquivalent(with: event))
+        XCTAssertNil(palette.overlay)
+        XCTAssertEqual(model.navigationTabs.map(\.id), original)
+        XCTAssertTrue(window.firstResponder === editor)
+        palette.show(in: window, pageContext: true)
+        XCTAssertTrue(palette.dismissForClose(in: window))
+        XCTAssertFalse(palette.dismissForClose(in: window))
+        XCTAssertEqual(model.navigationTabs.map(\.id), original)
     }
 
 }

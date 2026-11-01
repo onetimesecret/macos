@@ -44,4 +44,15 @@ final class CommandPaletteTests: XCTestCase {
         XCTAssertEqual(map.command(for: try Keystroke.parse("cmd-shift-w").get(), in: .editor), .windowClose)
         XCTAssertEqual(map.menuKeystroke(for: .pageClose), try Keystroke.parse("cmd-w").get())
     }
+
+    func testWindowOnlyCommandsDoNotAdvertiseUninstalledMenuChords() {
+        let map = Keymap.resolve(defaultText:
+            #"[{"context":"Editor","use_key_equivalents":false,"bindings":{"cmd-h":"app::Help","cmd-shift-w":"window::Close","cmd-n":"page::New"}}]"#,
+            overrideText: nil)
+        let entries = CommandPaletteCatalog.entries(keymap: map)
+        XCTAssertNil(entries.first { $0.command == .appHelp }?.shortcut)
+        XCTAssertNil(entries.first { $0.command == .windowClose }?.shortcut)
+        XCTAssertEqual(entries.first { $0.command == .pageNew }?.shortcut, "⌘N")
+    }
+
 }
