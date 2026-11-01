@@ -9,6 +9,7 @@ enum SealedBlockLayout {
     static let controlGap: CGFloat = 6
     static let horizontalPadding: CGFloat = 12
     static let controlHitSlop: CGFloat = 3
+    static let minimumStatusTextWidth: CGFloat = 30
 
     static func controlWidth(for titleWidths: CGFloat...) -> CGFloat {
         ceil(titleWidths.max() ?? 0) + 8

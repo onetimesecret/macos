@@ -5658,47 +5658,40 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         }
     }
 
-    struct CopyBeat: Equatable {
-        let index: Int
+    struct CopyBeat: Equatable, Sendable {
         let chip: UInt64
-        let started: TimeInterval
+        let id = UUID()
     }
 
     private(set) var copyBeat: CopyBeat?
     private var copyBeatTimer: Timer?
+    #if DEBUG
+    var copyBeatTimerForTests: Timer? { copyBeatTimer }
+    #endif
 
     /// Briefly acknowledges a copy on the block's Copy control.
     func beginCopyBeat(at index: Int) {
         guard let chip = chipCell(at: index)?.info.chipId else { return }
         copyBeatTimer?.invalidate()
-        if let previous = copyBeat { redrawChip(at: previous.index) }
-        copyBeat = CopyBeat(
-            index: index, chip: chip, started: ProcessInfo.processInfo.systemUptime)
+        if let previous = copyBeat, let previousIndex = chipIndex(ofChip: previous.chip) {
+            redrawChip(at: previousIndex)
+        }
+        let beat = CopyBeat(chip: chip)
+        copyBeat = beat
         redrawChip(at: index)
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let timer = Timer(
-            timeInterval: reduceMotion ? SealedBlockCell.beatDuration : 1.0 / 30,
-            repeats: !reduceMotion
-        ) { [weak self] timer in
-            guard let self else { return timer.invalidate() }
-            MainActor.assumeIsolated { self.advanceCopyBeat() }
+        let timer = Timer(timeInterval: SealedBlockCell.beatDuration, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.finishCopyBeat(beat) }
         }
         RunLoop.main.add(timer, forMode: .common)
         copyBeatTimer = timer
     }
 
-    private func advanceCopyBeat() {
-        guard let beat = copyBeat else {
-            copyBeatTimer?.invalidate()
-            copyBeatTimer = nil
-            return
-        }
-        if ProcessInfo.processInfo.systemUptime - beat.started >= SealedBlockCell.beatDuration {
-            copyBeat = nil
-            copyBeatTimer?.invalidate()
-            copyBeatTimer = nil
-        }
-        redrawChip(at: beat.index)
+    private func finishCopyBeat(_ beat: CopyBeat) {
+        guard copyBeat == beat else { return }
+        copyBeat = nil
+        copyBeatTimer?.invalidate()
+        copyBeatTimer = nil
+        if let index = chipIndex(ofChip: beat.chip) { redrawChip(at: index) }
     }
 
     /// The block whose name seat is a field, and how wide the field is (Law 0007).
@@ -5745,7 +5738,12 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
 
     /// A text field in another key window, such as a pad's in Settings, other than `source`.
     private func keysHeldInAnotherWindow(besides source: NSView? = nil) -> Bool {
-        guard let key = NSApp?.keyWindow, key !== window,
+        #if DEBUG
+        let keyWindow = keyWindowSourceForTests?() ?? NSApp?.keyWindow
+        #else
+        let keyWindow = NSApp?.keyWindow
+        #endif
+        guard let key = keyWindow, key !== window,
               let holder = key.firstResponder as? NSTextView
         else { return false }
         return holder !== source
@@ -5918,6 +5916,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
                 guard let rect = optionalRect, !rect.isEmpty else { continue }
                 let chip = cell.info.chipId
                 let key = HandleElementKey(chip: chip, action: action)
+                guard kept[key] == nil else { continue }
                 let element = handleElements[key] ?? SealedActionElement()
                 element.setAccessibilityRole(.button)
                 element.setAccessibilityLabel(CompanionL10n.string(labelKey))
@@ -5925,11 +5924,11 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
                     .joined(separator: "\n")
                 element.setAccessibilityHelp(help)
                 element.setAccessibilityParent(self)
-                element.setAccessibilityEnabled(isEditable && answersChords)
+                element.setAccessibilityEnabled(canPrepareSealedAction)
                 element.setAccessibilityFrameInParentSpace(accessibilityParentSpaceRect(rect))
                 element.press = { [weak self] in
-                    guard let self, self.isEditable, self.answersChords,
-                          let current = self.chipIndex(ofChip: chip), let coordinator = self.coordinator
+                    guard let self, self.canPrepareSealedAction, let coordinator = self.coordinator,
+                          coordinator.prepareChipAction(), let current = self.chipIndex(ofChip: chip)
                     else { return false }
                     self.setSelectedRange(NSRange(location: current, length: 1))
                     switch action {
@@ -5949,6 +5948,11 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         }
         handleElements = kept
         handleAccessibilityElements = elements
+    }
+
+    private var canPrepareSealedAction: Bool {
+        isEditable && !keysHeldInAnotherWindow()
+            && (answersChords || coordinator?.nameEditor?.holdsKeys == true || coordinator?.noteEditor?.holdsKeys == true)
     }
 
     /// `rect`, drawn in this flipped view, in the space a child element's parent space frame
@@ -6195,6 +6199,7 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         /// Takes every session this view would start, in place of AppKit, so a test can read
         /// the items and the source without a pointer (ADR-0018 seam).
         var dragSessionWitness: (([NSDraggingItem], NSDraggingSource) -> Void)?
+        var keyWindowSourceForTests: (() -> NSWindow?)?
         var handlePressStarted: (() -> Void)?
         var handlePressEventSource: (() -> NSEvent?)?
         var handlePressContextSource: (() -> (applicationActive: Bool, windowKey: Bool, windowVisible: Bool))?
@@ -7570,7 +7575,12 @@ final class ChipAttachment: NSTextAttachment {
 
 /// A compact embedded object with one identity row and one stable action row.
 final class SealedBlockCell: NSTextAttachmentCell {
-    @MainActor var info: ChipInfo { didSet { measureCache = nil } }
+    @MainActor var info: ChipInfo {
+        didSet {
+            measureCache = nil
+            statusMeasureCache.removeAll(keepingCapacity: true)
+        }
+    }
     private struct Measurement {
         let typeface: InkStyle.Typeface
         let value: String
@@ -7578,6 +7588,27 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let height: CGFloat
     }
     @MainActor private var measureCache: Measurement?
+    private struct StatusMeasurement {
+        let text: String
+        let font: NSFont
+        let locale: String
+        let width: CGFloat
+    }
+    @MainActor private var statusMeasureCache: [StatusMeasurement] = []
+    struct ControlWidths {
+        let copy: CGFloat
+        let note: CGFloat
+    }
+    private struct ControlMeasurement {
+        let copyTitle: String
+        let copiedTitle: String
+        let noteTitle: String
+        let font: NSFont
+        let locale: String
+        let widths: ControlWidths
+    }
+    @MainActor private static var controlMeasureCache: ControlMeasurement?
+    @MainActor private static var nameFloorMeasureCache: (font: NSFont, width: CGFloat)?
     #if DEBUG
     @MainActor private(set) var lastDrawnFrame: NSRect?
     @MainActor private(set) var lastDrawnShowsControls: Bool?
@@ -7585,9 +7616,11 @@ final class SealedBlockCell: NSTextAttachmentCell {
     @MainActor private(set) var lastDrawnStatus: String?
     @MainActor private(set) var lastDrawnStatusSymbol: String?
     @MainActor private(set) var lastDrawnStatusSymbolFrame: NSRect?
+    @MainActor private(set) var lastDrawnCopied: Bool?
+    @MainActor private(set) var statusMeasurementCount = 0
+    @MainActor private(set) static var controlMeasurementCount = 0
     #endif
 
-    nonisolated static let blockHeight = SealedBlockLayout.height
     nonisolated static let fallbackBlockWidth = SealedBlockLayout.minimumWidth
     nonisolated static let effectivelyUnboundedWidth: CGFloat = 1_000_000
     nonisolated static var classification: String { CompanionL10n.string("chip.status.classification") }
@@ -7599,7 +7632,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     nonisolated static var decryptedDragWords: String { CompanionL10n.string("chip.control.copy") }
     nonisolated static let moveHandleGlyph = "⠿"
 
-    nonisolated static func blockBounds(width: CGFloat, height: CGFloat = blockHeight) -> NSRect {
+    nonisolated static func blockBounds(width: CGFloat, height: CGFloat) -> NSRect {
         NSRect(x: 0, y: -height + 4, width: max(0, width), height: height)
     }
 
@@ -7675,10 +7708,10 @@ final class SealedBlockCell: NSTextAttachmentCell {
     func doorwayRect(in cellFrame: NSRect) -> NSRect? {
         guard info.hasNote else { return nil }
         let status = statusString(selected: false)
-        let width = SealedBlockLayout.controlWidth(for: Self.controlString(Self.doorwayWord).size().width)
+        let width = Self.controlWidths.note
         let rect = NSRect(
-            x: Self.contentLayout(in: cellFrame).labelOrigin.x + status.size().width + 8,
-            y: Self.actionsRect(in: cellFrame).minY, width: width, height: 24)
+            x: Self.contentLayout(in: cellFrame).labelOrigin.x + measuredStatusWidth(status) + 8,
+            y: Self.actionsRect(in: cellFrame).minY, width: width, height: SealedBlockLayout.controlHeight)
         return rect.maxX + 8 <= actionRowStart(in: cellFrame) ? rect : nil
     }
 
@@ -7716,7 +7749,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
             name: NSAttributedString(string: name, attributes: attributes).size().width,
             equals: separator.size().width,
             value: NSAttributedString(string: value, attributes: valueAttributes).size().width,
-            nameFloor: NSAttributedString(string: String(name.prefix(Self.nameFloorCharacters)) + "…", attributes: attributes).size().width)
+            nameFloor: Self.nameFloorWidth(font: InkStyle.chipNameFont))
         let fittedValue = Self.fitted(value, attributes: valueAttributes, width: allotment.value)
         let visibleSeparator = fittedValue.string.isEmpty ? NSAttributedString(string: "") : separator
         let fittedName = Self.fitted(
@@ -7799,10 +7832,66 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     @MainActor
-    static var copyControlWidth: CGFloat {
-        SealedBlockLayout.controlWidth(for:
-            controlString(decryptedDragWords).size().width,
-            controlString(copiedWords).size().width)
+    static var copyControlWidth: CGFloat { controlWidths.copy }
+
+    @MainActor
+    private static var controlWidths: ControlWidths {
+        measuredControlWidths(copyTitle: decryptedDragWords, copiedTitle: copiedWords,
+                              noteTitle: doorwayWord, font: NSFont.systemFont(ofSize: 12),
+                              localeIdentifier: Locale.current.identifier)
+    }
+
+    @MainActor
+    static func measuredControlWidths(
+        copyTitle: String, copiedTitle: String, noteTitle: String, font: NSFont,
+        localeIdentifier: String
+    ) -> ControlWidths {
+        if let cached = controlMeasureCache,
+           cached.copyTitle == copyTitle, cached.copiedTitle == copiedTitle,
+           cached.noteTitle == noteTitle, cached.font == font, cached.locale == localeIdentifier {
+            return cached.widths
+        }
+        func width(_ text: String) -> CGFloat {
+            NSAttributedString(string: text, attributes: [.font: font]).size().width
+        }
+        let widths = ControlWidths(
+            copy: SealedBlockLayout.controlWidth(for: width(copyTitle), width(copiedTitle)),
+            note: SealedBlockLayout.controlWidth(for: width(noteTitle)))
+        controlMeasureCache = ControlMeasurement(
+            copyTitle: copyTitle, copiedTitle: copiedTitle, noteTitle: noteTitle,
+            font: font, locale: localeIdentifier, widths: widths)
+        #if DEBUG
+        controlMeasurementCount += 1
+        #endif
+        return widths
+    }
+
+    @MainActor
+    private func measuredStatusWidth(_ status: NSAttributedString) -> CGFloat {
+        let font = status.attribute(.font, at: 0, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 12)
+        let locale = Locale.current.identifier
+        if let cached = statusMeasureCache.first(where: {
+            $0.text == status.string && $0.font == font && $0.locale == locale
+        }) { return cached.width }
+        let width = status.size().width
+        statusMeasureCache.append(StatusMeasurement(text: status.string, font: font, locale: locale, width: width))
+        #if DEBUG
+        statusMeasurementCount += 1
+        #endif
+        return width
+    }
+
+    @MainActor
+    static func nameFloorWidth(font: NSFont) -> CGFloat {
+        if let cached = nameFloorMeasureCache, cached.font == font { return cached.width }
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let digitAdvance = "0123456789".map {
+            NSAttributedString(string: String($0), attributes: attributes).size().width
+        }.max() ?? 0
+        let width = digitAdvance * CGFloat(nameFloorCharacters)
+            + NSAttributedString(string: "…", attributes: attributes).size().width
+        nameFloorMeasureCache = (font, width)
+        return width
     }
 
     @MainActor
@@ -7852,9 +7941,6 @@ final class SealedBlockCell: NSTextAttachmentCell {
     private func actionRowStart(in frame: NSRect) -> CGFloat {
         moveHandleRect(in: frame)?.minX ?? copyRect(in: frame)?.minX ?? Self.actionsRect(in: frame).minX
     }
-
-    @MainActor
-    static var decryptedDragString: NSAttributedString { controlString(decryptedDragWords) }
 
     @MainActor
     static func moveHandleString(selected: Bool) -> NSAttributedString {
@@ -7908,10 +7994,6 @@ final class SealedBlockCell: NSTextAttachmentCell {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    @MainActor static func drawDecryptedDragHandle(in rect: NSRect) {
-        drawControl(decryptedDragString, in: rect, bordered: true)
-    }
-
     @MainActor static func drawMoveHandle(in rect: NSRect, selected: Bool) {
         drawControl(moveHandleString(selected: selected), in: rect, bordered: false, selected: selected)
     }
@@ -7952,25 +8034,13 @@ final class SealedBlockCell: NSTextAttachmentCell {
     }
 
     nonisolated static let beatDuration: TimeInterval = 1
-    nonisolated static let beatFade: TimeInterval = 0.15
-
-    nonisolated static func beatStrength(elapsed: TimeInterval, reduceMotion: Bool) -> CGFloat? {
-        guard elapsed >= 0, elapsed < beatDuration else { return nil }
-        guard !reduceMotion else { return 1 }
-        return CGFloat(min(1, min(elapsed, beatDuration - elapsed) / beatFade))
-    }
-
     override func draw(
         withFrame frame: NSRect, in controlView: NSView?, characterIndex index: Int,
         layoutManager: NSLayoutManager
     ) {
         let view = controlView as? InkTextView
         let drag = (layoutManager.firstTextView as? InkTextView)?.drawsPageDragImage == true
-        let beat = view?.copyBeat.flatMap { $0.index == index && $0.chip == info.chipId ? $0 : nil }
-        let copied = beat.map {
-            Self.beatStrength(elapsed: ProcessInfo.processInfo.systemUptime - $0.started,
-                              reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) != nil
-        } ?? false
+        let copied = view?.copyBeat?.chip == info.chipId
         let naming = view?.naming.flatMap { $0.index == index && $0.chip == info.chipId ? $0.width : nil }
         let selected = !drag && (controlView as? NSTextView)?.selectedRanges.contains {
             NSLocationInRange(index, $0.rangeValue)
@@ -8013,6 +8083,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
         lastDrawnStatus = status.string
         lastDrawnStatusSymbol = nil
         lastDrawnStatusSymbolFrame = nil
+        lastDrawnCopied = copied
         #endif
         let path = NSBezierPath(roundedRect: frame.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
         if !selected {
@@ -8027,7 +8098,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let statusRoom = max(0, statusEnd - layout.labelOrigin.x)
         let symbolName = noteNeedsStatus ? "note.text" : "lock.fill"
         let symbolEnd = showsControls ? actionRowStart(in: frame) : frame.maxX
-        if (statusRoom >= 30 || noteNeedsStatus), layout.lockRect.maxX <= symbolEnd,
+        if (statusRoom >= SealedBlockLayout.minimumStatusTextWidth || noteNeedsStatus), layout.lockRect.maxX <= symbolEnd,
            let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
             let tinted = symbol.withSymbolConfiguration(
                 NSImage.SymbolConfiguration(paletteColors: [Self.quietInk(selected: selected)])) ?? symbol
@@ -8038,7 +8109,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
             lastDrawnStatusSymbolFrame = layout.lockRect
             #endif
         }
-        if statusRoom >= 30 {
+        if statusRoom >= SealedBlockLayout.minimumStatusTextWidth {
             let fitted = Self.fitted(status.string, attributes: status.attributes(at: 0, effectiveRange: nil), width: statusRoom)
             fitted.draw(at: layout.labelOrigin)
         }

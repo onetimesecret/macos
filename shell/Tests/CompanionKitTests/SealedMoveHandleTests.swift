@@ -618,4 +618,73 @@ final class SealedMoveHandleTests: XCTestCase {
         }
     }
 
+    func testCopyAcknowledgementFollowsItsObjectAndEndsWithOneShotTimer() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let chip = try XCTUnwrap(page.textView.chipCell(at: object)?.info.chipId)
+        page.textView.beginCopyBeat(at: object)
+        let timer = try XCTUnwrap(page.textView.copyBeatTimerForTests)
+        XCTAssertEqual(timer.timeInterval, SealedBlockCell.beatDuration)
+        page.textView.insertText("prefix ", replacementRange: NSRange(location: 0, length: 0))
+        let moved = try XCTUnwrap(page.textView.chipIndex(ofChip: chip))
+        XCTAssertNotEqual(moved, object)
+        let cell = try XCTUnwrap(page.textView.chipCell(at: moved))
+        let manager = try XCTUnwrap(page.textView.layoutManager)
+        manager.ensureLayout(for: try XCTUnwrap(page.textView.textContainer))
+        let frame = try XCTUnwrap(page.textView.chipFrame(at: moved))
+        let image = NSImage(size: page.textView.bounds.size)
+        image.lockFocus()
+        cell.draw(withFrame: frame, in: page.textView, characterIndex: moved, layoutManager: manager)
+        image.unlockFocus()
+        XCTAssertEqual(cell.lastDrawnCopied, true)
+        timer.fire()
+        XCTAssertFalse(timer.isValid)
+        XCTAssertNil(page.textView.copyBeat)
+        XCTAssertNil(page.textView.copyBeatTimerForTests)
+    }
+
+    func testAccessibilityCopyCommitsAValidNameAndRefusesAnInvalidDraft() throws {
+        for draft in ["API_KEY", "not.valid"] {
+            let model = try makeModel()
+            let page = try mountPage(on: model)
+            let copy = try XCTUnwrap(page.textView.handleAccessibilityElements.first {
+                $0.accessibilityLabel() == "Copy Decrypted Contents"
+            })
+            page.coordinator.beginNaming(at: object)
+            let name = try XCTUnwrap(page.coordinator.nameEditor)
+            name.draft = draft
+            page.textView.handlesMayHaveMoved()
+            XCTAssertTrue(copy.isAccessibilityEnabled())
+            let valid = draft == "API_KEY"
+            XCTAssertEqual(copy.accessibilityPerformPress(), valid)
+            XCTAssertEqual(sent(model).count, valid ? 1 : 0)
+            XCTAssertEqual(name.isOpen, !valid)
+            if valid { XCTAssertEqual(page.textView.chipCell(at: object)?.info.name, draft) }
+            else { XCTAssertNotNil(name.rename.error) }
+        }
+    }
+
+    func testAccessibilityCopyYieldsToATextFieldInAnotherWindow() throws {
+        let model = try makeModel()
+        let page = try mountPage(on: model)
+        let copy = try XCTUnwrap(page.textView.handleAccessibilityElements.first {
+            $0.accessibilityLabel() == "Copy Decrypted Contents"
+        })
+        page.coordinator.beginNaming(at: object)
+        let name = try XCTUnwrap(page.coordinator.nameEditor)
+        name.draft = "API_KEY"
+        let other = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 100),
+                             styleMask: [.titled], backing: .buffered, defer: false)
+        let field = NSTextField(frame: NSRect(x: 10, y: 10, width: 200, height: 24))
+        other.contentView?.addSubview(field)
+        XCTAssertTrue(other.makeFirstResponder(field))
+        page.textView.keyWindowSourceForTests = { other }
+        defer { page.textView.keyWindowSourceForTests = nil }
+        page.textView.handlesMayHaveMoved()
+        XCTAssertFalse(copy.isAccessibilityEnabled())
+        XCTAssertFalse(copy.accessibilityPerformPress())
+        XCTAssertTrue(sent(model).isEmpty)
+        XCTAssertTrue(name.isOpen)
+    }
+
 }

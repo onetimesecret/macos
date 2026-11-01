@@ -148,13 +148,6 @@ final class SealedBlockTests: XCTestCase {
         }
     }
 
-    func testCopyFeedbackDurationRespectsReduceMotion() {
-        XCTAssertNil(SealedBlockCell.beatStrength(elapsed: -0.1, reduceMotion: false))
-        XCTAssertEqual(SealedBlockCell.beatStrength(elapsed: 0.5, reduceMotion: false), 1)
-        XCTAssertNil(SealedBlockCell.beatStrength(elapsed: 1, reduceMotion: false))
-        XCTAssertEqual(SealedBlockCell.beatStrength(elapsed: 0, reduceMotion: true), 1)
-    }
-
     /// Records the proposal TextKit supplies during synchronous layout.
     private final class ProposalRecorder: NSTextAttachmentCell {
         nonisolated(unsafe) var proposedFragment: NSRect?
@@ -377,6 +370,41 @@ final class SealedBlockTests: XCTestCase {
         let title = SealedBlockCell.controlString(SealedBlockCell.doorwayWord)
         XCTAssertEqual(note.width, SealedBlockLayout.controlWidth(for: title.size().width))
         XCTAssertEqual(SealedBlockCell.controlTitle(title, in: note).text.string, title.string)
+    }
+
+    func testControlMeasurementsReuseIdenticalInputsAndRefreshForTranslatedTitlesAndFonts() {
+        let font = NSFont.systemFont(ofSize: 12)
+        func widths(_ copy: String, _ font: NSFont) -> SealedBlockCell.ControlWidths {
+            SealedBlockCell.measuredControlWidths(copyTitle: copy, copiedTitle: "Done", noteTitle: "Note",
+                                                 font: font, localeIdentifier: "test-locale")
+        }
+        let initial = widths("Copy", font)
+        let count = SealedBlockCell.controlMeasurementCount
+        XCTAssertEqual(widths("Copy", font).copy, initial.copy)
+        XCTAssertEqual(SealedBlockCell.controlMeasurementCount, count)
+        XCTAssertGreaterThan(widths("Entschlüsselten Inhalt kopieren", font).copy, initial.copy)
+        XCTAssertGreaterThan(widths("Copy", NSFont.systemFont(ofSize: 30)).copy, initial.copy)
+    }
+
+    func testStatusMeasureIsReusedAcrossGeometryQueriesAndRefreshesWhenTheFaceChanges() {
+        let cell = SealedBlockCell(info: face(note: true))
+        let frame = NSRect(x: 0, y: 0, width: 480, height: SealedBlockCell.preferredHeight)
+        _ = cell.doorwayRect(in: frame)
+        let count = cell.statusMeasurementCount
+        for _ in 0..<20 { _ = cell.doorwayRect(in: frame) }
+        XCTAssertEqual(cell.statusMeasurementCount, count)
+        cell.info = face(note: true, available: false)
+        _ = cell.doorwayRect(in: frame)
+        XCTAssertEqual(cell.statusMeasurementCount, count + 1)
+    }
+
+    func testNameFloorUsesAStableFontBudgetAndScalesWithTheTypeface() {
+        let small = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        let large = NSFont.systemFont(ofSize: 30, weight: .semibold)
+        let budget = SealedBlockCell.nameFloorWidth(font: small)
+        XCTAssertGreaterThan(budget, 0)
+        XCTAssertEqual(SealedBlockCell.nameFloorWidth(font: small), budget)
+        XCTAssertGreaterThan(SealedBlockCell.nameFloorWidth(font: large), budget)
     }
 
 }
