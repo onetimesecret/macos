@@ -163,7 +163,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         overlay.onLayout = { [weak self] in self?.layout() }
         overlay.onKeyEquivalent = { [weak self] event in
             guard let self, let command = self.model.keymap.command(for: event, in: .editor) else { return false }
-            if command == .pageClose || command == .appCommandPalette {
+            if command == .pageClose || command == .appCommandPalette || command == .surfaceHandBackKeys {
                 self.dismiss(restoringFocus: true)
                 return true
             }

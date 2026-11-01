@@ -589,6 +589,17 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertNil(palette.overlay)
         XCTAssertEqual(model.navigationTabs.map(\.id), original)
         XCTAssertTrue(window.firstResponder === editor)
+        let selection = editor.selectedRanges
+        palette.show(in: window, pageContext: true)
+        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+            isARepeat: false, keyCode: 53))
+        XCTAssertTrue(container.performKeyEquivalent(with: escape))
+        XCTAssertNil(palette.overlay)
+        XCTAssertTrue(window.firstResponder === editor)
+        XCTAssertEqual(editor.selectedRanges, selection)
+        XCTAssertEqual(model.navigationTabs.map(\.id), original)
         palette.show(in: window, pageContext: true)
         XCTAssertTrue(palette.dismissForClose(in: window))
         XCTAssertFalse(palette.dismissForClose(in: window))
