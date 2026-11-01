@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Combine
 import CompanionKit
 
 @MainActor
@@ -34,6 +35,9 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     private var originalLedger = false
     private var availableEditorCommands: Set<CommandID> = []
     private var hasPageContext = false
+    private var modelObservation: AnyCancellable?
+    private var modelChangeQueued = false
+    private let realizedCells = NSHashTable<PaletteCommandCell>.weakObjects()
     private var rows: [Row] = []
     private var datedSource: [TabSummary] = []
     private var datedRows: [Row] = []
@@ -188,15 +192,18 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         overlay.onOutsideClick = { [weak self] in self?.dismiss(restoringFocus: true) }
         overlay.onLayout = { [weak self] in self?.layout() }
         overlay.onKeyEquivalent = { [weak self] event in
-            guard let self, let command = self.model.keymap.command(for: event, in: .editor) else { return false }
-            if command == .surfaceHandBackKeys {
+            guard let self else { return false }
+            if event.keyCode == UInt16(kVK_Escape),
+               event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
                 self.cancelSearchOrDismiss()
                 return true
             }
+            guard let command = self.model.keymap.command(for: event, in: .editor) else { return false }
             if command == .pageClose || command == .appCommandPalette {
                 self.dismiss(restoringFocus: true)
                 return true
             }
+            guard event.modifierFlags.contains(.command) else { return false }
             if command.dispatch == .surface { self.dismiss(restoringFocus: true) }
             return false
         }
@@ -206,6 +213,18 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         overlay.setAccessibilityModal(true)
         overlay.addSubview(card)
         self.overlay = overlay
+        modelObservation = model.objectWillChange.sink { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.modelChangeQueued else { return }
+                self.modelChangeQueued = true
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.modelChangeQueued = false
+                    guard self.overlay != nil else { return }
+                    self.reload()
+                }
+            }
+        }
         host.addSubview(overlay, positioned: .above, relativeTo: nil)
         reload()
         layout()
@@ -226,6 +245,13 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         }
         overlay?.removeFromSuperview()
         overlay = nil
+        modelObservation = nil
+        rows.removeAll()
+        clearDatedCache()
+        clearRealizedCells()
+        table.reloadData()
+        search.stringValue = ""
+        footer.stringValue = ""
         if let storageObserver { NotificationCenter.default.removeObserver(storageObserver) }
         storageObserver = nil
         if let windowCloseObserver { NotificationCenter.default.removeObserver(windowCloseObserver) }
@@ -273,6 +299,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         let view = (tableView.makeView(withIdentifier: identifier, owner: self) as? PaletteCommandCell)
             ?? PaletteCommandCell(title: "", detail: "", shortcut: nil)
         view.identifier = identifier
+        realizedCells.add(view)
         view.configure(title: item.title, detail: item.detail, shortcut: item.shortcut)
         view.frame = NSRect(x: 0, y: 0, width: tableColumn?.width ?? tableView.bounds.width, height: 42)
         view.setAccessibilityLabel([item.title, item.detail, item.shortcut].compactMap { $0 }.joined(separator: ", "))
@@ -369,7 +396,24 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         _ = originalWindow?.makeFirstResponder(search)
     }
 
+    private func clearDatedCache() {
+        datedSource.removeAll()
+        datedRows.removeAll()
+        datedLocale = nil
+        datedTimeZone = nil
+    }
+
+    private func clearRealizedCells() {
+        for cell in realizedCells.allObjects {
+            cell.configure(title: "", detail: "", shortcut: nil)
+            cell.toolTip = nil
+            cell.setAccessibilityLabel(nil)
+            cell.setAccessibilityHelp(nil)
+        }
+    }
+
     private func reload() {
+        let selected = rows.indices.contains(table.selectedRow) ? rows[table.selectedRow] : nil
         if reopening {
             let source = model.closedTabs
             let locale = Locale.current.identifier
@@ -392,6 +436,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
                     .allSatisfy { text.localizedStandardContains(String($0)) }
             }
         } else {
+            clearDatedCache()
             rows = CommandPaletteCatalog.entries(keymap: model.keymap).compactMap { entry in
                 let title = entry.command == .pageClose ? CompanionL10n.string(closeChoice.title) : entry.title
                 guard entry.matches(search.stringValue, title: title), isAvailable(entry) else { return nil }
@@ -403,8 +448,14 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         search.nextKeyView = table
         table.nextKeyView = reopening ? backButton : search
         backButton.nextKeyView = search
+        clearRealizedCells()
         table.reloadData()
-        if !rows.isEmpty { table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
+        if !rows.isEmpty {
+            let index = selected.flatMap { previous in
+                rows.firstIndex { $0.command == previous.command && $0.tab == previous.tab }
+            } ?? 0
+            table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+        }
         footer.stringValue = rows.isEmpty
             ? CompanionL10n.string(reopening ? "No closed pages or tabs" : "No matching commands")
             : CompanionL10n.string("↑↓ Select · Return Run · Esc Cancel")

@@ -45,7 +45,7 @@ private final class PaletteKeyEquivalentSink: NSView {
 
 @MainActor
 final class CommandPaletteControllerTests: XCTestCase {
-    private func makeModel() throws -> PageModel {
+    private func makeModel(overrideText: String? = nil) throws -> PageModel {
         let tag = "palette-\(UUID().uuidString)"
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(tag)
         let defaults = try XCTUnwrap(UserDefaults(suiteName: tag))
@@ -53,10 +53,17 @@ final class CommandPaletteControllerTests: XCTestCase {
             UserDefaults.standard.removePersistentDomain(forName: tag)
             try? FileManager.default.removeItem(at: directory)
         }
+        var override: URL?
+        if let overrideText {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("palette-keymap-\(UUID().uuidString).json")
+            try overrideText.write(to: url, atomically: true, encoding: .utf8)
+            addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+            override = url
+        }
         companion_init()
         let handle = try XCTUnwrap(tag.withCString { companion_new_ephemeral($0) })
         return PageModel(formFactor: .backdrop, defaults: defaults,
-            seams: .init(stateDirectory: directory, client: CompanionClient(adopting: handle)))
+            seams: .init(stateDirectory: directory, client: CompanionClient(adopting: handle), keymapOverride: override))
     }
 
     private func makeWindow() -> (NSWindow, PaletteEditorProbe) {
@@ -758,6 +765,75 @@ final class CommandPaletteControllerTests: XCTestCase {
             XCTAssertTrue(window.firstResponder === searchEditor)
             XCTAssertFalse(window.firstResponder === originalEditor)
         }
+    }
+
+    func testTheOpenDatedPickerRefreshesWhenItsPageExpiresAndDismissalClearsCells() async throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let tab = try XCTUnwrap(model.selection)
+        let title = "synthetic derived title before expiry"
+        XCTAssertTrue(model.coreClient.syncDocument(sheet: page, json: #"[{"ink":"synthetic derived title before expiry"}]"#))
+        model.refresh()
+        model.closeCurrent()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false, reopen: true)
+        let overlay = try XCTUnwrap(palette.overlay)
+        let oldCell = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+        XCTAssertEqual(oldCell.titleLabel.stringValue, title)
+        XCTAssertTrue(companion_test_age_ms(model.coreClient.rawHandleForTests, 31 * 24 * 60 * 60 * 1_000))
+        _ = model.settleCoreEvent()
+        await drainMainQueue()
+        let expired = try XCTUnwrap(model.closedTabs.first { $0.id == tab })
+        XCTAssertFalse(expired.hasPage)
+        XCTAssertNotEqual(expired.title, title)
+        let cell = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+        XCTAssertEqual(cell.titleLabel.stringValue, expired.title)
+        XCTAssertFalse(oldCell.titleLabel.stringValue.contains(title))
+        palette.search.stringValue = title
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        XCTAssertEqual(palette.table.numberOfRows, 0)
+        palette.dismiss(restoringFocus: true)
+        XCTAssertEqual(palette.table.numberOfRows, 0)
+        XCTAssertEqual(palette.search.stringValue, "")
+        XCTAssertEqual(cell.titleLabel.stringValue, "")
+        XCTAssertEqual(cell.detailLabel.stringValue, "")
+        XCTAssertEqual(cell.shortcutLabel.stringValue, "")
+        XCTAssertNil(cell.accessibilityLabel())
+        XCTAssertNil(cell.toolTip)
+        XCTAssertNil(overlay.superview)
+        palette.show(in: window, pageContext: false)
+        palette.show(in: window, pageContext: false, reopen: true)
+        palette.search.stringValue = title
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        XCTAssertEqual(palette.table.numberOfRows, 0)
+    }
+
+    func testOptionTextBindingsDoNotDismissSearchOrDispatchPageCommands() throws {
+        let model = try makeModel(overrideText:
+            #"[{"context":"Editor","bindings":{"alt-n":"page::New"}}]"#)
+        model.loadStateIfNeeded()
+        let original = model.tabs.map(\.id)
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        let searchEditor = try XCTUnwrap(palette.search.currentEditor() as? NSTextView)
+        searchEditor.setMarkedText("ñ", selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: [.option], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, characters: "˜", charactersIgnoringModifiers: "n", isARepeat: false, keyCode: 45))
+        XCTAssertEqual(model.keymap.command(for: event, in: .editor), .pageNew)
+        XCTAssertFalse(try XCTUnwrap(palette.overlay).performKeyEquivalent(with: event))
+        XCTAssertNotNil(palette.overlay)
+        XCTAssertTrue(window.firstResponder === searchEditor)
+        XCTAssertTrue(searchEditor.hasMarkedText())
+        XCTAssertEqual(searchEditor.string, "ñ")
+        XCTAssertEqual(model.tabs.map(\.id), original)
     }
 
 }
