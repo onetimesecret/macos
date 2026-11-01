@@ -211,6 +211,9 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
             }
             guard let command = self.model.keymap.command(for: event, in: .editor) else { return false }
             if command == .pageClose || command == .appCommandPalette {
+                let modifiers = event.modifierFlags
+                guard modifiers.contains(.command)
+                    || (modifiers.contains(.control) && !modifiers.contains(.option)) else { return false }
                 self.dismiss(restoringFocus: true)
                 return true
             }

@@ -934,4 +934,49 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertNil(model.notice)
     }
 
+    func testTextBindingsForDismissCommandsStayWithSearch() throws {
+        for command in [CommandID.pageClose, .appCommandPalette] {
+            let model = try makeModel(overrideText:
+                "[{\"context\":\"Editor\",\"bindings\":{\"alt-n\":\"\(command.rawValue)\",\"x\":\"\(command.rawValue)\"}}]")
+            let (window, _) = makeWindow()
+            defer { window.close() }
+            let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+            palette.show(in: window, pageContext: true)
+            let searchEditor = try XCTUnwrap(palette.search.currentEditor() as? NSTextView)
+            for (modifiers, characters, key, code) in [
+                (NSEvent.ModifierFlags.option, "˜", "n", UInt16(45)),
+                (NSEvent.ModifierFlags(), "x", "x", UInt16(7))
+            ] {
+                let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                    modifierFlags: modifiers, timestamp: 0, windowNumber: window.windowNumber,
+                    context: nil, characters: characters, charactersIgnoringModifiers: key,
+                    isARepeat: false, keyCode: code))
+                XCTAssertEqual(model.keymap.command(for: event, in: .editor), command)
+                XCTAssertFalse(try XCTUnwrap(palette.overlay).performKeyEquivalent(with: event))
+                XCTAssertNotNil(palette.overlay)
+                XCTAssertTrue(window.firstResponder === searchEditor)
+            }
+        }
+    }
+
+    func testControlCloseAndCommandPaletteChordsStillDismissSearch() throws {
+        let model = try makeModel()
+        let (window, editor) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        for (modifiers, character, code) in [
+            (NSEvent.ModifierFlags.control, "w", UInt16(13)),
+            (NSEvent.ModifierFlags([.command, .shift]), "p", UInt16(35))
+        ] {
+            palette.show(in: window, pageContext: true)
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                modifierFlags: modifiers, timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, characters: character, charactersIgnoringModifiers: character,
+                isARepeat: false, keyCode: code))
+            XCTAssertTrue(try XCTUnwrap(palette.overlay).performKeyEquivalent(with: event))
+            XCTAssertNil(palette.overlay)
+            XCTAssertTrue(window.firstResponder === editor)
+        }
+    }
+
 }
