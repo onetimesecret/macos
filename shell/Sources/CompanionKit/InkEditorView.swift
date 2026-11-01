@@ -726,6 +726,7 @@ public struct InkEditorView: NSViewRepresentable {
         func keysMoved() {
             textView?.handlesMayHaveMoved()
             DispatchQueue.main.async { [weak self] in
+                self?.textView?.handlesMayHaveMoved()
                 self?.refreshLanguageActionAvailability()
             }
         }
@@ -3557,9 +3558,10 @@ public struct InkEditorView: NSViewRepresentable {
                 _ = nameEditor?.focusDraft()
                 return false
             }
+            if let window = textView.window, !window.makeFirstResponder(textView) { return false }
+            guard textView.answersChords else { return false }
             closeNote()
-            if let window = textView.window { _ = window.makeFirstResponder(textView) }
-            return textView.answersChords
+            return true
         }
 
         final class ChipMenuTarget: NSObject {
@@ -3767,6 +3769,7 @@ public struct InkEditorView: NSViewRepresentable {
         func followNaming() {
             guard let nameEditor, nameEditor.isOpen else { return }
             nameEditor.follow()
+            textView?.handlesMayHaveMoved()
         }
 
         /// The chip's ↗: open the inline confirmation. The bytes stay
@@ -5908,9 +5911,9 @@ final class InkTextView: AskingTextView, EditStepResponder, LanguageDetectionRes
         for index in blocksWithHandles {
             guard let frame = chipFrame(at: index), let cell = chipCell(at: index) else { continue }
             let actions: [(SealedAction, NSRect?, String, String)] = [
-                (.copy, cell.copyRect(in: frame), "chip.handle.decrypted", "chip.control.copy.help"),
+                (.copy, cell.copyRect(in: frame), "chip.control.copy", "chip.control.copy.help"),
                 (.more, SealedBlockCell.actionsRect(in: frame), "chip.accessibility.actions", "chip.control.actions.help"),
-                (.note, cell.doorwayRect(in: frame), "chip.accessibility.note", "chip.control.note.help"),
+                (.note, cell.doorwayRect(in: frame), "chip.control.note", "chip.control.note.help"),
             ]
             for (action, optionalRect, labelKey, helpKey) in actions {
                 guard let rect = optionalRect, !rect.isEmpty else { continue }
@@ -7617,6 +7620,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
     @MainActor private(set) var lastDrawnStatusSymbol: String?
     @MainActor private(set) var lastDrawnStatusSymbolFrame: NSRect?
     @MainActor private(set) var lastDrawnCopied: Bool?
+    @MainActor private(set) var lastDrawnEditingWidth: CGFloat?
     @MainActor private(set) var statusMeasurementCount = 0
     @MainActor private(set) static var controlMeasurementCount = 0
     #endif
@@ -7868,6 +7872,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
 
     @MainActor
     private func measuredStatusWidth(_ status: NSAttributedString) -> CGFloat {
+        guard status.length > 0 else { return 0 }
         let font = status.attribute(.font, at: 0, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 12)
         let locale = Locale.current.identifier
         if let cached = statusMeasureCache.first(where: {
@@ -8041,7 +8046,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
         let view = controlView as? InkTextView
         let drag = (layoutManager.firstTextView as? InkTextView)?.drawsPageDragImage == true
         let copied = view?.copyBeat?.chip == info.chipId
-        let naming = view?.naming.flatMap { $0.index == index && $0.chip == info.chipId ? $0.width : nil }
+        let naming = view?.naming.flatMap { $0.chip == info.chipId ? $0.width : nil }
         let selected = !drag && (controlView as? NSTextView)?.selectedRanges.contains {
             NSLocationInRange(index, $0.rangeValue)
         } == true
@@ -8084,6 +8089,7 @@ final class SealedBlockCell: NSTextAttachmentCell {
         lastDrawnStatusSymbol = nil
         lastDrawnStatusSymbolFrame = nil
         lastDrawnCopied = copied
+        lastDrawnEditingWidth = editingWidth
         #endif
         let path = NSBezierPath(roundedRect: frame.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
         if !selected {

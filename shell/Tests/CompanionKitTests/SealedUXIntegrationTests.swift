@@ -307,7 +307,7 @@ final class SealedUXIntegrationTests: XCTestCase {
         let button = try XCTUnwrap(editor.chipCell(at: 3)?.copyRect(in: frame))
         editor.handlesMayHaveMoved()
         let copy = try XCTUnwrap(editor.handleAccessibilityElements.first {
-            $0.accessibilityLabel() == "Copy Decrypted Contents"
+            $0.accessibilityLabel() == "Copy Decrypted"
         })
         editor.isEditable = false
         editor.handlesMayHaveMoved()

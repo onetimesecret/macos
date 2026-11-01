@@ -6,6 +6,15 @@ import XCTest
 /// Sealed-object controls on a mounted page in an isolated window.
 @MainActor
 final class SealedMoveHandleTests: XCTestCase {
+    private final class HandoffWindow: NSWindow {
+        var refusesPageHandoff = false
+
+        override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+            if refusesPageHandoff, responder is InkTextView { return false }
+            return super.makeFirstResponder(responder)
+        }
+    }
+
     private struct Page {
         let model: PageModel
         let coordinator: InkEditorView.Coordinator
@@ -53,7 +62,7 @@ final class SealedMoveHandleTests: XCTestCase {
         let sheet = try XCTUnwrap(model.selectedPageID)
         let textView = try XCTUnwrap(InkEditorView.makeInkTextView(
             model: model, sheetID: sheet, coordinator: coordinator))
-        let window = NSWindow(
+        let window = HandoffWindow(
             contentRect: NSRect(x: 0, y: 0, width: width, height: 400),
             styleMask: [.titled], backing: .buffered, defer: false)
         let content = NSView(frame: window.contentLayoutRect)
@@ -400,7 +409,7 @@ final class SealedMoveHandleTests: XCTestCase {
         let more = SealedBlockCell.actionsRect(in: frame)
         let elements = textView.handleAccessibilityElements
         XCTAssertEqual(elements.map { $0.accessibilityLabel() },
-                       ["Copy Decrypted Contents", "Sealed Content Actions"])
+                       ["Copy Decrypted", "Sealed Content Actions"])
         XCTAssertEqual(elements.map { $0.accessibilityFrame() },
                        [copy, more].map { onScreen($0, in: page) })
         for element in elements {
@@ -439,7 +448,7 @@ final class SealedMoveHandleTests: XCTestCase {
         view.handlesMayHaveMoved()
         let elements = view.handleAccessibilityElements
         XCTAssertEqual(elements.map { $0.accessibilityLabel() },
-                       ["Copy Decrypted Contents", "Sealed Content Actions", "Edit Note"])
+                       ["Copy Decrypted", "Sealed Content Actions", "Note"])
         let helpKeys = ["chip.control.copy.help", "chip.control.actions.help", "chip.control.note.help"]
         let identity = try XCTUnwrap(view.chipCell(at: object)?.accessibilityLabel())
         XCTAssertTrue(identity.contains("API_KEY"))
@@ -654,7 +663,7 @@ final class SealedMoveHandleTests: XCTestCase {
             let model = try makeModel()
             let page = try mountPage(on: model)
             let copy = try XCTUnwrap(page.textView.handleAccessibilityElements.first {
-                $0.accessibilityLabel() == "Copy Decrypted Contents"
+                $0.accessibilityLabel() == "Copy Decrypted"
             })
             page.coordinator.beginNaming(at: object)
             let name = try XCTUnwrap(page.coordinator.nameEditor)
@@ -674,7 +683,7 @@ final class SealedMoveHandleTests: XCTestCase {
         let model = try makeModel()
         let page = try mountPage(on: model)
         let copy = try XCTUnwrap(page.textView.handleAccessibilityElements.first {
-            $0.accessibilityLabel() == "Copy Decrypted Contents"
+            $0.accessibilityLabel() == "Copy Decrypted"
         })
         page.coordinator.beginNaming(at: object)
         let name = try XCTUnwrap(page.coordinator.nameEditor)
@@ -691,6 +700,57 @@ final class SealedMoveHandleTests: XCTestCase {
         XCTAssertFalse(copy.accessibilityPerformPress())
         XCTAssertTrue(sent(model).isEmpty)
         XCTAssertTrue(name.isOpen)
+    }
+
+    func testNameSeatFollowsItsObjectBeforeTheDeferredFieldRelayout() throws {
+        let page = try mountPage(on: try makeModel())
+        page.coordinator.beginNaming(at: object)
+        let original = try XCTUnwrap(page.textView.naming)
+        page.textView.insertText("prefix ", replacementRange: NSRange(location: 0, length: 0))
+        let moved = try XCTUnwrap(page.textView.chipIndex(ofChip: original.chip))
+        XCTAssertNotEqual(moved, original.index)
+        let cell = try XCTUnwrap(page.textView.chipCell(at: moved))
+        let manager = try XCTUnwrap(page.textView.layoutManager)
+        manager.ensureLayout(for: try XCTUnwrap(page.textView.textContainer))
+        let frame = try XCTUnwrap(page.textView.chipFrame(at: moved))
+        let image = NSImage(size: page.textView.bounds.size)
+        image.lockFocus()
+        cell.draw(withFrame: frame, in: page.textView, characterIndex: moved, layoutManager: manager)
+        image.unlockFocus()
+        XCTAssertEqual(cell.lastDrawnEditingWidth, original.width)
+    }
+
+    func testAccessibilityEnablementFollowsNameDraftAndFocusLifecycle() throws {
+        let page = try mountPage(on: try makeModel())
+        let copy = try XCTUnwrap(page.textView.handleAccessibilityElements.first {
+            $0.accessibilityLabel() == SealedBlockCell.decryptedDragWords
+        })
+        XCTAssertTrue(copy.isAccessibilityEnabled())
+        XCTAssertTrue(page.window.makeFirstResponder(page.field))
+        drainMainQueue()
+        XCTAssertFalse(copy.isAccessibilityEnabled())
+        page.coordinator.beginNaming(at: object)
+        let name = try XCTUnwrap(page.coordinator.nameEditor)
+        XCTAssertTrue(copy.isAccessibilityEnabled())
+        name.draft = "API_KEY"
+        XCTAssertTrue(name.commit(returningKeys: false))
+        XCTAssertFalse(copy.isAccessibilityEnabled())
+        XCTAssertTrue(page.window.makeFirstResponder(page.textView))
+        drainMainQueue()
+        XCTAssertTrue(copy.isAccessibilityEnabled())
+    }
+
+    func testRefusedPageHandoffLeavesTheOpenNoteInPlace() throws {
+        let page = try mountPage(on: try makeModel())
+        page.coordinator.beginNote(at: object)
+        let note = try XCTUnwrap(page.coordinator.noteEditor)
+        XCTAssertTrue(note.isOpen)
+        let responder = page.window.firstResponder
+        let window = try XCTUnwrap(page.window as? HandoffWindow)
+        window.refusesPageHandoff = true
+        XCTAssertFalse(page.coordinator.prepareChipAction())
+        XCTAssertTrue(note.isOpen)
+        XCTAssertTrue(page.window.firstResponder === responder)
     }
 
 }
