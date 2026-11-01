@@ -730,6 +730,8 @@ public final class PageModel: ObservableObject {
     /// The inline conceal confirmation, when one is open.
     @Published public var concealDraft: ConcealDraft? {
         didSet {
+            let token = concealDraft?.copyToken
+            concealLinkRecoveryToken.withLock { $0 = token }
             guard oldValue?.id != concealDraft?.id else { return }
             concealLinkRecoveryTimer?.invalidate()
             concealLinkRecoveryTimer = nil
@@ -1317,6 +1319,7 @@ public final class PageModel: ObservableObject {
     /// nothing the user copied since.
     private nonisolated(unsafe) var clipboardClearTimer: Timer?
     private nonisolated(unsafe) var concealLinkRecoveryTimer: Timer?
+    private let concealLinkRecoveryToken = OSAllocatedUnfairLock<UInt64?>(initialState: nil)
 
     // nonisolated(unsafe) for the same reason as the timers: deinit is
     // nonisolated even on a @MainActor class, and deinit is where a
@@ -3057,6 +3060,9 @@ public final class PageModel: ObservableObject {
         eventTimer?.invalidate()
         redrawTimer?.invalidate()
         concealLinkRecoveryTimer?.invalidate()
+        if let token = concealLinkRecoveryToken.withLock({ $0 }) {
+            client.forgetConcealedLink(token: token)
+        }
         if clipboardClearTimer != nil {
             _ = clearClipboardIfOurs()
             clipboardClearTimer?.invalidate()
@@ -7669,15 +7675,15 @@ public final class PageModel: ObservableObject {
         let ttl = draft.ttlSecs
         let passphrase = draft.passphrase
         let recipient = draft.recipient
-        Task.detached(priority: .userInitiated) {
+        Task.detached(priority: .userInitiated) { [self] in
             let outcome: ConcealOutcome = switch target {
             case .chip(let id):
                 client.concealChip(id: id, ttlSecs: ttl, passphrase: passphrase, recipient: recipient)
             case .page(let id):
                 client.concealSheet(id: id, ttlSecs: ttl, passphrase: passphrase, recipient: recipient)
             }
-            await MainActor.run { [weak self] in
-                self?.finishConceal(outcome, for: target, draftID: draftID)
+            await MainActor.run {
+                self.finishConceal(outcome, for: target, draftID: draftID)
             }
         }
     }

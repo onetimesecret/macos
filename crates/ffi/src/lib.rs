@@ -469,6 +469,34 @@ pub unsafe extern "C" fn companion_test_memory_pasteboard(handle: *mut Companion
     true
 }
 
+/// # Safety
+/// `handle` must be null or a valid handle.
+#[cfg(feature = "test-util")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_test_memory_pasteboard_text(
+    handle: *mut CompanionHandle,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let board = match &guard.pasteboard {
+        Board::Memory(board) => board,
+        #[cfg(target_os = "macos")]
+        Board::System(_) => return ptr::null_mut(),
+    };
+    let Some(PasteboardItem {
+        content: PasteboardContent::Text(text),
+        ..
+    }) = board.read()
+    else {
+        return ptr::null_mut();
+    };
+    into_c_string(text)
+}
+
 /// Write `text` as ink at `pos_u16` of page `sheet`, below the guard that
 /// refuses U+FFFC and outside the undo stack, as an earlier build's page or a
 /// peer's batch lands it. Returns whether it landed. `test-util` only (ADR-0018).
@@ -3167,7 +3195,8 @@ pub unsafe extern "C" fn companion_conceal_link_can_copy(
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    guard.cached_link(token, Instant::now()).is_some()
+    let now = guard.store.now();
+    guard.cached_link(token, now).is_some()
 }
 
 /// # Safety
@@ -3183,7 +3212,7 @@ pub unsafe extern "C" fn companion_conceal_link_remaining_ms(
     let Ok(mut guard) = handle.inner.lock() else {
         return 0;
     };
-    let now = Instant::now();
+    let now = guard.store.now();
     guard.cached_link(token, now).map_or(0, |link| {
         u64::try_from(link.expires_at.saturating_duration_since(now).as_millis())
             .unwrap_or(u64::MAX)
@@ -3203,7 +3232,8 @@ pub unsafe extern "C" fn companion_conceal_link_copy(
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    let Some(link) = guard.cached_link(token, Instant::now()) else {
+    let now = guard.store.now();
+    let Some(link) = guard.cached_link(token, now) else {
         return false;
     };
     let bytes = link.bytes.clone();
@@ -3251,10 +3281,11 @@ fn finish_conceal(
     guard.retire_last_write();
     let link_bytes = Zeroizing::new(concealed.link.into_bytes());
     let copy_token = guard.next_link_copy_token.checked_add(1);
+    let expires_at = guard.store.now() + Duration::from_secs(u64::from(LINK_RECOVERY_SECONDS));
     guard.concealed_link = copy_token.map(|token| CachedConcealLink {
         bytes: link_bytes.clone(),
         token,
-        expires_at: Instant::now() + Duration::from_secs(u64::from(LINK_RECOVERY_SECONDS)),
+        expires_at,
         target: sent,
     });
     if let Some(token) = copy_token {
@@ -7521,24 +7552,22 @@ mod tests {
         unsafe {
             let (_, page) = new_page(handle);
             let token = complete_page_link(handle, page, "window");
-            let deadline = (&*handle)
-                .inner
-                .lock()
-                .unwrap()
-                .concealed_link
-                .as_ref()
-                .unwrap()
-                .expires_at;
-            assert!(
-                (&*handle)
-                    .inner
-                    .lock()
-                    .unwrap()
-                    .cached_link(token, deadline)
-                    .is_none()
-            );
-            assert_eq!(companion_conceal_link_remaining_ms(handle, token), 0);
+            {
+                let mut guard = (&*handle).inner.lock().unwrap();
+                let deadline = guard.store.now();
+                guard.concealed_link.as_mut().unwrap().expires_at = deadline;
+            }
+            seed(handle, "leave this external copy alone");
             assert!(!companion_conceal_link_copy(handle, token));
+            assert_eq!(companion_conceal_link_remaining_ms(handle, token), 0);
+            assert!(!companion_conceal_link_can_copy(handle, token));
+            {
+                let guard = (&*handle).inner.lock().unwrap();
+                assert_eq!(
+                    guard.pasteboard.read().unwrap().content,
+                    PasteboardContent::Text("leave this external copy alone".into())
+                );
+            }
             let token = complete_page_link(handle, page, "page");
             age_by(handle, 8 * 24 * 60 * 60 * 1_000);
             assert!(!companion_conceal_link_can_copy(handle, token));
@@ -7547,6 +7576,36 @@ mod tests {
             assert!(!companion_conceal_link_copy(ptr::null_mut(), token));
             assert!(!companion_conceal_link_can_copy(ptr::null_mut(), 0));
             companion_conceal_link_forget(ptr::null_mut(), 0);
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn link_recopy_reports_its_store_clock_deadline_without_restarting_it() {
+        let handle = handle();
+        unsafe {
+            let (_, page) = new_page(handle);
+            let token = complete_page_link(handle, page, "remaining");
+            let deadline = {
+                let mut guard = (&*handle).inner.lock().unwrap();
+                let deadline = guard.store.now() + Duration::from_secs(5);
+                guard.concealed_link.as_mut().unwrap().expires_at = deadline;
+                deadline
+            };
+            let remaining = companion_conceal_link_remaining_ms(handle, token);
+            assert!(remaining > 0 && remaining <= 5_000);
+            assert!(companion_conceal_link_can_copy(handle, token));
+            assert!(companion_conceal_link_copy(handle, token));
+            assert!(companion_conceal_link_remaining_ms(handle, token) <= remaining);
+            {
+                let mut guard = (&*handle).inner.lock().unwrap();
+                assert_eq!(guard.concealed_link.as_ref().unwrap().expires_at, deadline);
+                let now = guard.store.now();
+                guard.concealed_link.as_mut().unwrap().expires_at = now;
+            }
+            assert_eq!(companion_conceal_link_remaining_ms(handle, token), 0);
+            assert!(!companion_conceal_link_can_copy(handle, token));
+            assert!(!companion_conceal_link_copy(handle, token));
             companion_free(handle);
         }
     }

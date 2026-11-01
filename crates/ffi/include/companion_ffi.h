@@ -260,6 +260,10 @@ char *companion_test_wire_last_json(CompanionHandle *handle);
  * companion_new_ephemeral() above. */
 bool companion_test_memory_pasteboard(CompanionHandle *handle);
 
+/* Test-util only: read in-memory pasteboard text; null for other boards/items.
+ * Free a non-null result with companion_string_free(). */
+char *companion_test_memory_pasteboard_text(CompanionHandle *handle);
+
 /* Write `text` as ink at UTF-16 offset `pos_u16` of page `sheet`,
  * below the guard that refuses U+FFFC and outside the undo stack, as
  * a page an earlier build saved or a peer's batch lands it. Returns

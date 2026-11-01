@@ -70,6 +70,13 @@ extension CompanionClient {
         companion_test_memory_pasteboard(rawHandleForTests)
     }
 
+    /// Read only the handle's in-memory pasteboard, through the test-util seam.
+    func memoryPasteboardTextForTests() -> String? {
+        guard let text = companion_test_memory_pasteboard_text(rawHandleForTests) else { return nil }
+        defer { companion_string_free(text) }
+        return String(cString: text)
+    }
+
     /// Write `text` as ink into page `sheet` below the guard that refuses U+FFFC
     /// and outside the undo stack, as a page an earlier build saved or a peer's
     /// batch holds it (`companion_test_ink_below_the_guard`, gated with the seams above).

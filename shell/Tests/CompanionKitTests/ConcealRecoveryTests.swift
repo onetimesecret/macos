@@ -7,14 +7,19 @@ import XCTest
 private final class RecoveryClipboardProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
-    let cleared: XCTestExpectation
+    private let cleared: [XCTestExpectation]
 
-    init(cleared: XCTestExpectation) { self.cleared = cleared }
+    init(cleared: XCTestExpectation, again: XCTestExpectation? = nil) {
+        self.cleared = [cleared] + [again].compactMap { $0 }
+    }
     var callCount: Int { lock.withLock { count } }
 
     func record() {
-        lock.withLock { count += 1 }
-        cleared.fulfill()
+        let next = lock.withLock {
+            count += 1
+            return cleared.indices.contains(count - 1) ? cleared[count - 1] : nil
+        }
+        next?.fulfill()
     }
 }
 
@@ -51,7 +56,7 @@ final class ConcealRecoveryTests: XCTestCase {
         return model
     }
 
-    private func completeLink(_ model: PageModel) throws -> UInt64 {
+    private func prepareLink(_ model: PageModel) throws -> (page: UInt64, draftID: UUID) {
         let page = try XCTUnwrap(model.selectedPageID)
         let client = model.coreClient
         XCTAssertTrue(client.syncDocument(sheet: page, json: #"[{"ink":"a test page"}]"#))
@@ -61,6 +66,12 @@ final class ConcealRecoveryTests: XCTestCase {
             #"{"record":{"receipt":{"identifier":"recovery-test"},"secret":{"identifier":"local-secret","key":"local-key"},"share_domain":null}}"#))
         model.beginConceal(.page(page))
         let draftID = try XCTUnwrap(model.concealDraft?.id)
+        return (page, draftID)
+    }
+
+    private func completeLink(_ model: PageModel) throws -> UInt64 {
+        let (page, draftID) = try prepareLink(model)
+        let client = model.coreClient
         let outcome = client.concealSheet(id: page, ttlSecs: 3600, passphrase: "", recipient: "")
         XCTAssertTrue(outcome.ok)
         model.finishConceal(outcome, for: .page(page), draftID: draftID)
@@ -104,6 +115,57 @@ final class ConcealRecoveryTests: XCTestCase {
         XCTAssertEqual(model.concealDraft?.canCopyLink, true)
         XCTAssertTrue(model.coreClient.canCopyConcealedLink(token: token))
         XCTAssertEqual(CompanionClient.concealLinkRecoverySeconds(), 60)
+    }
+
+    func testCopyingTheLinkAgainRearmsClipboardClearing() throws {
+        let first = expectation(description: "the initial link copy cleared")
+        let second = expectation(description: "the copied-again link cleared")
+        let probe = RecoveryClipboardProbe(cleared: first, again: second)
+        let model = try makeModel(clipboardDelay: 0.01, clearProbe: probe)
+        let token = try completeLink(model)
+        let link = try XCTUnwrap(model.coreClient.memoryPasteboardTextForTests())
+        XCTAssertEqual(URL(string: link)?.host, "example.invalid")
+        wait(for: [first], timeout: 10)
+        XCTAssertNil(model.coreClient.memoryPasteboardTextForTests())
+        XCTAssertTrue(model.coreClient.canCopyConcealedLink(token: token))
+
+        XCTAssertTrue(model.copyConcealedLink())
+        XCTAssertEqual(model.coreClient.memoryPasteboardTextForTests(), link)
+        wait(for: [second], timeout: 10)
+        XCTAssertNil(model.coreClient.memoryPasteboardTextForTests())
+        XCTAssertEqual(probe.callCount, 2)
+        XCTAssertTrue(model.coreClient.canCopyConcealedLink(token: token))
+    }
+
+    func testModelTeardownForgetsRecoveryWhileItsClientRemainsAlive() throws {
+        weak var released: PageModel?
+        let session = try autoreleasepool { () throws -> (client: CompanionClient, token: UInt64) in
+            let model = try makeModel()
+            released = model
+            let token = try completeLink(model)
+            XCTAssertTrue(model.coreClient.canCopyConcealedLink(token: token))
+            return (model.coreClient, token)
+        }
+        XCTAssertNil(released)
+        XCTAssertFalse(session.client.canCopyConcealedLink(token: session.token))
+        XCTAssertFalse(session.client.copyConcealedLink(token: session.token))
+        XCTAssertNil(session.client.memoryPasteboardTextForTests())
+    }
+
+    func testInFlightCreationFinishesCleanupBeforeReleasingItsModel() throws {
+        let cleared = expectation(description: "completed copy cleaned up during teardown")
+        let probe = RecoveryClipboardProbe(cleared: cleared)
+        var model: PageModel? = try makeModel(clipboardDelay: 60, clearProbe: probe)
+        let client = try XCTUnwrap(model?.coreClient)
+        weak var released = model
+        _ = try prepareLink(try XCTUnwrap(model))
+        model?.confirmConceal()
+        model = nil
+        XCTAssertNotNil(released)
+        wait(for: [cleared], timeout: 10)
+        XCTAssertNil(released)
+        XCTAssertNil(client.memoryPasteboardTextForTests())
+        XCTAssertEqual(probe.callCount, 1)
     }
 
     func testTheRecoveryTimerDisablesRecopyWithoutAClipboardAssertion() throws {
