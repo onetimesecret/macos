@@ -26,6 +26,11 @@ private final class PaletteEditorProbe: NSTextView, CommandPaletteResponder {
     }
 }
 
+private final class PaletteStorageNotification: @unchecked Sendable {
+    let storage: NSTextStorage
+    init(_ storage: NSTextStorage) { self.storage = storage }
+}
+
 @MainActor
 private final class PaletteEventSink: NSResponder {
     private(set) var scrolls = 0
@@ -822,8 +827,6 @@ final class CommandPaletteControllerTests: XCTestCase {
         let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
         palette.show(in: window, pageContext: true)
         let searchEditor = try XCTUnwrap(palette.search.currentEditor() as? NSTextView)
-        searchEditor.setMarkedText("ñ", selectedRange: NSRange(location: 1, length: 0),
-            replacementRange: NSRange(location: NSNotFound, length: 0))
         let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
             modifierFlags: [.option], timestamp: 0, windowNumber: window.windowNumber,
             context: nil, characters: "˜", charactersIgnoringModifiers: "n", isARepeat: false, keyCode: 45))
@@ -831,9 +834,104 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(palette.overlay).performKeyEquivalent(with: event))
         XCTAssertNotNil(palette.overlay)
         XCTAssertTrue(window.firstResponder === searchEditor)
+        XCTAssertFalse(searchEditor.hasMarkedText())
+        searchEditor.setMarkedText("ñ", selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertFalse(try XCTUnwrap(palette.overlay).performKeyEquivalent(with: event))
+        XCTAssertNotNil(palette.overlay)
+        XCTAssertTrue(window.firstResponder === searchEditor)
         XCTAssertTrue(searchEditor.hasMarkedText())
         XCTAssertEqual(searchEditor.string, "ñ")
         XCTAssertEqual(model.tabs.map(\.id), original)
+    }
+
+    func testMarkedSearchTextReceivesEscapeAndReturnWithoutPaletteCommands() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        let original = model.tabs.map(\.id)
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        let searchEditor = try XCTUnwrap(palette.search.currentEditor() as? NSTextView)
+        searchEditor.setMarkedText("書", selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+        XCTAssertFalse(try XCTUnwrap(palette.overlay).performKeyEquivalent(with: escape))
+        XCTAssertFalse(palette.control(palette.search, textView: searchEditor,
+            doCommandBy: #selector(NSResponder.cancelOperation(_:))))
+        XCTAssertFalse(palette.control(palette.search, textView: searchEditor,
+            doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertTrue(searchEditor.hasMarkedText())
+        XCTAssertEqual(searchEditor.string, "書")
+        XCTAssertNotNil(palette.overlay)
+        XCTAssertTrue(window.firstResponder === searchEditor)
+        XCTAssertEqual(model.tabs.map(\.id), original)
+    }
+
+    func testAStaleDatedPickerRefusesReopenWithANotice() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        let tab = try XCTUnwrap(model.selection)
+        model.closeCurrent()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        var returns = 0
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: { returns += 1 })
+        palette.show(in: window, pageContext: false, reopen: true)
+        XCTAssertEqual(palette.table.numberOfRows, 1)
+        XCTAssertTrue(model.reopenClosedTab(tab))
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertNil(palette.overlay)
+        XCTAssertEqual(returns, 0)
+        XCTAssertEqual(model.notice, CompanionL10n.string("palette.reopen_unavailable"))
+        XCTAssertEqual(model.noticeTone, .actionable)
+    }
+
+    func testOffMainStorageNotificationConservativelyDisarmsTheSelectionCommand() async throws {
+        let model = try makeModel()
+        let (window, editor) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        palette.search.stringValue = "seal selected"
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        let notification = PaletteStorageNotification(try XCTUnwrap(editor.textStorage))
+        await Task.detached {
+            NotificationCenter.default.post(name: NSTextStorage.didProcessEditingNotification, object: notification.storage)
+        }.value
+        await drainMainQueue()
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertTrue(editor.performed.isEmpty)
+        XCTAssertEqual(model.notice, CompanionL10n.string("palette.context_changed"))
+    }
+
+    func testQueuedStorageNotificationFromThePreviousPresentationDoesNotDisarmANewOne() async throws {
+        let model = try makeModel()
+        let (window, editor) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        let notification = PaletteStorageNotification(try XCTUnwrap(editor.textStorage))
+        let posted = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            NotificationCenter.default.post(name: NSTextStorage.didProcessEditingNotification, object: notification.storage)
+            posted.signal()
+        }
+        XCTAssertEqual(posted.wait(timeout: .now() + 2), .success)
+        palette.dismiss(restoringFocus: true)
+        palette.show(in: window, pageContext: true)
+        palette.search.stringValue = "seal selected"
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        await drainMainQueue()
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertEqual(editor.performed, [.clipboardSealSelection])
+        XCTAssertNil(model.notice)
     }
 
 }

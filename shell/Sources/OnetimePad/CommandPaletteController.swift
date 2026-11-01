@@ -26,6 +26,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     private var originalSelection: [NSValue] = []
     private weak var originalStorage: NSTextStorage?
     private var sourceWasEdited = false
+    private var contextGeneration = UUID()
     private nonisolated(unsafe) var storageObserver: NSObjectProtocol?
     private nonisolated(unsafe) var windowCloseObserver: NSObjectProtocol?
     private nonisolated(unsafe) var windowResignObserver: NSObjectProtocol?
@@ -165,13 +166,23 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         originalSelection = originalEditor?.selectedRanges ?? []
         originalStorage = originalEditor?.textStorage
         sourceWasEdited = false
+        contextGeneration = UUID()
+        let generation = contextGeneration
         if let originalStorage {
             storageObserver = NotificationCenter.default.addObserver(
                 forName: NSTextStorage.didProcessEditingNotification, object: originalStorage, queue: nil
             ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard self?.originalStorage?.editedMask.contains(.editedCharacters) == true else { return }
-                    self?.sourceWasEdited = true
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated {
+                        guard self?.contextGeneration == generation,
+                              self?.originalStorage?.editedMask.contains(.editedCharacters) == true else { return }
+                        self?.sourceWasEdited = true
+                    }
+                } else {
+                    Task { @MainActor [weak self] in
+                        guard self?.contextGeneration == generation else { return }
+                        self?.sourceWasEdited = true
+                    }
                 }
             }
         }
@@ -192,7 +203,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         overlay.onOutsideClick = { [weak self] in self?.dismiss(restoringFocus: true) }
         overlay.onLayout = { [weak self] in self?.layout() }
         overlay.onKeyEquivalent = { [weak self] event in
-            guard let self else { return false }
+            guard let self, (self.search.currentEditor() as? NSTextView)?.hasMarkedText() != true else { return false }
             if event.keyCode == UInt16(kVK_Escape),
                event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
                 self.cancelSearchOrDismiss()
@@ -245,6 +256,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         }
         overlay?.removeFromSuperview()
         overlay = nil
+        contextGeneration = UUID()
         modelObservation = nil
         rows.removeAll()
         clearDatedCache()
@@ -309,6 +321,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     func controlTextDidChange(_ notification: Notification) { reload() }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard !textView.hasMarkedText() else { return false }
         switch commandSelector {
         case #selector(NSResponder.cancelOperation(_:)):
             cancelSearchOrDismiss()
@@ -353,6 +366,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         dismiss(restoringFocus: true)
         if let tab = row.tab {
             if model.reopenClosedTab(tab) { returnToPages() }
+            else { model.flash(CompanionL10n.string("palette.reopen_unavailable"), tone: .actionable) }
             return
         }
         guard let command = row.command else { return }

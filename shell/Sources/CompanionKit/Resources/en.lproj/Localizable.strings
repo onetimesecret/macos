@@ -148,7 +148,6 @@
 "Reopen Dated Tabs…" = "Reopen Dated Tabs…";
 "Reopen Last Closed Page or Tab" = "Reopen Last Closed Page or Tab";
 "Open File…" = "Open File…";
-"OnetimePad Help" = "OnetimePad Help";
 "Close Page or Tab" = "Close Page or Tab";
 "Previous Page or Tab" = "Previous Page or Tab";
 "Next Page or Tab" = "Next Page or Tab";
@@ -255,3 +254,5 @@
 "chip.reference.copied" = "copied the sealed reference; paste it into OnetimePad";
 
 "palette.context_changed" = "the page changed; reopen the command palette to use page commands";
+
+"palette.reopen_unavailable" = "this page is no longer available to reopen";

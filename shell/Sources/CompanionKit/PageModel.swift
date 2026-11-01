@@ -3203,7 +3203,7 @@ public final class PageModel: ObservableObject {
     public func showPageLayout(timeline: Bool) {
         if showsTimeUnits == timeline, selectedFile == nil, !showingLedger { return }
         guard pendingFileClose == nil else {
-            flash(CompanionL10n.string("layout.switch.pendingClose"))
+            flash(CompanionL10n.string("layout.switch.pendingClose"), tone: .actionable)
             return
         }
         selectedFile = nil
