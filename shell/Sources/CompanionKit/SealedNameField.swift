@@ -194,6 +194,12 @@ final class SealedNameField: NSTextField {
 
 final class SealedNameHelpView: NSView {
     override var isFlipped: Bool { true }
+    var isCompact = false {
+        didSet {
+            error.maximumNumberOfLines = isCompact ? 1 : 0
+            error.lineBreakMode = isCompact ? .byTruncatingTail : .byWordWrapping
+        }
+    }
 
     let title = NSTextField(wrappingLabelWithString: CompanionL10n.string("chip.name.title"))
     let help = NSTextField(wrappingLabelWithString: CompanionL10n.string("chip.name.help"))
@@ -244,6 +250,18 @@ final class SealedNameHelpView: NSView {
         let width = max(0, width)
         let inset = min(10, width / 2)
         let textWidth = max(0, width - inset * 2)
+        if isCompact {
+            let message = NSRect(x: inset, y: 6, width: textWidth, height: 16)
+            let saveWidth = min(textWidth, max(56, ceil(save.intrinsicContentSize.width)))
+            let cancelWidth = min(textWidth, max(62, ceil(cancel.intrinsicContentSize.width)))
+            let stacked = textWidth < saveWidth + 6 + cancelWidth
+            let cancelRect = NSRect(x: inset, y: 26, width: stacked ? textWidth : cancelWidth, height: 24)
+            let saveRect = NSRect(x: stacked ? inset : width - inset - saveWidth,
+                y: stacked ? cancelRect.maxY + 6 : 26, width: stacked ? textWidth : saveWidth, height: 24)
+            return Layout(title: error.stringValue.isEmpty ? message : .zero, help: .zero,
+                error: error.stringValue.isEmpty ? .zero : message, hint: .zero,
+                save: saveRect, cancel: cancelRect, height: saveRect.maxY + 6)
+        }
         let titleRect = NSRect(x: inset, y: 10, width: textWidth, height: textHeight(title, width: textWidth))
         let helpRect = NSRect(x: inset, y: titleRect.maxY + 6, width: textWidth,
                               height: textHeight(help, width: textWidth))
@@ -278,6 +296,10 @@ final class SealedNameHelpView: NSView {
     override func layout() {
         super.layout()
         let placed = arrangement(width: bounds.width)
+        title.isHidden = isCompact && !error.stringValue.isEmpty
+        help.isHidden = isCompact
+        hint.isHidden = isCompact
+        error.toolTip = error.stringValue.isEmpty ? nil : error.stringValue
         title.frame = placed.title
         help.frame = placed.help
         error.isHidden = error.stringValue.isEmpty
@@ -456,14 +478,31 @@ final class SealedNameEditor: NSObject, NSTextFieldDelegate {
             NSAccessibility.post(element: helpView.error, notification: .valueChanged)
         }
         field.setAccessibilityHelp(rename.error ?? CompanionL10n.string("chip.name.field.help"))
-        let block = textView.convert(block, to: overlay)
+        var block = textView.convert(block, to: overlay)
         let room = overlay.bounds.insetBy(dx: 8, dy: 8)
         let width = min(440, max(0, room.width))
-        let height = helpView.preferredHeight(width: width)
-        let belowY = max(room.minY, block.maxY + 4)
-        let belowRoom = max(0, room.maxY - belowY)
-        let aboveEnd = min(room.maxY, block.minY - 4)
-        let aboveRoom = max(0, aboveEnd - room.minY)
+        helpView.isCompact = false
+        var height = helpView.preferredHeight(width: width)
+        var belowY = min(room.maxY, max(room.minY, block.maxY + 4))
+        var belowRoom = max(0, room.maxY - belowY)
+        var aboveEnd = max(room.minY, min(room.maxY, block.minY - 4))
+        var aboveRoom = max(0, aboveEnd - room.minY)
+        if max(belowRoom, aboveRoom) < height {
+            helpView.isCompact = true
+            let compactHeight = helpView.preferredHeight(width: width)
+            height = compactHeight
+            if max(belowRoom, aboveRoom) < compactHeight {
+                var fieldFrame = field.convert(field.bounds, to: overlay)
+                fieldFrame.origin.y = room.minY
+                fieldFrame.size.height = min(fieldFrame.height, max(0, room.height))
+                field.frame = overlay.convert(fieldFrame, to: textView)
+                block = fieldFrame
+                belowY = min(room.maxY, fieldFrame.maxY + 4)
+                belowRoom = max(0, room.maxY - belowY)
+                aboveEnd = room.minY
+                aboveRoom = 0
+            }
+        }
         let below = belowRoom >= height || belowRoom >= aboveRoom
         let visibleHeight = min(height, below ? belowRoom : aboveRoom)
         let y = below ? belowY : aboveEnd - visibleHeight

@@ -159,7 +159,9 @@ final class SealedNameFieldTests: XCTestCase {
             XCTAssertFalse(editor.helpScroll.isHidden)
             XCTAssertFalse(editor.helpScroll.frame.intersects(fieldFrame))
             XCTAssertTrue(editor.overlay.bounds.contains(editor.helpScroll.frame))
-            XCTAssertLessThan(editor.helpScroll.contentSize.height, editor.helpView.frame.height)
+            if !editor.helpView.isCompact {
+                XCTAssertLessThan(editor.helpScroll.contentSize.height, editor.helpView.frame.height)
+            }
 
             let fieldPoint = editor.field.convert(
                 NSPoint(x: editor.field.bounds.midX, y: editor.field.bounds.midY), to: page.scroll)
@@ -171,6 +173,73 @@ final class SealedNameFieldTests: XCTestCase {
             editor.helpView.cancel.performClick(nil)
             XCTAssertFalse(editor.isOpen)
         }
+    }
+
+    func testSeverelyShortViewportPromotesTheErrorAndNamingActions() throws {
+        let page = try makePage(width: 260)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 100),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = page.scroll
+        defer { window.close() }
+        page.scroll.frame.size.height = 100
+        page.scroll.layoutSubtreeIfNeeded()
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        let originalX = editor.field.frame.minX
+        editor.draft = "invalid.name"
+        editor.helpView.save.performClick(nil)
+        editor.helpView.layoutSubtreeIfNeeded()
+        XCTAssertTrue(editor.isOpen)
+        XCTAssertTrue(editor.helpView.isCompact)
+        XCTAssertFalse(editor.helpScroll.isHidden)
+        XCTAssertEqual(editor.field.frame.minX, originalX)
+        let fieldFrame = editor.field.convert(editor.field.bounds, to: editor.overlay)
+        XCTAssertTrue(editor.overlay.bounds.contains(fieldFrame))
+        XCTAssertTrue(editor.overlay.bounds.contains(editor.helpScroll.frame))
+        XCTAssertFalse(editor.helpScroll.frame.intersects(fieldFrame))
+        XCTAssertFalse(editor.helpView.error.isHidden)
+        XCTAssertEqual(editor.helpView.error.toolTip, ChipRename.words(for: .outsideCharset))
+        for control in [editor.helpView.error, editor.helpView.save, editor.helpView.cancel] as [NSView] {
+            XCTAssertTrue(editor.helpView.visibleRect.contains(control.frame))
+        }
+        let fieldPoint = editor.field.convert(
+            NSPoint(x: editor.field.bounds.midX, y: editor.field.bounds.midY), to: page.scroll)
+        XCTAssertNil(editor.overlay.hitTest(fieldPoint))
+        editor.draft = "VALID_NAME"
+        editor.helpView.save.performClick(nil)
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertEqual(coreName(page), "VALID_NAME")
+
+        page.coordinator.beginNaming(at: 3)
+        editor.draft = "invalid.name"
+        editor.helpView.save.performClick(nil)
+        editor.helpView.cancel.performClick(nil)
+        XCTAssertFalse(editor.isOpen)
+        XCTAssertEqual(coreName(page), "VALID_NAME")
+    }
+
+    func testViewportShorterThanTheCompactHelperKeepsEscapeAndBounds() throws {
+        let page = try makePage(width: 260)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 60),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = page.scroll
+        defer { window.close() }
+        page.scroll.frame.size.height = 60
+        page.scroll.layoutSubtreeIfNeeded()
+        page.coordinator.beginNaming(at: 3)
+        let editor = try field(page)
+        editor.draft = "invalid.name"
+        XCTAssertFalse(editor.commit(returningKeys: false))
+        XCTAssertTrue(editor.helpView.isCompact)
+        XCTAssertTrue(editor.overlay.bounds.contains(editor.helpScroll.frame))
+        XCTAssertTrue(editor.overlay.bounds.contains(editor.field.convert(editor.field.bounds, to: editor.overlay)))
+        XCTAssertTrue(editor.control(editor.field, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.cancelOperation(_:))))
+        XCTAssertFalse(editor.isOpen)
     }
 
     func testRenderNamingPreviewsWhenRequested() throws {
