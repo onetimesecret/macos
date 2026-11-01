@@ -22,12 +22,13 @@ event loop for them. The gutter's
 field is AppKit and is driven by `DayScrollTests`; the checks below
 that touch it are about a real key window, which the tests do not
 have. A sealed object's name field is AppKit too, driven by
-`SealedNameFieldTests`; its checks are the double click's timing and
-the keys in a real key window. The slot rail, which no layout drew
+`SealedNameFieldTests`; its checks cover the explicit opening action,
+local validation and keys in a real key window. The slot rail, which no layout drew
 since ADR-0037, is deleted (issue 275), so it has no check here.
 
-Quit any running instance first (`swift build` re-signs in place and
-SIGKILLs a live one), then `scripts/dev.sh`.
+Use synthetic data in a dedicated fixture with a temporary state directory
+and an in-memory credential client. Automated fixtures use
+`PageModel.Seams(stateDirectory:client:)`; the test setup follows [AGENTS.md](../../../AGENTS.md).
 
 ## Checks
 
@@ -77,27 +78,21 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       keys row).
       **Fail:** the page steps back or seals, or a greyed item is
       enabled and acts on the page.
-- [ ] **Sealed name, the double click.** Seal a line with ⌘↩, then
-      double click the block's bottom row. **Pass:** a field opens where
-      a name would stand, placeholder `NAME`, with the keys in it and
-      the excerpt to its right. Type `MY_API_KEY` and press Return: the
-      row reads `MY_API_KEY=<excerpt>`. Click the name once: the line
-      reads `copied the name.`. Double click the name: the field opens
-      on the name, selected whole. Double click the excerpt: the line
-      says the decrypted contents were copied, once, and no field
-      opens. **Fail:** a first click opens the field, a double click on
-      the excerpt opens it or copies twice, or the draft is not
-      selected.
-- [ ] **Sealed name, a refusal and the keys.** Open the field, type
-      `my.key` and press Return. **Pass:** the line under the page asks
-      for letters A to Z, digits and underscores, the field stays open
-      with the keys in it, and neither ⌘Z nor Edit → Undo from the menu
-      bar changes anything on the page; typing
-      `MY_KEY` clears the line and Return names the object. Then open
-      the field again, press Escape and type a character. **Pass:** the
-      name is unchanged and the character lands in the page. **Fail:**
-      the field closes on the refusal, the page steps back, or the
-      character goes nowhere.
+- [ ] **Sealed variable name, explicit opening and endings.** Seal a
+      synthetic line and choose Set Variable Name…. **Pass:** the inline field
+      opens selected whole, with an API_KEY example, format guidance and
+      Save/Cancel controls. Single and repeated identity clicks select rather
+      than copy or rename. Return, Save, a valid blur, a pad switch and an
+      editor handoff save the draft; Escape and Cancel discard it. **Fail:** a
+      valid draft disappears on navigation, a text click copies, or the helper
+      instructions and buttons overlap at a narrow width.
+- [ ] **Sealed variable name, local refusal and keys.** Enter `my.key`
+      and press Return, then click outside. **Pass:** the draft stays open
+      with an error beside it; the page's Undo remains separate. Entering
+      `MY_KEY` clears the error and Return saves. Teardown closes an invalid
+      remainder; removing the source does not rename another object.
+      **Fail:** the error appears only in the footer, a normal blur discards
+      the invalid draft, or the page changes under field Undo.
 
 ## Results
 
@@ -113,5 +108,5 @@ stay: a re-run adds a row rather than replacing one that failed.
 | | | pad row, an empty Return | | |
 | | | pad row, Escape | | |
 | | | the page's keys stand aside for every field | | record each of the two fields |
-| | | sealed name, the double click | | |
-| | | sealed name, a refusal and the keys | | |
+| | | sealed variable name, explicit opening and endings | | |
+| | | sealed variable name, local refusal and keys | | |

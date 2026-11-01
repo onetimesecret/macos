@@ -1,10 +1,16 @@
 ---
 id: 2026-0915-ui-ux-decisions
 title: UI/UX decisions for the background surface
-status: accepted     # draft → accepted → superseded
+status: superseded   # draft → accepted → superseded
 dated: 2026-09-15
 supersedes: docs/spec/design/2026-0914-ui-ux-decisions.md; docs/design-brief.md (Tokens and parameters)
-superseded-by: docs/adr/0060-shared-pad-timeline-navigation.md, on fixed newest-first day ordering in Timeline only
+superseded-by:
+  - record: docs/adr/0060-shared-pad-timeline-navigation.md
+    scope: fixed newest-first day ordering in Timeline only
+    dated: 2026-10-03
+  - record: docs/spec/design/2026-1031-sealed-content-ux-revision.md
+    scope: whole record, with unchanged decisions incorporated by immutable reference
+    dated: 2026-10-31
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface)
 sources:

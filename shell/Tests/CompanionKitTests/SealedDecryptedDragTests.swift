@@ -149,31 +149,20 @@ final class SealedDecryptedDragTests: XCTestCase {
 
     // MARK: The handle
 
-    /// The handle sits on the classification's row a gap before the actions seat, and
-    /// a block too narrow to hold it beside the classification offers none.
-    func testTheHandleSitsBeforeTheActionsSeatAndOnlyWhereItFits() throws {
-        let words: CGFloat = 76
-        let label: CGFloat = 92
-        let frame = NSRect(x: 10, y: 10, width: 300, height: SealedBlockCell.blockHeight)
-        let metrics = SealedBlockLayout.metrics(containerWidth: frame.width)
-        let actions = SealedBlockCell.actionsRect(in: frame)
-        let handle = try XCTUnwrap(
-            SealedBlockCell.decryptedDragRect(in: frame, wordsWidth: words, labelWidth: label))
-        XCTAssertEqual(handle.maxX, actions.minX - metrics.handleGap)
-        XCTAssertEqual(handle.minY, actions.minY)
-        XCTAssertEqual(handle.height, actions.height)
-        XCTAssertEqual(handle.width, words + metrics.handleInset * 2)
-
-        let least = metrics.horizontalPadding * 2 + metrics.lockSize + metrics.lockToLabelGap
-            + label + metrics.handleGap * 2 + words + metrics.handleInset * 2
-            + metrics.actionsWidth
-        func fits(_ width: CGFloat) -> Bool {
-            SealedBlockCell.decryptedDragRect(
-                in: NSRect(x: 10, y: 10, width: width, height: frame.height),
-                wordsWidth: words, labelWidth: label) != nil
-        }
-        XCTAssertTrue(fits(least))
-        XCTAssertFalse(fits(least - 1), "the handle would meet the classification")
+    func testCopyDecryptedTargetIsVisibleBesideMoreAndOnlyWhereItFits() throws {
+        let cell = SealedBlockCell(info: ChipInfo(
+            chipId: 1, kind: "text", excerpt: "n0…3t", sizeLabel: "tiny", concealed: false))
+        let frame = NSRect(x: 10, y: 10, width: 340, height: 70)
+        let copy = try XCTUnwrap(cell.copyRect(in: frame))
+        let more = SealedBlockCell.actionsRect(in: frame)
+        XCTAssertEqual(copy.maxX + SealedBlockLayout.controlGap, more.minX)
+        XCTAssertEqual(copy.width, SealedBlockCell.copyControlWidth)
+        XCTAssertEqual(copy.height, 24)
+        XCTAssertEqual(cell.decryptedDragRect(in: frame), copy)
+        XCTAssertEqual(SealedBlockCell.decryptedDragWords, CompanionL10n.string("chip.control.copy"))
+        let narrow = NSRect(x: 0, y: 0, width: 100, height: 70)
+        XCTAssertNil(cell.copyRect(in: narrow))
+        XCTAssertTrue(narrow.contains(SealedBlockCell.actionsRect(in: narrow)))
     }
 
     /// A text object drags as plain text and an image as PNG, as copy decrypted writes
@@ -182,7 +171,7 @@ final class SealedDecryptedDragTests: XCTestCase {
         XCTAssertEqual(DecryptedDrag.pasteboardType(forKind: "text"), .string)
         XCTAssertEqual(DecryptedDrag.pasteboardType(forKind: "image"), .png)
         XCTAssertNil(DecryptedDrag.pasteboardType(forKind: "file"))
-        let frame = NSRect(x: 0, y: 0, width: 400, height: SealedBlockCell.blockHeight)
+        let frame = NSRect(x: 0, y: 0, width: 400, height: SealedBlockCell.preferredHeight)
         func cell(_ kind: String) -> SealedBlockCell {
             SealedBlockCell(info: ChipInfo(
                 chipId: 1, kind: kind, excerpt: "n0…3t", sizeLabel: "tiny", concealed: false))
@@ -217,13 +206,13 @@ final class SealedDecryptedDragTests: XCTestCase {
 
     /// The pointer turns to an open hand over the handle while it is drawn, hovered or
     /// selected, and over none while a field or the note holds the keys (Law 0007, keys row).
-    func testTheHandleShowsAnOpenHandWhereAPressWouldStartTheDrag() throws {
+    func testCopyCursorIsAvailableWithoutHoverAndYieldsToOtherFields() throws {
         let model = try makeModel()
         let page = try mountPage(on: model)
         let textView = page.textView
         let frame = try XCTUnwrap(textView.chipFrame(at: object))
         let handle = try XCTUnwrap(textView.chipCell(at: object)?.decryptedDragRect(in: frame))
-        XCTAssertEqual(textView.decryptedDragCursorRects, [], "a handle not drawn")
+        XCTAssertEqual(textView.decryptedDragCursorRects, [handle], "a handle not drawn")
 
         func hover(_ point: NSPoint, holdsKeys: Bool = true) {
             textView.hoverRefreshInput = (
@@ -236,12 +225,12 @@ final class SealedDecryptedDragTests: XCTestCase {
         XCTAssertEqual(textView.decryptedDragCursorRects, [handle], "the hovered block")
         hover(NSPoint(x: frame.midX, y: frame.midY), holdsKeys: false)
         XCTAssertNil(textView.hoveredChipIndex)
-        XCTAssertEqual(textView.decryptedDragCursorRects, [], "the hover left")
+        XCTAssertEqual(textView.decryptedDragCursorRects, [handle], "the hover left")
 
         textView.setSelectedRange(NSRange(location: 0, length: 2))
-        XCTAssertEqual(textView.decryptedDragCursorRects, [], "ink is selected")
+        XCTAssertEqual(textView.decryptedDragCursorRects, [handle], "ink is selected")
         textView.setSelectedRange(NSRange(location: object, length: 0))
-        XCTAssertEqual(textView.decryptedDragCursorRects, [], "a caret before the block")
+        XCTAssertEqual(textView.decryptedDragCursorRects, [handle], "a caret before the block")
         textView.setSelectedRange(NSRange(location: object, length: 1))
         XCTAssertEqual(textView.decryptedDragCursorRects, [handle], "the selected block")
 
@@ -433,7 +422,7 @@ final class SealedDecryptedDragTests: XCTestCase {
         let id = try XCTUnwrap(chipID(page))
         let cell = try XCTUnwrap(page.textView.chipCell(at: object))
         XCTAssertFalse(cell.info.available)
-        let frame = NSRect(x: 0, y: 0, width: 400, height: SealedBlockCell.blockHeight)
+        let frame = NSRect(x: 0, y: 0, width: 400, height: SealedBlockCell.preferredHeight)
         XCTAssertNil(cell.decryptedDragRect(in: frame))
         XCTAssertNotNil(cell.moveHandleRect(in: frame), "a move keeps the identity, so it stays")
         XCTAssertNil(page.coordinator.beginDecryptedDrag(at: object))
@@ -463,14 +452,14 @@ final class SealedDecryptedDragTests: XCTestCase {
                 $0.isSeparatorItem ? nil : $0.title
             }
         }
-        XCTAssertEqual(try titles(), ["Name", "Note…", nil, "Remove Sealed Content"])
+        XCTAssertEqual(try titles(), ["Copy Sealed Reference", nil, "Set Variable Name…", "Add Note…", nil, "Remove from Document"])
         XCTAssertTrue(model.setChipName("PEER_KEY", chip: id, sheet: page.sheet))
         XCTAssertEqual(
-            try titles(), ["Copy Name", nil, "Rename", "Note…", nil, "Remove Sealed Content"])
+            try titles(), ["Copy Sealed Reference", "Copy Variable Name", nil, "Edit Variable Name…", "Add Note…", nil, "Remove from Document"])
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles(
                 named: true, hasNote: true, kind: "text", available: false),
-            ["Copy Name", nil, "Rename", "Edit Note…", nil, "Remove Sealed Content"])
+            ["Copy Sealed Reference", "Copy Variable Name", nil, "Edit Variable Name…", "Edit Note…", nil, "Remove from Document"])
 
         model.notice = nil
         XCTAssertFalse(page.coordinator.copyOutChip(at: object))
@@ -518,7 +507,7 @@ final class SealedDecryptedDragTests: XCTestCase {
         let away = try mountPeerPage(on: model, of: original.chipId)
         let standing = try XCTUnwrap(away.coordinator.chipAttachment(at: object)?.info)
         XCTAssertFalse(standing.available, "the control")
-        XCTAssertEqual(try menuTitles(away), ["Name", "Note…", nil, "Remove Sealed Content"])
+        XCTAssertEqual(try menuTitles(away), ["Copy Sealed Reference", nil, "Set Variable Name…", "Add Note…", nil, "Remove from Document"])
 
         // Two presses: the caret after the object selects it, the second removes it.
         home.textView.setSelectedRange(NSRange(location: object + 1, length: 0))

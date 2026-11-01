@@ -94,8 +94,10 @@ public struct ConcealDraft {
     /// Inline failure — offline, auth, refusal — with retry. Content
     /// never left the sheet.
     public var error: String?
-    /// Success: the link is on the clipboard; this is all we keep.
     public var receiptId: String?
+    public var copyToken: UInt64?
+    public var targetLabel: String?
+    public var canCopyLink = false
 
     public init(target: Target, ttlSecs: UInt64) {
         self.id = UUIDv7.generate()
@@ -726,7 +728,16 @@ public final class PageModel: ObservableObject {
     @Published public private(set) var activeCut: ActiveCut?
 
     /// The inline conceal confirmation, when one is open.
-    @Published public var concealDraft: ConcealDraft?
+    @Published public var concealDraft: ConcealDraft? {
+        didSet {
+            let token = concealDraft?.copyToken
+            concealLinkRecoveryToken.withLock { $0 = token }
+            guard oldValue?.id != concealDraft?.id else { return }
+            concealLinkRecoveryTimer?.invalidate()
+            concealLinkRecoveryTimer = nil
+            if let token = oldValue?.copyToken { client.forgetConcealedLink(token: token) }
+        }
+    }
 
     /// Connection state for Settings and the conceal header (never
     /// the token itself).
@@ -1307,6 +1318,8 @@ public final class PageModel: ObservableObject {
     /// inside the window. Its firing is the guarded clear, which takes
     /// nothing the user copied since.
     private nonisolated(unsafe) var clipboardClearTimer: Timer?
+    private nonisolated(unsafe) var concealLinkRecoveryTimer: Timer?
+    private let concealLinkRecoveryToken = OSAllocatedUnfairLock<UInt64?>(initialState: nil)
 
     // nonisolated(unsafe) for the same reason as the timers: deinit is
     // nonisolated even on a @MainActor class, and deinit is where a
@@ -1378,6 +1391,7 @@ public final class PageModel: ObservableObject {
     /// The clear-after-copy window a test shortened, or nil for the
     /// core's own interval (`CompanionClient.clipboardClearSeconds`).
     private let clipboardClearDebounce: TimeInterval?
+    private let concealLinkRecoveryDebounce: TimeInterval?
 
     /// The receipt-guarded clear itself. Shipping construction always
     /// delegates to the core; the seam lets timer and teardown behavior
@@ -1438,6 +1452,8 @@ public final class PageModel: ObservableObject {
         /// is never this one: that is always the core's constant, and
         /// only the timer's wait is shortened.
         let clipboardClearDebounce: TimeInterval?
+        /// A shorter wait for the link-recovery availability timer in tests.
+        let concealLinkRecoveryDebounce: TimeInterval?
         let clearClipboardIfOurs: (@Sendable () -> Bool)?
         /// What a declined presentation write does besides being
         /// declined and logged. Nil is the shipping answer, a debug
@@ -1470,6 +1486,7 @@ public final class PageModel: ObservableObject {
             keymapOverride: URL? = nil,
             fileLanguageDetection: LanguageDetectionService? = nil,
             clipboardClearDebounce: TimeInterval? = nil,
+            concealLinkRecoveryDebounce: TimeInterval? = nil,
             clearClipboardIfOurs: (@Sendable () -> Bool)? = nil,
             declinedPresentationWrite: (
                 @MainActor (PresentationField, PresentationOwner) -> Void
@@ -1488,6 +1505,7 @@ public final class PageModel: ObservableObject {
             self.keymapOverride = keymapOverride
             self.fileLanguageDetection = fileLanguageDetection
             self.clipboardClearDebounce = clipboardClearDebounce
+            self.concealLinkRecoveryDebounce = concealLinkRecoveryDebounce
             self.clearClipboardIfOurs = clearClipboardIfOurs
             self.declinedPresentationWrite = declinedPresentationWrite
             self.ambientPasteboard = ambientPasteboard
@@ -1575,6 +1593,7 @@ public final class PageModel: ObservableObject {
         saveDebounce = seams.saveDebounce ?? Self.saveDebounce
         saveRetryDebounce = seams.saveRetryDebounce ?? Self.saveRetryDebounce
         clipboardClearDebounce = seams.clipboardClearDebounce
+        concealLinkRecoveryDebounce = seams.concealLinkRecoveryDebounce
         declinedPresentationWrite = seams.declinedPresentationWrite
         ambientPasteboard = seams.ambientPasteboard ?? .general
         writeCutFragment = seams.writeCutFragment ?? { $0.write(to: $1) }
@@ -3040,6 +3059,10 @@ public final class PageModel: ObservableObject {
         if let wakeObserver { wakeCenter.removeObserver(wakeObserver) }
         eventTimer?.invalidate()
         redrawTimer?.invalidate()
+        concealLinkRecoveryTimer?.invalidate()
+        if let token = concealLinkRecoveryToken.withLock({ $0 }) {
+            client.forgetConcealedLink(token: token)
+        }
         if clipboardClearTimer != nil {
             _ = clearClipboardIfOurs()
             clipboardClearTimer?.invalidate()
@@ -3218,6 +3241,7 @@ public final class PageModel: ObservableObject {
         defer { isApplyingCatalogChange = false }
         updateApplicationContextObservation()
         if pads.isEnabled != lastPadsEnabled || (pads.isEnabled && pads.activeID != lastPadID) {
+            (activeEditor as? InkTextView)?.coordinator?.finishNaming()
             // The inline conceal offer belongs to the pad surface being left.
             // Dismissing it cannot cancel a request already confirmed in flight.
             concealDraft = nil
@@ -3683,43 +3707,51 @@ public final class PageModel: ObservableObject {
         quietRenderings[id] = nil
     }
 
-    /// Stands the core's face for `chip` in for the one its block on page
-    /// `sheet` draws, without restating the page around it.
+    private func chipStorages(on sheet: UInt64) -> [NSTextStorage] {
+        let continuous = continuousDocuments.values.filter { document in
+            document.projection.pages.contains { $0.id == sheet }
+        }.map(\.storage)
+        var seen = Set<ObjectIdentifier>()
+        return ([storages[sheet]].compactMap { $0 } + continuous).filter {
+            seen.insert(ObjectIdentifier($0)).inserted
+        }
+    }
+
     func restateChipFace(_ chip: UInt64, sheet: UInt64) {
         let face = client.documentRuns(sheet: sheet).lazy.compactMap { run -> ChipInfo? in
             if case .chip(let info) = run, info.chipId == chip { return info }
             return nil
         }.first
-        guard let face, let storage = storages[sheet] else { return }
-        let whole = NSRange(location: 0, length: storage.length)
-        storage.enumerateAttribute(.attachment, in: whole) { value, range, stop in
-            guard let attachment = value as? ChipAttachment, attachment.info.chipId == chip
-            else { return }
-            attachment.info = face
-            for manager in storage.layoutManagers {
-                manager.invalidateDisplay(forCharacterRange: range)
+        guard let face else { return }
+        for storage in chipStorages(on: sheet) {
+            storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { value, range, stop in
+                guard let attachment = value as? ChipAttachment, attachment.info.chipId == chip else { return }
+                attachment.info = face
+                for manager in storage.layoutManagers {
+                    manager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                    manager.invalidateDisplay(forCharacterRange: range)
+                }
+                stop.pointee = true
             }
-            stop.pointee = true
         }
         invalidateQuietRendering(for: sheet)
     }
 
-    /// Stands the core's face in for each block on page `sheet` whose face it no longer
-    /// matches, as after a peer's batch moved a value here (ADR-0058 point 3).
     func restateChipFaces(onSheet sheet: UInt64) {
-        guard let storage = storages[sheet] else { return }
         var faces: [UInt64: ChipInfo] = [:]
         for case .chip(let face) in client.documentRuns(sheet: sheet) { faces[face.chipId] = face }
-        let whole = NSRange(location: 0, length: storage.length)
-        storage.enumerateAttribute(.attachment, in: whole) { value, range, _ in
-            guard let attachment = value as? ChipAttachment,
-                  let face = faces[attachment.info.chipId], face != attachment.info
-            else { return }
-            attachment.info = face
-            for manager in storage.layoutManagers {
-                manager.invalidateDisplay(forCharacterRange: range)
+        for storage in chipStorages(on: sheet) {
+            storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+                guard let attachment = value as? ChipAttachment,
+                      let face = faces[attachment.info.chipId], face != attachment.info else { return }
+                attachment.info = face
+                for manager in storage.layoutManagers {
+                    manager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                    manager.invalidateDisplay(forCharacterRange: range)
+                }
             }
         }
+        invalidateQuietRendering(for: sheet)
     }
 
     /// Snapshot of the fence-language labels a page carries in its
@@ -5616,88 +5648,14 @@ public final class PageModel: ObservableObject {
         let dwell = action == nil ? Self.noticeDwell : Self.noticeDwellWithAction
         DispatchQueue.main.asyncAfter(deadline: .now() + dwell) { [weak self] in
             guard let self, self.noticeGeneration == generation else { return }
-            self.showHeldOrNothing()
+            self.clearNotice()
         }
     }
 
-    /// A line `holdNotice` put up, named so that only its own release ends it.
-    public struct NoticeHold: Equatable, Sendable {
-        fileprivate let serial: Int
-    }
-
-    /// The held line, which a flash stands in front of and a clear returns to.
-    private var held: (hold: NoticeHold, message: String, tone: NoticeTone)?
-    private var holdSerial = 0
-    /// The generation at which the held line was last put on screen.
-    private var heldGeneration: Int?
-
-    /// Holds `message` under the page while a field stays open (Law 0007,
-    /// Refusing; D-14); given the standing hold, it changes that hold's words.
-    @discardableResult
-    public func holdNotice(
-        _ message: String, tone: NoticeTone = .actionable, replacing standing: NoticeHold? = nil
-    ) -> NoticeHold {
-        if let standing, held?.hold == standing {
-            held = (standing, message, tone)
-            if heldGeneration == noticeGeneration {
-                notice = message
-                noticeTone = tone
-            }
-            return standing
-        }
-        holdSerial += 1
-        let hold = NoticeHold(serial: holdSerial)
-        held = (hold, message, tone)
-        clearNotice()
-        return hold
-    }
-
-    /// Ends a hold. Its line goes if it is on screen; a flash in front of
-    /// it keeps its dwell and then leaves the line empty.
-    public func releaseNotice(_ hold: NoticeHold) {
-        guard held?.hold == hold else { return }
-        held = nil
-        if heldGeneration == noticeGeneration { clearNotice() }
-        heldGeneration = nil
-    }
-
-    /// Takes down what the line says, back to the held line if one stands.
     private func clearNotice() {
         noticeGeneration += 1
-        showHeldOrNothing()
-    }
-
-    private func showHeldOrNothing() {
         noticeAction = nil
-        guard let held else {
-            notice = nil
-            return
-        }
-        notice = held.message
-        noticeTone = held.tone
-        heldGeneration = noticeGeneration
-    }
-
-    /// A field's refusal in the line under the page (Law 0007, Refusing),
-    /// held once and given new words only when they change.
-    @MainActor
-    struct HeldRefusal {
-        private var hold: NoticeHold?
-        private var message: String?
-
-        var isStanding: Bool { hold != nil }
-
-        mutating func say(_ message: String, in model: PageModel) {
-            guard hold == nil || message != self.message else { return }
-            hold = model.holdNotice(message, replacing: hold)
-            self.message = message
-        }
-
-        mutating func release(in model: PageModel) {
-            if let hold { model.releaseNotice(hold) }
-            hold = nil
-            message = nil
-        }
+        notice = nil
     }
 
     /// The notice's button was pressed: run it, and take the line down
@@ -7632,13 +7590,28 @@ public final class PageModel: ObservableObject {
         // The draft opens on the link's own default. Which page the
         // target sits on, and how long that page has left, is not
         // consulted (ADR-0026).
-        concealDraft = ConcealDraft(target: target, ttlSecs: ConcealDraft.defaultTtlSecs)
+        var draft = ConcealDraft(target: target, ttlSecs: ConcealDraft.defaultTtlSecs)
+        draft.targetLabel = concealTargetLabel(target)
+        concealDraft = draft
     }
 
-    /// The confirming click: one POST, off the main actor — the core
-    /// releases its lock during the round-trip, so the surface stays
-    /// live. On success the link is on the clipboard (written
-    /// core-side) and the confirmation offers Burn Local Copy.
+    func concealTargetLabel(_ target: ConcealDraft.Target) -> String? {
+        switch target {
+        case .page(let id):
+            return tabs.first { $0.pageID == id }?.title
+        case .chip(let id):
+            for page in livePageIDs {
+                for case .chip(let info) in client.documentRuns(sheet: page) where info.chipId == id {
+                    let identity = [info.name, info.excerpt.isEmpty ? nil : info.excerpt]
+                        .compactMap { $0 }.joined(separator: " · ")
+                    return identity.isEmpty ? nil : identity
+                }
+            }
+            return nil
+        }
+    }
+
+    /// Submit the confirmation off the main actor, then show its outcome and copy-again action.
     public func confirmConceal() {
         guard var draft = concealDraft, !draft.inFlight else { return }
         draft.inFlight = true
@@ -7650,15 +7623,15 @@ public final class PageModel: ObservableObject {
         let ttl = draft.ttlSecs
         let passphrase = draft.passphrase
         let recipient = draft.recipient
-        Task.detached(priority: .userInitiated) {
+        Task.detached(priority: .userInitiated) { [self] in
             let outcome: ConcealOutcome = switch target {
             case .chip(let id):
                 client.concealChip(id: id, ttlSecs: ttl, passphrase: passphrase, recipient: recipient)
             case .page(let id):
                 client.concealSheet(id: id, ttlSecs: ttl, passphrase: passphrase, recipient: recipient)
             }
-            await MainActor.run { [weak self] in
-                self?.finishConceal(outcome, for: target, draftID: draftID)
+            await MainActor.run {
+                self.finishConceal(outcome, for: target, draftID: draftID)
             }
         }
     }
@@ -7683,24 +7656,67 @@ public final class PageModel: ObservableObject {
         // new offer for the same target — while the call was out; a stale outcome
         // must not land on someone else's draft. (On success the link
         // is on the clipboard and the receipt marked either way.)
-        guard var draft = concealDraft, draft.id == draftID, draft.target == target else { return }
+        guard var draft = concealDraft, draft.id == draftID, draft.target == target else {
+            if outcome.ok, let token = outcome.copyToken {
+                client.forgetConcealedLink(token: token)
+            }
+            if let token = concealDraft?.copyToken {
+                concealDraft?.canCopyLink = client.canCopyConcealedLink(token: token)
+            }
+            return
+        }
         draft.inFlight = false
         if outcome.ok {
             draft.error = nil
             draft.receiptId = outcome.receiptId
+            draft.copyToken = outcome.copyToken
+            draft.canCopyLink = outcome.copyToken.map { client.canCopyConcealedLink(token: $0) } ?? false
             flash(Self.linkCopiedLine)
         } else {
             // Inline, with retry; content never left the sheet.
             draft.error = outcome.error ?? Self.linkFailedLine
         }
         concealDraft = draft
+        if let token = draft.copyToken { armConcealLinkRecoveryExpiry(token: token, draftID: draft.id) }
         refresh()
     }
 
-    /// Success's one offer: the content travelled, so the local copy
-    /// may go. A chip burns by a core delete that zeroizes its bytes
-    /// and drops its sentinel, its glyph stripped from the projection;
-    /// a page burns by closing (it rests in the ledger).
+    private func armConcealLinkRecoveryExpiry(token: UInt64, draftID: UUID) {
+        concealLinkRecoveryTimer?.invalidate()
+        let remaining = TimeInterval(client.concealedLinkCopyRemainingMilliseconds(token: token)) / 1_000
+        guard remaining > 0 else {
+            client.forgetConcealedLink(token: token)
+            concealDraft?.canCopyLink = false
+            return
+        }
+        let interval = min(concealLinkRecoveryDebounce ?? remaining, remaining)
+        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.concealDraft?.id == draftID else { return }
+                self.client.forgetConcealedLink(token: token)
+                self.concealDraft?.canCopyLink = false
+                self.concealLinkRecoveryTimer = nil
+            }
+        }
+        concealLinkRecoveryTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    @discardableResult
+    public func copyConcealedLink() -> Bool {
+        guard let draft = concealDraft, let token = draft.copyToken else { return false }
+        let copied = client.copyConcealedLink(token: token)
+        if copied {
+            armClipboardClear()
+            flash(Self.linkCopiedLine)
+        } else {
+            concealDraft?.canCopyLink = false
+            flash(CompanionL10n.string("sharing.recovery.copy_failed"))
+        }
+        return copied
+    }
+
+    /// Delete the shared local target when the person chooses the destructive action.
     public func burnConcealedCopy() {
         guard let draft = concealDraft, draft.receiptId != nil else { return }
         switch draft.target {

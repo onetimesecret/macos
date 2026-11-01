@@ -2598,6 +2598,8 @@ mod tests {
             store: companion_core::SheetStore::new(companion_core::SystemClock),
             pasteboard: crate::Board::Memory(companion_pasteboard::MemoryPasteboard::new()),
             last_write: None,
+            concealed_link: None,
+            next_link_copy_token: 0,
             connection: None,
             credentials,
             wire: crate::conceal::Wire::real(),
