@@ -26,6 +26,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     private weak var originalStorage: NSTextStorage?
     private var sourceWasEdited = false
     private nonisolated(unsafe) var storageObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var windowCloseObserver: NSObjectProtocol?
     private var originalTarget: SurfaceTarget?
     private var originalPage: UInt64?
     private var availableEditorCommands: Set<CommandID> = []
@@ -94,18 +95,27 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
             Task { @MainActor in borrowed.endPaletteFocusBorrow() }
         }
         if let storageObserver { NotificationCenter.default.removeObserver(storageObserver) }
+        if let windowCloseObserver { NotificationCenter.default.removeObserver(windowCloseObserver) }
     }
 
     func show(in window: NSWindow, pageContext: Bool, reopen: Bool = false) {
         if overlay != nil {
-            if reopen { enterReopenMode() }
-            else { dismiss(restoringFocus: true) }
-            return
+            if originalWindow === window {
+                if reopen { enterReopenMode() }
+                else { dismiss(restoringFocus: true) }
+                return
+            }
+            dismiss(restoringFocus: false)
         }
         guard let host = window.contentView else { return }
         if pageContext, let editor = model.activeEditor as? CommandPaletteResponder,
            !editor.prepareForCommandPalette() { return }
         originalWindow = window
+        windowCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.dismiss(restoringFocus: false) }
+        }
         originalResponder = window.firstResponder
         originalControl = nil
         originalControlSelection = nil
@@ -160,10 +170,18 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         let borrowed = borrowedFocusResponder
         borrowedFocusResponder = nil
         defer { borrowed?.endPaletteFocusBorrow() }
+        if !restoringFocus, let window = originalWindow {
+            let responder = window.firstResponder
+            if responder === search.currentEditor() || responder === table || responder === backButton {
+                _ = window.makeFirstResponder(nil)
+            }
+        }
         overlay?.removeFromSuperview()
         overlay = nil
         if let storageObserver { NotificationCenter.default.removeObserver(storageObserver) }
         storageObserver = nil
+        if let windowCloseObserver { NotificationCenter.default.removeObserver(windowCloseObserver) }
+        windowCloseObserver = nil
         guard restoringFocus, let window = originalWindow, window.isVisible else { return }
         if let control = originalControl {
             guard control.window === window else { return }

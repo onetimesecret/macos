@@ -10,6 +10,10 @@ private final class PaletteEditorProbe: NSTextView, CommandPaletteResponder {
     var performed: [CommandID] = []
     var selectionAtExecution: NSRange?
     var wasFirstResponder = false
+    private(set) var borrowBegins = 0
+    private(set) var borrowEnds = 0
+    func beginPaletteFocusBorrow() { borrowBegins += 1 }
+    func endPaletteFocusBorrow() { borrowEnds += 1 }
     func prepareForCommandPalette() -> Bool { true }
     func canPerformPaletteCommand(_ command: CommandID) -> Bool { command == .clipboardSealSelection }
     func performPaletteCommand(_ command: CommandID) -> Bool {
@@ -358,6 +362,58 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertGreaterThan(palette.table.numberOfRows, 0)
         XCTAssertTrue(palette.search.nextKeyView === palette.table)
         XCTAssertTrue(palette.table.nextKeyView === palette.search)
+    }
+
+
+    func testInvokingFromAnotherWindowMovesThePaletteWithoutRestoringTheOldResponder() throws {
+        let model = try makeModel()
+        let (first, firstEditor) = makeWindow()
+        let (second, secondEditor) = makeWindow()
+        defer { first.close(); second.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: first, pageContext: false)
+        XCTAssertTrue(palette.overlay?.window === first)
+        palette.show(in: second, pageContext: true)
+        XCTAssertTrue(palette.overlay?.window === second)
+        XCTAssertFalse(first.firstResponder === firstEditor)
+        XCTAssertEqual(firstEditor.borrowEnds, 1)
+        XCTAssertEqual(secondEditor.borrowBegins, 1)
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.cancelOperation(_:)))
+        XCTAssertTrue(second.firstResponder === secondEditor)
+        XCTAssertEqual(secondEditor.borrowEnds, 1)
+    }
+
+    func testCrossWindowReopenUsesTheInvokingWindowAndRemovesTheOldWindowObserver() throws {
+        let model = try makeModel()
+        let (first, firstEditor) = makeWindow()
+        let (second, secondEditor) = makeWindow()
+        defer { first.close(); second.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: first, pageContext: false)
+        palette.show(in: second, pageContext: true, reopen: true)
+        XCTAssertTrue(palette.overlay?.window === second)
+        XCTAssertFalse(palette.backButton.isHidden)
+        XCTAssertEqual(palette.search.placeholderString, CompanionL10n.string("Search closed pages or tabs…"))
+        XCTAssertEqual(firstEditor.borrowEnds, 1)
+        first.close()
+        XCTAssertTrue(palette.overlay?.window === second)
+        second.close()
+        XCTAssertNil(palette.overlay)
+        XCTAssertEqual(secondEditor.borrowEnds, 1)
+    }
+
+    func testClosingTheOriginWindowDismissesThePaletteAndReleasesItsFocusBorrow() throws {
+        let model = try makeModel()
+        let (window, editor) = makeWindow()
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        XCTAssertEqual(editor.borrowBegins, 1)
+        window.close()
+        XCTAssertNil(palette.overlay)
+        XCTAssertEqual(editor.borrowEnds, 1)
+        palette.dismiss(restoringFocus: true)
+        XCTAssertEqual(editor.borrowEnds, 1)
     }
 
 }
