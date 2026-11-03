@@ -62,6 +62,7 @@ VISIBLE_DOC_STATUS = re.compile(r"documentation[_ -]status", re.IGNORECASE)
 # A Markdown inline link, reduced to its text when a heading is slugged.
 INLINE_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 SLUG_STRIP = re.compile(r"[^\w\- ]", re.UNICODE)
+PROVENANCE_MARKS = re.compile(r"[\uFE00-\uFE0F\U000E0100-\U000E01EF]")
 
 
 def split_frontmatter(lines: list[str]) -> tuple[list[str], int, str | None]:
@@ -143,7 +144,7 @@ def anchors(path: Path) -> set[str] | None:
     if resolved in _ANCHOR_CACHE:
         return _ANCHOR_CACHE[resolved]
     try:
-        lines = resolved.read_text(encoding="utf-8").splitlines()
+        lines = PROVENANCE_MARKS.sub("", resolved.read_text(encoding="utf-8")).splitlines()
     except (OSError, UnicodeDecodeError):
         _ANCHOR_CACHE[resolved] = None
         return None
@@ -202,7 +203,7 @@ def check(path: Path) -> tuple[list[str], dict[str, tuple[int, list[str]]]]:
         return problems, relations
     number = name_match.group(1)
 
-    text = path.read_text(encoding="utf-8")
+    text = PROVENANCE_MARKS.sub("", path.read_text(encoding="utf-8"))
     lines = text.splitlines()
     header = FILE_HEADER.match(lines[0]) if lines else None
     skip = 1 if header and Path(header.group(1)).name == path.name else 0
