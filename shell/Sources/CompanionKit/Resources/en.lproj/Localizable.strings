@@ -55,13 +55,15 @@
 "pad.picker.current" = "Choose pad, current pad %@";
 "pad.picker.heading" = "Pads";
 "pad.new.title" = "New Pad";
+"pad.new.nameLabel" = "Name";
+"pad.new.placeholder" = "Project or topic";
 "pad.new.menu" = "New Pad…";
 "pad.manage.menu" = "Manage Pads…";
 "pad.name" = "Pad name";
 "pad.name.empty" = "Enter a pad name.";
 "pad.name.long" = "Use 80 characters or fewer for the pad name.";
 "pad.name.failed" = "The pad could not be saved. Finish any pending file decision and try again.";
-"pad.create" = "Create";
+"pad.create" = "Create Pad";
 "pad.cancel" = "Cancel";
 "pad.rename.menu" = "Rename";
 "pad.remove.title" = "Remove %@?";

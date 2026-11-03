@@ -47,6 +47,88 @@ final class PadPickerTests: XCTestCase {
         XCTAssertNotEqual(CompanionL10n.string("pad.name.long"), "pad.name.long")
     }
 
+    func testCreationTrimsTheNameActivatesOnceAndClearsTheForm() throws {
+        let (model, _) = try padModel()
+        let count = model.pads.entries.count
+        var creation = PadCreation()
+        creation.isPresented = true
+        creation.draft = "  Design notes \n"
+
+        creation.submit(in: model)
+        XCTAssertEqual(model.pads.activePad.name, "Design notes")
+        XCTAssertEqual(model.pads.entries.count, count + 1)
+        XCTAssertFalse(creation.isPresented)
+        XCTAssertEqual(creation.draft, "")
+        XCTAssertNil(creation.message)
+
+        creation.submit(in: model)
+        XCTAssertEqual(model.pads.entries.count, count + 1)
+    }
+
+    func testInvalidCreationKeepsTheFormOpenWithoutChangingPads() throws {
+        let (model, pad) = try padModel()
+        let count = model.pads.entries.count
+        var creation = PadCreation()
+        creation.isPresented = true
+        XCTAssertFalse(creation.canSubmit)
+        XCTAssertNil(creation.message)
+
+        for draft in [" \n", String(repeating: "🐕", count: 81)] {
+            creation.draft = draft
+            XCTAssertFalse(creation.canSubmit)
+            XCTAssertEqual(creation.message, PadNameDraft.validationMessage(draft))
+            creation.submit(in: model)
+            XCTAssertTrue(creation.isPresented)
+            XCTAssertEqual(creation.draft, draft)
+            XCTAssertEqual(model.pads.entries.count, count)
+            XCTAssertEqual(model.pads.activeID, pad.id)
+        }
+
+        creation.draft = "Design notes"
+        XCTAssertTrue(creation.canSubmit)
+        XCTAssertNil(creation.message)
+    }
+
+    func testAutomaticDismissalRetainsTheDraftWhileCancelDiscardsIt() {
+        var creation = PadCreation()
+        creation.isPresented = true
+        creation.draft = "Design notes"
+        creation.isPresented = false
+        creation.isPresented = true
+        XCTAssertEqual(creation.draft, "Design notes")
+
+        creation.cancel()
+        XCTAssertFalse(creation.isPresented)
+        creation.isPresented = true
+        XCTAssertEqual(creation.draft, "")
+        XCTAssertFalse(creation.canSubmit)
+        XCTAssertNil(creation.message)
+    }
+
+    func testFailedCreationKeepsTheDraftForCorrectionAndRetry() throws {
+        let (model, _) = try padModel()
+        let count = model.pads.entries.count
+        var creation = PadCreation()
+        creation.isPresented = true
+        creation.draft = "Design notes"
+        model.pads.isEnabled = false
+
+        creation.submit(in: model)
+        XCTAssertTrue(creation.isPresented)
+        XCTAssertEqual(creation.draft, "Design notes")
+        XCTAssertEqual(creation.message, CompanionL10n.string("pad.name.failed"))
+        XCTAssertEqual(model.pads.entries.count, count)
+        XCTAssertNil(model.notice)
+
+        model.pads.isEnabled = true
+        creation.draft = "Design notes revised"
+        XCTAssertNil(creation.message)
+        creation.submit(in: model)
+        XCTAssertFalse(creation.isPresented)
+        XCTAssertNil(creation.message)
+        XCTAssertEqual(model.pads.activePad.name, "Design notes revised")
+    }
+
     // MARK: The pad row's rename field (Law 0007, issue #249)
 
     private func padModel() throws -> (PageModel, PadEntry) {
@@ -158,7 +240,7 @@ final class PadPickerTests: XCTestCase {
         defer { NotificationCenter.default.removeObserver(token) }
         var routes = PadSettingsRoutes()
         func inTheRow(_ moment: String) {
-            XCTAssertFalse(routes.creating, "the sheet came up \(moment)")
+            XCTAssertFalse(routes.creation.isPresented, "the creation form opened \(moment)")
             XCTAssertFalse(ModalSession.isRunning, "a modal session ran \(moment)")
         }
 
@@ -175,9 +257,8 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(ends, 0)
     }
 
-    /// *New Pad…* is the one route to the sheet, and it keeps the name
-    /// under any field that was open.
-    func testNewPadRaisesTheSheetAndKeepsAnOpenFieldsName() throws {
+    /// New Pad closes the rename field before presenting the creation form.
+    func testNewPadOpensTheFormAndKeepsAnOpenFieldsName() throws {
         let (model, pad) = try padModel()
         var routes = PadSettingsRoutes()
         routes.beginRename(pad)
@@ -186,8 +267,8 @@ final class PadPickerTests: XCTestCase {
         XCTAssertNotNil(routes.rename.refusal)
 
         routes.beginCreating()
-        XCTAssertTrue(routes.creating)
-        XCTAssertFalse(routes.rename.isOpen, "the field outlived the sheet's arrival")
+        XCTAssertTrue(routes.creation.isPresented)
+        XCTAssertFalse(routes.rename.isOpen, "the rename field outlived the form's arrival")
         XCTAssertNil(routes.rename.refusal, "the refusal outlived its field")
         XCTAssertEqual(name(of: pad, in: model), "Otto")
     }
@@ -280,11 +361,12 @@ final class PadPickerTests: XCTestCase {
         XCTAssertTrue(managed)
     }
 
-    func testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay() {
+    func testTheRenameStringsAreGoneAndTheCreateStringsStay() {
         for key in ["pad.rename.title", "pad.rename"] {
             XCTAssertEqual(CompanionL10n.string(key), key, "\(key) is still in the strings")
         }
-        for key in ["pad.cancel", "pad.name", "pad.new.title", "pad.create", "pad.rename.menu"] {
+        for key in ["pad.cancel", "pad.name", "pad.new.title", "pad.new.nameLabel",
+                    "pad.new.placeholder", "pad.create", "pad.rename.menu"] {
             XCTAssertNotEqual(CompanionL10n.string(key), key, "\(key) went with the rename sheet")
         }
     }
@@ -370,6 +452,13 @@ final class PadPickerTests: XCTestCase {
         XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [other, sheet]))
         parent.endSheet(sheet)
         XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [parent, other]))
+    }
+
+    func testPadShortcutsYieldWhileTheCreationFieldIsEditing() {
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(
+            isModal: false, windows: [], isEditingField: true))
+        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(
+            isModal: false, windows: [], isEditingField: false))
     }
 
     func testSortMenuOffersExplicitOrdersAndDescribesTheCurrentValue() {
