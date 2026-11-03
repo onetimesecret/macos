@@ -441,6 +441,18 @@ public final class PageModel: ObservableObject {
     public let formFactor: FormFactor
 
     public let pads: PadCatalog
+
+    private var presentedPadCreations: Set<UUID> = []
+    var hasPresentedPadCreation: Bool { !presentedPadCreations.isEmpty }
+
+    func registerPadCreation(_ id: UUID) {
+        presentedPadCreations.insert(id)
+    }
+
+    func unregisterPadCreation(_ id: UUID) {
+        presentedPadCreations.remove(id)
+    }
+
     private var lastPadID = PadCatalog.scratchID
     private var lastPadsEnabled = false
     private var isApplyingCatalogChange = false

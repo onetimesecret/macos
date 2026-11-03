@@ -15,7 +15,7 @@ public struct PadPickerView: View {
     @Environment(\.presentationSurface) private var surface
     @StateObject private var keyboard = PadShortcutMonitor()
     @State private var creation = PadCreation()
-    @State private var anchor = PadMenuAnchor()
+    @State private var anchor = PadViewAnchor()
 
     public init(model: PageModel, placement: Placement = .row) {
         self.model = model
@@ -36,7 +36,7 @@ public struct PadPickerView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .background(PadMenuAnchorView(anchor: anchor))
+            .background(PadViewAnchorView(anchor: anchor))
             .accessibilityLabel(CompanionL10n.format("pad.picker.current", model.pads.activePad.name))
             .popover(isPresented: $creation.isPresented, arrowEdge: .bottom) {
                 PadCreateForm(model: model, creation: $creation)
@@ -165,15 +165,14 @@ final class PadMenuAction: NSObject {
     }
 }
 
-/// The view the pad menu drops from, kept by reference so the button's
-/// action can find it.
+/// The native view used for menu placement and scoped field selection.
 @MainActor
-final class PadMenuAnchor {
+final class PadViewAnchor {
     weak var view: NSView?
 }
 
-struct PadMenuAnchorView: NSViewRepresentable {
-    let anchor: PadMenuAnchor
+struct PadViewAnchorView: NSViewRepresentable {
+    let anchor: PadViewAnchor
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -234,7 +233,9 @@ struct PadCreateForm: View {
     @Binding var creation: PadCreation
     @Environment(\.isEnabled) private var isEnabled
     @FocusState private var focused: Bool
-    @State private var nameAnchor = PadMenuAnchor()
+    @State private var nameAnchor = PadViewAnchor()
+    @State private var presentationID = UUID()
+    @State private var initialDraftSelected = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -242,12 +243,13 @@ struct PadCreateForm: View {
                 .font(.headline)
             VStack(alignment: .leading, spacing: 6) {
                 Text(CompanionL10n.string("pad.new.nameLabel")).font(.caption)
+                    .accessibilityHidden(true)
                 TextField(CompanionL10n.string("pad.new.placeholder"), text: $creation.draft)
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.large)
                     .lineLimit(1)
                     .focused($focused)
-                    .background(PadMenuAnchorView(anchor: nameAnchor))
+                    .background(PadViewAnchorView(anchor: nameAnchor))
                     .accessibilityLabel(CompanionL10n.string("pad.name"))
                     .onSubmit { creation.submit(in: model) }
                 if let message = creation.message {
@@ -266,6 +268,14 @@ struct PadCreateForm: View {
         }
         .padding(18).frame(width: 326)
         .onExitCommand { creation.cancel() }
+        .onAppear {
+            initialDraftSelected = false
+            if creation.isPresented { model.registerPadCreation(presentationID) }
+        }
+        .onChange(of: creation.isPresented) { presented in
+            if presented { model.registerPadCreation(presentationID) }
+            else { model.unregisterPadCreation(presentationID) }
+        }
         .task(id: isEnabled) {
             guard isEnabled else {
                 creation.isPresented = false
@@ -276,18 +286,22 @@ struct PadCreateForm: View {
             focused = true
         }
         .onChange(of: focused) { now in
-            if now { selectNameDraft() }
+            if now && !initialDraftSelected { selectNameDraft() }
             model.editorKeysMayHaveMoved()
         }
-        .onDisappear { model.editorKeysMayHaveMoved() }
+        .onDisappear {
+            model.unregisterPadCreation(presentationID)
+            model.editorKeysMayHaveMoved()
+        }
     }
 
     private func selectNameDraft() {
         DispatchQueue.main.async { [nameAnchor] in
-            guard creation.isPresented, isEnabled, focused,
+            guard creation.isPresented, isEnabled, focused, !initialDraftSelected,
                   let window = nameAnchor.view?.window,
                   let editor = window.firstResponder as? NSTextView,
                   editor.isFieldEditor else { return }
+            initialDraftSelected = true
             editor.selectAll(nil)
         }
     }
@@ -434,8 +448,8 @@ final class PadShortcutMonitor: ObservableObject {
 
     /// Pad selection is shared across windows, so a sheet in any app window
     /// suspends these application-local shortcuts even if another window is key.
-    static func allowsPadSwitch(isModal: Bool, windows: [NSWindow], isEditingField: Bool) -> Bool {
-        !isModal && !isEditingField && !windows.contains { $0.attachedSheet != nil || $0.sheetParent != nil }
+    static func allowsPadSwitch(isModal: Bool, windows: [NSWindow]) -> Bool {
+        !isModal && !windows.contains { $0.attachedSheet != nil || $0.sheetParent != nil }
     }
 
     static func isEditingField(for event: NSEvent, fallbackWindow: NSWindow?) -> Bool {
@@ -443,22 +457,34 @@ final class PadShortcutMonitor: ObservableObject {
         return (window?.firstResponder as? NSTextView)?.isFieldEditor == true
     }
 
+    static func handle(
+        _ event: NSEvent, model: PageModel, surface: PresentationOwner,
+        fallbackWindow: NSWindow?, windows: [NSWindow], isModal: Bool
+    ) -> NSEvent? {
+        guard model.pads.isEnabled,
+              event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
+              let key = event.charactersIgnoringModifiers, let number = Int(key),
+              (0...9).contains(number), allows(number: number, keymap: model.keymap)
+        else { return event }
+        if model.hasPresentedPadCreation || isEditingField(for: event, fallbackWindow: fallbackWindow) {
+            return nil
+        }
+        guard model.owner == surface,
+              allowsPadSwitch(isModal: isModal, windows: windows)
+        else { return event }
+        guard model.pads.entries.indices.contains(number) else { return nil }
+        model.activatePad(model.pads.entries[number].id)
+        return nil
+    }
+
     func install(model: PageModel, surface: PresentationOwner) {
         stop()
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak model] event in
             let consumed = MainActor.assumeIsolated {
-                guard let model, model.pads.isEnabled, model.owner == surface,
-                      event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
-                      Self.allowsPadSwitch(
-                        isModal: NSApp.modalWindow != nil, windows: NSApp.windows,
-                        isEditingField: Self.isEditingField(for: event, fallbackWindow: NSApp.keyWindow)),
-                      let key = event.charactersIgnoringModifiers, let number = Int(key),
-                      (0...9).contains(number), Self.allows(number: number, keymap: model.keymap)
-                else { return false }
-                // A claimed digit with no pad must not fall through to a slot.
-                guard model.pads.entries.indices.contains(number) else { return true }
-                model.activatePad(model.pads.entries[number].id)
-                return true
+                guard let model else { return false }
+                return Self.handle(
+                    event, model: model, surface: surface, fallbackWindow: NSApp.keyWindow,
+                    windows: NSApp.windows, isModal: NSApp.modalWindow != nil) == nil
             }
             return consumed ? nil : event
         }

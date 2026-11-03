@@ -122,6 +122,9 @@ final class PadCreateFormTests: XCTestCase {
         let window = try XCTUnwrap(popover)
         let field = try nameField(in: window)
         try await waitFor("The name field did not receive focus") { field.currentEditor() != nil }
+        try await waitFor("The native creation form did not register its presentation") {
+            fixture.model.hasPresentedPadCreation
+        }
         return window
     }
 
@@ -162,11 +165,11 @@ final class PadCreateFormTests: XCTestCase {
             events.append(event)
         }
         events.forEach { NSApp.postEvent($0, atStart: false) }
-        for mask in [NSEvent.EventTypeMask.leftMouseDown, .leftMouseUp] {
-            if let queued = NSApp.nextEvent(
-                matching: mask, until: Date(), inMode: .default, dequeue: true) {
-                NSApp.sendEvent(queued)
-            }
+        for (mask, phase) in [(NSEvent.EventTypeMask.leftMouseDown, "mouse-down"), (.leftMouseUp, "mouse-up")] {
+            let queued = try XCTUnwrap(NSApp.nextEvent(
+                matching: mask, until: Date().addingTimeInterval(1), inMode: .default, dequeue: true),
+                "The posted \(phase) event for \(title) was not delivered to the fixture")
+            NSApp.sendEvent(queued)
         }
     }
 
@@ -182,6 +185,7 @@ final class PadCreateFormTests: XCTestCase {
         try key("\r", code: 36, in: popover)
         try await waitFor("Return did not dismiss the native form") {
             !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
         }
         XCTAssertFalse(fixture.presentation.routes.creation.isPresented)
         XCTAssertEqual(fixture.presentation.routes.creation.draft, "")
@@ -196,6 +200,7 @@ final class PadCreateFormTests: XCTestCase {
         try key("\u{1b}", code: 53, in: popover)
         try await waitFor("Escape did not dismiss the native form") {
             !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
         }
         XCTAssertFalse(fixture.presentation.routes.creation.isPresented)
         XCTAssertEqual(fixture.presentation.routes.creation.draft, "")
@@ -210,6 +215,7 @@ final class PadCreateFormTests: XCTestCase {
         try click("Outside", in: fixture)
         try await waitFor("Clicking outside did not dismiss the native form") {
             !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
         }
         XCTAssertFalse(popover.isVisible)
         XCTAssertFalse(fixture.presentation.routes.creation.isPresented)
@@ -231,6 +237,7 @@ final class PadCreateFormTests: XCTestCase {
         fixture.presentation.isEnabled = false
         try await waitFor("A disabled presenter left the form visible") {
             !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
         }
         XCTAssertEqual(fixture.presentation.routes.creation.draft, "Retained on rest")
         fixture.presentation.isEnabled = true
@@ -251,6 +258,7 @@ final class PadCreateFormTests: XCTestCase {
         try click("New Pad", in: fixture)
         try await waitFor("Clicking the anchor did not dismiss the native form") {
             !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
         }
         XCTAssertFalse(popover.isVisible)
         XCTAssertFalse(fixture.presentation.routes.creation.isPresented)
@@ -268,6 +276,28 @@ final class PadCreateFormTests: XCTestCase {
         XCTAssertTrue(popover.isVisible)
         XCTAssertEqual(fixture.model.pads.entries.count, 1)
         XCTAssertNotNil(try nameField(in: popover).currentEditor())
+    }
+
+    func testNativeFormSuspendsPadShortcutsAfterTheNameFieldResignsFocus() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        let field = try nameField(in: popover)
+        XCTAssertTrue(popover.makeFirstResponder(nil))
+        try await waitFor("The name field did not resign its editor") { field.currentEditor() == nil }
+        XCTAssertTrue(fixture.model.hasPresentedPadCreation)
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+            windowNumber: popover.windowNumber, context: nil,
+            characters: "0", charactersIgnoringModifiers: "0", isARepeat: false, keyCode: 29))
+        XCTAssertTrue(PadShortcutMonitor.allows(number: 0, keymap: fixture.model.keymap))
+        XCTAssertNil(PadShortcutMonitor.handle(
+            event, model: fixture.model, surface: .panel, fallbackWindow: fixture.window,
+            windows: [fixture.window, popover], isModal: false))
+        try key("\u{1b}", code: 53, in: popover)
+        try await waitFor("Dismissing the native form did not unregister it") {
+            !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
+        }
     }
 
 }

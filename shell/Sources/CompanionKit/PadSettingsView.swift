@@ -116,7 +116,7 @@ private struct PadSettingsRow: View {
     let commitRename: () -> Void
     let keepRename: () -> Void
     let remove: () -> Void
-    @State private var anchor = PadMenuAnchor()
+    @State private var anchor = PadViewAnchor()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -209,7 +209,7 @@ private struct PadSettingsRow: View {
             .font(.caption)
         }
         .buttonStyle(.borderless)
-        .background(PadMenuAnchorView(anchor: anchor))
+        .background(PadViewAnchorView(anchor: anchor))
     }
 
     private func showApplications() {
