@@ -12,6 +12,7 @@ consumed-by:
   - docs/development/sealed-objects-core-interface.md (the name's routes and the keys holder's predicate)
   - docs/mockups/sealed-name-and-note.md (the drawn states; not authoritative)
 sources:
+  - the maintainer's 2026-11-03 approval of the anchored New Pad proposal, quoted in Amendments
   - the maintainer's 2026-10-31 instruction to address the 28-item sealed-content UX audit (quoted in the interface revision)
   - docs/spec/design/2026-1031-sealed-content-ux-revision.md (presentation decisions; unchanged boundary decisions reference their immutable pre-task sources)
   - the maintainer's instruction in the 2026-10-13 design conversation (primary)
@@ -23,7 +24,7 @@ sources:
   - shell/Sources/CompanionKit/TabRename.swift (one rule for every field's ending; `TabRename.Field`, the SwiftUI fields' state)
   - shell/Sources/CompanionKit/DayScrollView.swift (`DayHeaderView.beginRename`, `endRename`, `opensRename`, `keyboardToReturn`, `words`, `seat`, `drawsTitle`)
   - shell/Sources/CompanionKit/TabStripView.swift (`beginRename`, `renameField`, `endRename`)
-  - shell/Sources/CompanionKit/PadPickerView.swift (`PadRename`, the row's field; `PadNameDraft`; `PadCreateSheet`, the create sheet)
+  - shell/Sources/CompanionKit/PadPickerView.swift (`PadRename`, the row's field; `PadNameDraft`; `PadCreation` and `PadCreateForm`, the anchored creation form)
   - shell/Sources/CompanionKit/PadSettingsView.swift (the Pads tab of Settings; `PadSettingsRoutes`, its routes; the row's field and the refusal under it)
   - shell/Sources/CompanionKit/PageModel.swift (`renameTab`, `renamePad`, `setChipName`)
   - shell/Sources/CompanionKit/InkEditorView.swift (`InkTextView.answersChords`, whether the page's chords and Edit menu actions are its own to answer)
@@ -121,8 +122,9 @@ the first tenet (the app is furniture, never interrupts) forbids.
   takes the seat and the default follows it to the right.
 
 Exemption: creating a pad has no seat to edit in until a new row exists
-for it. It stays as built, a sheet, until a contract row gives it a seat;
-the maintainer's instruction names the pad list's Rename only.
+for it. T󠄁h󠄁e󠄁 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁3󠄁 a󠄁p󠄁p󠄁r󠄁o󠄁v󠄁a󠄁l󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁s󠄁 i󠄁t󠄁s󠄁 s󠄁h󠄁e󠄁e󠄁t󠄁 w󠄁i󠄁t󠄁h󠄁 a f󠄁o󠄁r󠄁m󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁e󠄁d󠄁 t󠄁o󠄁
+the pad p󠄁i󠄁c󠄁k󠄁e󠄁r󠄁,󠄁 o󠄁r󠄁 t󠄁o󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 i󠄁n󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁l󠄁o󠄁w󠄁 i󠄁s󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁
+f󠄁r󠄁o󠄁m󠄁 r󠄁e󠄁n󠄁a󠄁m󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 p󠄁a󠄁d󠄁 i󠄁n󠄁 i󠄁t󠄁s󠄁 r󠄁o󠄁w󠄁.󠄁
 
 ## The contract
 
@@ -131,6 +133,7 @@ without a test says what it is owed by.
 
 | Interaction | Class | Expected behaviour | Pinned by |
 | --- | --- | --- | --- |
+| N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 s󠄁w󠄁i󠄁t󠄁c󠄁h󠄁e󠄁r󠄁 o󠄁r󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 | o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁,󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁i󠄁n󠄁g󠄁,󠄁 c󠄁o󠄁m󠄁m󠄁i󠄁t󠄁t󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁 k󠄁e󠄁e󠄁p󠄁i󠄁n󠄁g󠄁 | a󠄁n󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁 o󠄁p󠄁e󠄁n󠄁s󠄁 a󠄁t󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁t󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁;󠄁 R󠄁e󠄁t󠄁u󠄁r󠄁n󠄁 o󠄁r󠄁 C󠄁r󠄁e󠄁a󠄁t󠄁e󠄁 P󠄁a󠄁d󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁e󠄁s󠄁 a󠄁 p󠄁a󠄁d󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁 t󠄁r󠄁i󠄁m󠄁m󠄁e󠄁d󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁 n󠄁a󠄁m󠄁e󠄁;󠄁 i󠄁n󠄁v󠄁a󠄁l󠄁i󠄁d󠄁 n󠄁a󠄁m󠄁e󠄁s󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁 s󠄁t󠄁a󠄁y󠄁s󠄁 b󠄁e󠄁s󠄁i󠄁d󠄁e󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁;󠄁 a󠄁 f󠄁a󠄁i󠄁l󠄁e󠄁d󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 l󠄁e󠄁a󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 o󠄁p󠄁e󠄁n󠄁 f󠄁o󠄁r󠄁 r󠄁e󠄁t󠄁r󠄁y󠄁;󠄁 c󠄁l󠄁i󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁s󠄁 i󠄁t󠄁s󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 f󠄁o󠄁r󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁,󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁 a󠄁n󠄁d󠄁 C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁 i󠄁t󠄁 | `PadPickerTests.swift` `testCreationTrimsTheNameActivatesOnceAndClearsTheForm`,󠄁 `testInvalidCreationKeepsTheFormOpenWithoutChangingPads`,󠄁 `testAutomaticDismissalRetainsTheDraftWhileCancelDiscardsIt`,󠄁 `testFailedCreationKeepsTheDraftForCorrectionAndRetry`,󠄁 `testPadShortcutsYieldWhileTheCreationFieldIsEditing`;󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁,󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁,󠄁 k󠄁e󠄁y󠄁b󠄁o󠄁a󠄁r󠄁d󠄁 e󠄁n󠄁d󠄁i󠄁n󠄁g󠄁s󠄁 a󠄁n󠄁d󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁:󠄁 o󠄁w󠄁e󠄁d󠄁 h󠄁a󠄁n󠄁d󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁 i󠄁n󠄁 [r󠄁e󠄁n󠄁a󠄁m󠄁e󠄁 i󠄁n󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁](../qa/verification-procedures/rename-in-place.md) |
 | Return over a changed draft | committing | the trimmed draft becomes the name | `TabRenameTests.swift` `testReturnOverANewNameRenames`, `testTheNameIsTrimmedBeforeItIsJudged` |
 | Return over an untouched draft | keeping | nothing changes; a default is never frozen into a typed name by a Return | `TabRenameTests.swift` `testReturnOverAnUntouchedDraftKeeps` |
 | Return over an empty draft | committing | the typed name is cleared and the default derives again; a pad, which has no default, refuses it (row below) | `TabRenameTests.swift` `testAnEmptyNameIsARenameNotACancel` |
@@ -144,7 +147,7 @@ without a test says what it is owed by.
 | the gutter's menu | opening | *Rename Page* opens the field in the gutter | `DayScrollTests.swift` `testTheDayGutterOffersTheSameVerbsAsTheStrip` |
 | a click on the gutter's time, or on the typed name standing in its seat | opening | opens the field in the time's seat on what the seat showed; the time slides right of the field and stays there once a name is typed, `today · Deploy notes · 13:00`, `Rotate keys · 13:41`; a long name gives way before the time does; Return and Escape give the keys back to the page. The name is the slot's (ADR-0017: "Tab identity, order, name, and keyboard position survive every Page that lived in the slot"), so a page minted into a named empty slot reads the name | `DayScrollTests.swift` `testAClickOnTheGutterTimeOpensTheFieldAndOnTheDayFocuses`, `testANamedGutterReadsTheDayTheNameAndTheTime`, `testAClickOnATypedNameOrItsTimeOpensTheFieldOnTheName`, `testALongNameOnANarrowGutterLeavesTheTimeWhole`, `testAFieldOpenedOverAnotherGivesTheKeysBackToThePage`, `testAPageMintedIntoALabelledSlotReadsTheSlotsLabel`; `DayScrollProjectionTests.swift` `testAnUnnamedGuttersDraftIsTheTime`; in a real key window, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | the strip's *Rename Tab* | opening | opens the field in the tab; double click stays the hold | `TabRenameTests.swift` `testTheFieldOpensOnTheCurrentTitle`, `testTheFieldsReturnKeepsAnUntouchedDraftAndRenamesAChangedOne`, `testTheFieldKeepsTheTitleOnEscapeAndEndsOnce`, over `TabRename.Field`, which the strip calls, and whose `end` takes no title but the one the field opened on; the SwiftUI field's focus and its selection on focus, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
-| a pad row's *Rename*, on its actions menu in the Pads tab of Settings | opening | opens the field in the pad's row, the only way in; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | `PadPickerTests.swift` `testReturnInTheRowRenamesThePadAndShutsTheField`, `testAnUntouchedReturnEscapeAndFocusLossKeepTheName`, `testRenameOpensTheFieldInTheRowAndRaisesNoSheet`, `testNewPadRaisesTheSheetAndKeepsAnOpenFieldsName`, `testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay`, over `PadRename` and `PadSettingsRoutes`; the menu item reaching that route, and the SwiftUI field's focus, selection and Escape, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
+| a pad row's *Rename*, on its actions menu in the Pads tab of Settings | opening | opens the field in the pad's row, the only way in; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | `PadPickerTests.swift` `testReturnInTheRowRenamesThePadAndShutsTheField`, `testAnUntouchedReturnEscapeAndFocusLossKeepTheName`, `testRenameOpensTheFieldInTheRowAndRaisesNoSheet`, `testNewPadOpensTheFormAndKeepsAnOpenFieldsName`,󠄁 `testTheRenameStringsAreGoneAndTheCreateStringsStay`,󠄁 over `PadRename` and `PadSettingsRoutes`; the menu item reaching that route, and the SwiftUI field's focus, selection and Escape, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | a pad name the catalog refuses, empty or over 80 characters | refusing | said under the field in the pad's row with the field still open, `pad.name.empty`'s words for an empty one; nothing is said under a page, which stands in another window | `PadPickerTests.swift` `testARefusalIsSaidUnderTheFieldWithTheFieldOpen`, `testANameTheCatalogRefusesIsSaidWithTheFieldOpen`; the SwiftUI field keeping its keys after Return over a refused draft, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | a sealed object's Set Variable Name… or Edit Variable Name… | opening | opens the inline field on its name, selected whole, with API_KEY as the example, format guidance and visible Save/Cancel and Return/Esc instructions; identity clicks do not open it | `SealedNameFieldTests.swift` `testTheFieldOpensWithItsVariableNameInstructionsAndActions`, `testTheMenusVerbOpensTheField`, `testAReadOnlyPageOpensNoField`, `testNamingHelpKeepsItsControlsInsideVeryNarrowAndWideBounds`;󠄁 `SealedCapsuleTests.swift` `testTheIdentityRowAlwaysSelectsWithoutCopyingOrRenaming` |
 | Return, Save or valid focus loss over a sealed variable-name draft | committing | saves the trimmed draft; an empty draft clears the name; Escape or Cancel discards the draft instead | `SealedNameFieldTests.swift` `testReturnNamesTheObjectAndRedrawsItsBlock`, `testCancelKeepsWhileFocusLossAndReturnSave`, `testTheVisibleSaveAndCancelButtonsEndTheEdit`, `testTheEndingsAreTabRenamesOutcomes` |
@@ -232,6 +235,12 @@ rows land: none.
 Owed: a first run of the rename in place procedure.
 
 ## Amendments
+
+- 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁3󠄁:󠄁 T󠄁h󠄁e󠄁 m󠄁a󠄁i󠄁n󠄁t󠄁a󠄁i󠄁n󠄁e󠄁r󠄁 a󠄁p󠄁p󠄁r󠄁o󠄁v󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁e󠄁d󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁a󠄁l󠄁:󠄁
+  “󠄁A󠄁g󠄁r󠄁e󠄁e󠄁d󠄁,󠄁 l󠄁e󠄁t󠄁'󠄁s󠄁 g󠄁o󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁.󠄁 P󠄁l󠄁e󠄁a󠄁s󠄁e󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 i󠄁t󠄁.󠄁”󠄁 C󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
+  n󠄁o󠄁w󠄁 u󠄁s󠄁e󠄁s󠄁 a󠄁 p󠄁o󠄁p󠄁o󠄁v󠄁e󠄁r󠄁 a󠄁t󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁t󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 e󠄁x󠄁e󠄁m󠄁p󠄁t󠄁i󠄁o󠄁n󠄁,󠄁
+  c󠄁o󠄁n󠄁t󠄁r󠄁a󠄁c󠄁t󠄁 r󠄁o󠄁w󠄁 a󠄁n󠄁d󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁 t󠄁h󠄁a󠄁t󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁;󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁
+  p󠄁a󠄁d󠄁 r󠄁e󠄁n󠄁a󠄁m󠄁e󠄁 e󠄁n󠄁d󠄁i󠄁n󠄁g󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 s󠄁a󠄁m󠄁e󠄁.󠄁
 
 - 2026-10-13: Accepted. Built from the maintainer's instruction of the
   same day and the two records that already held the tab and gutter
