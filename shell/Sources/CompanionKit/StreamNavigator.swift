@@ -59,6 +59,8 @@ public enum StreamNavigator {
         /// empty place. The day is not repeated: it stands above the
         /// node in the day's words.
         public let stamp: String
+        /// Full local date and time for hover and assistive technology.
+        public let detailStamp: String
         /// The page's title as the core resolves it (D-12), for the
         /// tooltip, when it is a name or a first line. Empty for the
         /// empty place and for a placeholder, which would only repeat
@@ -118,7 +120,8 @@ public enum StreamNavigator {
             guard !unit.pageIDs.isEmpty else {
                 nodes.append(Node(
                     page: nil, tab: nil, bucket: unit.bucket, dayIndex: dayIndex,
-                    dayLabel: unit.railLabel, spokenDay: unit.spokenLabel, stamp: "", title: "",
+                    dayLabel: unit.railLabel, spokenDay: unit.spokenLabel,
+                    stamp: "", detailStamp: "", title: "",
                     firstOfDay: true, active: surfaceShowsRoll && !anyPageDrawn,
                     emptyDays: gap,
                     fractionRemaining: 0, paused: false, toppedUp: false, lastHour: false,
@@ -137,6 +140,9 @@ public enum StreamNavigator {
                     page: page, tab: tab, bucket: unit.bucket, dayIndex: dayIndex,
                     dayLabel: unit.railLabel, spokenDay: unit.spokenLabel,
                     stamp: stamps[index],
+                    detailStamp: summary?.pageCreatedMs.map {
+                        detailedStamp(createdMs: $0, timeZone: timeZone)
+                    } ?? "",
                     title: title(of: summary),
                     firstOfDay: index == 0, active: surfaceShowsRoll && selection == tab,
                     emptyDays: index == 0 ? gap : 0,
@@ -223,6 +229,11 @@ public enum StreamNavigator {
         return fallback.string(from: date)
     }
 
+    /// The expanded reading used by timeline and checkpoint tooltips.
+    static func detailedStamp(createdMs: UInt64, timeZone: TimeZone = .current) -> String {
+        stamp(createdMs: createdMs, pattern: "yyyy-MM-dd HH:mm:ss", timeZone: timeZone)
+    }
+
     /// The stamps for one day's pages, in the day's order: the short
     /// form for each, and the fine form for every page whose short
     /// form another page on the same day also reads, so no two gutters
@@ -282,25 +293,22 @@ public enum StreamNavigator {
 
     // MARK: What a node says
 
-    /// The tooltip: the day and the minute, the chord that reaches the
-    /// day when the keymap bound one, and the page's title on a second
-    /// line. The affordance is revealed, the page is not: the title is
-    /// the one line the gutter already shows.
+    /// Hover expands the compact time to its full local date and seconds.
+    /// The title and keyboard shortcut follow when available.
     @MainActor
     public static func help(for node: Node, chord: Keystroke?) -> String {
         guard node.hasPage else { return TimeUnitTab.todayHelp(chord: chord) }
-        var first = "\(node.spokenDay) · \(node.stamp)"
+        var first = [node.spokenDay, node.detailStamp].filter { !$0.isEmpty }.joined(separator: " · ")
         if let chord { first += " (\(chord.displaySymbol))" }
         guard !node.title.isEmpty else { return first }
         return "\(first)\n\(node.title)"
     }
 
-    /// What VoiceOver reads for a node: which day, which minute, what
-    /// the page is called, and that it is retained past the window
-    /// when it is. The gauge rides the value, in words, beside it.
+    /// VoiceOver reads the full date, time and title, plus the retained state.
+    /// The gauge supplies its own accessibility value.
     public static func spoken(for node: Node) -> String {
         guard node.hasPage else { return "\(node.spokenDay), no page" }
-        var parts = [node.spokenDay, node.stamp]
+        var parts = [node.spokenDay, node.detailStamp].filter { !$0.isEmpty }
         if !node.title.isEmpty { parts.append(node.title) }
         if node.trailing { parts.append("past seven days, retained because it holds content") }
         return parts.joined(separator: ", ")

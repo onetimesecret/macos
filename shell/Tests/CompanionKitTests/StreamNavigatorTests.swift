@@ -420,8 +420,8 @@ final class StreamNavigatorTests: XCTestCase {
         ])
         XCTAssertEqual(nodes.map(\.title), ["", "the vault", "stdout sync"])
         let placeholder = try XCTUnwrap(nodes.first)
-        XCTAssertEqual(StreamNavigator.help(for: placeholder, chord: nil), "today · 11:39")
-        XCTAssertEqual(StreamNavigator.spoken(for: placeholder), "today, 11:39")
+        XCTAssertEqual(StreamNavigator.help(for: placeholder, chord: nil), "today · 2025-09-14 11:39:00")
+        XCTAssertEqual(StreamNavigator.spoken(for: placeholder), "today, 2025-09-14 11:39:00")
     }
 
     /// Today with no page is a node with no minute, and the one node
@@ -482,21 +482,18 @@ final class StreamNavigatorTests: XCTestCase {
 
     // MARK: What a node says
 
-    /// The tooltip names the day and the minute, the chord when one is
-    /// bound, and the page's title on its own line; the empty place
-    /// says what its click makes. VoiceOver hears the same facts and,
-    /// past the window, that the page is retained.
+    /// Hover and VoiceOver use the full date and seconds regardless of compact precision.
     func testTheTooltipAndTheSpokenLabelSayTheSameFacts() throws {
         let page = try XCTUnwrap(nodes([slot(tab: 1, page: 11, title: "stdout sync")]).first)
-        XCTAssertEqual(StreamNavigator.help(for: page, chord: nil), "today · 11:39\nstdout sync")
+        XCTAssertEqual(StreamNavigator.help(for: page, chord: nil), "today · 2025-09-14 11:39:00\nstdout sync")
         let chord = try Keystroke.parse("cmd-1").get()
         XCTAssertEqual(
             StreamNavigator.help(for: page, chord: chord),
-            "today · 11:39 (\(chord.displaySymbol))\nstdout sync")
-        XCTAssertEqual(StreamNavigator.spoken(for: page), "today, 11:39, stdout sync")
+            "today · 2025-09-14 11:39:00 (\(chord.displaySymbol))\nstdout sync")
+        XCTAssertEqual(StreamNavigator.spoken(for: page), "today, 2025-09-14 11:39:00, stdout sync")
 
         let untitled = try XCTUnwrap(nodes([slot(tab: 1, page: 11)]).first)
-        XCTAssertEqual(StreamNavigator.help(for: untitled, chord: nil), "today · 11:39")
+        XCTAssertEqual(StreamNavigator.help(for: untitled, chord: nil), "today · 2025-09-14 11:39:00")
 
         let empty = try XCTUnwrap(nodes([]).first)
         XCTAssertEqual(StreamNavigator.help(for: empty, chord: nil), "Start today's page")
@@ -504,7 +501,7 @@ final class StreamNavigatorTests: XCTestCase {
         let retained = try XCTUnwrap(nodes([slot(tab: 1, page: 11, day: -8)]).last)
         XCTAssertEqual(
             StreamNavigator.spoken(for: retained),
-            "8 days ago, 11:39, past seven days, retained because it holds content")
+            "8 days ago, 2025-09-14 11:39:00, past seven days, retained because it holds content")
     }
 
     /// The gutter's words are the day and the time on a day's first

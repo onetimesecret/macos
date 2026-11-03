@@ -370,6 +370,7 @@ final class ContinuousPadCanvas: NSView {
             guard let page = extent.page, summaries[page] != nil else { continue }
             if let previousY, abs(previousY - extent.top) < 1 {
                 checkpointLabels[usedLabels - 1].stringValue = "•••"
+                checkpointLabels[usedLabels - 1].toolTip = nil
                 checkpointLabels[usedLabels - 1].setAccessibilityLabel("Checkpoints on this line")
                 continue
             }
@@ -383,11 +384,14 @@ final class ContinuousPadCanvas: NSView {
                 addSubview(label)
             }
             label.stringValue = value
+            label.toolTip = summaries[page]?.pageCreatedMs.map {
+                StreamNavigator.detailedStamp(createdMs: $0)
+            }
             label.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
             label.textColor = .tertiaryLabelColor
             label.alignment = .right
             label.frame = NSRect(x: 8, y: extent.top + 2, width: Self.gutterWidth - 22, height: 16)
-            label.setAccessibilityLabel("Checkpoint, \(label.stringValue)")
+            label.setAccessibilityLabel("Checkpoint, \(label.toolTip ?? label.stringValue)")
             usedLabels += 1
             previousY = extent.top
         }

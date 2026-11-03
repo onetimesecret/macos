@@ -265,7 +265,7 @@ final class TimeRailTests: XCTestCase {
         XCTAssertTrue(peopled.hasPage)
         XCTAssertEqual(peopled.target, .tab(1))
         let help = StreamNavigator.help(for: peopled, chord: nil)
-        XCTAssertTrue(help.contains(" · "), "a page node's tooltip is its day and stamp: \(help)")
+        XCTAssertEqual(help, "today", "missing metadata must not add an empty stamp separator")
         XCTAssertFalse(help.contains("Start"), "a page node's tooltip promised a page that exists")
     }
 

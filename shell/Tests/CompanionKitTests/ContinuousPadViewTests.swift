@@ -198,6 +198,28 @@ final class ContinuousPadViewTests: XCTestCase {
         XCTAssertTrue(document.blockMetas.isEmpty)
     }
 
+    func testCheckpointTimesMatchTimelineAndExpandOnHover() throws {
+        let model = try model()
+        _ = try seed("first", in: model)
+        _ = try seed("second", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+
+        for format in [StreamNavigator.StampFormat.standard, .init(short: "h:mm a", fine: "h:mm:ss a")] {
+            model.stampFormat = format
+            ContinuousPadView.updateSurface(surface.scroll, model: model, readOnly: false,
+                coordinator: surface.coordinator)
+            let nodes = StreamNavigator.nodes(projection: model.timeUnits, tabs: model.navigationTabs,
+                selection: model.selection).filter(\.hasPage)
+            XCTAssertEqual(surface.canvas.checkpointLabels.count, nodes.count)
+            for (label, node) in zip(surface.canvas.checkpointLabels, nodes) {
+                XCTAssertEqual(label.stringValue, node.stamp)
+                XCTAssertEqual(label.toolTip, node.detailStamp)
+                XCTAssertEqual(label.accessibilityLabel(), "Checkpoint, \(node.detailStamp)")
+            }
+        }
+    }
+
     func testOneStorageSupportsNativeSelectionAndMovementAcrossCheckpoint() throws {
         let model = try model()
         _ = try seed("first line", in: model)

@@ -341,7 +341,7 @@ public struct GeneralSettingsView: View {
     /// What the two time patterns cost and do, in the caption's own
     /// words (D-26).
     static let stampFormatCaption =
-        "How a page's birth time reads beside its day, on the rail and in the gutter. The day's words carry the date, so the time stands alone; two pages born the same minute take the second pattern so they read apart. Unicode date patterns: HH:mm, HH:mm:ss, h:mm a. Empty means the standard one."
+        "By default, times show minutes; pages sharing a minute on the same day show seconds. The day heading supplies the date; hover over a time for its full date and seconds. Customize the timeline and page checkpoint times with Unicode date patterns: HH:mm, HH:mm:ss, h:mm a. Empty means the standard one."
 
     /// One field of the stamp format, edited in place. An empty
     /// pattern is kept as typed and read as the standard one.
