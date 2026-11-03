@@ -82,7 +82,7 @@ final class PadPickerTests: XCTestCase {
 
         creation.isPresented = false
         creation.isPresented = true
-        XCTAssertEqual(creation.message, CompanionL10n.string("pad.name.empty"))
+        XCTAssertNil(creation.message)
         creation.cancel()
         creation.isPresented = true
         XCTAssertNil(creation.message)
@@ -155,8 +155,12 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(model.pads.activeID, activePad)
         XCTAssertNil(model.notice)
 
+        creation.isPresented = false
         model.resolvePendingFileClose(.keepEditing)
         XCTAssertNil(model.pendingFileClose)
+        creation.isPresented = true
+        XCTAssertEqual(creation.draft, "Design notes")
+        XCTAssertNil(creation.message)
         creation.draft = "Design notes revised"
         XCTAssertNil(creation.message)
         creation.submit(in: model)
@@ -168,7 +172,7 @@ final class PadPickerTests: XCTestCase {
     // MARK: Shared model fixtures
 
     private func padModel() throws -> (PageModel, PadEntry) {
-        let suite = "pad-rename-\(UUID().uuidString)"
+        let suite = "pad-picker-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
         let model = isolatedModel(defaults: defaults)
@@ -516,6 +520,41 @@ final class PadPickerTests: XCTestCase {
             isModal: false, windows: [], isEditingField: true))
         XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(
             isModal: false, windows: [], isEditingField: false))
+    }
+
+    func testPadShortcutFieldDetectionUsesTheEventWindowBeforeItsKeyWindowFallback() throws {
+        _ = NSApplication.shared
+        func window(fieldEditor: Bool) -> NSWindow {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
+                styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+            editor.isFieldEditor = fieldEditor
+            window.contentView = editor
+            XCTAssertTrue(window.makeFirstResponder(editor))
+            return window
+        }
+        let page = window(fieldEditor: false)
+        let field = window(fieldEditor: true)
+        defer { [page, field].forEach { $0.close() } }
+        func key(in window: NSWindow?) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+                windowNumber: window?.windowNumber ?? 0, context: nil,
+                characters: "1", charactersIgnoringModifiers: "1", isARepeat: false, keyCode: 18))
+        }
+
+        let pageEvent = try key(in: page)
+        XCTAssertTrue(pageEvent.window === page)
+        XCTAssertFalse(PadShortcutMonitor.isEditingField(for: pageEvent, fallbackWindow: field))
+        let fieldEvent = try key(in: field)
+        XCTAssertTrue(fieldEvent.window === field)
+        XCTAssertTrue(PadShortcutMonitor.isEditingField(for: fieldEvent, fallbackWindow: page))
+        let noWindowEvent = try key(in: nil)
+        XCTAssertNil(noWindowEvent.window)
+        XCTAssertTrue(PadShortcutMonitor.isEditingField(for: noWindowEvent, fallbackWindow: field))
+        XCTAssertFalse(PadShortcutMonitor.isEditingField(for: noWindowEvent, fallbackWindow: page))
     }
 
     func testSortMenuOffersExplicitOrdersAndDescribesTheCurrentValue() {

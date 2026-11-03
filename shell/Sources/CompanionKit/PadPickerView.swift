@@ -189,7 +189,14 @@ struct PadMenuAnchorView: NSViewRepresentable {
 /// Creation state belongs to the presenting control, outside the popover's lifetime.
 @MainActor
 struct PadCreation {
-    var isPresented = false
+    var isPresented = false {
+        didSet {
+            if !isPresented {
+                submitted = false
+                failure = nil
+            }
+        }
+    }
     var draft = "" {
         didSet { failure = nil }
     }
@@ -225,7 +232,9 @@ struct PadCreation {
 struct PadCreateForm: View {
     @ObservedObject var model: PageModel
     @Binding var creation: PadCreation
+    @Environment(\.isEnabled) private var isEnabled
     @FocusState private var focused: Bool
+    @State private var nameAnchor = PadMenuAnchor()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -238,6 +247,7 @@ struct PadCreateForm: View {
                     .controlSize(.large)
                     .lineLimit(1)
                     .focused($focused)
+                    .background(PadMenuAnchorView(anchor: nameAnchor))
                     .accessibilityLabel(CompanionL10n.string("pad.name"))
                     .onSubmit { creation.submit(in: model) }
                 if let message = creation.message {
@@ -256,12 +266,30 @@ struct PadCreateForm: View {
         }
         .padding(18).frame(width: 326)
         .onExitCommand { creation.cancel() }
-        .onAppear { DispatchQueue.main.async { focused = true } }
+        .task(id: isEnabled) {
+            guard isEnabled else {
+                creation.isPresented = false
+                return
+            }
+            await Task.yield()
+            guard !Task.isCancelled, isEnabled, creation.isPresented else { return }
+            focused = true
+        }
         .onChange(of: focused) { now in
-            if now { TabRename.selectWholeDraft() }
+            if now { selectNameDraft() }
             model.editorKeysMayHaveMoved()
         }
         .onDisappear { model.editorKeysMayHaveMoved() }
+    }
+
+    private func selectNameDraft() {
+        DispatchQueue.main.async { [nameAnchor] in
+            guard creation.isPresented, isEnabled, focused,
+                  let window = nameAnchor.view?.window,
+                  let editor = window.firstResponder as? NSTextView,
+                  editor.isFieldEditor else { return }
+            editor.selectAll(nil)
+        }
     }
 }
 
@@ -410,6 +438,11 @@ final class PadShortcutMonitor: ObservableObject {
         !isModal && !isEditingField && !windows.contains { $0.attachedSheet != nil || $0.sheetParent != nil }
     }
 
+    static func isEditingField(for event: NSEvent, fallbackWindow: NSWindow?) -> Bool {
+        let window = event.window ?? fallbackWindow
+        return (window?.firstResponder as? NSTextView)?.isFieldEditor == true
+    }
+
     func install(model: PageModel, surface: PresentationOwner) {
         stop()
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak model] event in
@@ -418,7 +451,7 @@ final class PadShortcutMonitor: ObservableObject {
                       event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
                       Self.allowsPadSwitch(
                         isModal: NSApp.modalWindow != nil, windows: NSApp.windows,
-                        isEditingField: (NSApp.keyWindow?.firstResponder as? NSTextView)?.isFieldEditor == true),
+                        isEditingField: Self.isEditingField(for: event, fallbackWindow: NSApp.keyWindow)),
                       let key = event.charactersIgnoringModifiers, let number = Int(key),
                       (0...9).contains(number), Self.allows(number: number, keymap: model.keymap)
                 else { return false }
