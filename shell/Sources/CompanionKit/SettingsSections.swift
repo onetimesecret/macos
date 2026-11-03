@@ -318,11 +318,11 @@ public struct GeneralSettingsView: View {
 
     static func pageLayoutCaption(experimental: Bool) -> String {
         if experimental {
-            return CompanionL10n.format("pad.settings.layout", Int(TimeRailView.width(experimental: true)))
+            return CompanionL10n.format("pad.settings.layout", Int(TimeRailView.width))
         }
         return "Tabs shows named pages along the bottom at full page width. Timeline is a prototype "
             + "that groups live pages by the day they were written, newest first, down the "
-            + "side, taking \(Int(TimeRailView.width(experimental: experimental))) points from the page; lines always wrap and older blank pages "
+            + "side, starting at \(Int(TimeRailView.width)) points wide. Drag the divider to resize the timeline. Lines always wrap and older blank pages "
             + "are hidden. Changing this moves no content and writes "
             + "nothing new to disk."
     }

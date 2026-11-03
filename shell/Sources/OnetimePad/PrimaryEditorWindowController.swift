@@ -357,11 +357,9 @@ private struct PrimaryEditorRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                if pages.showsPagesDownSide && !pages.isPageExpanded {
-                    TimeRailView(model: pages, readOnly: false)
-                    Divider()
-                }
+            TimelineSplitView(showsTimeline: pages.showsPagesDownSide && !pages.isPageExpanded) {
+                TimeRailView(model: pages, readOnly: false)
+            } content: {
                 content
             }
             PageStatusStack(model: pages)

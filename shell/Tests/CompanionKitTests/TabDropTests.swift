@@ -868,7 +868,7 @@ final class TabDropTests: XCTestCase {
     /// The side Timeline hosted in a window of its own that is never ordered on screen.
     private func mountTimeline(on model: PageModel, readOnly: Bool) -> NSHostingView<AnyView> {
         let host = NSHostingView(rootView: timeline(model, readOnly: readOnly, surface: .panel))
-        host.frame = NSRect(x: 0, y: 0, width: TimeRailView.width(experimental: model.pads.isEnabled), height: 480)
+        host.frame = NSRect(x: 0, y: 0, width: TimeRailView.width, height: 480)
         let window = NSWindow(
             contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false

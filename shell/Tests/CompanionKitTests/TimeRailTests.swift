@@ -674,7 +674,7 @@ final class TimeRailTests: XCTestCase {
         func navigatorClip(_ model: PageModel, pads: Bool, height: CGFloat) throws -> (CGFloat, CGFloat, Int) {
             let host = NSHostingView(rootView: AnyView(
                 TimeRailView(model: model, readOnly: false).environment(\.presentationSurface, .panel)))
-            host.frame = NSRect(x: 0, y: 0, width: TimeRailView.width(experimental: pads), height: height)
+            host.frame = NSRect(x: 0, y: 0, width: TimeRailView.width, height: height)
             let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.contentView = host

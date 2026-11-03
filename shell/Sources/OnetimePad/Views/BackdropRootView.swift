@@ -190,12 +190,10 @@ struct BackdropRootView: View {
             // Placement follows the layout: Tabs along the bottom,
             // Timeline down the side. The content view answers
             // organization; this branch answers only placement.
-            HStack(spacing: 0) {
-                if pages.showsPagesDownSide && !pages.isPageExpanded {
-                    TimeRailView(model: pages, readOnly: !raised)
-                        .stanceFaded(raised: raised, animation: stanceFade)
-                    Divider()
-                }
+            TimelineSplitView(showsTimeline: pages.showsPagesDownSide && !pages.isPageExpanded) {
+                TimeRailView(model: pages, readOnly: !raised)
+                    .stanceFaded(raised: raised, animation: stanceFade)
+            } content: {
                 pageContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .stanceFaded(raised: raised, animation: stanceFade)

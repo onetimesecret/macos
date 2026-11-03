@@ -80,26 +80,8 @@ public struct TimeRailView: View {
         drivesRoll(surface: surface, owner: owner) ? owners : unclaimed
     }
 
-    /// The rail's width, fixed. It eats into the page's column and not
-    /// into the header, which is why `BackdropGeometry.minWidth` and the
-    /// clamp its tests pin do not move for this mode. Whether the card
-    /// wants a wider floor while the days are showing is a question for
-    /// the dogfood window rather than a number to guess at now.
-    ///
-    /// One hundred and ten points, the navigator mockup's floor: the
-    /// track, a node's dot, the day's words beside it and the gauge
-    /// under them, with room for "10 days ago" in the monospaced
-    /// caption. Longer than that truncates at the tail, which is the
-    /// net rather than the plan.
+    /// The initial width; the native split view lets the person adjust it.
     nonisolated static let width: CGFloat = 110
-
-    /// The rail's width while multiple pads are on, with room for the heading's sort menu.
-    nonisolated static let experimentalWidth: CGFloat = 150
-
-    /// One measure for the rail and the layout caption in settings; with pads off it is `width`.
-    nonisolated static func width(experimental: Bool) -> CGFloat {
-        experimental ? experimentalWidth : width
-    }
 
     public var body: some View {
         unifiedRail
@@ -160,7 +142,7 @@ public struct TimeRailView: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
-        .frame(width: Self.width(experimental: model.pads.isEnabled))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.panelBackground)
     }
 
