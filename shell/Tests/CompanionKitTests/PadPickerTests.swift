@@ -47,7 +47,9 @@ final class PadPickerTests: XCTestCase {
         XCTAssertNotEqual(CompanionL10n.string("pad.name.long"), "pad.name.long")
     }
 
-    func testCreationTrimsTheNameActivatesOnceAndClearsTheForm() throws {
+    // MARK: Creation
+
+    func testCreationTrimsTheNameCreatesOnePadAndClearsTheForm() throws {
         let (model, _) = try padModel()
         let count = model.pads.entries.count
         var creation = PadCreation()
@@ -63,6 +65,27 @@ final class PadPickerTests: XCTestCase {
 
         creation.submit(in: model)
         XCTAssertEqual(model.pads.entries.count, count + 1)
+    }
+
+    func testEmptyReturnExplainsTheMissingNameAndCancelClearsTheFeedback() throws {
+        let (model, pad) = try padModel()
+        let count = model.pads.entries.count
+        var creation = PadCreation()
+        creation.isPresented = true
+        XCTAssertNil(creation.message)
+
+        creation.submit(in: model)
+        XCTAssertTrue(creation.isPresented)
+        XCTAssertEqual(creation.message, CompanionL10n.string("pad.name.empty"))
+        XCTAssertEqual(model.pads.entries.count, count)
+        XCTAssertEqual(model.pads.activeID, pad.id)
+
+        creation.isPresented = false
+        creation.isPresented = true
+        XCTAssertEqual(creation.message, CompanionL10n.string("pad.name.empty"))
+        creation.cancel()
+        creation.isPresented = true
+        XCTAssertNil(creation.message)
     }
 
     func testInvalidCreationKeepsTheFormOpenWithoutChangingPads() throws {
@@ -107,20 +130,33 @@ final class PadPickerTests: XCTestCase {
 
     func testFailedCreationKeepsTheDraftForCorrectionAndRetry() throws {
         let (model, _) = try padModel()
+        model.loadStateIfNeeded()
         let count = model.pads.entries.count
+        let activePad = model.pads.activeID
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pad-create-pending-\(UUID().uuidString).txt")
+        try "hello".write(to: file, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: file) }
+        model.openFile(at: file)
+        let fileID = try XCTUnwrap(model.selectedFile)
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "dirty ")]))
+        model.applyOps(sheet: fileID, opsJSON: ops)
+        _ = model.closeActiveFile()
+        XCTAssertEqual(model.pendingFileClose?.fileID, fileID)
         var creation = PadCreation()
         creation.isPresented = true
         creation.draft = "Design notes"
-        model.pads.isEnabled = false
 
         creation.submit(in: model)
         XCTAssertTrue(creation.isPresented)
         XCTAssertEqual(creation.draft, "Design notes")
         XCTAssertEqual(creation.message, CompanionL10n.string("pad.name.failed"))
         XCTAssertEqual(model.pads.entries.count, count)
+        XCTAssertEqual(model.pads.activeID, activePad)
         XCTAssertNil(model.notice)
 
-        model.pads.isEnabled = true
+        model.resolvePendingFileClose(.keepEditing)
+        XCTAssertNil(model.pendingFileClose)
         creation.draft = "Design notes revised"
         XCTAssertNil(creation.message)
         creation.submit(in: model)
@@ -129,7 +165,7 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(model.pads.activePad.name, "Design notes revised")
     }
 
-    // MARK: The pad row's rename field (Law 0007, issue #249)
+    // MARK: Shared model fixtures
 
     private func padModel() throws -> (PageModel, PadEntry) {
         let suite = "pad-rename-\(UUID().uuidString)"
@@ -144,6 +180,8 @@ final class PadPickerTests: XCTestCase {
     private func name(of pad: PadEntry, in model: PageModel) -> String? {
         model.pads.entries.first { $0.id == pad.id }?.name
     }
+
+    // MARK: The pad row's rename field (Law 0007, issue #249)
 
     func testReturnInTheRowRenamesThePadAndShutsTheField() throws {
         let (model, pad) = try padModel()
@@ -361,6 +399,19 @@ final class PadPickerTests: XCTestCase {
         XCTAssertTrue(managed)
     }
 
+    func testNewPadMenuDefersPresentationUntilTheActionReturns() async {
+        var creation = PadCreation()
+        let presented = expectation(description: "New Pad action presented")
+        let menu = PadSwitcherMenu.menu(
+            entries: [], select: { _ in },
+            newPad: { creation.isPresented = true; presented.fulfill() }, manage: {})
+
+        menu.performActionForItem(at: 1)
+        XCTAssertFalse(creation.isPresented)
+        await fulfillment(of: [presented], timeout: 1)
+        XCTAssertTrue(creation.isPresented)
+    }
+
     func testTheRenameStringsAreGoneAndTheCreateStringsStay() {
         for key in ["pad.rename.title", "pad.rename"] {
             XCTAssertEqual(CompanionL10n.string(key), key, "\(key) is still in the strings")
@@ -437,8 +488,10 @@ final class PadPickerTests: XCTestCase {
             if parent.attachedSheet === sheet { parent.endSheet(sheet) }
             windows.forEach { $0.orderOut(nil); $0.close() }
         }
-        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [parent, other]))
-        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: true, windows: [parent, other]))
+        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(
+            isModal: false, windows: [parent, other], isEditingField: false))
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(
+            isModal: true, windows: [parent, other], isEditingField: false))
         parent.beginSheet(sheet)
         XCTAssertFalse(parent.isKeyWindow)
         XCTAssertTrue(parent.attachedSheet === sheet)
@@ -447,14 +500,18 @@ final class PadPickerTests: XCTestCase {
         // incorrectly allow a shortcut to change the shared pad selection.
         XCTAssertNil(other.attachedSheet)
         XCTAssertNil(other.sheetParent)
-        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [other]))
-        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [parent, other]))
-        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [other, sheet]))
+        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(
+            isModal: false, windows: [other], isEditingField: false))
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(
+            isModal: false, windows: [parent, other], isEditingField: false))
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(
+            isModal: false, windows: [other, sheet], isEditingField: false))
         parent.endSheet(sheet)
-        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [parent, other]))
+        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(
+            isModal: false, windows: [parent, other], isEditingField: false))
     }
 
-    func testPadShortcutsYieldWhileTheCreationFieldIsEditing() {
+    func testPadShortcutsYieldWhileAnyFieldEditorIsEditing() {
         XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(
             isModal: false, windows: [], isEditingField: true))
         XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(

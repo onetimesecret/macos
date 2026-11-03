@@ -59,17 +59,15 @@ public struct PadPickerView: View {
     /// the button as a pull-down.
     private func showMenu() {
         guard let view = anchor.view else { return }
-        var wantsNewPad = false
         let menu = PadSwitcherMenu.menu(
             entries: PadSwitcherMenu.entries(
                 pads: model.pads.entries, activeID: model.pads.activeID, keymap: model.keymap),
             select: { [model] id in model.activatePad(id) },
-            newPad: { wantsNewPad = true },
+            newPad: { [$creation] in $creation.wrappedValue.isPresented = true },
             manage: { [model] in model.openSettings(.pads) }
         )
         let below = NSPoint(x: 0, y: view.isFlipped ? view.bounds.maxY + 4 : -4)
         menu.popUp(positioning: nil, at: below, in: view)
-        if wantsNewPad { creation.isPresented = true }
     }
 
     private var folderTally: String {
@@ -134,7 +132,9 @@ enum PadSwitcherMenu {
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        menu.addItem(item(CompanionL10n.string("pad.new.menu"), newPad))
+        menu.addItem(item(CompanionL10n.string("pad.new.menu")) {
+            DispatchQueue.main.async { newPad() }
+        })
         menu.addItem(item(CompanionL10n.string("pad.manage.menu"), manage))
         return menu
     }
@@ -194,21 +194,26 @@ struct PadCreation {
         didSet { failure = nil }
     }
     private(set) var failure: String?
+    private var submitted = false
 
     var canSubmit: Bool { PadNameDraft.validationMessage(draft) == nil }
 
     var message: String? {
-        failure ?? (draft.isEmpty ? nil : PadNameDraft.validationMessage(draft))
+        failure ?? (submitted || !draft.isEmpty ? PadNameDraft.validationMessage(draft) : nil)
     }
 
     mutating func cancel() {
         draft = ""
+        submitted = false
         isPresented = false
     }
 
     mutating func submit(in model: PageModel) {
-        guard isPresented, canSubmit else { return }
-        guard model.createPad(named: draft) != nil else {
+        guard isPresented else { return }
+        submitted = true
+        guard canSubmit else { return }
+        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard model.createPad(named: name) != nil else {
             failure = CompanionL10n.string("pad.name.failed")
             return
         }
@@ -231,6 +236,7 @@ struct PadCreateForm: View {
                 TextField(CompanionL10n.string("pad.new.placeholder"), text: $creation.draft)
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.large)
+                    .lineLimit(1)
                     .focused($focused)
                     .accessibilityLabel(CompanionL10n.string("pad.name"))
                     .onSubmit { creation.submit(in: model) }
@@ -251,7 +257,10 @@ struct PadCreateForm: View {
         .padding(18).frame(width: 326)
         .onExitCommand { creation.cancel() }
         .onAppear { DispatchQueue.main.async { focused = true } }
-        .onChange(of: focused) { _ in model.editorKeysMayHaveMoved() }
+        .onChange(of: focused) { now in
+            if now { TabRename.selectWholeDraft() }
+            model.editorKeysMayHaveMoved()
+        }
         .onDisappear { model.editorKeysMayHaveMoved() }
     }
 }
@@ -397,7 +406,7 @@ final class PadShortcutMonitor: ObservableObject {
 
     /// Pad selection is shared across windows, so a sheet in any app window
     /// suspends these application-local shortcuts even if another window is key.
-    static func allowsPadSwitch(isModal: Bool, windows: [NSWindow], isEditingField: Bool = false) -> Bool {
+    static func allowsPadSwitch(isModal: Bool, windows: [NSWindow], isEditingField: Bool) -> Bool {
         !isModal && !isEditingField && !windows.contains { $0.attachedSheet != nil || $0.sheetParent != nil }
     }
 
