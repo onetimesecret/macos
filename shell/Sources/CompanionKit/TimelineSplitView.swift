@@ -61,6 +61,9 @@ enum TimelineSplit {
     /// The thin divider's thickness.
     static let dividerWidth: CGFloat = 1
 
+    /// The narrowest split in which the rail's start width and the page's minimum both fit.
+    static let minimumSplitWidth = TimeRailView.width + dividerWidth + pageMinWidth
+
     /// The rail's widest allowed width in a split this wide, never under the rail's start width.
     static func railCeiling(splitWidth: CGFloat, dividerThickness: CGFloat = dividerWidth) -> CGFloat {
         guard splitWidth > 0 else { return TimeRailView.maxWidth }

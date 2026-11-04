@@ -560,6 +560,10 @@ so a person's drag is checked only here.
    110-point start width.
 7. Pin the card, let it rest, hover over the divider, then press and
    drag on it.
+8. With the card raised, turn VoiceOver on, move to the divider and
+   adjust it with VoiceOver's increment and decrement. Then relaunch.
+9. With three-finger drag on (Accessibility, Pointer Control, Trackpad
+   Options), drag the divider and release.
 
 **Pass:** the divider follows the pointer for the whole drag and stays
 where it was released; it reopens at that width after relaunch; the card
@@ -571,12 +575,17 @@ pad heading's sort menu and + fit inside the rail; on a pinned resting
 card the press raises the card and the divider does not move. Record
 whether the pointer shows the resize cursor over a resting card's
 divider; the stance comments call the resting card chrome-free.
+VoiceOver's adjustment and a three-finger drag each move the divider,
+the divider stays where they left it, and a relaunch opens at that
+width.
 
 **Fail:** the divider snaps back during or after a drag; a relaunch or a
 presentation switch opens at 110 or at an older width; a squeeze is
 remembered after the window widens; the divider stays bright while the
 card rests; a visible jump from 110 on opening; the + pushed out of the
-rail; a resting card's divider that moves instead of raising the card.
+rail; a resting card's divider that moves instead of raising the card;
+a VoiceOver adjustment or three-finger drag that the divider undoes, or
+that a relaunch forgets.
 
 ## Results
 
@@ -633,3 +642,5 @@ an executed result.
 | | | 13 divider fades with the card; no jump on opening | Pending | |
 | | | 13 multi-pad heading fits at the start width | Pending | Record the locale. |
 | | | 13 pinned resting card raises on a divider press | Pending | Record whether the width changed and whether the resize cursor showed. |
+| | | 13 VoiceOver adjusts the divider and the width is kept | Pending | Record whether it survives a relaunch. |
+| | | 13 three-finger drag moves the divider and is kept | Pending | |

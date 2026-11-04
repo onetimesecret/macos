@@ -74,8 +74,7 @@ final class PrimaryEditorWindowControllerTests: XCTestCase {
     func testTheWindowFloorsFitTheTimelineAndThePage() {
         for floor in [PrimaryEditorWindowController.minimumSize.width, BackdropGeometry.minWidth] {
             XCTAssertEqual(floor, 360)
-            XCTAssertGreaterThanOrEqual(
-                floor - TimelineSplit.dividerWidth - TimelineSplit.pageMinWidth, TimeRailView.width)
+            XCTAssertGreaterThanOrEqual(floor, TimelineSplit.minimumSplitWidth)
             XCTAssertEqual(
                 floor - TimelineSplit.railCeiling(splitWidth: floor) - TimelineSplit.dividerWidth,
                 TimelineSplit.pageMinWidth)
