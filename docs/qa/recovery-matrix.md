@@ -14,7 +14,8 @@ number that moves is found by a reader who trusts it.
 Two rules govern the table. A row may cite an automated test only if a
 CI step runs it: the Rust names run in the `logic` and `platform` jobs,
 the Swift names in `shell`,󠄁 and the packaged-bundle checks in `shell`
-and `package-release` (󠄁`.gitlab/ci/build.yml`)󠄁.󠄁 Every hardware cell must resolve
+and `package-release` (󠄁`.github/workflows/gitlab-macos.yml` a󠄁n󠄁d󠄁
+`.gitlab/ci/build.yml`)󠄁.󠄁 Every hardware cell must resolve
 to a file under `docs/qa/verification-procedures/` that carries an
 Owner line and a Results table.
 

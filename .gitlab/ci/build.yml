@@ -1,6 +1,3 @@
-variables:
-  MACOS_GUI_RUNNER_TAG: macos-gui
-
 .checks:
   stage: check
   rules:
@@ -28,7 +25,9 @@ variables:
     - export PATH="$CARGO_HOME/bin:$PATH"
     - rustup show
 
-.macos-rust:
+.macos-hosted-rust:
+  image: macos-27-xcode-27
+  tags: [saas-macos-medium-m1]
   variables:
     CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
     ONETIMEPAD_ENVIRONMENTS_DIR: "$CI_PROJECT_DIR/.ci-environments/$CI_JOB_ID"
@@ -51,16 +50,6 @@ variables:
       fi
     - rustup show
     - mkdir -p "$ONETIMEPAD_ENVIRONMENTS_DIR"
-
-.macos-gui-rust:
-  extends: .macos-rust
-  tags: ["$MACOS_GUI_RUNNER_TAG"]
-  resource_group: macos-gui
-
-.macos-hosted-rust:
-  extends: .macos-rust
-  image: macos-27-xcode-27
-  tags: [saas-macos-medium-m1]
 
 logic:
   extends: [.checks, .linux-rust]
@@ -86,25 +75,6 @@ logic:
     - cargo deny --all-features --locked check
     - ./scripts/verify-vendored-comrak.py --advisory-workspace "target/comrak-advisories-$CI_PIPELINE_ID-$CI_JOB_ID"
     - cargo deny --manifest-path "target/comrak-advisories-$CI_PIPELINE_ID-$CI_JOB_ID/Cargo.toml" --locked --config "$CI_PROJECT_DIR/deny.toml" check
-
-platform:
-  extends: [.checks, .macos-gui-rust]
-  variables:
-    RUST_BACKTRACE: "1"
-  script:
-    - cargo clippy --workspace --all-targets -- -D warnings
-    - cargo test --workspace -- --nocapture
-    - cargo test --workspace --features test-util -- --nocapture
-
-shell:
-  extends: [.checks, .macos-gui-rust]
-  script:
-    - ./scripts/build-core.sh --if-stale --test-util
-    - swift build --package-path shell
-    - ./scripts/test-shell.sh
-    - python3 scripts/ci/check-reveal-lab.py
-    - ./scripts/package-app.sh --debug
-    - bash scripts/ci/check-bundle.sh debug
 
 package-release:
   extends: [.checks, .macos-hosted-rust]

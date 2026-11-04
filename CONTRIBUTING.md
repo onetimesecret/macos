@@ -24,8 +24,9 @@ Short version: this is a spec-first project.
   reasoning behind a choice belongs in an ADR. A comment that states a
   guarantee no test checks is a defect, because it drifts and review
   then argues with the prose instead of the behaviour.
-- **Local gate** before pushing. `.gitlab/ci/build.yml` is the
-  source of truth; this is the same set, in one line, on a Mac:
+- **Local gate** before pushing. `.gitlab/ci/build.yml` a󠄁n󠄁d󠄁
+  `.github/workflows/gitlab-macos.yml` d󠄁e󠄁f󠄁i󠄁n󠄁e󠄁 the c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 is the same set,
+  in one line, on a Mac:
 
   ```sh
   cargo fmt --check \

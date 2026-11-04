@@ -253,6 +253,7 @@ scripts/test-shell.sh
 ```
 
 The shell wrapper rebuilds the framework with test utilities before Swift tests.
-Consult `CONTRIBUTING.md` and `.gitlab/ci/build.yml` for the complete lint,
-build, and supported-target checks. Add package-hash and evaluation commands only
+Consult `CONTRIBUTING.md`,󠄁 `.gitlab/ci/build.yml`,󠄁 and
+`.github/workflows/gitlab-macos.yml` for the complete lint, build, and
+supported-target checks. Add package-hash and evaluation commands only
 after their scripts exist; this plan does not invent runnable script names.

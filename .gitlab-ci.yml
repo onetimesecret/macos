@@ -1,5 +1,6 @@
 include:
   - local: .gitlab/ci/build.yml
+  - local: .gitlab/ci/github-macos.yml
   - local: .gitlab/ci/claude.yml
 
 stages:
