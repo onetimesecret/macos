@@ -119,10 +119,7 @@ private final class DividerWatchView: NSView {
     }
 
     func retire() {
-        if recordPending {
-            NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(recordDrag), object: nil)
-            recordDrag()
-        }
+        if recordPending { recordDrag() }
         detach()
         onMove = nil
     }
@@ -155,13 +152,22 @@ private final class DividerWatchView: NSView {
             return queuePlacement()
         }
         preferredWidth = leading.frame.width
-        // A delayed perform runs in the default run-loop mode, so a drag's moves coalesce into one record.
-        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(recordDrag), object: nil)
+        guard !recordPending else { return }
         recordPending = true
-        perform(#selector(recordDrag), with: nil, afterDelay: 0)
+        DispatchQueue.main.async { [weak self] in self?.recordWhenReleased() }
     }
 
-    @objc private func recordDrag() {
+    /// Records once the mouse button is up, so a drag's moves coalesce into one record.
+    private func recordWhenReleased() {
+        guard recordPending else { return }
+        guard NSEvent.pressedMouseButtons & 1 == 0 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.recordWhenReleased() }
+            return
+        }
+        recordDrag()
+    }
+
+    private func recordDrag() {
         recordPending = false
         onMove?(preferredWidth)
     }
