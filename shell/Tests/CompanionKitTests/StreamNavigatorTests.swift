@@ -425,7 +425,7 @@ final class StreamNavigatorTests: XCTestCase {
         ])
         XCTAssertEqual(nodes.map(\.title), ["", "the vault", "stdout sync"])
         let placeholder = try XCTUnwrap(nodes.first)
-        XCTAssertEqual(StreamNavigator.help(for: placeholder, chord: nil), detail(born))
+        XCTAssertEqual(StreamNavigator.help(for: placeholder, chord: nil), "today · \(detail(born))")
         XCTAssertEqual(StreamNavigator.spoken(for: placeholder), "today, \(detail(born))")
     }
 
@@ -487,20 +487,20 @@ final class StreamNavigatorTests: XCTestCase {
 
     // MARK: What a node says
 
-    /// Hover and VoiceOver use the full date and seconds regardless of compact precision. Hover
-    /// sits beside the day's words, which VoiceOver alone repeats.
+    /// Hover and VoiceOver both read the day's words, then the full date and seconds, regardless of
+    /// compact precision (D-38's day and minute).
     func testTheTooltipAndTheSpokenLabelSayTheSameFacts() throws {
         let page = try XCTUnwrap(nodes([slot(tab: 1, page: 11, title: "stdout sync")]).first)
         XCTAssertEqual(page.detailStamp, detail(born))
-        XCTAssertEqual(StreamNavigator.help(for: page, chord: nil), "\(detail(born))\nstdout sync")
+        XCTAssertEqual(StreamNavigator.help(for: page, chord: nil), "today · \(detail(born))\nstdout sync")
         let chord = try Keystroke.parse("cmd-1").get()
         XCTAssertEqual(
             StreamNavigator.help(for: page, chord: chord),
-            "\(detail(born)) (\(chord.displaySymbol))\nstdout sync")
+            "today · \(detail(born)) (\(chord.displaySymbol))\nstdout sync")
         XCTAssertEqual(StreamNavigator.spoken(for: page), "today, \(detail(born)), stdout sync")
 
         let untitled = try XCTUnwrap(nodes([slot(tab: 1, page: 11)]).first)
-        XCTAssertEqual(StreamNavigator.help(for: untitled, chord: nil), detail(born))
+        XCTAssertEqual(StreamNavigator.help(for: untitled, chord: nil), "today · \(detail(born))")
 
         let empty = try XCTUnwrap(nodes([]).first)
         XCTAssertEqual(StreamNavigator.help(for: empty, chord: nil), "Start today's page")

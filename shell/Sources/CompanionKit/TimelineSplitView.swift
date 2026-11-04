@@ -150,8 +150,9 @@ private final class DividerWatchView: NSView {
     /// pane and leaves the split.
     private var lastSplitWidth: CGFloat?
     private var lastLeadingWidth: CGFloat?
-    /// A placement the split did not take or kept undoing, not retried until the target or the split's width changes.
-    private var failedPlacement: (target: CGFloat, splitWidth: CGFloat)?
+    /// A placement the split did not take or kept undoing, retried once a window has passed or when the
+    /// target or the split's width changes.
+    private var failedPlacement: (target: CGFloat, splitWidth: CGFloat, at: TimeInterval)?
     /// The last placement's target and split width, when it was made, and how many came in a row.
     private var lastPlacement: (target: CGFloat, splitWidth: CGFloat, at: TimeInterval, count: Int)?
     /// Copied out by the nonisolated deinit, as `WheelRelayView` does for its monitor.
@@ -229,6 +230,16 @@ private final class DividerWatchView: NSView {
             // Case 13 reads these to learn which keys AppKit posts for a person's drag; built only when logged.
             TimelineSplit.logger.debug(
                 "timeline split resized, userInfo keys: \(TimelineSplit.keyList(note.userInfo), privacy: .public)")
+            // AppKit posts this on the main thread; a development build reports any other, a release one hops.
+            guard Thread.isMainThread else {
+                assertionFailure("timeline split resize posted off the main thread")
+                let watchRef = self, splitRef = split
+                Task { @MainActor in
+                    guard let watch = watchRef, let split = splitRef else { return }
+                    watch.splitDidResize(split, userResize: userResize, dividerMoved: dividerMoved)
+                }
+                return
+            }
             MainActor.assumeIsolated {
                 guard let watch = self, let split else { return }
                 watch.splitDidResize(split, userResize: userResize, dividerMoved: dividerMoved)
@@ -334,11 +345,14 @@ private final class DividerWatchView: NSView {
             failedPlacement = nil
             return
         }
-        if let failed = failedPlacement, abs(failed.target - target) < 0.5, abs(failed.splitWidth - width) < 0.5 {
-            return
-        }
         let now = clock()
-        let repeats = lastPlacement.map {
+        var retrying = false
+        if let failed = failedPlacement, abs(failed.target - target) < 0.5, abs(failed.splitWidth - width) < 0.5 {
+            guard now - failed.at >= TimelineSplit.placementRepeatWindow else { return }
+            // One retry a window: a split that undoes it again is left at once.
+            retrying = true
+        }
+        let repeats = retrying ? TimelineSplit.placementRepeatLimit : lastPlacement.map {
             abs($0.target - target) < 0.5 && abs($0.splitWidth - width) < 0.5
                 && now - $0.at < TimelineSplit.placementRepeatWindow ? $0.count + 1 : 1
         } ?? 1
@@ -349,8 +363,8 @@ private final class DividerWatchView: NSView {
         DispatchQueue.main.async { [weak self] in self?.placing = false }
         lastLeadingWidth = leading.frame.width
         let refused = abs(leading.frame.width - target) >= 0.5
-        failedPlacement = refused || repeats >= TimelineSplit.placementRepeatLimit ? (target, width) : nil
-        if failedPlacement != nil {
+        failedPlacement = refused || repeats >= TimelineSplit.placementRepeatLimit ? (target, width, now) : nil
+        if failedPlacement != nil, !retrying {
             let pane = Double(leading.frame.width)
             TimelineSplit.logger.notice(
                 "timeline split kept its own width: target \(Double(target)), split \(Double(width)), pane \(pane)")

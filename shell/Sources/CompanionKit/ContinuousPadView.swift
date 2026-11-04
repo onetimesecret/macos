@@ -402,7 +402,7 @@ final class ContinuousPadCanvas: NSView {
                 let reading = Self.stackedReading(lineDetails)
                 label.stringValue = "•••"
                 if label.toolTip != reading.toolTip { label.toolTip = reading.toolTip }
-                label.setAccessibilityLabel(reading.accessibility)
+                if label.accessibilityLabel() != reading.accessibility { label.setAccessibilityLabel(reading.accessibility) }
                 continue
             }
             lineDetails = [detail]
@@ -422,7 +422,8 @@ final class ContinuousPadCanvas: NSView {
             label.alignment = .right
             label.frame = NSRect(x: 8, y: extent.top + 2, width: Self.gutterWidth - 22, height: 16)
             // VoiceOver hears the full reading in place of the compact time, as `DayHeaderView` speaks it.
-            label.setAccessibilityLabel(CompanionL10n.format("pad.gutter.checkpoint", detail ?? value))
+            let spoken = CompanionL10n.format("pad.gutter.checkpoint", detail ?? value)
+            if label.accessibilityLabel() != spoken { label.setAccessibilityLabel(spoken) }
             usedLabels += 1
             previousY = extent.top
         }

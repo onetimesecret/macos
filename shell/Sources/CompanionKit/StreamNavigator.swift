@@ -297,13 +297,12 @@ public enum StreamNavigator {
 
     // MARK: What a node says
 
-    /// The node's time as hover reads it beside the day's words; those words when there is no birth stamp.
+    /// Hover's first line: the day's words, then the full local date and seconds (D-38's day and minute).
     static func timeReading(of node: Node) -> String {
-        node.detailStamp.isEmpty ? node.spokenDay : node.detailStamp
+        [node.spokenDay, node.detailStamp].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
-    /// Hover expands the compact time to its full local date and seconds.
-    /// The title and keyboard shortcut follow when available.
+    /// Hover reads the day and the full time, then the keyboard shortcut and the title when available.
     @MainActor
     public static func help(for node: Node, chord: Keystroke?) -> String {
         guard node.hasPage else { return TimeUnitTab.todayHelp(chord: chord) }

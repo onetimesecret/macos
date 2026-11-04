@@ -10,12 +10,19 @@ private final class MouseStandIn {
     var isDown = false
 }
 
+/// The watch's clock as a test sets it; it stands still unless a test moves it.
+@MainActor
+private final class ClockStandIn {
+    var now: TimeInterval = 0
+}
+
 /// Both root views observe the model and read its width on every body pass; so does this one.
 private struct SplitHarness: View {
     @ObservedObject var model: PageModel
     let showsTimeline: Bool
     var resizable = true
     let mouse: MouseStandIn
+    let clock: ClockStandIn
 
     var body: some View {
         TimelineSplitView(
@@ -23,7 +30,7 @@ private struct SplitHarness: View {
             railWidth: model.timelineWidth, onRailResize: model.recordTimelineWidth,
             leftMouseIsDown: { [mouse] in mouse.isDown },
             // A stopped clock, so a run of placements counts as one row however slow the runner.
-            clock: { 0 }
+            clock: { [clock] in clock.now }
         ) {
             TimeRailView(model: model, readOnly: false)
         } content: {
@@ -39,6 +46,7 @@ final class TimelineSplitViewTests: XCTestCase {
         let host: NSHostingView<AnyView>
         let root: (Bool) -> AnyView
         let mouse: MouseStandIn
+        let clock: ClockStandIn
         let resizable: (Bool) -> AnyView
     }
 
@@ -63,12 +71,13 @@ final class TimelineSplitViewTests: XCTestCase {
     private func mount(_ model: PageModel, width: CGFloat = 640) -> Mounted {
         // The runner's real button must not decide whether a drag is recorded.
         let mouse = MouseStandIn()
+        let clock = ClockStandIn()
         let root = { (showsTimeline: Bool) -> AnyView in
-            AnyView(SplitHarness(model: model, showsTimeline: showsTimeline, mouse: mouse)
+            AnyView(SplitHarness(model: model, showsTimeline: showsTimeline, mouse: mouse, clock: clock)
                 .environment(\.presentationSurface, model.owner))
         }
         let resizable = { (resizable: Bool) -> AnyView in
-            AnyView(SplitHarness(model: model, showsTimeline: true, resizable: resizable, mouse: mouse)
+            AnyView(SplitHarness(model: model, showsTimeline: true, resizable: resizable, mouse: mouse, clock: clock)
                 .environment(\.presentationSurface, model.owner))
         }
         let host = NSHostingView(rootView: root(true))
@@ -77,7 +86,7 @@ final class TimelineSplitViewTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentView = host
         layout(host)
-        return Mounted(window: window, host: host, root: root, mouse: mouse, resizable: resizable)
+        return Mounted(window: window, host: host, root: root, mouse: mouse, clock: clock, resizable: resizable)
     }
 
     private func layout(_ host: NSView) {
@@ -228,6 +237,11 @@ final class TimelineSplitViewTests: XCTestCase {
         split.setPosition(150, ofDividerAt: 0)
         wait(for: [named], timeout: 1)
         layout(mounted.host)
+
+        // The debug log's list, which Case 13 reads off a person's drag.
+        let info: [AnyHashable: Any] = [TimelineSplit.userResizeKey: 1, TimelineSplit.dividerIndexKey: 0]
+        XCTAssertEqual(TimelineSplit.keyList(info), "NSSplitViewDividerIndex,NSSplitViewUserResizeKey")
+        XCTAssertEqual(TimelineSplit.keyList(nil), "")
     }
 
     /// A drag stopped by a narrow split's ceiling keeps a wider stored width, as a squeeze does;
@@ -408,6 +422,15 @@ final class TimelineSplitViewTests: XCTestCase {
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 130, accuracy: 2, "the watch kept fighting the split")
         XCTAssertEqual(model.timelineWidth, 180, accuracy: 0.5, "the split's own width was recorded")
 
+        // A window later the watch tries once more, and gives up at once if the split undoes it again.
+        mounted.clock.now += TimelineSplit.placementRepeatWindow
+        split.setPosition(120, ofDividerAt: 0)
+        layout(mounted.host)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2, "the watch did not retry after the window")
+        split.setPosition(130, ofDividerAt: 0)
+        layout(mounted.host)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 130, accuracy: 2, "the retry did not give up at once")
+
         resize(mounted, width: 720)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2, "a window resize did not place again")
     }
@@ -449,7 +472,7 @@ final class TimelineSplitViewTests: XCTestCase {
             TimelineSplit.railCeiling(splitWidth: 200), TimeRailView.width,
             "the clamp only: a split under both window floors is not a layout the page minimum survives")
         XCTAssertEqual(TimelineSplit.railCeiling(splitWidth: 0), TimeRailView.maxWidth, "an unmeasured split binds nothing")
-        // place() takes the lower of the constant and the measured thickness; a thicker divider costs the rail.
+        // place() takes the thicker of the constant and the measured divider, so a thicker divider costs the rail.
         XCTAssertEqual(
             TimelineSplit.railCeiling(splitWidth: 360, dividerThickness: 9),
             TimelineSplit.railCeiling(splitWidth: 360) - 8)
