@@ -64,13 +64,13 @@ final class PadCreateFormTests: XCTestCase {
     }
 
     private func waitFor(
-        _ description: String, file: StaticString = #filePath, line: UInt = #line,
+        _ description: @autoclosure () -> String, file: StaticString = #filePath, line: UInt = #line,
         until condition: () -> Bool
     ) async throws {
         let deadline = Date().addingTimeInterval(3)
         while !condition() {
             guard Date() < deadline else {
-                XCTFail(description, file: file, line: line)
+                XCTFail(description(), file: file, line: line)
                 throw NSError(domain: "PadCreateFormTests", code: 1)
             }
             try await Task.sleep(nanoseconds: 10_000_000)
@@ -111,12 +111,49 @@ final class PadCreateFormTests: XCTestCase {
         [view] + view.subviews.flatMap(descendants)
     }
 
+    private func presentationDescription(_ fixture: Fixture) -> String {
+        let anchor = fixture.presentation.anchors["New Pad"]
+        let formWindow = fixture.presentation.formView?.window
+        return [
+            "appActive=\(NSApp.isActive)",
+            "windowKey=\(fixture.window.isKeyWindow)",
+            "visible=\(fixture.window.isVisible)",
+            "policy=\(NSApp.activationPolicy().rawValue)",
+            "anchorWindow=\(String(describing: anchor?.window?.windowNumber))",
+            "anchorBounds=\(String(describing: anchor?.bounds))",
+            "anchorHidden=\(String(describing: anchor?.isHiddenOrHasHiddenAncestor))",
+            "presented=\(fixture.presentation.routes.creation.isPresented)",
+            "formWindow=\(String(describing: formWindow?.windowNumber))",
+            "formVisible=\(String(describing: formWindow?.isVisible))",
+        ].joined(separator: ", ")
+    }
+
     private func open(
         _ fixture: Fixture, file: StaticString = #filePath, line: UInt = #line
     ) async throws -> NSWindow {
+        fixture.window.makeKeyAndOrderFront(nil)
+        try await waitFor(
+            "The native presenter was not ready for a click (\(presentationDescription(fixture)))",
+            file: file, line: line
+        ) {
+            NSApp.updateWindows()
+            fixture.window.contentView?.layoutSubtreeIfNeeded()
+            guard let anchor = fixture.presentation.anchors["New Pad"] else { return false }
+            return fixture.window.isVisible && anchor.window === fixture.window && !anchor.isHiddenOrHasHiddenAncestor
+                && anchor.bounds.width > 0 && anchor.bounds.height > 0
+        }
         try click("New Pad", in: fixture)
+        try await waitFor(
+            "The New Pad click did not request presentation (\(presentationDescription(fixture)))",
+            file: file, line: line
+        ) {
+            fixture.presentation.routes.creation.isPresented
+        }
         var popover: NSWindow?
-        try await waitFor("No native popover window appeared", file: file, line: line) {
+        try await waitFor(
+            "No native popover window appeared (\(presentationDescription(fixture)))",
+            file: file, line: line
+        ) {
             popover = fixture.presentation.formView?.window
             return popover?.isVisible == true
         }
@@ -174,7 +211,7 @@ final class PadCreateFormTests: XCTestCase {
                 XCTFail("The dequeued \(phase) event for \(title) targets window \(queued.windowNumber), expected fixture window \(fixture.window.windowNumber)")
                 throw NSError(domain: "PadCreateFormTests", code: 2)
             }
-            NSApp.sendEvent(queued)
+            fixture.window.sendEvent(queued)
         }
     }
 

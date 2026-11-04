@@ -37,15 +37,21 @@ f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁 c�
 u󠄁s󠄁e󠄁s󠄁 `isolatedModel(defaults:)`,󠄁 a󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁o󠄁r󠄁y󠄁 a󠄁n󠄁d󠄁 a󠄁n󠄁 i󠄁n󠄁-󠄁m󠄁e󠄁m󠄁o󠄁r󠄁y󠄁
 c󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁 c󠄁l󠄁i󠄁e󠄁n󠄁t󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 m󠄁o󠄁u󠄁n󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁 i󠄁n󠄁 i󠄁t󠄁s󠄁 o󠄁w󠄁n󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁.󠄁
 
-T󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 f󠄁i󠄁f󠄁t󠄁h󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 r󠄁u󠄁n󠄁 a󠄁t󠄁 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁4󠄁 0󠄁0󠄁:󠄁1󠄁8󠄁:󠄁5󠄁4󠄁 U󠄁T󠄁C󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 4󠄁7󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁:󠄁
-3󠄁7󠄁 `PadPickerTests` a󠄁n󠄁d󠄁 t󠄁e󠄁n󠄁 `PadCreateFormTests`,󠄁 w󠄁i󠄁t󠄁h󠄁 z󠄁e󠄁r󠄁o󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁.󠄁
-`/private/tmp/pr343-presenter-restoration-tests.log` i󠄁s󠄁 a󠄁n󠄁 e󠄁p󠄁h󠄁e󠄁m󠄁e󠄁r󠄁a󠄁l󠄁 e󠄁x󠄁e󠄁c󠄁u󠄁t󠄁i󠄁o󠄁n󠄁
-a󠄁r󠄁t󠄁i󠄁f󠄁a󠄁c󠄁t󠄁,󠄁 n󠄁o󠄁t󠄁 a󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁e󠄁r󠄁-󠄁a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 r󠄁u󠄁n󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 n󠄁e󠄁x󠄁t󠄁 p󠄁u󠄁s󠄁h󠄁e󠄁d󠄁 h󠄁e󠄁a󠄁d󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 n󠄁e󠄁e󠄁d󠄁s󠄁
-f󠄁r󠄁e󠄁s󠄁h󠄁 C󠄁I󠄁.󠄁 T󠄁h󠄁e󠄁 [s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁f󠄁u󠄁l󠄁 C󠄁I󠄁 r󠄁u󠄁n󠄁 o󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁u󠄁r󠄁t󠄁h󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 h󠄁e󠄁a󠄁d󠄁 0󠄁f󠄁2󠄁7󠄁5󠄁2󠄁9󠄁f󠄁](https://github.com/onetimesecret/macos/actions/runs/41744165278)
-p󠄁r󠄁o󠄁v󠄁i󠄁d󠄁e󠄁s󠄁 d󠄁u󠄁r󠄁a󠄁b󠄁l󠄁e󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁a󠄁t󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 r󠄁e󠄁v󠄁i󠄁s󠄁i󠄁o󠄁n󠄁;󠄁 i󠄁t󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁e󠄁 t󠄁h󠄁e󠄁
-f󠄁i󠄁f󠄁t󠄁h󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁.󠄁 A󠄁n󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 e󠄁x󠄁p󠄁e󠄁r󠄁i󠄁m󠄁e󠄁n󠄁t󠄁a󠄁l󠄁 c󠄁a󠄁r󠄁e󠄁t󠄁-󠄁r󠄁e󠄁f󠄁o󠄁c󠄁u󠄁s󠄁 t󠄁e󠄁s󠄁t󠄁 w󠄁a󠄁s󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁
-b󠄁e󠄁c󠄁a󠄁u󠄁s󠄁e󠄁 i󠄁t󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 a󠄁g󠄁a󠄁i󠄁n󠄁s󠄁t󠄁 t󠄁h󠄁e󠄁 o󠄁l󠄁d󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁;󠄁 i󠄁t󠄁 p󠄁r󠄁o󠄁v󠄁i󠄁d󠄁e󠄁s󠄁 n󠄁o󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 c󠄁a󠄁r󠄁e󠄁t󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁.󠄁
-N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁a󠄁g󠄁e󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁 i󠄁s󠄁:󠄁
+A󠄁l󠄁l󠄁 4󠄁7󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁l󠄁y󠄁 a󠄁t󠄁 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁4󠄁 0󠄁0󠄁:󠄁4󠄁0󠄁:󠄁0󠄁0󠄁 U󠄁T󠄁C󠄁:󠄁
+3󠄁7󠄁 `PadPickerTests` a󠄁n󠄁d󠄁 t󠄁e󠄁n󠄁 `PadCreateFormTests`.󠄁 A󠄁f󠄁t󠄁e󠄁r󠄁 a󠄁 d󠄁i󠄁a󠄁g󠄁n󠄁o󠄁s󠄁t󠄁i󠄁c󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 r󠄁e󠄁f󠄁a󠄁c󠄁t󠄁o󠄁r󠄁,󠄁
+a󠄁l󠄁l󠄁 4󠄁7󠄁 a󠄁l󠄁s󠄁o󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 i󠄁n󠄁s󠄁i󠄁d󠄁e󠄁 t󠄁h󠄁e󠄁 b󠄁r󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 C󠄁o󠄁m󠄁p󠄁a󠄁n󠄁i󠄁o󠄁n󠄁K󠄁i󠄁t󠄁 r󠄁u󠄁n󠄁 e󠄁n󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁t󠄁 0󠄁0󠄁:󠄁4󠄁2󠄁:󠄁3󠄁4󠄁 U󠄁T󠄁C󠄁.󠄁
+T󠄁h󠄁a󠄁t󠄁 b󠄁r󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 r󠄁u󠄁n󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 f󠄁a󠄁i󠄁l󠄁i󠄁n󠄁g󠄁:󠄁 2󠄁,󠄁4󠄁2󠄁4󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁,󠄁 t󠄁e󠄁n󠄁 s󠄁k󠄁i󠄁p󠄁s󠄁 a󠄁n󠄁d󠄁 t󠄁w󠄁o󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁s󠄁
+i󠄁n󠄁 t󠄁h󠄁e󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 D󠄁a󠄁y󠄁S󠄁c󠄁r󠄁o󠄁l󠄁l󠄁 a󠄁n󠄁i󠄁m󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 t󠄁e󠄁s󠄁t󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 t󠄁h󠄁e󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁s󠄁.󠄁
+`/private/tmp/pr343-window-delivery-tests.log` a󠄁n󠄁d󠄁
+`/private/tmp/pr343-companion-kit-tests.log` a󠄁r󠄁e󠄁 e󠄁p󠄁h󠄁e󠄁m󠄁e󠄁r󠄁a󠄁l󠄁 e󠄁x󠄁e󠄁c󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁r󠄁t󠄁i󠄁f󠄁a󠄁c󠄁t󠄁s󠄁.󠄁
+T󠄁h󠄁e󠄁 [s󠄁h󠄁e󠄁l󠄁l󠄁 C󠄁I󠄁 j󠄁o󠄁b󠄁 o󠄁n󠄁 h󠄁e󠄁a󠄁d󠄁 5󠄁3󠄁d󠄁e󠄁f󠄁4󠄁3󠄁b󠄁](https://github.com/onetimesecret/macos/actions/runs/41746166953/job/126299589555)
+f󠄁a󠄁i󠄁l󠄁e󠄁d󠄁 i󠄁n󠄁 t󠄁h󠄁r󠄁e󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁-󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 c󠄁a󠄁s󠄁e󠄁s󠄁;󠄁 f󠄁r󠄁e󠄁s󠄁h󠄁 C󠄁I󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 c󠄁o󠄁r󠄁r󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁
+i󠄁s󠄁 p󠄁e󠄁n󠄁d󠄁i󠄁n󠄁g󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 n󠄁o󠄁w󠄁 d󠄁e󠄁l󠄁i󠄁v󠄁e󠄁r󠄁s󠄁 m󠄁o󠄁u󠄁s󠄁e󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁s󠄁 d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁l󠄁y󠄁 t󠄁o󠄁 i󠄁t󠄁s󠄁 o󠄁w󠄁n󠄁e󠄁d󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁,󠄁
+c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁-󠄁a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁/󠄁l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁 r󠄁e󠄁a󠄁d󠄁i󠄁n󠄁e󠄁s󠄁s󠄁 a󠄁n󠄁d󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁s󠄁 c󠄁l󠄁i󠄁c󠄁k󠄁/󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁i󠄁a󠄁g󠄁n󠄁o󠄁s󠄁t󠄁i󠄁c󠄁s󠄁,󠄁
+w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁p󠄁p󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁r󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁.󠄁 N󠄁o󠄁 p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁.󠄁
+A󠄁n󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 e󠄁x󠄁p󠄁e󠄁r󠄁i󠄁m󠄁e󠄁n󠄁t󠄁a󠄁l󠄁 c󠄁a󠄁r󠄁e󠄁t󠄁-󠄁r󠄁e󠄁f󠄁o󠄁c󠄁u󠄁s󠄁 t󠄁e󠄁s󠄁t󠄁 w󠄁a󠄁s󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁 b󠄁e󠄁c󠄁a󠄁u󠄁s󠄁e󠄁 i󠄁t󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 a󠄁g󠄁a󠄁i󠄁n󠄁s󠄁t󠄁
+t󠄁h󠄁e󠄁 o󠄁l󠄁d󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁;󠄁 i󠄁t󠄁 p󠄁r󠄁o󠄁v󠄁i󠄁d󠄁e󠄁s󠄁 n󠄁o󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 c󠄁a󠄁r󠄁e󠄁t󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁.󠄁
+N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁a󠄁g󠄁e󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁s󠄁s󠄁i󠄁n󠄁g󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁t󠄁 i󠄁s󠄁:󠄁
 
 | F󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 | T󠄁e󠄁s󠄁t󠄁 |
 | --- | --- |
