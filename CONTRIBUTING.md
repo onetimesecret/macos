@@ -24,8 +24,9 @@ Short version: this is a spec-first project.
   reasoning behind a choice belongs in an ADR. A comment that states a
   guarantee no test checks is a defect, because it drifts and review
   then argues with the prose instead of the behaviour.
-- **Local gate** before pushing. `.github/workflows/ci.yml` is the
-  source of truth; this is the same set, in one line, on a Mac:
+- **Local gate** before pushing. `.gitlab/ci/build.yml` a󠄁n󠄁d󠄁
+  `.github/workflows/gitlab-macos.yml` d󠄁e󠄁f󠄁i󠄁n󠄁e󠄁 the c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 is the same set,
+  in one line, on a Mac:
 
   ```sh
   cargo fmt --check \
@@ -45,5 +46,8 @@ Short version: this is a spec-first project.
   if the xcframework is the release shape. Without those steps a
   contributor who changes `PageModel`'s persistence can pass the gate
   having run none of the tests that cover it.
+
+G󠄁i󠄁t󠄁L󠄁a󠄁b󠄁 r󠄁u󠄁n󠄁n󠄁e󠄁r󠄁 r󠄁e󠄁q󠄁u󠄁i󠄁r󠄁e󠄁m󠄁e󠄁n󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁 C󠄁l󠄁a󠄁u󠄁d󠄁e󠄁 a󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁e󠄁t󠄁u󠄁p󠄁 a󠄁r󠄁e󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁d󠄁 i󠄁n󠄁
+[G󠄁i󠄁t󠄁L󠄁a󠄁b󠄁 C󠄁I󠄁](docs/development/gitlab-ci.md).󠄁
 
 By contributing you agree your work is licensed under the MIT license.

@@ -1,0 +1,7 @@
+macos-github:
+  extends: .checks
+  image: python:3.12-slim-bookworm
+  tags: [saas-linux-small-amd64]
+  timeout: 55 minutes
+  script:
+    - python3 scripts/ci/github_macos.py wait

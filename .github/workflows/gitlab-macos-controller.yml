@@ -1,0 +1,29 @@
+name: Dispatch GitLab macOS tests
+
+on:
+  schedule:
+    - cron: '2-59/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: gitlab-macos-controller
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: github.repository == 'onetimesecret/macos' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Discover and dispatch waiting GitLab jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/github_macos.py controller

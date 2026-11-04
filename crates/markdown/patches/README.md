@@ -101,12 +101,11 @@ edges there; the script compares package versions, sources and checksums before
 and after normalization and refuses changed pins. T󠄁h󠄁e󠄁 w󠄁o󠄁r󠄁k󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁g󠄁i󠄁s󠄁t󠄁r󠄁y󠄁-󠄁o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 b󠄁o󠄁t󠄁h󠄁 u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁
 r󠄁e󠄁p󠄁o󠄁s󠄁i󠄁t󠄁o󠄁r󠄁y󠄁 `deny.toml`.󠄁 T󠄁h󠄁e󠄁 r󠄁e󠄁g󠄁i󠄁s󠄁t󠄁r󠄁y󠄁-󠄁o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁 r󠄁u󠄁n󠄁s󠄁 a󠄁l󠄁l󠄁 f󠄁o󠄁u󠄁r󠄁 c󠄁a󠄁t󠄁e󠄁g󠄁o󠄁r󠄁i󠄁e󠄁s󠄁:󠄁
 a󠄁d󠄁v󠄁i󠄁s󠄁o󠄁r󠄁i󠄁e󠄁s󠄁,󠄁 b󠄁a󠄁n󠄁s󠄁,󠄁 l󠄁i󠄁c󠄁e󠄁n󠄁s󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁s󠄁.󠄁 I󠄁t󠄁s󠄁 u󠄁n󠄁p󠄁u󠄁b󠄁l󠄁i󠄁s󠄁h󠄁e󠄁d󠄁 p󠄁r󠄁o󠄁b󠄁e󠄁 p󠄁a󠄁c󠄁k󠄁a󠄁g󠄁e󠄁 u󠄁s󠄁e󠄁s󠄁
-t󠄁h󠄁e󠄁 w󠄁o󠄁r󠄁k󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 M󠄁I󠄁T󠄁 l󠄁i󠄁c󠄁e󠄁n󠄁s󠄁e󠄁 m󠄁e󠄁t󠄁a󠄁d󠄁a󠄁t󠄁a󠄁.󠄁 C󠄁I󠄁 p󠄁i󠄁n󠄁s󠄁 c󠄁a󠄁r󠄁g󠄁o󠄁-󠄁d󠄁e󠄁n󠄁y󠄁-󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 c󠄁o󠄁m󠄁m󠄁i󠄁t󠄁
-`3c6349835b2b7b196a839186cb8b78e02f7b5f25`,󠄁 w󠄁h󠄁o󠄁s󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁a󠄁i󠄁n󠄁e󠄁r󠄁 u󠄁s󠄁e󠄁s󠄁 c󠄁a󠄁r󠄁g󠄁o󠄁-󠄁d󠄁e󠄁n󠄁y󠄁
-0󠄁.󠄁2󠄁0󠄁.󠄁2󠄁.󠄁 I󠄁n󠄁 t󠄁h󠄁a󠄁t󠄁 v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁 `--config` i󠄁s󠄁 a󠄁 g󠄁l󠄁o󠄁b󠄁a󠄁l󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 `check`;󠄁 0󠄁.󠄁1󠄁9󠄁.󠄁9󠄁
-u󠄁s󠄁e󠄁d󠄁 a󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁-󠄁l󠄁o󠄁c󠄁a󠄁l󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁 u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 C󠄁I󠄁 v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁.󠄁 S󠄁e󠄁e󠄁 t󠄁h󠄁e󠄁
-[p󠄁i󠄁n󠄁n󠄁e󠄁d󠄁 A󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 D󠄁o󠄁c󠄁k󠄁e󠄁r󠄁f󠄁i󠄁l󠄁e󠄁](https://github.com/EmbarkStudios/cargo-deny-action/blob/3c6349835b2b7b196a839186cb8b78e02f7b5f25/Dockerfile)
-a󠄁n󠄁d󠄁 [0󠄁.󠄁2󠄁0󠄁.󠄁2󠄁 g󠄁r󠄁a󠄁p󠄁h󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁s󠄁](https://github.com/EmbarkStudios/cargo-deny/blob/0.20.2/src/cargo-deny/main.rs#L107-L126).󠄁
+t󠄁h󠄁e󠄁 w󠄁o󠄁r󠄁k󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 M󠄁I󠄁T󠄁 l󠄁i󠄁c󠄁e󠄁n󠄁s󠄁e󠄁 m󠄁e󠄁t󠄁a󠄁d󠄁a󠄁t󠄁a󠄁.󠄁 C󠄁I󠄁 i󠄁n󠄁s󠄁t󠄁a󠄁l󠄁l󠄁s󠄁 c󠄁a󠄁r󠄁g󠄁o󠄁-󠄁d󠄁e󠄁n󠄁y󠄁 0󠄁.󠄁2󠄁0󠄁.󠄁2󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁
+[G󠄁i󠄁t󠄁L󠄁a󠄁b󠄁 b󠄁u󠄁i󠄁l󠄁d󠄁 j󠄁o󠄁b󠄁](../../../.gitlab/ci/build.yml).󠄁 I󠄁n󠄁 t󠄁h󠄁i󠄁s󠄁 v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁,󠄁 `--config`
+i󠄁s󠄁 a󠄁 g󠄁l󠄁o󠄁b󠄁a󠄁l󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 `check`;󠄁 0󠄁.󠄁1󠄁9󠄁.󠄁9󠄁 u󠄁s󠄁e󠄁d󠄁 a󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁-󠄁l󠄁o󠄁c󠄁a󠄁l󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 T󠄁h󠄁e󠄁
+c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁 u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 C󠄁I󠄁 v󠄁e󠄁r󠄁s󠄁i󠄁o󠄁n󠄁.󠄁 S󠄁e󠄁e󠄁 t󠄁h󠄁e󠄁
+[0󠄁.󠄁2󠄁0󠄁.󠄁2󠄁 g󠄁r󠄁a󠄁p󠄁h󠄁 o󠄁p󠄁t󠄁i󠄁o󠄁n󠄁s󠄁](https://github.com/EmbarkStudios/cargo-deny/blob/0.20.2/src/cargo-deny/main.rs#L107-L126).󠄁
 
 ```sh
 scripts/verify-vendored-comrak.py --advisory-workspace target/comrak-advisories-new

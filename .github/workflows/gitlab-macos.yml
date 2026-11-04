@@ -1,0 +1,123 @@
+name: GitLab macOS
+run-name: GitLab macOS ${{ inputs.pipeline_id }}/${{ inputs.job_id }}/${{ inputs.sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      pipeline_id:
+        description: GitLab pipeline ID
+        required: true
+        type: string
+      job_id:
+        description: GitLab macos-github job ID
+        required: true
+        type: string
+      sha:
+        description: Exact GitLab commit SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitlab-macos-${{ inputs.job_id }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  GITLAB_PIPELINE_ID: ${{ inputs.pipeline_id }}
+  GITLAB_BRIDGE_JOB_ID: ${{ inputs.job_id }}
+  GITLAB_SHA: ${{ inputs.sha }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.validate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate the running GitLab job and commit
+        id: validate
+        run: python3 scripts/ci/github_macos.py prepare
+
+  platform:
+    needs: prepare
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      RUST_BACKTRACE: '1'
+      TEST_SHA: ${{ needs.prepare.outputs.sha }}
+      ONETIMEPAD_ENVIRONMENTS_DIR: ${{ github.workspace }}/.ci-environments/${{ github.run_id }}/platform
+    steps:
+      - name: Checkout the exact GitLab commit
+        run: |
+          git init .
+          git remote add origin https://gitlab.com/onetimesecret/macos.git
+          git fetch --depth=1 origin "$TEST_SHA"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$TEST_SHA"
+          mkdir -p "$ONETIMEPAD_ENVIRONMENTS_DIR"
+      - name: Install pinned toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (full workspace)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test (full workspace)
+        run: cargo test --workspace -- --nocapture
+      - name: Test (full workspace, test-util seams)
+        run: cargo test --workspace --features test-util -- --nocapture
+
+  shell:
+    needs: prepare
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      TEST_SHA: ${{ needs.prepare.outputs.sha }}
+      ONETIMEPAD_ENVIRONMENTS_DIR: ${{ github.workspace }}/.ci-environments/${{ github.run_id }}/shell
+    steps:
+      - name: Checkout the exact GitLab commit
+        run: |
+          git init .
+          git remote add origin https://gitlab.com/onetimesecret/macos.git
+          git fetch --depth=1 origin "$TEST_SHA"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$TEST_SHA"
+          mkdir -p "$ONETIMEPAD_ENVIRONMENTS_DIR"
+      - name: Install pinned toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Build test-util core and Swift shell
+        run: |
+          ./scripts/build-core.sh --if-stale --test-util
+          swift build --package-path shell
+      - name: Test Swift shell
+        run: ./scripts/test-shell.sh
+      - name: Check RevealLab
+        run: python3 scripts/ci/check-reveal-lab.py
+      - name: Assemble and check the debug bundle
+        run: |
+          ./scripts/package-app.sh --debug
+          bash scripts/ci/check-bundle.sh debug
+
+  report:
+    needs: [prepare, platform, shell]
+    if: ${{ always() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: gitlab-status
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Report both suite results to the matching GitLab pipeline
+        env:
+          GITLAB_STATUS_TOKEN: ${{ secrets.GITLAB_STATUS_TOKEN }}
+          PLATFORM_RESULT: ${{ needs.platform.result }}
+          SHELL_RESULT: ${{ needs.shell.result }}
+        run: python3 scripts/ci/github_macos.py report

@@ -1,0 +1,26 @@
+include:
+  - local: .gitlab/ci/build.yml
+  - local: .gitlab/ci/github-macos.yml
+  - local: .gitlab/ci/claude.yml
+
+stages:
+  - check
+  - ai
+
+default:
+  interruptible: true
+  timeout: 1h
+
+variables:
+  CARGO_TERM_COLOR: always
+  CI_MODE: checks
+
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $CI_MODE == "checks"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api|trigger)$/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CLAUDE_CI_ENABLED == "true"'
+    - when: never
