@@ -558,6 +558,7 @@ so a person's drag is checked only here.
 5. Lower the card and watch the divider as the stance fades.
 6. With multiple pads on, open a window and look at the heading at the
    110-point start width.
+7. Pin the card, let it rest, and press and drag on the divider.
 
 **Pass:** the divider follows the pointer for the whole drag and stays
 where it was released; it reopens at that width after relaunch; the card
@@ -565,13 +566,14 @@ shows the width last dragged in the editor window; at the floor the rail
 gives way and the page keeps its width, and widening returns the rail to
 its width without a drag; the divider fades with the rail and the page;
 the rail opens at its stored width with no visible jump from 110; the
-pad heading's sort menu and + fit inside the rail.
+pad heading's sort menu and + fit inside the rail; on a pinned resting
+card the press raises the card and the divider does not move.
 
 **Fail:** the divider snaps back during or after a drag; a relaunch or a
 presentation switch opens at 110 or at an older width; a squeeze is
 remembered after the window widens; the divider stays bright while the
 card rests; a visible jump from 110 on opening; the + pushed out of the
-rail.
+rail; a resting card's divider that moves instead of raising the card.
 
 ## Results
 
@@ -627,3 +629,4 @@ an executed result.
 | | | 13 squeeze at the floor and recovery on widening | Pending | Both presentations. |
 | | | 13 divider fades with the card; no jump on opening | Pending | |
 | | | 13 multi-pad heading fits at the start width | Pending | Record the locale. |
+| | | 13 pinned resting card raises on a divider press | Pending | Record whether the width changed. |

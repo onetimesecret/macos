@@ -241,12 +241,14 @@ final class TimelineSplitViewTests: XCTestCase {
         defer { mounted.window.close() }
         let split = try splitView(in: mounted.host)
 
+        // Two moves in one gesture, the second without a drain, as a drag's frames arrive.
         mounted.mouse.isDown = true
+        split.setPosition(180, ofDividerAt: 0)
         split.setPosition(200, ofDividerAt: 0)
         mounted.mouse.isDown = false
         layout(mounted.host)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 200, accuracy: 2, "the watch fought the person's drag")
-        XCTAssertEqual(model.timelineWidth, 200, accuracy: 2, "the held move was not recorded")
+        XCTAssertEqual(model.timelineWidth, 200, accuracy: 2, "the held drag's last move was not recorded")
 
         // Held across the drain, so the queued placement runs under the held button too.
         mounted.mouse.isDown = true
