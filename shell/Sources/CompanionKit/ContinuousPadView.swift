@@ -99,6 +99,7 @@ final class ContinuousPadCanvas: NSView {
     private(set) var extents: [RollGeometry.Extent] = []
     private(set) var checkpointLabels: [NSTextField] = []
     private weak var observedScroll: NSScrollView?
+    private var localeObserver: NSObjectProtocol?
     private var selectedPage: UInt64?
     private var pendingOffset: NSPoint?
     private var pendingPlace: RollPlace?
@@ -167,10 +168,21 @@ final class ContinuousPadCanvas: NSView {
             name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         NotificationCenter.default.addObserver(self, selector: #selector(editorResized),
             name: NSView.frameDidChangeNotification, object: editor)
+        // The gutter's detailed readings follow the person's locale and clock settings.
+        localeObserver = NotificationCenter.default.addObserver(
+            forName: NSLocale.currentLocaleDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.needsMeasurement = true
+                self?.needsLayout = true
+            }
+        }
     }
 
     func stopObserving() {
         NotificationCenter.default.removeObserver(self)
+        if let localeObserver { NotificationCenter.default.removeObserver(localeObserver) }
+        localeObserver = nil
         observedScroll = nil
     }
 

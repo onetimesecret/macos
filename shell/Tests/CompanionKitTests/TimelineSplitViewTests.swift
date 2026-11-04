@@ -213,6 +213,45 @@ final class TimelineSplitViewTests: XCTestCase {
             "the person's drag was not recorded")
     }
 
+    /// AppKit's own divider move names the divider under the key the watch reads; the user-resize key
+    /// needs a person's drag, which Case 13 checks.
+    func testAppKitNamesTheMovedDividerUnderTheWatchedKey() throws {
+        let model = timelineModel(defaults: try defaults())
+        let mounted = mount(model)
+        defer { mounted.window.close() }
+        let split = try splitView(in: mounted.host)
+        let named = expectation(forNotification: NSSplitView.didResizeSubviewsNotification, object: split) {
+            $0.userInfo?[TimelineSplit.dividerIndexKey] != nil
+        }
+        split.setPosition(150, ofDividerAt: 0)
+        wait(for: [named], timeout: 1)
+        layout(mounted.host)
+    }
+
+    /// A drag stopped by a narrow split's ceiling keeps a wider stored width, as a squeeze does;
+    /// a drag below the ceiling is recorded where the person left it.
+    func testADragToTheCeilingKeepsAWiderStoredWidth() throws {
+        let model = timelineModel(defaults: try defaults())
+        model.recordTimelineWidth(TimeRailView.maxWidth)
+        let floor: CGFloat = 360
+        let mounted = mount(model, width: floor)
+        defer { mounted.window.close() }
+        let split = try splitView(in: mounted.host)
+
+        drag(split, to: TimeRailView.maxWidth, in: mounted.host)
+        XCTAssertEqual(
+            split.arrangedSubviews[0].frame.width, TimelineSplit.railCeiling(splitWidth: floor), accuracy: 2,
+            "the control: the ceiling stops the drag")
+        XCTAssertEqual(
+            model.timelineWidth, TimeRailView.maxWidth, accuracy: 0.5, "a drag stopped by the ceiling lowered the width")
+        resize(mounted, width: 640)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, TimeRailView.maxWidth, accuracy: 2)
+
+        resize(mounted, width: floor)
+        drag(split, to: 150, in: mounted.host)
+        XCTAssertEqual(model.timelineWidth, 150, accuracy: 2, "a drag below the ceiling was not recorded")
+    }
+
     /// The dragged width returns when the rail comes back and when the app relaunches.
     func testTheDraggedWidthPersistsAcrossHidingAndRelaunch() throws {
         let store = try defaults()

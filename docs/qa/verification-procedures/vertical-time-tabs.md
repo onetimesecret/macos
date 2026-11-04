@@ -548,6 +548,11 @@ a documentation edit or automated test result is not a hardware pass.
 the divider with `setPosition` and posts the drag notification itself,
 so a person's drag is checked only here.
 
+**Known risk:** the watch records a divider move only when AppKit marks
+it as a drag or a left button is down. A VoiceOver adjustment presses no
+button, so if AppKit leaves the mark off, the divider returns to the
+stored width and step 8 fails. Record steps 8 and 9 in their own rows.
+
 1. With Timeline on, in the card, drag the divider slowly to about
    200 points over more than three seconds and release.
 2. Quit and relaunch, and raise the card.
@@ -574,9 +579,11 @@ gives way and the page keeps its width, and widening returns the rail to
 its width without a drag; the divider fades with the rail and the page;
 the rail opens at its stored width with no visible jump from 110; the
 pad heading's sort menu and + fit inside the rail; on a pinned resting
-card the press raises the card and the divider does not move. Record
-whether the pointer shows the resize cursor over a resting card's
-divider; the stance comments call the resting card chrome-free.
+card the press leaves the divider and the stored width alone. Record
+whether the press raises the card: `NSSplitView` takes the press, and
+routing it to the card waits on an owned split view. Record whether the
+pointer shows the resize cursor over a resting card's divider; the
+stance comments call the resting card chrome-free.
 VoiceOver's adjustment and a three-finger drag each move the divider,
 the divider stays where they left it, and a relaunch opens at that
 width. A press held still past three seconds leaves the divider where
@@ -586,7 +593,8 @@ the move put it, and a relaunch opens there.
 presentation switch opens at 110 or at an older width; a squeeze is
 remembered after the window widens; the divider stays bright while the
 card rests; a visible jump from 110 on opening; the + pushed out of the
-rail; a resting card's divider that moves instead of raising the card;
+rail; a resting card's divider that moves, or a press there that
+changes the width a relaunch opens at;
 a VoiceOver adjustment or three-finger drag that the divider undoes, or
 that a relaunch forgets.
 
@@ -644,7 +652,7 @@ an executed result.
 | | | 13 squeeze at the floor and recovery on widening | Pending | Both presentations. |
 | | | 13 divider fades with the card; no jump on opening | Pending | |
 | | | 13 multi-pad heading fits at the start width | Pending | Record the locale. |
-| | | 13 pinned resting card raises on a divider press | Pending | Record whether the width changed and whether the resize cursor showed. |
+| | | 13 pinned resting card's divider stays put on a press | Pending | Record whether the press raised the card and whether the resize cursor showed. |
 | | | 13 VoiceOver adjusts the divider and the width is kept | Pending | Record whether it survives a relaunch. |
 | | | 13 three-finger drag moves the divider and is kept | Pending | |
 | | | 13 a press held still past three seconds is kept | Pending | Record whether the divider jumped on release. |

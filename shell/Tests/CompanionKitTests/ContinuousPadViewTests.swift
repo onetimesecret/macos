@@ -221,6 +221,24 @@ final class ContinuousPadViewTests: XCTestCase {
         }
     }
 
+    /// A change to the person's locale settings reads the gutter's times again without a text edit.
+    func testALocaleChangeReadsTheCheckpointTimesAgain() throws {
+        let model = try model()
+        _ = try seed("first", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let label = try XCTUnwrap(surface.canvas.checkpointLabels.first)
+        let detail = try XCTUnwrap(label.toolTip, "the control: the fixture page has a birth stamp")
+
+        label.toolTip = "stale"
+        label.setAccessibilityLabel("stale")
+        NotificationCenter.default.post(name: NSLocale.currentLocaleDidChangeNotification, object: nil)
+        drainMainQueue()
+        surface.scroll.layoutSubtreeIfNeeded()
+        XCTAssertEqual(label.toolTip, detail, "the gutter kept a reading from before the change")
+        XCTAssertEqual(label.accessibilityLabel(), "Checkpoint, \(detail)")
+    }
+
     /// A line standing for several checkpoints still gives each one's full time.
     func testStackedCheckpointsListEveryTimeOnHover() {
         let stacked = ContinuousPadCanvas.stackedReading(["first time", "second time"])

@@ -229,7 +229,9 @@ private final class DividerWatchView: NSView {
         else {
             return queuePlacement()
         }
-        preferredWidth = leading.frame.width
+        let granted = leading.frame.width
+        // At the ceiling the split set the width, not the person, so a wider stored width stays, as in a squeeze.
+        preferredWidth = granted < ceiling(of: split) - 0.5 ? granted : max(preferredWidth, granted)
         // Re-armed on every move, so the bound counts from the latest one and a slow drag is not cut short.
         releaseChecks = 60
         guard !recordPending else { return }
@@ -285,11 +287,7 @@ private final class DividerWatchView: NSView {
         let width = split.bounds.width
         lastSplitWidth = width
         lastLeadingWidth = leading.frame.width
-        // The lower of the frame's ceiling and the measured one, within SwiftUI's `maxWidth`.
-        let target = min(
-            TimeRailView.clampedWidth(preferredWidth),
-            TimelineSplit.railCeiling(splitWidth: width),
-            TimelineSplit.railCeiling(splitWidth: width, dividerThickness: split.dividerThickness))
+        let target = min(TimeRailView.clampedWidth(preferredWidth), ceiling(of: split))
         guard abs(leading.frame.width - target) >= 0.5 else {
             failedPlacement = nil
             return
@@ -303,6 +301,12 @@ private final class DividerWatchView: NSView {
         DispatchQueue.main.async { [weak self] in self?.placing = false }
         lastLeadingWidth = leading.frame.width
         failedPlacement = abs(leading.frame.width - target) >= 0.5 ? (target, width) : nil
+    }
+
+    /// The lower of the frame's ceiling and the measured one, within SwiftUI's `maxWidth`.
+    private func ceiling(of split: NSSplitView) -> CGFloat {
+        min(TimelineSplit.railCeiling(splitWidth: split.bounds.width),
+            TimelineSplit.railCeiling(splitWidth: split.bounds.width, dividerThickness: split.dividerThickness))
     }
 
     private func enclosingSplitView() -> NSSplitView? {
