@@ -14,8 +14,12 @@ import XCTest
 /// table, one XCTAssert per fact, so a failure names the row.
 final class ActivationRouteTests: XCTestCase {
     func testSideTabClickSummonsOnlyAnEnabledAmbientPanel() {
-        XCTAssertEqual(ActivationRouter.decide(.sideTabClick, in: base()), .summonPanel)
-        XCTAssertEqual(ActivationRouter.decide(.sideTabClick, in: base(ambientPanelEnabled: false)), .noop)
+        for claimed in [false, true] {
+            XCTAssertEqual(ActivationRouter.decide(.sideTabClick,
+                in: base(claimedByAnotherWindow: claimed)), .summonPanel)
+            XCTAssertEqual(ActivationRouter.decide(.sideTabClick,
+                in: base(ambientPanelEnabled: false, claimedByAnotherWindow: claimed)), .noop)
+        }
     }
     // MARK: The activation reasons — launch, late, reopen
 

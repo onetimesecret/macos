@@ -7,6 +7,35 @@ import XCTest
 
 @MainActor
 final class SideTabControllerTests: XCTestCase {
+    private final class RecoveryClock: SideTabRecoveryScheduling {
+        final class Job {
+            let deadline: TimeInterval
+            let action: @MainActor () -> Void
+            var cancelled = false
+            init(deadline: TimeInterval, action: @escaping @MainActor () -> Void) {
+                self.deadline = deadline
+                self.action = action
+            }
+        }
+
+        var time: TimeInterval = 1_000
+        private var jobs: [Job] = []
+        var pending: Int { jobs.filter { !$0.cancelled }.count }
+
+        func schedule(after delay: TimeInterval, action: @escaping @MainActor () -> Void) -> @MainActor () -> Void {
+            let job = Job(deadline: time + delay, action: action)
+            jobs.append(job)
+            return { job.cancelled = true }
+        }
+
+        func advance(by interval: TimeInterval) {
+            time += interval
+            let due = jobs.filter { $0.deadline <= time }
+            jobs.removeAll { $0.deadline <= time }
+            for job in due where !job.cancelled { job.action() }
+        }
+    }
+
     private final class DesktopState {
         var allowed = true
         var displays: [SideTabDisplay]
@@ -81,6 +110,117 @@ final class SideTabControllerTests: XCTestCase {
         XCTAssertEqual(tab.button.bounds.size, tab.panel.frame.size)
         XCTAssertEqual(tab.button.accessibilityLabel(), "Open ambient panel")
         XCTAssertTrue(tab.button.acceptsFirstMouse(for: nil))
+        XCTAssertEqual(tab.panel.title, "OnetimePad side tab")
+        XCTAssertEqual(tab.panel.accessibilityLabel(), "OnetimePad side tab")
+        XCTAssertEqual(tab.button.toolTip, "Open ambient panel")
+    }
+
+    func testDuplicateDisplayIdentitiesProduceOnePickerEntry() {
+        let duplicate = SideTabDisplay(id: display.id, name: "Duplicate", frame: display.frame,
+            visibleFrame: display.visibleFrame)
+        let other = SideTabDisplay(id: "other", name: "Other", frame: display.frame,
+            visibleFrame: display.visibleFrame)
+        XCTAssertEqual(SideTabDisplays.unique([display, duplicate, other]), [display, other])
+    }
+
+    func testDisabledTabDoesNotReadDisplaySnapshots() throws {
+        let model = try model()
+        var reads = 0
+        let tab = SideTabController(model: model, displays: { reads += 1; return [] },
+            systemAllows: { true }, observeSystem: false, onOpen: {})
+        defer { tab.stop() }
+        tab.refresh()
+        model.sideTab.position = 0.3
+        drainMainQueue()
+        XCTAssertEqual(reads, 0)
+    }
+
+    func testMissingMenuEndRecoversAtTheExistingBoundWithoutPolling() throws {
+        let model = try enabledModel()
+        let clock = RecoveryClock()
+        let display = display
+        let tab = SideTabController(model: model, displays: { [display] }, systemAllows: { true },
+            now: { clock.time }, recoveryScheduler: clock, onOpen: {})
+        defer { tab.stop() }
+
+        NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: nil)
+        XCTAssertFalse(tab.panel.isVisible)
+        XCTAssertEqual(clock.pending, 1)
+        tab.refresh()
+        XCTAssertEqual(clock.pending, 1)
+        clock.advance(by: MenuTracking.openLimit - 0.1)
+        XCTAssertFalse(tab.panel.isVisible)
+        clock.advance(by: 0.2)
+        XCTAssertTrue(tab.panel.isVisible)
+        XCTAssertEqual(clock.pending, 0)
+    }
+
+    func testNestedMenusStaySuppressedUntilTheLastEndAndCancelRecovery() throws {
+        let model = try enabledModel()
+        let clock = RecoveryClock()
+        let display = display
+        let tab = SideTabController(model: model, displays: { [display] }, systemAllows: { true },
+            now: { clock.time }, recoveryScheduler: clock, onOpen: {})
+        defer { tab.stop() }
+        let center = NotificationCenter.default
+        center.post(name: NSMenu.didBeginTrackingNotification, object: nil)
+        clock.advance(by: 1)
+        center.post(name: NSMenu.didBeginTrackingNotification, object: nil)
+        center.post(name: NSMenu.didEndTrackingNotification, object: nil)
+        XCTAssertFalse(tab.panel.isVisible)
+        center.post(name: NSMenu.didEndTrackingNotification, object: nil)
+        XCTAssertTrue(tab.panel.isVisible)
+        XCTAssertEqual(clock.pending, 0)
+        center.post(name: NSMenu.didEndTrackingNotification, object: nil)
+        XCTAssertTrue(tab.panel.isVisible)
+    }
+
+    func testMissingSheetEndRecoversAfterTransitionAndActualStateAllows() throws {
+        let model = try enabledModel()
+        let clock = RecoveryClock()
+        let desktop = DesktopState(displays: [display])
+        let tab = SideTabController(model: model, displays: { desktop.displays },
+            systemAllows: { desktop.allowed }, now: { clock.time }, recoveryScheduler: clock, onOpen: {})
+        defer { tab.stop() }
+        NotificationCenter.default.post(name: NSWindow.willBeginSheetNotification, object: nil)
+        XCTAssertFalse(tab.panel.isVisible)
+        XCTAssertEqual(clock.pending, 1)
+        desktop.allowed = false
+        clock.advance(by: SideTabController.sheetTransitionDuration + 0.01)
+        XCTAssertFalse(tab.panel.isVisible)
+        XCTAssertEqual(clock.pending, 0)
+        desktop.allowed = true
+        tab.refresh()
+        XCTAssertTrue(tab.panel.isVisible)
+    }
+
+    func testMissingSheetEndDoesNotLeaveTransitionSuppressionBehind() throws {
+        let model = try enabledModel()
+        let clock = RecoveryClock()
+        let display = display
+        let tab = SideTabController(model: model, displays: { [display] }, systemAllows: { true },
+            now: { clock.time }, recoveryScheduler: clock, onOpen: {})
+        defer { tab.stop() }
+        NotificationCenter.default.post(name: NSWindow.willBeginSheetNotification, object: nil)
+        XCTAssertFalse(tab.panel.isVisible)
+        clock.advance(by: SideTabController.sheetTransitionDuration + 0.01)
+        XCTAssertTrue(tab.panel.isVisible)
+        XCTAssertEqual(clock.pending, 0)
+    }
+
+    func testStoppingCancelsPendingMenuAndSheetRecovery() throws {
+        let model = try enabledModel()
+        let clock = RecoveryClock()
+        let display = display
+        let tab = SideTabController(model: model, displays: { [display] }, systemAllows: { true },
+            now: { clock.time }, recoveryScheduler: clock, onOpen: {})
+        NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: nil)
+        NotificationCenter.default.post(name: NSWindow.willBeginSheetNotification, object: nil)
+        XCTAssertEqual(clock.pending, 2)
+        tab.stop()
+        XCTAssertEqual(clock.pending, 0)
+        clock.advance(by: MenuTracking.openLimit + 1)
+        XCTAssertFalse(tab.panel.isVisible)
     }
 
     func testFirstButtonActionUsesTheExplicitSummonRoute() throws {
