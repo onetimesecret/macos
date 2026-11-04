@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest import mock
 
@@ -39,6 +40,7 @@ class FakeGitLab:
         self.job = {"id": 45, "name": "macos-github", "status": "running", "allow_failure": False,
                     "pipeline": copy.deepcopy(self.pipeline), "commit": {"id": HEAD}}
         self.calls = []
+        self.branch = {"name": "main", "protected": True}
 
     def request(self, method, path, data=None):
         self.calls.append((method, path, data))
@@ -52,6 +54,8 @@ class FakeGitLab:
             return [copy.deepcopy(self.job)]
         if method == "POST" and path == ci.GITLAB_PROJECT + "/statuses/" + HEAD:
             return {"id": 80, **data}
+        if path == ci.GITLAB_PROJECT + "/repository/branches/" + self.pipeline["ref"].replace("/", "%2F"):
+            return copy.deepcopy(self.branch)
         raise AssertionError((method, path, data))
 
 
@@ -59,12 +63,16 @@ class FakeGitHub:
     def __init__(self, runs=None):
         self.runs = [worker()] if runs is None else runs
         self.detail = None
+        self.jobs = [{"name": name, "run_id": max((run["id"] for run in self.runs), default=67),
+                      "status": "completed", "conclusion": "success"} for name in ["platform", "shell"]]
         self.calls = []
 
     def request(self, method, path, data=None):
         self.calls.append((method, path, data))
         if "/actions/workflows/" in path and "/runs?" in path:
             return {"workflow_runs": copy.deepcopy(self.runs)}
+        if method == "GET" and path.endswith("/jobs?filter=latest&per_page=100"):
+            return {"total_count": len(self.jobs), "jobs": copy.deepcopy(self.jobs)}
         if method == "GET" and "/actions/runs/" in path:
             return copy.deepcopy(self.detail or next(run for run in self.runs if path.endswith("/" + str(run["id"]))))
         if method == "POST" and path.endswith("/dispatches"):
@@ -206,6 +214,25 @@ class ControllerTests(unittest.TestCase):
 
 
 class ReportTests(unittest.TestCase):
+    def test_protected_main_uses_native_job_without_status_writes(self):
+        api = FakeGitLab()
+        api.pipeline["ref"] = "main"
+        self.assertEqual(ci.report(GH_ENV, api), {"reported": 0, "mode": "native-gitlab-job", "run_id": 67})
+        self.assertFalse(any(method == "POST" for method, _, _ in api.calls))
+        for result in ["failure", "cancelled", "skipped", None]:
+            with self.subTest(result=result), self.assertRaises(ci.BridgeError):
+                ci.report({**GH_ENV, "SHELL_RESULT": result}, api)
+
+    def test_unprotected_branch_still_posts_statuses_and_bad_branch_fails(self):
+        api = FakeGitLab()
+        api.pipeline["ref"] = "topic/ci"
+        api.branch = {"name": "topic/ci", "protected": False}
+        self.assertEqual(ci.report(GH_ENV, api), {"reported": 2})
+        for branch in [{"name": "other", "protected": True}, {"name": "topic/ci"}]:
+            api.branch = branch
+            with self.subTest(branch=branch), self.assertRaises(ci.InvalidBinding):
+                ci.report(GH_ENV, api)
+
     def test_statuses_target_exact_sha_pipeline_ref_and_stable_contexts(self):
         api = FakeGitLab()
         self.assertEqual(ci.report(GH_ENV, api), {"reported": 2})
@@ -278,7 +305,39 @@ class WaitTests(unittest.TestCase):
         github = FakeGitHub([worker(), worker(id=68, conclusion="failure")])
         with self.assertRaises(ci.BridgeError):
             ci.wait(CI_ENV, github)
-        self.assertEqual(len(github.calls), 1)
+        self.assertEqual(len(github.calls), 2)
+
+    def test_junit_records_each_suite_and_worker_url_even_on_reporter_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "reports/macos.xml"
+            with self.assertRaises(ci.BridgeError):
+                ci.wait(CI_ENV, FakeGitHub([worker(conclusion="failure")]), report_path=output)
+            suite = ET.parse(output).getroot()
+            self.assertEqual((suite.get("tests"), suite.get("failures")), ("2", "0"))
+            self.assertEqual([case.get("name") for case in suite], ["platform", "shell"])
+            self.assertIn("/actions/runs/67", suite[0].find("system-out").text)
+
+    def test_missing_duplicate_incomplete_or_failed_suite_cannot_pass(self):
+        for jobs in [[], [{"name": "platform", "run_id": 67, "status": "completed", "conclusion": "success"}]]:
+            github = FakeGitHub()
+            github.jobs = jobs
+            with self.subTest(jobs=jobs), self.assertRaises(ci.BridgeError):
+                ci.wait(CI_ENV, github)
+        for changes in [{"name": "platform"}, {"status": "in_progress"}, {"conclusion": "skipped"},
+                        {"conclusion": "failure"}, {"conclusion": None}]:
+            github = FakeGitHub()
+            github.jobs[1].update(changes)
+            with tempfile.TemporaryDirectory() as folder:
+                output = Path(folder) / "macos.xml"
+                with self.subTest(changes=changes), self.assertRaises(ci.BridgeError):
+                    ci.wait(CI_ENV, github, report_path=output)
+                self.assertNotEqual(ET.parse(output).getroot().get("failures"), "0")
+
+    def test_jobs_from_another_run_are_rejected(self):
+        github = FakeGitHub()
+        github.jobs[0]["run_id"] = 68
+        with self.assertRaises(ci.InvalidBinding):
+            ci.wait(CI_ENV, github)
 
 
 class APITests(unittest.TestCase):
@@ -337,6 +396,14 @@ class APITests(unittest.TestCase):
             api.request("GET", ci.GITHUB_REPO + "/actions/runs")
         self.assertEqual(clock.sleeps, [])
 
+    def test_transient_error_with_available_quota_uses_short_backoff(self):
+        clock = Clock()
+        opener = Opener(http_error(502, {"X-RateLimit-Remaining": "4999", "X-RateLimit-Reset": "3600"}), {})
+        api = ci.API("github", opener=opener, clock=clock.now, sleep=clock.sleep,
+                     wall_clock=lambda: 1000, deadline=100)
+        self.assertEqual(api.request("GET", ci.GITHUB_REPO + "/actions/runs"), {})
+        self.assertEqual(clock.sleeps, [1])
+
     def test_failed_callbacks_are_bounded_and_error_messages_exclude_credentials(self):
         clock = Clock()
         opener = Opener(*(http_error(503) for _ in range(6)))
@@ -367,7 +434,8 @@ class APITests(unittest.TestCase):
             self.assertEqual(ci.main(["report"], env), 0)
             self.assertEqual(created, [("gitlab", "report-fixture-token")])
             created.clear()
-            self.assertEqual(ci.main(["wait"], {**env, **CI_ENV}), 0)
+            with mock.patch.object(ci, "write_test_report"):
+                self.assertEqual(ci.main(["wait"], {**env, **CI_ENV}), 0)
             self.assertEqual(created, [("github", None)])
 
 

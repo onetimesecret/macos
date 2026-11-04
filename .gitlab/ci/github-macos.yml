@@ -5,3 +5,7 @@ macos-github:
   timeout: 55 minutes
   script:
     - python3 scripts/ci/github_macos.py wait
+  artifacts:
+    when: always
+    reports:
+      junit: .ci-reports/github-macos.xml
