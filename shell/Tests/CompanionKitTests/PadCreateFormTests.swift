@@ -42,11 +42,16 @@ final class PadCreateFormTests: XCTestCase {
         }
     }
 
+    private final class FixtureAnchorView: NSView {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
     private struct Anchor: NSViewRepresentable {
         let register: (NSView) -> Void
 
         func makeNSView(context: Context) -> NSView {
-            let view = NSView()
+            let view = FixtureAnchorView()
             register(view)
             return view
         }
@@ -78,6 +83,10 @@ final class PadCreateFormTests: XCTestCase {
             .disabled(!presentation.isEnabled)
             .onAppear { presentation.routesBinding = $routes }
         }
+    }
+
+    private final class FixtureHostingView: NSHostingView<Surface> {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
 
     private struct Fixture {
@@ -118,7 +127,7 @@ final class PadCreateFormTests: XCTestCase {
             window = NSWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false)
         }
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: Surface(presentation: presentation, model: model))
+        window.contentView = FixtureHostingView(rootView: Surface(presentation: presentation, model: model))
         window.makeKeyAndOrderFront(nil)
         addTeardownBlock { @MainActor in
             presentation.routesBinding?.wrappedValue.creation.isPresented = false
@@ -240,7 +249,7 @@ final class PadCreateFormTests: XCTestCase {
                 XCTFail("The dequeued \(phase) event for \(title) targets window \(queued.windowNumber), expected fixture window \(fixture.window.windowNumber)")
                 throw NSError(domain: "PadCreateFormTests", code: 2)
             }
-            fixture.window.sendEvent(queued)
+            NSApp.sendEvent(queued)
         }
     }
 
