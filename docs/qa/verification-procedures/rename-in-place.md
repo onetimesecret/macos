@@ -32,116 +32,116 @@ and an in-memory credential client. Automated fixtures use
 
 ## Checks
 
-The New Pad cases below distinguish the shared form's native test fixture
-from the complete card, editor toolbar and Settings integrations. The fixture
-uses `isolatedModel(defaults:)`, a temporary state directory and an in-memory
-credential client, then mounts the shared form in its own native window.
+T󠄁h󠄁e󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 c󠄁a󠄁s󠄁e󠄁s󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁 t󠄁h󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁'󠄁s󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁
+f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁 c󠄁a󠄁r󠄁d󠄁,󠄁 e󠄁d󠄁i󠄁t󠄁o󠄁r󠄁 t󠄁o󠄁o󠄁l󠄁b󠄁a󠄁r󠄁 a󠄁n󠄁d󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 i󠄁n󠄁t󠄁e󠄁g󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁
+u󠄁s󠄁e󠄁s󠄁 `isolatedModel(defaults:)`,󠄁 a󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁o󠄁r󠄁y󠄁 a󠄁n󠄁d󠄁 a󠄁n󠄁 i󠄁n󠄁-󠄁m󠄁e󠄁m󠄁o󠄁r󠄁y󠄁
+c󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁 c󠄁l󠄁i󠄁e󠄁n󠄁t󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 m󠄁o󠄁u󠄁n󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁 i󠄁n󠄁 i󠄁t󠄁s󠄁 o󠄁w󠄁n󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁.󠄁
 
-The final local focused run at 2026-11-04 01:36:07 UTC passed 50 New Pad
-tests: 38 `PadPickerTests` and twelve `PadCreateFormTests`, with zero failures.
-`/private/tmp/pr343-production-route-tests.log` is an ephemeral execution artifact.
-The [shell CI job on head 7082889a](https://github.com/onetimesecret/macos/actions/runs/41753269711/job/126323252468)
-failed in two initial-click fixture cases; the other ten native and all 38 picker
-cases passed. The final component fixture opens through production
-`PadSettingsRoutes.beginCreating()` on a stable unconditional presenter; a separate
-conditional surface tests removal/restoration. Entry-click and OS-activation
-coverage remain manual. Product code is unchanged; next-head CI is pending.
-Both representative panel cases have passed; actual production-controller handoff,
-VoiceOver speech and pointer-caret behavior remain separate manual observations.
-Earlier broader local failures and the removed insensitive caret test remain in
-the ledger. Native fixture coverage is:
+T󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁 r󠄁u󠄁n󠄁 a󠄁t󠄁 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁4󠄁 0󠄁1󠄁:󠄁3󠄁6󠄁:󠄁0󠄁7󠄁 U󠄁T󠄁C󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 5󠄁0󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁
+t󠄁e󠄁s󠄁t󠄁s󠄁:󠄁 3󠄁8󠄁 `PadPickerTests` a󠄁n󠄁d󠄁 t󠄁w󠄁e󠄁l󠄁v󠄁e󠄁 `PadCreateFormTests`,󠄁 w󠄁i󠄁t󠄁h󠄁 z󠄁e󠄁r󠄁o󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁.󠄁
+`/private/tmp/pr343-production-route-tests.log` i󠄁s󠄁 a󠄁n󠄁 e󠄁p󠄁h󠄁e󠄁m󠄁e󠄁r󠄁a󠄁l󠄁 e󠄁x󠄁e󠄁c󠄁u󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁r󠄁t󠄁i󠄁f󠄁a󠄁c󠄁t󠄁.󠄁
+T󠄁h󠄁e󠄁 [s󠄁h󠄁e󠄁l󠄁l󠄁 C󠄁I󠄁 j󠄁o󠄁b󠄁 o󠄁n󠄁 h󠄁e󠄁a󠄁d󠄁 7󠄁0󠄁8󠄁2󠄁8󠄁8󠄁9󠄁a󠄁](https://github.com/onetimesecret/macos/actions/runs/41753269711/job/126323252468)
+f󠄁a󠄁i󠄁l󠄁e󠄁d󠄁 i󠄁n󠄁 t󠄁w󠄁o󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁-󠄁c󠄁l󠄁i󠄁c󠄁k󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 c󠄁a󠄁s󠄁e󠄁s󠄁;󠄁 t󠄁h󠄁e󠄁 o󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁e󠄁n󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 a󠄁n󠄁d󠄁 a󠄁l󠄁l󠄁 3󠄁8󠄁 p󠄁i󠄁c󠄁k󠄁e󠄁r󠄁
+c󠄁a󠄁s󠄁e󠄁s󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 c󠄁o󠄁m󠄁p󠄁o󠄁n󠄁e󠄁n󠄁t󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 o󠄁p󠄁e󠄁n󠄁s󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁
+`PadSettingsRoutes.beginCreating()` o󠄁n󠄁 a󠄁 s󠄁t󠄁a󠄁b󠄁l󠄁e󠄁 u󠄁n󠄁c󠄁o󠄁n󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁r󠄁;󠄁 a󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁
+c󠄁o󠄁n󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 s󠄁u󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁a󠄁l󠄁/󠄁r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 E󠄁n󠄁t󠄁r󠄁y󠄁-󠄁c󠄁l󠄁i󠄁c󠄁k󠄁 a󠄁n󠄁d󠄁 O󠄁S󠄁-󠄁a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
+c󠄁o󠄁v󠄁e󠄁r󠄁a󠄁g󠄁e󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 m󠄁a󠄁n󠄁u󠄁a󠄁l󠄁.󠄁 P󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁 c󠄁o󠄁d󠄁e󠄁 i󠄁s󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁;󠄁 n󠄁e󠄁x󠄁t󠄁-󠄁h󠄁e󠄁a󠄁d󠄁 C󠄁I󠄁 i󠄁s󠄁 p󠄁e󠄁n󠄁d󠄁i󠄁n󠄁g󠄁.󠄁
+B󠄁o󠄁t󠄁h󠄁 r󠄁e󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 p󠄁a󠄁n󠄁e󠄁l󠄁 c󠄁a󠄁s󠄁e󠄁s󠄁 h󠄁a󠄁v󠄁e󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁;󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁-󠄁c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁l󠄁e󠄁r󠄁 h󠄁a󠄁n󠄁d󠄁o󠄁f󠄁f󠄁,󠄁
+V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 s󠄁p󠄁e󠄁e󠄁c󠄁h󠄁 a󠄁n󠄁d󠄁 p󠄁o󠄁i󠄁n󠄁t󠄁e󠄁r󠄁-󠄁c󠄁a󠄁r󠄁e󠄁t󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 m󠄁a󠄁n󠄁u󠄁a󠄁l󠄁 o󠄁b󠄁s󠄁e󠄁r󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁
+E󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 b󠄁r󠄁o󠄁a󠄁d󠄁e󠄁r󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁 i󠄁n󠄁s󠄁e󠄁n󠄁s󠄁i󠄁t󠄁i󠄁v󠄁e󠄁 c󠄁a󠄁r󠄁e󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 i󠄁n󠄁
+t󠄁h󠄁e󠄁 l󠄁e󠄁d󠄁g󠄁e󠄁r󠄁.󠄁 N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁a󠄁g󠄁e󠄁 i󠄁s󠄁:󠄁
 
-| Fixture interaction | Test |
+| F󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 | T󠄁e󠄁s󠄁t󠄁 |
 | --- | --- |
-| Focus and valid Return create a pad | `testNativeNameFieldFocusAndReturnCreateThePad` |
-| Empty Return explains the refusal and keeps the form open | `testNativeEmptyReturnExplainsTheMissingNameWithoutDismissing` |
-| Field-focused Escape clears the draft and dismisses | `testNativeEscapeClearsTheDraftAndDismissesTheForm` |
-| Representative raised-card panel focus and Return create a pad | `testRepresentativeRaisedCardPanelFocusAndReturnCreateThePad` |
-| Representative card rest dismisses the form and retains its draft for reopening | `testRepresentativeCardRestDismissesTheNativeFormAndRetainsItsDraft` |
-| Outside dismissal retains the draft; reopening selects it whole | `testNativeOutsideDismissalRetainsTheDraftForReopening` |
-| Disabling the presenter dismisses; reopening restores the draft | `testDisablingThePresenterDismissesTheFormAndRetainsItsDraft` |
-| Clicking the anchor closes the existing form without reopening | `testNativeAnchorClickClosesTheExistingForm` |
-| Closing the presenter hides the form and releases shortcut suppression | `testClosingThePresenterWindowDismissesAndUnregistersTheNativeForm` |
-| Removing the presenter host hides the form and releases shortcut suppression | `testRemovingThePresenterHostDismissesAndUnregistersTheNativeForm` |
-| A presented shared form suspends pad digits after its name field resigns focus | `testNativeFormSuspendsPadShortcutsAfterTheNameFieldResignsFocus` |
-| Conditional presenter removal preserves the draft; restoring the control does not reopen the form | `testRemovingAndRestoringThePresenterDoesNotReopenTheNativeForm` |
+| F󠄁o󠄁c󠄁u󠄁s󠄁 a󠄁n󠄁d󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁 R󠄁e󠄁t󠄁u󠄁r󠄁n󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁e󠄁 a󠄁 p󠄁a󠄁d󠄁 | `testNativeNameFieldFocusAndReturnCreateThePad` |
+| E󠄁m󠄁p󠄁t󠄁y󠄁 R󠄁e󠄁t󠄁u󠄁r󠄁n󠄁 e󠄁x󠄁p󠄁l󠄁a󠄁i󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁f󠄁u󠄁s󠄁a󠄁l󠄁 a󠄁n󠄁d󠄁 k󠄁e󠄁e󠄁p󠄁s󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 o󠄁p󠄁e󠄁n󠄁 | `testNativeEmptyReturnExplainsTheMissingNameWithoutDismissing` |
+| F󠄁i󠄁e󠄁l󠄁d󠄁-󠄁f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁 E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 a󠄁n󠄁d󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁e󠄁s󠄁 | `testNativeEscapeClearsTheDraftAndDismissesTheForm` |
+| R󠄁e󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 r󠄁a󠄁i󠄁s󠄁e󠄁d󠄁-󠄁c󠄁a󠄁r󠄁d󠄁 p󠄁a󠄁n󠄁e󠄁l󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 a󠄁n󠄁d󠄁 R󠄁e󠄁t󠄁u󠄁r󠄁n󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁e󠄁 a󠄁 p󠄁a󠄁d󠄁 | `testRepresentativeRaisedCardPanelFocusAndReturnCreateThePad` |
+| R󠄁e󠄁p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 c󠄁a󠄁r󠄁d󠄁 r󠄁e󠄁s󠄁t󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁s󠄁 i󠄁t󠄁s󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 f󠄁o󠄁r󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 | `testRepresentativeCardRestDismissesTheNativeFormAndRetainsItsDraft` |
+| O󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁;󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁s󠄁 i󠄁t󠄁 w󠄁h󠄁o󠄁l󠄁e󠄁 | `testNativeOutsideDismissalRetainsTheDraftForReopening` |
+| D󠄁i󠄁s󠄁a󠄁b󠄁l󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁r󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁e󠄁s󠄁;󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 | `testDisablingThePresenterDismissesTheFormAndRetainsItsDraft` |
+| C󠄁l󠄁i󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁 c󠄁l󠄁o󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 f󠄁o󠄁r󠄁m󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 | `testNativeAnchorClickClosesTheExistingForm` |
+| C󠄁l󠄁o󠄁s󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁r󠄁 h󠄁i󠄁d󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁s󠄁 s󠄁h󠄁o󠄁r󠄁t󠄁c󠄁u󠄁t󠄁 s󠄁u󠄁p󠄁p󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 | `testClosingThePresenterWindowDismissesAndUnregistersTheNativeForm` |
+| R󠄁e󠄁m󠄁o󠄁v󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁r󠄁 h󠄁o󠄁s󠄁t󠄁 h󠄁i󠄁d󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁s󠄁 s󠄁h󠄁o󠄁r󠄁t󠄁c󠄁u󠄁t󠄁 s󠄁u󠄁p󠄁p󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 | `testRemovingThePresenterHostDismissesAndUnregistersTheNativeForm` |
+| A󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁d󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁 s󠄁u󠄁s󠄁p󠄁e󠄁n󠄁d󠄁s󠄁 p󠄁a󠄁d󠄁 d󠄁i󠄁g󠄁i󠄁t󠄁s󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 i󠄁t󠄁s󠄁 n󠄁a󠄁m󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 r󠄁e󠄁s󠄁i󠄁g󠄁n󠄁s󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 | `testNativeFormSuspendsPadShortcutsAfterTheNameFieldResignsFocus` |
+| C󠄁o󠄁n󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁r󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁a󠄁l󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁;󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 | `testRemovingAndRestoringThePresenterDoesNotReopenTheNativeForm` |
 
-The checkboxes remain open for the actual app entry surfaces, full Cancel
-click, button-focused Escape, card-to-toolbar focus handoff, app-deactivation
-routing, VoiceOver and long-message geometry in both appearances. A removed
-experimental geometry observer did not provide reliable text bounds; it is
-not evidence of clipping or successful pixel layout.
+T󠄁h󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁b󠄁o󠄁x󠄁e󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 o󠄁p󠄁e󠄁n󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁e󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 a󠄁p󠄁p󠄁 e󠄁n󠄁t󠄁r󠄁y󠄁 s󠄁u󠄁r󠄁f󠄁a󠄁c󠄁e󠄁s󠄁,󠄁 f󠄁u󠄁l󠄁l󠄁 C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁
+c󠄁l󠄁i󠄁c󠄁k󠄁,󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁-󠄁f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁 E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁,󠄁 c󠄁a󠄁r󠄁d󠄁-󠄁t󠄁o󠄁-󠄁t󠄁o󠄁o󠄁l󠄁b󠄁a󠄁r󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 h󠄁a󠄁n󠄁d󠄁o󠄁f󠄁f󠄁,󠄁 a󠄁p󠄁p󠄁-󠄁d󠄁e󠄁a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
+r󠄁o󠄁u󠄁t󠄁i󠄁n󠄁g󠄁,󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 l󠄁o󠄁n󠄁g󠄁-󠄁m󠄁e󠄁s󠄁s󠄁a󠄁g󠄁e󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁 i󠄁n󠄁 b󠄁o󠄁t󠄁h󠄁 a󠄁p󠄁p󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁s󠄁.󠄁 A󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁
+e󠄁x󠄁p󠄁e󠄁r󠄁i󠄁m󠄁e󠄁n󠄁t󠄁a󠄁l󠄁 g󠄁e󠄁o󠄁m󠄁e󠄁t󠄁r󠄁y󠄁 o󠄁b󠄁s󠄁e󠄁r󠄁v󠄁e󠄁r󠄁 d󠄁i󠄁d󠄁 n󠄁o󠄁t󠄁 p󠄁r󠄁o󠄁v󠄁i󠄁d󠄁e󠄁 r󠄁e󠄁l󠄁i󠄁a󠄁b󠄁l󠄁e󠄁 t󠄁e󠄁x󠄁t󠄁 b󠄁o󠄁u󠄁n󠄁d󠄁s󠄁;󠄁 i󠄁t󠄁 i󠄁s󠄁
+n󠄁o󠄁t󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁 o󠄁f󠄁 c󠄁l󠄁i󠄁p󠄁p󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁 s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁f󠄁u󠄁l󠄁 p󠄁i󠄁x󠄁e󠄁l󠄁 l󠄁a󠄁y󠄁o󠄁u󠄁t󠄁.󠄁
 
-- [ ] **New Pad, anchored creation.** Open New Pad from the pad switcher
-      in both the card and editor window, then from the Pads tab in Settings.
-      **Pass:** a compact form opens below the initiating control without
-      dimming the editor; the name field receives focus. Blank, whitespace-only
-      and overlong names cannot be created. A valid Return or Create Pad
-      creates and activates the named pad. Escape and Cancel close the form
-      without creating a pad and clear the draft. Clicking outside closes it;
-      reopening restores the draft. Repeat at the minimum window size and in
-      light and dark appearances. **Fail:** a centered sheet opens, focus goes
-      to the page while typing, a pad shortcut switches the pad from the name
-      field, or the form's controls or validation text are clipped.
-- [ ] **New Pad, retained draft and focus.** In each presentation, type a
-      synthetic name, click outside the form, then reopen it. **Pass:** the
-      draft returns, receives focus and is selected whole so typing replaces
-      it. Repeat after explicit Cancel and Escape; those openings start blank.
-      **Fail:** automatic dismissal loses the draft, selection is partial, or
-      explicit cancellation leaves the cancelled draft behind.
-- [ ] **New Pad, rest and app deactivation.** Open the form on the raised
-      card, type a draft, then rest the card or activate another app. Record
-      whether the form dismisses or remains visible. **Pass:** no visible form
-      becomes unusable; if it remains, its field and Cancel/Create Pad controls
-      remain operable. If it dismisses automatically, reopening retains the
-      draft. **Fail:** a visible disabled form remains, or reopening loses the
-      automatically dismissed draft. The initial native fixture reproduced a
-      visible form with a disabled name field. Its regression now verifies
-      passive dismissal and draft restoration after re-enabling. The actual
-      card-rest and app-deactivation routes remain manual checks.
-- [ ] **New Pad, Settings anchor.** Open the form from New Pad in Settings
-      and click that same button again. Record the mouse-down and mouse-up
-      result. **Pass:** the form closes once without immediately reopening or
-      flickering. **Fail:** the anchor action presents it again after outside
-      dismissal. Repeat after typing a retained draft.
-- [ ] **New Pad, picker anchor and menu.** On the card and editor toolbar,
-      open New Pad through the pad menu, type a synthetic draft, then click the
-      pad picker anchor again. Record whether the first click only dismisses the
-      form or also opens the NSMenu, and repeat the click. **Pass:** presentation
-      ends coherently, any menu opens once and remains usable, and explicit New
-      Pad reopening restores the retained draft. **Fail:** a stale or duplicate
-      form/menu remains, a pad changes unexpectedly, or the draft is discarded.
-- [ ] **New Pad, longest validation message.** At minimum window width in
-      both appearances, press Return on an empty name, enter an overlong name,
-      then use a synthetic pending-file-close fixture to show `pad.name.failed`.
-      **Pass:** each complete message and both buttons fit; no text or control
-      is clipped as the message changes. **Fail:** text is truncated, overlaps
-      a control, or extends beyond the popover.
-- [ ] **New Pad, Escape route.** Press Escape first with the field focused
-      and then with a button focused. **Pass:** the form closes and reopening
-      starts blank in both cases. Record whether the explicit cancellation
-      action or the native popover dismissal ended each presentation.
-      **Fail:** either route behaves like automatic draft-retaining dismissal.
-- [ ] **New Pad, suspended pad digits.** In each entry surface, open the form
-      and press pad-owned Command-digit shortcuts with the name field focused,
-      then move focus to Cancel or Create Pad and repeat. **Pass:** while the form
-      is visible, a reserved digit changes neither pad nor selected page. After
-      dismissal, an unrelated rename/search field keeps its prior configured pad
-      route. A modal session or attached sheet takes precedence and receives the
-      event unchanged. Verify remapped and explicitly unbound chords separately.
-      **Fail:** the visible form permits a pad/page change, an unrelated field
-      alone suppresses the prior pad route, or the native modal route is swallowed.
-- [ ] **New Pad, click caret after refocus.** Open a retained synthetic draft
-      and verify initial whole-draft selection. Move focus to a form button,
-      then click within the name. **Pass:** the click's caret position remains
-      after the event loop settles. **Fail:** deferred select-all replaces it.
-- [ ] **New Pad, spoken labels and feedback.** With VoiceOver, navigate through
-      the caption, name field, validation message and buttons. Trigger empty-name
-      feedback from the field and separately with a button focused. Record
-      whether the message is spoken and whether button-focused Return supplies
-      feedback; do not infer speech from the accessibility label alone.
-      **Pass:** the field has a clear name without a redundant caption stop,
-      and observed feedback behavior is recorded for both focus routes.
+- [ ] **N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁e󠄁d󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁** O󠄁p󠄁e󠄁n󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁d󠄁 s󠄁w󠄁i󠄁t󠄁c󠄁h󠄁e󠄁r󠄁
+      i󠄁n󠄁 b󠄁o󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 c󠄁a󠄁r󠄁d󠄁 a󠄁n󠄁d󠄁 e󠄁d󠄁i󠄁t󠄁o󠄁r󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 P󠄁a󠄁d󠄁s󠄁 t󠄁a󠄁b󠄁 i󠄁n󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁.󠄁
+      **P󠄁a󠄁s󠄁s󠄁:󠄁** a󠄁 c󠄁o󠄁m󠄁p󠄁a󠄁c󠄁t󠄁 f󠄁o󠄁r󠄁m󠄁 o󠄁p󠄁e󠄁n󠄁s󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁t󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁
+      d󠄁i󠄁m󠄁m󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 e󠄁d󠄁i󠄁t󠄁o󠄁r󠄁;󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁m󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 r󠄁e󠄁c󠄁e󠄁i󠄁v󠄁e󠄁s󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁.󠄁 B󠄁l󠄁a󠄁n󠄁k󠄁,󠄁 w󠄁h󠄁i󠄁t󠄁e󠄁s󠄁p󠄁a󠄁c󠄁e󠄁-󠄁o󠄁n󠄁l󠄁y󠄁
+      a󠄁n󠄁d󠄁 o󠄁v󠄁e󠄁r󠄁l󠄁o󠄁n󠄁g󠄁 n󠄁a󠄁m󠄁e󠄁s󠄁 c󠄁a󠄁n󠄁n󠄁o󠄁t󠄁 b󠄁e󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁e󠄁d󠄁.󠄁 A󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁 R󠄁e󠄁t󠄁u󠄁r󠄁n󠄁 o󠄁r󠄁 C󠄁r󠄁e󠄁a󠄁t󠄁e󠄁 P󠄁a󠄁d󠄁
+      c󠄁r󠄁e󠄁a󠄁t󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁m󠄁e󠄁d󠄁 p󠄁a󠄁d󠄁.󠄁 E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁 a󠄁n󠄁d󠄁 C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁 c󠄁l󠄁o󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁
+      w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁 p󠄁a󠄁d󠄁 a󠄁n󠄁d󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁.󠄁 C󠄁l󠄁i󠄁c󠄁k󠄁i󠄁n󠄁g󠄁 o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 c󠄁l󠄁o󠄁s󠄁e󠄁s󠄁 i󠄁t󠄁;󠄁
+      r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁.󠄁 R󠄁e󠄁p󠄁e󠄁a󠄁t󠄁 a󠄁t󠄁 t󠄁h󠄁e󠄁 m󠄁i󠄁n󠄁i󠄁m󠄁u󠄁m󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 s󠄁i󠄁z󠄁e󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁
+      l󠄁i󠄁g󠄁h󠄁t󠄁 a󠄁n󠄁d󠄁 d󠄁a󠄁r󠄁k󠄁 a󠄁p󠄁p󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁s󠄁.󠄁 **F󠄁a󠄁i󠄁l󠄁:󠄁** a󠄁 c󠄁e󠄁n󠄁t󠄁e󠄁r󠄁e󠄁d󠄁 s󠄁h󠄁e󠄁e󠄁t󠄁 o󠄁p󠄁e󠄁n󠄁s󠄁,󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 g󠄁o󠄁e󠄁s󠄁
+      t󠄁o󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁g󠄁e󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 t󠄁y󠄁p󠄁i󠄁n󠄁g󠄁,󠄁 a󠄁 p󠄁a󠄁d󠄁 s󠄁h󠄁o󠄁r󠄁t󠄁c󠄁u󠄁t󠄁 s󠄁w󠄁i󠄁t󠄁c󠄁h󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁d󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁m󠄁e󠄁
+      f󠄁i󠄁e󠄁l󠄁d󠄁,󠄁 o󠄁r󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁'󠄁s󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 o󠄁r󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 t󠄁e󠄁x󠄁t󠄁 a󠄁r󠄁e󠄁 c󠄁l󠄁i󠄁p󠄁p󠄁e󠄁d󠄁.󠄁
+- [ ] **N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 a󠄁n󠄁d󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁.󠄁** I󠄁n󠄁 e󠄁a󠄁c󠄁h󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 t󠄁y󠄁p󠄁e󠄁 a󠄁
+      s󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 n󠄁a󠄁m󠄁e󠄁,󠄁 c󠄁l󠄁i󠄁c󠄁k󠄁 o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁 i󠄁t󠄁.󠄁 **P󠄁a󠄁s󠄁s󠄁:󠄁** t󠄁h󠄁e󠄁
+      d󠄁r󠄁a󠄁f󠄁t󠄁 r󠄁e󠄁t󠄁u󠄁r󠄁n󠄁s󠄁,󠄁 r󠄁e󠄁c󠄁e󠄁i󠄁v󠄁e󠄁s󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 a󠄁n󠄁d󠄁 i󠄁s󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 w󠄁h󠄁o󠄁l󠄁e󠄁 s󠄁o󠄁 t󠄁y󠄁p󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁s󠄁
+      i󠄁t󠄁.󠄁 R󠄁e󠄁p󠄁e󠄁a󠄁t󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁 a󠄁n󠄁d󠄁 E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁;󠄁 t󠄁h󠄁o󠄁s󠄁e󠄁 o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁s󠄁 s󠄁t󠄁a󠄁r󠄁t󠄁 b󠄁l󠄁a󠄁n󠄁k󠄁.󠄁
+      **F󠄁a󠄁i󠄁l󠄁:󠄁** a󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁i󠄁c󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁 l󠄁o󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁,󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁s󠄁 p󠄁a󠄁r󠄁t󠄁i󠄁a󠄁l󠄁,󠄁 o󠄁r󠄁
+      e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁l󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 l󠄁e󠄁a󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁l󠄁e󠄁d󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 b󠄁e󠄁h󠄁i󠄁n󠄁d󠄁.󠄁
+- [ ] **N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 r󠄁e󠄁s󠄁t󠄁 a󠄁n󠄁d󠄁 a󠄁p󠄁p󠄁 d󠄁e󠄁a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁** O󠄁p󠄁e󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 o󠄁n󠄁 t󠄁h󠄁e󠄁 r󠄁a󠄁i󠄁s󠄁e󠄁d󠄁
+      c󠄁a󠄁r󠄁d󠄁,󠄁 t󠄁y󠄁p󠄁e󠄁 a󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 r󠄁e󠄁s󠄁t󠄁 t󠄁h󠄁e󠄁 c󠄁a󠄁r󠄁d󠄁 o󠄁r󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁e󠄁 a󠄁n󠄁o󠄁t󠄁h󠄁e󠄁r󠄁 a󠄁p󠄁p󠄁.󠄁 R󠄁e󠄁c󠄁o󠄁r󠄁d󠄁
+      w󠄁h󠄁e󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁e󠄁s󠄁 o󠄁r󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁.󠄁 **P󠄁a󠄁s󠄁s󠄁:󠄁** n󠄁o󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁
+      b󠄁e󠄁c󠄁o󠄁m󠄁e󠄁s󠄁 u󠄁n󠄁u󠄁s󠄁a󠄁b󠄁l󠄁e󠄁;󠄁 i󠄁f󠄁 i󠄁t󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁,󠄁 i󠄁t󠄁s󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 a󠄁n󠄁d󠄁 C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁/󠄁C󠄁r󠄁e󠄁a󠄁t󠄁e󠄁 P󠄁a󠄁d󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁
+      r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 o󠄁p󠄁e󠄁r󠄁a󠄁b󠄁l󠄁e󠄁.󠄁 I󠄁f󠄁 i󠄁t󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁e󠄁s󠄁 a󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁i󠄁c󠄁a󠄁l󠄁l󠄁y󠄁,󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁
+      d󠄁r󠄁a󠄁f󠄁t󠄁.󠄁 **F󠄁a󠄁i󠄁l󠄁:󠄁** a󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁,󠄁 o󠄁r󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 l󠄁o󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁
+      a󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁i󠄁c󠄁a󠄁l󠄁l󠄁y󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁e󠄁d󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁.󠄁 T󠄁h󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 r󠄁e󠄁p󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁d󠄁 a󠄁
+      v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁 n󠄁a󠄁m󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁.󠄁 I󠄁t󠄁s󠄁 r󠄁e󠄁g󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 n󠄁o󠄁w󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁e󠄁s󠄁
+      p󠄁a󠄁s󠄁s󠄁i󠄁v󠄁e󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁 a󠄁n󠄁d󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 r󠄁e󠄁-󠄁e󠄁n󠄁a󠄁b󠄁l󠄁i󠄁n󠄁g󠄁.󠄁 T󠄁h󠄁e󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁
+      c󠄁a󠄁r󠄁d󠄁-󠄁r󠄁e󠄁s󠄁t󠄁 a󠄁n󠄁d󠄁 a󠄁p󠄁p󠄁-󠄁d󠄁e󠄁a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 m󠄁a󠄁n󠄁u󠄁a󠄁l󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁.󠄁
+- [ ] **N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁.󠄁** O󠄁p󠄁e󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 f󠄁r󠄁o󠄁m󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 i󠄁n󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁
+      a󠄁n󠄁d󠄁 c󠄁l󠄁i󠄁c󠄁k󠄁 t󠄁h󠄁a󠄁t󠄁 s󠄁a󠄁m󠄁e󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁 a󠄁g󠄁a󠄁i󠄁n󠄁.󠄁 R󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 t󠄁h󠄁e󠄁 m󠄁o󠄁u󠄁s󠄁e󠄁-󠄁d󠄁o󠄁w󠄁n󠄁 a󠄁n󠄁d󠄁 m󠄁o󠄁u󠄁s󠄁e󠄁-󠄁u󠄁p󠄁
+      r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁.󠄁 **P󠄁a󠄁s󠄁s󠄁:󠄁** t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 c󠄁l󠄁o󠄁s󠄁e󠄁s󠄁 o󠄁n󠄁c󠄁e󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 i󠄁m󠄁m󠄁e󠄁d󠄁i󠄁a󠄁t󠄁e󠄁l󠄁y󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁
+      f󠄁l󠄁i󠄁c󠄁k󠄁e󠄁r󠄁i󠄁n󠄁g󠄁.󠄁 **F󠄁a󠄁i󠄁l󠄁:󠄁** t󠄁h󠄁e󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁s󠄁 i󠄁t󠄁 a󠄁g󠄁a󠄁i󠄁n󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁
+      d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁.󠄁 R󠄁e󠄁p󠄁e󠄁a󠄁t󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 t󠄁y󠄁p󠄁i󠄁n󠄁g󠄁 a󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁.󠄁
+- [ ] **N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 p󠄁i󠄁c󠄁k󠄁e󠄁r󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁 a󠄁n󠄁d󠄁 m󠄁e󠄁n󠄁u󠄁.󠄁** O󠄁n󠄁 t󠄁h󠄁e󠄁 c󠄁a󠄁r󠄁d󠄁 a󠄁n󠄁d󠄁 e󠄁d󠄁i󠄁t󠄁o󠄁r󠄁 t󠄁o󠄁o󠄁l󠄁b󠄁a󠄁r󠄁,󠄁
+      o󠄁p󠄁e󠄁n󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁d󠄁 m󠄁e󠄁n󠄁u󠄁,󠄁 t󠄁y󠄁p󠄁e󠄁 a󠄁 s󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 c󠄁l󠄁i󠄁c󠄁k󠄁 t󠄁h󠄁e󠄁
+      p󠄁a󠄁d󠄁 p󠄁i󠄁c󠄁k󠄁e󠄁r󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁 a󠄁g󠄁a󠄁i󠄁n󠄁.󠄁 R󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 w󠄁h󠄁e󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁 c󠄁l󠄁i󠄁c󠄁k󠄁 o󠄁n󠄁l󠄁y󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁
+      f󠄁o󠄁r󠄁m󠄁 o󠄁r󠄁 a󠄁l󠄁s󠄁o󠄁 o󠄁p󠄁e󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁 N󠄁S󠄁M󠄁e󠄁n󠄁u󠄁,󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁p󠄁e󠄁a󠄁t󠄁 t󠄁h󠄁e󠄁 c󠄁l󠄁i󠄁c󠄁k󠄁.󠄁 **P󠄁a󠄁s󠄁s󠄁:󠄁** p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
+      e󠄁n󠄁d󠄁s󠄁 c󠄁o󠄁h󠄁e󠄁r󠄁e󠄁n󠄁t󠄁l󠄁y󠄁,󠄁 a󠄁n󠄁y󠄁 m󠄁e󠄁n󠄁u󠄁 o󠄁p󠄁e󠄁n󠄁s󠄁 o󠄁n󠄁c󠄁e󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 u󠄁s󠄁a󠄁b󠄁l󠄁e󠄁,󠄁 a󠄁n󠄁d󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 N󠄁e󠄁w󠄁
+      P󠄁a󠄁d󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁.󠄁 **F󠄁a󠄁i󠄁l󠄁:󠄁** a󠄁 s󠄁t󠄁a󠄁l󠄁e󠄁 o󠄁r󠄁 d󠄁u󠄁p󠄁l󠄁i󠄁c󠄁a󠄁t󠄁e󠄁
+      f󠄁o󠄁r󠄁m󠄁/󠄁m󠄁e󠄁n󠄁u󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁,󠄁 a󠄁 p󠄁a󠄁d󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 u󠄁n󠄁e󠄁x󠄁p󠄁e󠄁c󠄁t󠄁e󠄁d󠄁l󠄁y󠄁,󠄁 o󠄁r󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 i󠄁s󠄁 d󠄁i󠄁s󠄁c󠄁a󠄁r󠄁d󠄁e󠄁d󠄁.󠄁
+- [ ] **N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 l󠄁o󠄁n󠄁g󠄁e󠄁s󠄁t󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 m󠄁e󠄁s󠄁s󠄁a󠄁g󠄁e󠄁.󠄁** A󠄁t󠄁 m󠄁i󠄁n󠄁i󠄁m󠄁u󠄁m󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁 i󠄁n󠄁
+      b󠄁o󠄁t󠄁h󠄁 a󠄁p󠄁p󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁s󠄁,󠄁 p󠄁r󠄁e󠄁s󠄁s󠄁 R󠄁e󠄁t󠄁u󠄁r󠄁n󠄁 o󠄁n󠄁 a󠄁n󠄁 e󠄁m󠄁p󠄁t󠄁y󠄁 n󠄁a󠄁m󠄁e󠄁,󠄁 e󠄁n󠄁t󠄁e󠄁r󠄁 a󠄁n󠄁 o󠄁v󠄁e󠄁r󠄁l󠄁o󠄁n󠄁g󠄁 n󠄁a󠄁m󠄁e󠄁,󠄁
+      t󠄁h󠄁e󠄁n󠄁 u󠄁s󠄁e󠄁 a󠄁 s󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 p󠄁e󠄁n󠄁d󠄁i󠄁n󠄁g󠄁-󠄁f󠄁i󠄁l󠄁e󠄁-󠄁c󠄁l󠄁o󠄁s󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 t󠄁o󠄁 s󠄁h󠄁o󠄁w󠄁 `pad.name.failed`.󠄁
+      **P󠄁a󠄁s󠄁s󠄁:󠄁** e󠄁a󠄁c󠄁h󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁 m󠄁e󠄁s󠄁s󠄁a󠄁g󠄁e󠄁 a󠄁n󠄁d󠄁 b󠄁o󠄁t󠄁h󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁s󠄁 f󠄁i󠄁t󠄁;󠄁 n󠄁o󠄁 t󠄁e󠄁x󠄁t󠄁 o󠄁r󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁
+      i󠄁s󠄁 c󠄁l󠄁i󠄁p󠄁p󠄁e󠄁d󠄁 a󠄁s󠄁 t󠄁h󠄁e󠄁 m󠄁e󠄁s󠄁s󠄁a󠄁g󠄁e󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁.󠄁 **F󠄁a󠄁i󠄁l󠄁:󠄁** t󠄁e󠄁x󠄁t󠄁 i󠄁s󠄁 t󠄁r󠄁u󠄁n󠄁c󠄁a󠄁t󠄁e󠄁d󠄁,󠄁 o󠄁v󠄁e󠄁r󠄁l󠄁a󠄁p󠄁s󠄁
+      a󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁,󠄁 o󠄁r󠄁 e󠄁x󠄁t󠄁e󠄁n󠄁d󠄁s󠄁 b󠄁e󠄁y󠄁o󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 p󠄁o󠄁p󠄁o󠄁v󠄁e󠄁r󠄁.󠄁
+- [ ] **N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁.󠄁** P󠄁r󠄁e󠄁s󠄁s󠄁 E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁 f󠄁i󠄁r󠄁s󠄁t󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁
+      a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁n󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁.󠄁 **P󠄁a󠄁s󠄁s󠄁:󠄁** t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 c󠄁l󠄁o󠄁s󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁
+      s󠄁t󠄁a󠄁r󠄁t󠄁s󠄁 b󠄁l󠄁a󠄁n󠄁k󠄁 i󠄁n󠄁 b󠄁o󠄁t󠄁h󠄁 c󠄁a󠄁s󠄁e󠄁s󠄁.󠄁 R󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 w󠄁h󠄁e󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁l󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
+      a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁r󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 p󠄁o󠄁p󠄁o󠄁v󠄁e󠄁r󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁 e󠄁n󠄁d󠄁e󠄁d󠄁 e󠄁a󠄁c󠄁h󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁
+      **F󠄁a󠄁i󠄁l󠄁:󠄁** e󠄁i󠄁t󠄁h󠄁e󠄁r󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁e󠄁s󠄁 l󠄁i󠄁k󠄁e󠄁 a󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁i󠄁c󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁-󠄁r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁i󠄁n󠄁g󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁.󠄁
+- [ ] **N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 s󠄁u󠄁s󠄁p󠄁e󠄁n󠄁d󠄁e󠄁d󠄁 p󠄁a󠄁d󠄁 d󠄁i󠄁g󠄁i󠄁t󠄁s󠄁.󠄁** I󠄁n󠄁 e󠄁a󠄁c󠄁h󠄁 e󠄁n󠄁t󠄁r󠄁y󠄁 s󠄁u󠄁r󠄁f󠄁a󠄁c󠄁e󠄁,󠄁 o󠄁p󠄁e󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁
+      a󠄁n󠄁d󠄁 p󠄁r󠄁e󠄁s󠄁s󠄁 p󠄁a󠄁d󠄁-󠄁o󠄁w󠄁n󠄁e󠄁d󠄁 C󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁-󠄁d󠄁i󠄁g󠄁i󠄁t󠄁 s󠄁h󠄁o󠄁r󠄁t󠄁c󠄁u󠄁t󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁m󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁,󠄁
+      t󠄁h󠄁e󠄁n󠄁 m󠄁o󠄁v󠄁e󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 t󠄁o󠄁 C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁 o󠄁r󠄁 C󠄁r󠄁e󠄁a󠄁t󠄁e󠄁 P󠄁a󠄁d󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁p󠄁e󠄁a󠄁t󠄁.󠄁 **P󠄁a󠄁s󠄁s󠄁:󠄁** w󠄁h󠄁i󠄁l󠄁e󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁
+      i󠄁s󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁,󠄁 a󠄁 r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁d󠄁 d󠄁i󠄁g󠄁i󠄁t󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 n󠄁e󠄁i󠄁t󠄁h󠄁e󠄁r󠄁 p󠄁a󠄁d󠄁 n󠄁o󠄁r󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 p󠄁a󠄁g󠄁e󠄁.󠄁 A󠄁f󠄁t󠄁e󠄁r󠄁
+      d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁,󠄁 a󠄁n󠄁 u󠄁n󠄁r󠄁e󠄁l󠄁a󠄁t󠄁e󠄁d󠄁 r󠄁e󠄁n󠄁a󠄁m󠄁e󠄁/󠄁s󠄁e󠄁a󠄁r󠄁c󠄁h󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 k󠄁e󠄁e󠄁p󠄁s󠄁 i󠄁t󠄁s󠄁 p󠄁r󠄁i󠄁o󠄁r󠄁 c󠄁o󠄁n󠄁f󠄁i󠄁g󠄁u󠄁r󠄁e󠄁d󠄁 p󠄁a󠄁d󠄁
+      r󠄁o󠄁u󠄁t󠄁e󠄁.󠄁 A󠄁 m󠄁o󠄁d󠄁a󠄁l󠄁 s󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 o󠄁r󠄁 a󠄁t󠄁t󠄁a󠄁c󠄁h󠄁e󠄁d󠄁 s󠄁h󠄁e󠄁e󠄁t󠄁 t󠄁a󠄁k󠄁e󠄁s󠄁 p󠄁r󠄁e󠄁c󠄁e󠄁d󠄁e󠄁n󠄁c󠄁e󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁c󠄁e󠄁i󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁
+      e󠄁v󠄁e󠄁n󠄁t󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁.󠄁 V󠄁e󠄁r󠄁i󠄁f󠄁y󠄁 r󠄁e󠄁m󠄁a󠄁p󠄁p󠄁e󠄁d󠄁 a󠄁n󠄁d󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁l󠄁y󠄁 u󠄁n󠄁b󠄁o󠄁u󠄁n󠄁d󠄁 c󠄁h󠄁o󠄁r󠄁d󠄁s󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁.󠄁
+      **F󠄁a󠄁i󠄁l󠄁:󠄁** t󠄁h󠄁e󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 p󠄁e󠄁r󠄁m󠄁i󠄁t󠄁s󠄁 a󠄁 p󠄁a󠄁d󠄁/󠄁p󠄁a󠄁g󠄁e󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁,󠄁 a󠄁n󠄁 u󠄁n󠄁r󠄁e󠄁l󠄁a󠄁t󠄁e󠄁d󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁
+      a󠄁l󠄁o󠄁n󠄁e󠄁 s󠄁u󠄁p󠄁p󠄁r󠄁e󠄁s󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁i󠄁o󠄁r󠄁 p󠄁a󠄁d󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁,󠄁 o󠄁r󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 m󠄁o󠄁d󠄁a󠄁l󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁 i󠄁s󠄁 s󠄁w󠄁a󠄁l󠄁l󠄁o󠄁w󠄁e󠄁d󠄁.󠄁
+- [ ] **N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 c󠄁l󠄁i󠄁c󠄁k󠄁 c󠄁a󠄁r󠄁e󠄁t󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 r󠄁e󠄁f󠄁o󠄁c󠄁u󠄁s󠄁.󠄁** O󠄁p󠄁e󠄁n󠄁 a󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 s󠄁y󠄁n󠄁t󠄁h󠄁e󠄁t󠄁i󠄁c󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁
+      a󠄁n󠄁d󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁y󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁 w󠄁h󠄁o󠄁l󠄁e󠄁-󠄁d󠄁r󠄁a󠄁f󠄁t󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 M󠄁o󠄁v󠄁e󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 t󠄁o󠄁 a󠄁 f󠄁o󠄁r󠄁m󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁,󠄁
+      t󠄁h󠄁e󠄁n󠄁 c󠄁l󠄁i󠄁c󠄁k󠄁 w󠄁i󠄁t󠄁h󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 n󠄁a󠄁m󠄁e󠄁.󠄁 **P󠄁a󠄁s󠄁s󠄁:󠄁** t󠄁h󠄁e󠄁 c󠄁l󠄁i󠄁c󠄁k󠄁'󠄁s󠄁 c󠄁a󠄁r󠄁e󠄁t󠄁 p󠄁o󠄁s󠄁i󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁
+      a󠄁f󠄁t󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁 l󠄁o󠄁o󠄁p󠄁 s󠄁e󠄁t󠄁t󠄁l󠄁e󠄁s󠄁.󠄁 **F󠄁a󠄁i󠄁l󠄁:󠄁** d󠄁e󠄁f󠄁e󠄁r󠄁r󠄁e󠄁d󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁-󠄁a󠄁l󠄁l󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁s󠄁 i󠄁t󠄁.󠄁
+- [ ] **N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 s󠄁p󠄁o󠄁k󠄁e󠄁n󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁s󠄁 a󠄁n󠄁d󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁.󠄁** W󠄁i󠄁t󠄁h󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁,󠄁 n󠄁a󠄁v󠄁i󠄁g󠄁a󠄁t󠄁e󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁
+      t󠄁h󠄁e󠄁 c󠄁a󠄁p󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 n󠄁a󠄁m󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁,󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 m󠄁e󠄁s󠄁s󠄁a󠄁g󠄁e󠄁 a󠄁n󠄁d󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁s󠄁.󠄁 T󠄁r󠄁i󠄁g󠄁g󠄁e󠄁r󠄁 e󠄁m󠄁p󠄁t󠄁y󠄁-󠄁n󠄁a󠄁m󠄁e󠄁
+      f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 a󠄁n󠄁d󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁.󠄁 R󠄁e󠄁c󠄁o󠄁r󠄁d󠄁
+      w󠄁h󠄁e󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁 m󠄁e󠄁s󠄁s󠄁a󠄁g󠄁e󠄁 i󠄁s󠄁 s󠄁p󠄁o󠄁k󠄁e󠄁n󠄁 a󠄁n󠄁d󠄁 w󠄁h󠄁e󠄁t󠄁h󠄁e󠄁r󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁-󠄁f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁 R󠄁e󠄁t󠄁u󠄁r󠄁n󠄁 s󠄁u󠄁p󠄁p󠄁l󠄁i󠄁e󠄁s󠄁
+      f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁;󠄁 d󠄁o󠄁 n󠄁o󠄁t󠄁 i󠄁n󠄁f󠄁e󠄁r󠄁 s󠄁p󠄁e󠄁e󠄁c󠄁h󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 l󠄁a󠄁b󠄁e󠄁l󠄁 a󠄁l󠄁o󠄁n󠄁e󠄁.󠄁
+      **P󠄁a󠄁s󠄁s󠄁:󠄁** t󠄁h󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 h󠄁a󠄁s󠄁 a󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁 n󠄁a󠄁m󠄁e󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁 r󠄁e󠄁d󠄁u󠄁n󠄁d󠄁a󠄁n󠄁t󠄁 c󠄁a󠄁p󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁t󠄁o󠄁p󠄁,󠄁
+      a󠄁n󠄁d󠄁 o󠄁b󠄁s󠄁e󠄁r󠄁v󠄁e󠄁d󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁 i󠄁s󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁 b󠄁o󠄁t󠄁h󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁s󠄁.󠄁
 - [ ] **Gutter, a click on the time.** *Timeline.* Click a page's time
       in its gutter. **Pass:** a field opens where the time stood, on
       the time, selected whole, and typing replaces it; the time moves
@@ -206,18 +206,18 @@ not evidence of clipping or successful pixel layout.
 
 ## Results
 
-The app-surface hand checks have not yet run. Native fixture coverage is
-recorded separately above. One row per check when a hand session runs it;
+T󠄁h󠄁e󠄁 a󠄁p󠄁p󠄁-󠄁s󠄁u󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 h󠄁a󠄁n󠄁d󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 h󠄁a󠄁v󠄁e󠄁 n󠄁o󠄁t󠄁 yet run. N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁a󠄁g󠄁e󠄁 i󠄁s󠄁
+r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁e󠄁d󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁l󠄁y󠄁 a󠄁b󠄁o󠄁v󠄁e󠄁.󠄁 One row per check when a h󠄁a󠄁n󠄁d󠄁 session runs i󠄁t󠄁;󠄁
 a re-run adds a row rather than replacing one that failed.
 
 | Date | Machine and macOS | Check | Pass or fail | Notes |
 |---|---|---|---|---|
-| | | New Pad, retained draft and focus | | all three presentations |
-| | | New Pad, rest and app deactivation | | record dismissal or continued operability |
-| | | New Pad, Settings anchor | | record mouse-down and mouse-up result |
-| | | New Pad, longest validation message | | minimum width; both appearances |
-| | | New Pad, Escape route | | field focus and button focus; actual ending route |
-| | | New Pad, anchored creation | | card, editor window and Settings; both appearances |
+| | | N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 a󠄁n󠄁d󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 | | a󠄁l󠄁l󠄁 t󠄁h󠄁r󠄁e󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 |
+| | | N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 r󠄁e󠄁s󠄁t󠄁 a󠄁n󠄁d󠄁 a󠄁p󠄁p󠄁 d󠄁e󠄁a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 | | r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁 o󠄁r󠄁 c󠄁o󠄁n󠄁t󠄁i󠄁n󠄁u󠄁e󠄁d󠄁 o󠄁p󠄁e󠄁r󠄁a󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 |
+| | | N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁 | | r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁 m󠄁o󠄁u󠄁s󠄁e󠄁-󠄁d󠄁o󠄁w󠄁n󠄁 a󠄁n󠄁d󠄁 m󠄁o󠄁u󠄁s󠄁e󠄁-󠄁u󠄁p󠄁 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁 |
+| | | N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 l󠄁o󠄁n󠄁g󠄁e󠄁s󠄁t󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 m󠄁e󠄁s󠄁s󠄁a󠄁g󠄁e󠄁 | | m󠄁i󠄁n󠄁i󠄁m󠄁u󠄁m󠄁 w󠄁i󠄁d󠄁t󠄁h󠄁;󠄁 b󠄁o󠄁t󠄁h󠄁 a󠄁p󠄁p󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁s󠄁 |
+| | | N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁 | | f󠄁i󠄁e󠄁l󠄁d󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 a󠄁n󠄁d󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁;󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 e󠄁n󠄁d󠄁i󠄁n󠄁g󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁 |
+| | | N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁,󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁e󠄁d󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 | | c󠄁a󠄁r󠄁d󠄁,󠄁 e󠄁d󠄁i󠄁t󠄁o󠄁r󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 a󠄁n󠄁d󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁;󠄁 b󠄁o󠄁t󠄁h󠄁 a󠄁p󠄁p󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁s󠄁 |
 | | | gutter, a click on the time | | |
 | | | gutter, the keys come back to the page | | |
 | | | strip, the field selects whole | | |
