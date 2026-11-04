@@ -220,9 +220,12 @@ private final class DividerWatchView: NSView {
         recordDrag()
     }
 
+    /// Writes the person's width, then places the divider again, since `place()` skipped any resize
+    /// that arrived while the record waited.
     private func recordDrag() {
         recordPending = false
         onMove?(preferredWidth)
+        queuePlacement()
     }
 
     /// Places the divider on the next main-queue turn, outside the split's own resize pass.

@@ -289,21 +289,21 @@ renamed or re-ordered; a new sealed generation written for a flip.
 "yesterday", "3 days ago") followed by how long the page on it that
 dies soonest has left, and the selected row announces as selected. On
 Today, VoiceOver also offers a **New page** action that mints another
-page. Since
-issue #131 the row says the same day words on screen, so what is heard and
-what is read agree apart from the capital; after them VoiceOver reads the
-page's full birth date and time, with seconds, the reading the row's
-tooltip shows on hover. The short form (`-3d`) is
+page. Since issue #131 the row says the same day words on screen, so
+what is heard and what is read agree apart from the capital; after them
+VoiceOver reads the page's full birth date and time, with seconds, the
+reading the row's tooltip shows on hover. The short form (`-3d`) is
 left only in the roll's gutter, whose header announces the phrase, so
 nothing anywhere is abbreviation-only. Each perforation announces the
-day, the page's full birth date and time, its name and its remaining time. The hidden-pages line at
-the foot of the rail, when it is there, announces the whole sentence and
-not just the number.
+day, the page's full birth date and time, its name and its remaining
+time. The hidden-pages line at the foot of the rail, when it is there,
+announces the whole sentence and not just the number.
 
-**Fail:** a row that announces only "-3d"; a row whose spoken day differs
-from the day words it shows, or whose spoken time differs from its tooltip; a row with no value; Today with no
-**New page** action; a perforation that announces nothing; a decorative
-gauge or a minimap bar that VoiceOver reads.
+**Fail:** a row that announces only "-3d"; a row whose spoken day
+differs from the day words it shows, or whose spoken time differs from
+its tooltip; a row with no value; Today with no **New page** action; a
+perforation that announces nothing; a decorative gauge or a minimap bar
+that VoiceOver reads.
 
 ## Case 8: reduced motion
 
@@ -542,6 +542,37 @@ horizontal-only scrolling, or preview/sealed-note regression is a failure.
 An unrun step remains pending;
 a documentation edit or automated test result is not a hardware pass.
 
+## Case 13: the timeline divider
+
+**Status: pending hardware verification; not passed.** The suite moves
+the divider with `setPosition` and posts the drag notification itself,
+so a person's drag is checked only here.
+
+1. With Timeline on, in the card, drag the divider slowly to about
+   200 points over more than three seconds and release.
+2. Quit and relaunch, and raise the card.
+3. Open the editor window, drag its divider to about 150 points, close
+   the window and raise the card again.
+4. With the divider at 280, narrow the card to its 360-point floor,
+   then widen it again. Repeat in the editor window.
+5. Lower the card and watch the divider as the stance fades.
+6. With multiple pads on, open a window and look at the heading at the
+   110-point start width.
+
+**Pass:** the divider follows the pointer for the whole drag and stays
+where it was released; it reopens at that width after relaunch; the card
+shows the width last dragged in the editor window; at the floor the rail
+gives way and the page keeps its width, and widening returns the rail to
+its width without a drag; the divider fades with the rail and the page;
+the rail opens at its stored width with no visible jump from 110; the
+pad heading's sort menu and + fit inside the rail.
+
+**Fail:** the divider snaps back during or after a drag; a relaunch or a
+presentation switch opens at 110 or at an older width; a squeeze is
+remembered after the window widens; the divider stays bright while the
+card rests; a visible jump from 110 on opening; the + pushed out of the
+rail.
+
 ## Results
 
 Not yet run; hardware verification remains **pending**, including case 12.
@@ -591,3 +622,8 @@ an executed result.
 | | | 12 logical reading anchors through reflow | Pending | Record source position and explicit-reveal exceptions. |
 | | | 12 no repeated measurement during horizontal-only scrolling | Pending | Measurement trace required, not visual smoothness alone. |
 | | | 12 reading anchor with scroll bars always shown | Pending | Record the Show scroll bars setting. |
+| | | 13 slow drag followed and kept, relaunch restores it | Pending | |
+| | | 13 a dragged width shown in the other presentation | Pending | |
+| | | 13 squeeze at the floor and recovery on widening | Pending | Both presentations. |
+| | | 13 divider fades with the card; no jump on opening | Pending | |
+| | | 13 multi-pad heading fits at the start width | Pending | Record the locale. |
