@@ -79,6 +79,9 @@ enum TimelineSplit {
     static let placementRepeatLimit = 10
     static let placementRepeatWindow: TimeInterval = 2
 
+    /// The split's mechanics in the unified log: widths and notification keys, never content.
+    fileprivate static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "timeline")
+
     /// A notification's `userInfo` keys, sorted, for the debug log.
     static func keyList(_ userInfo: [AnyHashable: Any]?) -> String {
         (userInfo?.keys).map { keys in keys.map { "\($0)" }.sorted().joined(separator: ",") } ?? ""
@@ -122,7 +125,6 @@ private struct DividerWatch: NSViewRepresentable {
 }
 
 private final class DividerWatchView: NSView {
-    private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "timeline")
     /// The stored width at mount, then each divider move. `HSplitView` opens a pane at its
     /// minimum, so the watch places the divider itself.
     var preferredWidth: CGFloat = TimeRailView.width
@@ -224,10 +226,10 @@ private final class DividerWatchView: NSView {
         ) { [weak self, weak split] note in
             let userResize = (note.userInfo?[TimelineSplit.userResizeKey] as? NSNumber)?.boolValue == true
             let dividerMoved = note.userInfo?[TimelineSplit.dividerIndexKey] != nil
+            // Case 13 reads these to learn which keys AppKit posts for a person's drag; built only when logged.
+            TimelineSplit.logger.debug(
+                "timeline split resized, userInfo keys: \(TimelineSplit.keyList(note.userInfo), privacy: .public)")
             MainActor.assumeIsolated {
-                // Case 13 reads these to learn which keys AppKit posts for a person's drag; built only when logged.
-                DividerWatchView.logger.debug(
-                    "timeline split resized, userInfo keys: \(TimelineSplit.keyList(note.userInfo), privacy: .public)")
                 guard let watch = self, let split else { return }
                 watch.splitDidResize(split, userResize: userResize, dividerMoved: dividerMoved)
             }
@@ -350,7 +352,7 @@ private final class DividerWatchView: NSView {
         failedPlacement = refused || repeats >= TimelineSplit.placementRepeatLimit ? (target, width) : nil
         if failedPlacement != nil {
             let pane = Double(leading.frame.width)
-            Self.logger.notice(
+            TimelineSplit.logger.notice(
                 "timeline split kept its own width: target \(Double(target)), split \(Double(width)), pane \(pane)")
         }
     }
