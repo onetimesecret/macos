@@ -89,6 +89,25 @@ Triggers.
         self.path.write_text(self.document + f"\n`{example}`\n\n```md\n{example}\n```\n", encoding="utf-8")
         self.assertEqual(LINT.check(self.path)[0], [])
 
+    def test_marks_in_a_fence_opener_do_not_hide_visible_sections(self):
+        for mark in ("\U000E0100", "\U000E0101"):
+            with self.subTest(mark=ascii(mark)):
+                self.path.write_text(
+                    self.document + f"\n`{mark}``md\n## Decision\n```\n",
+                    encoding="utf-8")
+                problems, _ = LINT.check(self.path)
+                self.assertTrue(any(
+                    "required section '## Decision' appears more than once" in problem
+                    for problem in problems))
+
+    def test_actual_fences_hide_example_sections_and_links(self):
+        for fence in ("```", "~~~"):
+            with self.subTest(fence=fence):
+                self.path.write_text(
+                    self.document + f"\n{fence}md\n## Decision\n[Example](missing.md)\n{fence}\n",
+                    encoding="utf-8")
+                self.assertEqual(LINT.check(self.path)[0], [])
+
     def test_vs16_in_a_real_filename_is_preserved(self):
         name = "heart\u2764\ufe0f.md"
         (self.root / name).write_text("## Decision\n", encoding="utf-8")

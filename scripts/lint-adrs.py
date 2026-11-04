@@ -253,7 +253,8 @@ def check(path: Path) -> tuple[list[str], dict[str, tuple[int, list[str]]]]:
                 f"documentation_status '{found[0][1]}' is not one of {sorted(DOC_STATUS)}",
             )
 
-    visible_lines = outside_fences(lines)
+    raw_visible_lines = outside_fences(raw_lines)
+    visible_lines = [(i, lines[i - 1]) for i, _ in raw_visible_lines]
     body = [(i, raw) for i, raw in visible_lines if i > body_start]
 
     titles = [i for i, raw in body if raw.startswith("# ")]
@@ -370,7 +371,7 @@ def check(path: Path) -> tuple[list[str], dict[str, tuple[int, list[str]]]]:
             bad(None, f"required section '## {section}' appears more than once")
 
     own_anchors = anchors(path)
-    for i, raw in outside_fences(raw_lines):
+    for i, raw in raw_visible_lines:
         for raw_target in LINK.findall(CODE_SPAN.sub("", raw)):
             target = clean_link_target(raw_target)
             if PROVENANCE_MARKS.search(target):
