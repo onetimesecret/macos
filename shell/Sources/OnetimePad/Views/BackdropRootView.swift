@@ -192,6 +192,7 @@ struct BackdropRootView: View {
             // organization; this branch answers only placement.
             TimelineSplitView(
                 showsTimeline: pages.showsPagesDownSide && !pages.isPageExpanded,
+                resizable: raised,
                 railWidth: pages.timelineWidth, onRailResize: pages.recordTimelineWidth
             ) {
                 TimeRailView(model: pages, readOnly: !raised)

@@ -4,6 +4,7 @@ import SwiftUI
 /// Shared native divider for the timeline and page content in both presentations.
 public struct TimelineSplitView<Rail: View, Content: View>: View {
     let showsTimeline: Bool
+    let resizable: Bool
     let railWidth: CGFloat
     let onRailResize: @MainActor (CGFloat) -> Void
     let leftMouseIsDown: @MainActor () -> Bool
@@ -12,6 +13,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
 
     public init(
         showsTimeline: Bool,
+        resizable: Bool = true,
         railWidth: CGFloat,
         onRailResize: @escaping @MainActor (CGFloat) -> Void,
         leftMouseIsDown: @escaping @MainActor () -> Bool = { NSEvent.pressedMouseButtons & 1 != 0 },
@@ -19,6 +21,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
         @ViewBuilder content: () -> Content
     ) {
         self.showsTimeline = showsTimeline
+        self.resizable = resizable
         self.railWidth = railWidth
         self.onRailResize = onRailResize
         self.leftMouseIsDown = leftMouseIsDown
@@ -29,10 +32,15 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
     public var body: some View {
         GeometryReader { proxy in
             let ceiling = TimelineSplit.railCeiling(splitWidth: proxy.size.width)
+            // Not resizable: the rail's range closes on its placed width, so the divider cannot move.
+            let pinned = min(TimeRailView.clampedWidth(railWidth), ceiling)
             HSplitView {
                 if showsTimeline {
                     rail
-                        .frame(minWidth: TimeRailView.width, idealWidth: TimeRailView.width, maxWidth: ceiling)
+                        .frame(
+                            minWidth: resizable ? TimeRailView.width : pinned,
+                            idealWidth: resizable ? TimeRailView.width : pinned,
+                            maxWidth: resizable ? ceiling : pinned)
                         .background(DividerWatch(
                             startWidth: railWidth, onMove: onRailResize, leftMouseIsDown: leftMouseIsDown))
                 }
@@ -193,8 +201,8 @@ private final class DividerWatchView: NSView {
         }
         guard !placing else { return }
         let paneMoved = leadingWidth.map { abs($0 - (lastLeadingWidth ?? $0)) >= 0.5 } ?? false
-        let heldMove = dividerMoved && !placementQueued && lastSplitWidth == width && paneMoved
-            && leftMouseIsDown()
+        let splitUnchanged = lastSplitWidth.map { abs($0 - width) < 0.5 } ?? false
+        let heldMove = dividerMoved && !placementQueued && splitUnchanged && paneMoved && leftMouseIsDown()
         guard userResize || heldMove, split.arrangedSubviews.count > 1,
               let leading = split.arrangedSubviews.first, isDescendant(of: leading)
         else {

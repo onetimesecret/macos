@@ -14,11 +14,12 @@ private final class MouseStandIn {
 private struct SplitHarness: View {
     @ObservedObject var model: PageModel
     let showsTimeline: Bool
+    var resizable = true
     let mouse: MouseStandIn
 
     var body: some View {
         TimelineSplitView(
-            showsTimeline: showsTimeline,
+            showsTimeline: showsTimeline, resizable: resizable,
             railWidth: model.timelineWidth, onRailResize: model.recordTimelineWidth,
             leftMouseIsDown: { [mouse] in mouse.isDown }
         ) {
@@ -36,6 +37,7 @@ final class TimelineSplitViewTests: XCTestCase {
         let host: NSHostingView<AnyView>
         let root: (Bool) -> AnyView
         let mouse: MouseStandIn
+        let resizable: (Bool) -> AnyView
     }
 
     private func descendants<T: NSView>(_ type: T.Type, in view: NSView) -> [T] {
@@ -63,13 +65,17 @@ final class TimelineSplitViewTests: XCTestCase {
             AnyView(SplitHarness(model: model, showsTimeline: showsTimeline, mouse: mouse)
                 .environment(\.presentationSurface, model.owner))
         }
+        let resizable = { (resizable: Bool) -> AnyView in
+            AnyView(SplitHarness(model: model, showsTimeline: true, resizable: resizable, mouse: mouse)
+                .environment(\.presentationSurface, model.owner))
+        }
         let host = NSHostingView(rootView: root(true))
         host.frame = NSRect(x: 0, y: 0, width: width, height: 400)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
         layout(host)
-        return Mounted(window: window, host: host, root: root, mouse: mouse)
+        return Mounted(window: window, host: host, root: root, mouse: mouse, resizable: resizable)
     }
 
     private func layout(_ host: NSView) {
@@ -280,6 +286,28 @@ final class TimelineSplitViewTests: XCTestCase {
         XCTAssertEqual(
             model.timelineWidth, TimeRailView.maxWidth, accuracy: 0.5,
             "a height-only resize under a held button was recorded")
+    }
+
+    /// A resting card's split is not resizable: a drag leaves the rail and the stored width alone,
+    /// and the range opens again with the stance.
+    func testANonResizableSplitKeepsItsWidth() throws {
+        let model = timelineModel(defaults: try defaults())
+        model.recordTimelineWidth(180)
+        let mounted = mount(model)
+        defer { mounted.window.close() }
+        mounted.host.rootView = mounted.resizable(false)
+        layout(mounted.host)
+        let split = try splitView(in: mounted.host)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2, "the control: the rail is placed")
+
+        drag(split, to: 250, in: mounted.host)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2, "the divider moved while resting")
+        XCTAssertEqual(model.timelineWidth, 180, accuracy: 0.5)
+
+        mounted.host.rootView = mounted.resizable(true)
+        layout(mounted.host)
+        drag(split, to: 250, in: mounted.host)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 250, accuracy: 2, "the divider stayed fixed once raised")
     }
 
     /// A presentation hidden but still mounted follows a drag made in the other one.
