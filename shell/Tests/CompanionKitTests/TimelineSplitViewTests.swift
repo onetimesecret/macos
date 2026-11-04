@@ -109,6 +109,8 @@ final class TimelineSplitViewTests: XCTestCase {
         layout(host)
         XCTAssertEqual(split.arrangedSubviews.count, 1)
         XCTAssertGreaterThan(split.arrangedSubviews[0].frame.width, 700)
+        XCTAssertTrue(
+            descendants(InkTextView.self, in: host).first === editor, "hiding the timeline remounted the editor")
     }
 
     /// At the floor both windows share, the rail yields and the page keeps its minimum;

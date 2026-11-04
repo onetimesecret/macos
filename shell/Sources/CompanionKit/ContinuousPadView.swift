@@ -350,10 +350,12 @@ final class ContinuousPadCanvas: NSView {
         }
     }
 
-    /// One gutter label for every checkpoint on a line: each full time on hover and for VoiceOver.
-    static func stackedReading(_ details: [String]) -> (toolTip: String?, accessibility: String) {
-        (details.isEmpty ? nil : details.joined(separator: "\n"),
-         (["Checkpoints on this line"] + details).joined(separator: ", "))
+    /// One gutter label for every checkpoint on a line: each stamped time on hover and for
+    /// VoiceOver. A checkpoint without a birth stamp has no time to list and is left out.
+    static func stackedReading(_ details: [String?]) -> (toolTip: String?, accessibility: String) {
+        let times = details.compactMap { $0 }
+        return (times.isEmpty ? nil : times.joined(separator: "\n"),
+                (["Checkpoints on this line"] + times).joined(separator: ", "))
     }
 
     private func placeLabels() {
@@ -373,12 +375,12 @@ final class ContinuousPadCanvas: NSView {
         var previousY: CGFloat?
         var usedLabels = 0
         // The detail readings of the checkpoints sharing the current label's line.
-        var lineDetails: [String] = []
+        var lineDetails: [String?] = []
         for extent in extents {
             guard let page = extent.page, let summary = summaries[page] else { continue }
             let detail = summary.pageCreatedMs.map { StreamNavigator.detailedStamp(createdMs: $0) }
             if let previousY, abs(previousY - extent.top) < 1 {
-                if let detail { lineDetails.append(detail) }
+                lineDetails.append(detail)
                 let label = checkpointLabels[usedLabels - 1]
                 let reading = Self.stackedReading(lineDetails)
                 label.stringValue = "•••"
@@ -386,7 +388,7 @@ final class ContinuousPadCanvas: NSView {
                 label.setAccessibilityLabel(reading.accessibility)
                 continue
             }
-            lineDetails = detail.map { [$0] } ?? []
+            lineDetails = [detail]
             let stamp = stamps[page] ?? ""
             let value = stamp.isEmpty ? "•" : stamp
             let label: NSTextField

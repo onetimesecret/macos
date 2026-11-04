@@ -213,7 +213,7 @@ final class ContinuousPadViewTests: XCTestCase {
                 selection: model.selection).filter(\.hasPage)
             XCTAssertEqual(surface.canvas.checkpointLabels.count, nodes.count)
             for (label, node) in zip(surface.canvas.checkpointLabels, nodes) {
-                XCTAssertFalse(node.detailStamp.isEmpty, "the fixture's pages carry a birth stamp")
+                XCTAssertFalse(node.detailStamp.isEmpty, "the control: every fixture page has a birth stamp")
                 XCTAssertEqual(label.stringValue, node.stamp)
                 XCTAssertEqual(label.toolTip, node.detailStamp)
                 XCTAssertEqual(label.accessibilityLabel(), "Checkpoint, \(node.detailStamp)")
@@ -226,7 +226,10 @@ final class ContinuousPadViewTests: XCTestCase {
         let stacked = ContinuousPadCanvas.stackedReading(["first time", "second time"])
         XCTAssertEqual(stacked.toolTip, "first time\nsecond time")
         XCTAssertEqual(stacked.accessibility, "Checkpoints on this line, first time, second time")
-        let unstamped = ContinuousPadCanvas.stackedReading([])
+        let mixed = ContinuousPadCanvas.stackedReading([nil, "second time"])
+        XCTAssertEqual(mixed.toolTip, "second time", "an unstamped checkpoint has no time to list")
+        XCTAssertEqual(mixed.accessibility, "Checkpoints on this line, second time")
+        let unstamped = ContinuousPadCanvas.stackedReading([nil, nil])
         XCTAssertNil(unstamped.toolTip)
         XCTAssertEqual(unstamped.accessibility, "Checkpoints on this line")
     }

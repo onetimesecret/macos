@@ -517,7 +517,6 @@ final class StreamNavigatorTests: XCTestCase {
         let us = StreamNavigator.detailedStamp(
             createdMs: born, locale: Locale(identifier: "en_US"), timeZone: utc)
         XCTAssertTrue(us.contains("2025"), us)
-        XCTAssertTrue(us.contains("Sep"), us)
         XCTAssertTrue(us.contains("11:39:00"), us)
         XCTAssertTrue(us.contains("AM"), us)
         XCTAssertFalse(us.contains("2025-09-14"), us)

@@ -1054,7 +1054,7 @@ public final class PageModel: ObservableObject {
 
     /// The timeline's width from the last divider move, a UserDefaults presentation preference.
     /// Not published: the split view keeps the live width and reads this when the rail mounts.
-    public var timelineWidth: CGFloat {
+    public private(set) var timelineWidth: CGFloat {
         didSet { defaults.set(Double(timelineWidth), forKey: Self.timelineWidthKey) }
     }
     private static let timelineWidthKey = "timelineWidth"

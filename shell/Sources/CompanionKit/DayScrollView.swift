@@ -2037,6 +2037,7 @@ final class DayHeaderView: NSView {
             titleField.stringValue = summaryTitle
         }
         titleSource = summary?.titleSource
+        detailStamp = summary?.pageCreatedMs.map { StreamNavigator.detailedStamp(createdMs: $0) }
         titleField.isHidden = !Self.drawsTitle(
             source: titleSource, renaming: titleBeforeRename != nil)
         remainingField.stringValue = Self.retainedText(pageDayOffset: summary?.pageDayOffset)
@@ -2065,11 +2066,18 @@ final class DayHeaderView: NSView {
         refreshPreviewButton()
     }
 
+    /// The page's full birth date and time, the reading the timeline's node gives on hover.
+    private var detailStamp: String?
+
+    /// The time's hover reading, for tests.
+    var timeToolTip: String? { timeField.toolTip }
+
     /// The day and time runs, re-joined to whatever the seat now holds.
     private func compose() {
         let runs = Self.runs(words, named: !titleField.isHidden)
         dayField.stringValue = runs.day
         timeField.stringValue = runs.time
+        timeField.toolTip = runs.time.isEmpty ? nil : detailStamp
     }
 
     /// The countdown VoiceOver hears, kept beside the gauge that

@@ -4421,6 +4421,18 @@ final class DayScrollTests: XCTestCase {
         hit.mouseDown(with: event)
     }
 
+    /// The gutter's time expands on hover to the reading the timeline's node gives.
+    func testTheGutterTimeExpandsOnHover() throws {
+        let model = try makeModel()
+        let selected = try page(in: model, saying: "first line")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(projection: model.timeUnits, selectedPage: selected, readOnly: false)
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        XCTAssertFalse(header.timeText.isEmpty, "the control: the page's gutter shows a time")
+        let born = try XCTUnwrap(model.tabs.first { $0.pageID == selected }?.pageCreatedMs)
+        XCTAssertEqual(header.timeToolTip, StreamNavigator.detailedStamp(createdMs: born))
+    }
+
     /// A click on the time opens the field on the time, selected whole, and
     /// the time slides right; a click on the day focuses the page (Law 0007).
     func testAClickOnTheGutterTimeOpensTheFieldAndOnTheDayFocuses() async throws {

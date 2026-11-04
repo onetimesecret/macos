@@ -42,7 +42,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
 
 /// The split's measures, outside the generic view so both test targets can name them.
 enum TimelineSplit {
-    /// The page's narrowest width beside the timeline; the rail yields before the page does.
+    /// The page's narrowest width beside the timeline.
     static let pageMinWidth: CGFloat = 160
 
     /// The thin divider's thickness.
@@ -120,7 +120,7 @@ final class DividerWatchView: NSView {
         observer = NotificationCenter.default.addObserver(
             forName: NSSplitView.didResizeSubviewsNotification, object: split, queue: nil
         ) { [weak self, weak split] note in
-            // Divider moves carry an index; window resizes stay unrecorded (TimelineSplitViewTests).
+            // Only divider moves name a divider index; window resizes stay unrecorded (TimelineSplitViewTests).
             let moved = note.userInfo?["NSSplitViewDividerIndex"] != nil
             MainActor.assumeIsolated {
                 guard let watch = self else { return }
