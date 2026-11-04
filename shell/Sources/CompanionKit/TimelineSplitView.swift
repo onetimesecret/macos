@@ -104,6 +104,8 @@ private final class DividerWatchView: NSView {
     /// Set across the watch's own `setPosition`, so the resize it posts is never read as a drag.
     private var placing = false
     private var recordPending = false
+    /// Checks left before a pending record is written even with a button still held.
+    private var releaseChecks = 0
     /// The split's width at the last notification, which a divider drag leaves unchanged.
     private var lastSplitWidth: CGFloat?
     /// A placement the split did not take, not retried until the target or the split's width changes.
@@ -197,13 +199,16 @@ private final class DividerWatchView: NSView {
         preferredWidth = leading.frame.width
         guard !recordPending else { return }
         recordPending = true
+        releaseChecks = 60
         DispatchQueue.main.async { [weak self] in self?.recordWhenReleased() }
     }
 
-    /// Records once the mouse button is up, so a drag's moves coalesce into one record.
+    /// Records once the mouse button is up, so a drag's moves coalesce into one record; a button held
+    /// elsewhere for three seconds no longer defers it.
     private func recordWhenReleased() {
         guard recordPending else { return }
-        guard !TimelineSplit.leftMouseIsDown() else {
+        releaseChecks -= 1
+        guard !TimelineSplit.leftMouseIsDown() || releaseChecks <= 0 else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.recordWhenReleased() }
             return
         }

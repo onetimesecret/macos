@@ -355,7 +355,7 @@ final class ContinuousPadCanvas: NSView {
     static func stackedReading(_ details: [String?]) -> (toolTip: String?, accessibility: String) {
         let times = details.compactMap { $0 }
         return (times.isEmpty ? nil : times.joined(separator: "\n"),
-                (["\(details.count) checkpoints on this line"] + times).joined(separator: ", "))
+                ([CompanionL10n.format("pad.gutter.checkpoints", details.count)] + times).joined(separator: ", "))
     }
 
     private func placeLabels() {
@@ -404,7 +404,8 @@ final class ContinuousPadCanvas: NSView {
             label.textColor = .tertiaryLabelColor
             label.alignment = .right
             label.frame = NSRect(x: 8, y: extent.top + 2, width: Self.gutterWidth - 22, height: 16)
-            label.setAccessibilityLabel(["Checkpoint", value, detail].compactMap { $0 }.joined(separator: ", "))
+            // VoiceOver hears the full reading in place of the compact time, as `DayHeaderView` speaks it.
+            label.setAccessibilityLabel(CompanionL10n.format("pad.gutter.checkpoint", detail ?? value))
             usedLabels += 1
             previousY = extent.top
         }
