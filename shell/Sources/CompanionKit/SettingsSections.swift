@@ -324,7 +324,7 @@ public struct GeneralSettingsView: View {
             + "that groups live pages by the day they were written, newest first, down the "
             + "side, starting at \(Int(TimeRailView.width)) points wide. Drag the divider to resize the timeline; "
             + "it reopens at the width you leave it. Lines always wrap and older blank pages "
-            + "are hidden. Changing this moves no content and writes "
+            + "are hidden. Changing the layout moves no content and writes "
             + "nothing new to disk."
     }
 
