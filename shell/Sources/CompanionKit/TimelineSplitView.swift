@@ -9,6 +9,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
     let railWidth: CGFloat
     let onRailResize: @MainActor (CGFloat) -> Void
     let leftMouseIsDown: @MainActor () -> Bool
+    let clock: @MainActor () -> TimeInterval
     let rail: Rail
     let content: Content
 
@@ -18,6 +19,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
         railWidth: CGFloat,
         onRailResize: @escaping @MainActor (CGFloat) -> Void,
         leftMouseIsDown: @escaping @MainActor () -> Bool = { NSEvent.pressedMouseButtons & 1 != 0 },
+        clock: @escaping @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         @ViewBuilder rail: () -> Rail,
         @ViewBuilder content: () -> Content
     ) {
@@ -26,6 +28,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
         self.railWidth = railWidth
         self.onRailResize = onRailResize
         self.leftMouseIsDown = leftMouseIsDown
+        self.clock = clock
         self.rail = rail()
         self.content = content()
     }
@@ -44,7 +47,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
                             maxWidth: resizable ? ceiling : pinned)
                         .background(DividerWatch(
                             startWidth: railWidth, records: resizable, onMove: onRailResize,
-                            leftMouseIsDown: leftMouseIsDown))
+                            leftMouseIsDown: leftMouseIsDown, clock: clock))
                 }
                 content
                     .frame(minWidth: TimelineSplit.pageMinWidth, maxWidth: .infinity, maxHeight: .infinity)
@@ -87,6 +90,7 @@ private struct DividerWatch: NSViewRepresentable {
     let records: Bool
     let onMove: @MainActor (CGFloat) -> Void
     let leftMouseIsDown: @MainActor () -> Bool
+    let clock: @MainActor () -> TimeInterval
 
     func makeNSView(context: Context) -> DividerWatchView {
         let view = DividerWatchView()
@@ -95,6 +99,7 @@ private struct DividerWatch: NSViewRepresentable {
         view.records = records
         view.onMove = onMove
         view.leftMouseIsDown = leftMouseIsDown
+        view.clock = clock
         return view
     }
 
@@ -102,6 +107,7 @@ private struct DividerWatch: NSViewRepresentable {
         view.setRecords(records)
         view.onMove = onMove
         view.leftMouseIsDown = leftMouseIsDown
+        view.clock = clock
         view.adopt(startWidth)
     }
 
@@ -119,7 +125,10 @@ private final class DividerWatchView: NSView {
     /// Off for a resting card: a resize is then placed back rather than taken as the person's.
     var records = true
     var leftMouseIsDown: @MainActor () -> Bool = { false }
+    var clock: @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     private weak var split: NSSplitView?
+    /// Set by SwiftUI's dismantle, after which the watch does not attach again.
+    private var retired = false
     private var placementQueued = false
     /// Set by a resize that changed the split's own width, until the next main-queue turn.
     private var splitResizedThisTurn = false
@@ -156,9 +165,14 @@ private final class DividerWatchView: NSView {
     }
 
     /// Not while a drag waits to be recorded, which places again, nor for the watch's own placement.
+    /// A watch laid out before its split view was above it attaches then.
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        if !recordPending && !placing { queuePlacement() }
+        if split == nil, !retired, window != nil {
+            attach()
+        } else if !recordPending && !placing {
+            queuePlacement()
+        }
     }
 
     /// A stored width changed elsewhere, such as in the other presentation, unless this split's
@@ -182,6 +196,7 @@ private final class DividerWatchView: NSView {
     /// SwiftUI's dismantle: a drag still waiting is recorded on the next main-queue turn, outside the
     /// view update, since the record publishes.
     func retire() {
+        retired = true
         detach()
         guard recordPending else {
             onMove = nil
@@ -195,7 +210,7 @@ private final class DividerWatchView: NSView {
 
     private func attach() {
         detach()
-        guard window != nil, let split = enclosingSplitView() else { return }
+        guard !retired, window != nil, let split = enclosingSplitView() else { return }
         self.split = split
         observer = NotificationCenter.default.addObserver(
             forName: NSSplitView.didResizeSubviewsNotification, object: split, queue: nil
@@ -275,7 +290,7 @@ private final class DividerWatchView: NSView {
         if thenPlace { queuePlacement() }
     }
 
-    fileprivate func markSplitResized() {
+    private func markSplitResized() {
         guard !splitResizedThisTurn else { return }
         splitResizedThisTurn = true
         DispatchQueue.main.async { [weak self] in self?.splitResizedThisTurn = false }
@@ -309,7 +324,7 @@ private final class DividerWatchView: NSView {
         if let failed = failedPlacement, abs(failed.target - target) < 0.5, abs(failed.splitWidth - width) < 0.5 {
             return
         }
-        let now = ProcessInfo.processInfo.systemUptime
+        let now = clock()
         let repeats = lastPlacement.map {
             abs($0.target - target) < 0.5 && abs($0.splitWidth - width) < 0.5
                 && now - $0.at < TimelineSplit.placementRepeatWindow ? $0.count + 1 : 1
@@ -322,12 +337,17 @@ private final class DividerWatchView: NSView {
         lastLeadingWidth = leading.frame.width
         let refused = abs(leading.frame.width - target) >= 0.5
         failedPlacement = refused || repeats >= TimelineSplit.placementRepeatLimit ? (target, width) : nil
+        if failedPlacement != nil {
+            let pane = Double(leading.frame.width)
+            Self.logger.notice(
+                "timeline split kept its own width: target \(Double(target)), split \(Double(width)), pane \(pane)")
+        }
     }
 
-    /// The lower of the frame's ceiling and the measured one, within SwiftUI's `maxWidth`.
+    /// The frame's ceiling, or the measured one where AppKit's divider is thicker, within SwiftUI's `maxWidth`.
     private func ceiling(of split: NSSplitView) -> CGFloat {
-        min(TimelineSplit.railCeiling(splitWidth: split.bounds.width),
-            TimelineSplit.railCeiling(splitWidth: split.bounds.width, dividerThickness: split.dividerThickness))
+        TimelineSplit.railCeiling(
+            splitWidth: split.bounds.width, dividerThickness: max(TimelineSplit.dividerWidth, split.dividerThickness))
     }
 
     private func enclosingSplitView() -> NSSplitView? {

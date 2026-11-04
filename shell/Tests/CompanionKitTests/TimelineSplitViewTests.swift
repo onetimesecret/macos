@@ -21,7 +21,9 @@ private struct SplitHarness: View {
         TimelineSplitView(
             showsTimeline: showsTimeline, resizable: resizable,
             railWidth: model.timelineWidth, onRailResize: model.recordTimelineWidth,
-            leftMouseIsDown: { [mouse] in mouse.isDown }
+            leftMouseIsDown: { [mouse] in mouse.isDown },
+            // A stopped clock, so a run of placements counts as one row however slow the runner.
+            clock: { 0 }
         ) {
             TimeRailView(model: model, readOnly: false)
         } content: {
@@ -394,7 +396,7 @@ final class TimelineSplitViewTests: XCTestCase {
         let split = try splitView(in: mounted.host)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2, "the control: the rail is placed")
 
-        // The mount's own placement may count as the first in the row.
+        // The mount's own placement may count as the first in the row; the harness's clock is stopped.
         var placedBack = 0
         for _ in 0..<(TimelineSplit.placementRepeatLimit + 2) {
             split.setPosition(130, ofDividerAt: 0)
