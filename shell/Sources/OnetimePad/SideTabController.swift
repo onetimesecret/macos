@@ -46,6 +46,8 @@ final class SideTabController {
     private let onOpen: @MainActor () -> Void
     private let now: @MainActor () -> TimeInterval
     private let recoveryScheduler: SideTabRecoveryScheduling
+    private let notificationCenter: NotificationCenter
+    private let workspaceCenter: NotificationCenter
     private var subscriptions = Set<AnyCancellable>()
     private var refreshPending = false
     private var sessionActive = true
@@ -68,6 +70,8 @@ final class SideTabController {
         observeSystem: Bool = true,
         now: @escaping @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         recoveryScheduler: SideTabRecoveryScheduling? = nil,
+        notificationCenter: NotificationCenter = .default,
+        workspaceCenter: NotificationCenter = NSWorkspace.shared.notificationCenter,
         onOpen: @escaping @MainActor () -> Void
     ) {
         self.model = model
@@ -76,6 +80,8 @@ final class SideTabController {
         self.onOpen = onOpen
         self.now = now
         self.recoveryScheduler = recoveryScheduler ?? SideTabRecoveryScheduler()
+        self.notificationCenter = notificationCenter
+        self.workspaceCenter = workspaceCenter
         panel = SideTabPanel(contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         button = SideTabButton(frame: .zero)
@@ -209,9 +215,10 @@ final class SideTabController {
     }
 
     private func watch(
-        _ name: Notification.Name, center: NotificationCenter = .default,
+        _ name: Notification.Name, center: NotificationCenter? = nil,
         change: @escaping @MainActor (SideTabController) -> Void = { $0.refresh() }
     ) {
+        let center = center ?? notificationCenter
         let token = center.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -239,10 +246,10 @@ final class SideTabController {
             $0.refresh()
         }
         watch(NSWindow.didEndSheetNotification) {
-            $0.sheetTransitionUntil = nil
+            $0.sheetTransitionUntil = $0.now() + Self.sheetTransitionDuration
             $0.refresh()
         }
-        let workspace = NSWorkspace.shared.notificationCenter
+        let workspace = workspaceCenter
         watch(NSWorkspace.activeSpaceDidChangeNotification, center: workspace)
         watch(NSWorkspace.didActivateApplicationNotification, center: workspace)
         watch(NSWorkspace.willSleepNotification, center: workspace) { $0.machineAwake = false; $0.refresh() }

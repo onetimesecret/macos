@@ -7,6 +7,8 @@ import XCTest
 
 @MainActor
 final class SideTabControllerTests: XCTestCase {
+    private let notificationCenter = NotificationCenter()
+    private let workspaceCenter = NotificationCenter()
     private final class RecoveryClock: SideTabRecoveryScheduling {
         final class Job {
             let deadline: TimeInterval
@@ -67,11 +69,14 @@ final class SideTabControllerTests: XCTestCase {
 
     private func controller(
         _ model: BackdropModel, systemAllows: @escaping @MainActor () -> Bool = { true },
-        observeSystem: Bool = false, onOpen: @escaping @MainActor () -> Void = {}
+        observeSystem: Bool = false, clock: RecoveryClock? = nil,
+        onOpen: @escaping @MainActor () -> Void = {}
     ) -> SideTabController {
         let display = display
         let controller = SideTabController(model: model, displays: { [display] },
-            systemAllows: systemAllows, observeSystem: observeSystem, onOpen: onOpen)
+            systemAllows: systemAllows, observeSystem: observeSystem,
+            now: { clock?.time ?? ProcessInfo.processInfo.systemUptime }, recoveryScheduler: clock,
+            notificationCenter: notificationCenter, workspaceCenter: workspaceCenter, onOpen: onOpen)
         addTeardownBlock { @MainActor in controller.stop() }
         return controller
     }
@@ -127,7 +132,8 @@ final class SideTabControllerTests: XCTestCase {
         let model = try model()
         var reads = 0
         let tab = SideTabController(model: model, displays: { reads += 1; return [] },
-            systemAllows: { true }, observeSystem: false, onOpen: {})
+            systemAllows: { true }, observeSystem: false,
+            notificationCenter: notificationCenter, workspaceCenter: workspaceCenter, onOpen: {})
         defer { tab.stop() }
         tab.refresh()
         model.sideTab.position = 0.3
@@ -140,10 +146,11 @@ final class SideTabControllerTests: XCTestCase {
         let clock = RecoveryClock()
         let display = display
         let tab = SideTabController(model: model, displays: { [display] }, systemAllows: { true },
-            now: { clock.time }, recoveryScheduler: clock, onOpen: {})
+            now: { clock.time }, recoveryScheduler: clock,
+            notificationCenter: notificationCenter, workspaceCenter: workspaceCenter, onOpen: {})
         defer { tab.stop() }
 
-        NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: nil)
+        notificationCenter.post(name: NSMenu.didBeginTrackingNotification, object: nil)
         XCTAssertFalse(tab.panel.isVisible)
         XCTAssertEqual(clock.pending, 1)
         tab.refresh()
@@ -160,9 +167,10 @@ final class SideTabControllerTests: XCTestCase {
         let clock = RecoveryClock()
         let display = display
         let tab = SideTabController(model: model, displays: { [display] }, systemAllows: { true },
-            now: { clock.time }, recoveryScheduler: clock, onOpen: {})
+            now: { clock.time }, recoveryScheduler: clock,
+            notificationCenter: notificationCenter, workspaceCenter: workspaceCenter, onOpen: {})
         defer { tab.stop() }
-        let center = NotificationCenter.default
+        let center = notificationCenter
         center.post(name: NSMenu.didBeginTrackingNotification, object: nil)
         clock.advance(by: 1)
         center.post(name: NSMenu.didBeginTrackingNotification, object: nil)
@@ -180,9 +188,10 @@ final class SideTabControllerTests: XCTestCase {
         let clock = RecoveryClock()
         let desktop = DesktopState(displays: [display])
         let tab = SideTabController(model: model, displays: { desktop.displays },
-            systemAllows: { desktop.allowed }, now: { clock.time }, recoveryScheduler: clock, onOpen: {})
+            systemAllows: { desktop.allowed }, now: { clock.time }, recoveryScheduler: clock,
+            notificationCenter: notificationCenter, workspaceCenter: workspaceCenter, onOpen: {})
         defer { tab.stop() }
-        NotificationCenter.default.post(name: NSWindow.willBeginSheetNotification, object: nil)
+        notificationCenter.post(name: NSWindow.willBeginSheetNotification, object: nil)
         XCTAssertFalse(tab.panel.isVisible)
         XCTAssertEqual(clock.pending, 1)
         desktop.allowed = false
@@ -199,12 +208,52 @@ final class SideTabControllerTests: XCTestCase {
         let clock = RecoveryClock()
         let display = display
         let tab = SideTabController(model: model, displays: { [display] }, systemAllows: { true },
-            now: { clock.time }, recoveryScheduler: clock, onOpen: {})
+            now: { clock.time }, recoveryScheduler: clock,
+            notificationCenter: notificationCenter, workspaceCenter: workspaceCenter, onOpen: {})
         defer { tab.stop() }
-        NotificationCenter.default.post(name: NSWindow.willBeginSheetNotification, object: nil)
+        notificationCenter.post(name: NSWindow.willBeginSheetNotification, object: nil)
         XCTAssertFalse(tab.panel.isVisible)
         clock.advance(by: SideTabController.sheetTransitionDuration + 0.01)
         XCTAssertTrue(tab.panel.isVisible)
+        XCTAssertEqual(clock.pending, 0)
+    }
+
+    func testSheetEndRechecksAfterNativeDetachWithoutAnotherNotification() throws {
+        let model = try enabledModel()
+        let clock = RecoveryClock()
+        let desktop = DesktopState(displays: [display])
+        let tab = SideTabController(model: model, displays: { desktop.displays },
+            systemAllows: { desktop.allowed }, now: { clock.time }, recoveryScheduler: clock,
+            notificationCenter: notificationCenter, workspaceCenter: workspaceCenter, onOpen: {})
+        defer { tab.stop() }
+        notificationCenter.post(name: NSWindow.willBeginSheetNotification, object: nil)
+        desktop.allowed = false
+        clock.advance(by: SideTabController.sheetTransitionDuration + 0.01)
+        XCTAssertFalse(tab.panel.isVisible)
+        XCTAssertEqual(clock.pending, 0)
+
+        notificationCenter.post(name: NSWindow.didEndSheetNotification, object: nil)
+        XCTAssertFalse(tab.panel.isVisible)
+        XCTAssertEqual(clock.pending, 1)
+        desktop.allowed = true
+        clock.advance(by: SideTabController.sheetTransitionDuration + 0.01)
+        XCTAssertTrue(tab.panel.isVisible)
+        XCTAssertEqual(clock.pending, 0)
+    }
+
+    func testSheetEndRecoveryStillRespectsNativeState() throws {
+        let model = try enabledModel()
+        let clock = RecoveryClock()
+        let desktop = DesktopState(displays: [display])
+        let tab = SideTabController(model: model, displays: { desktop.displays },
+            systemAllows: { desktop.allowed }, now: { clock.time }, recoveryScheduler: clock,
+            notificationCenter: notificationCenter, workspaceCenter: workspaceCenter, onOpen: {})
+        defer { tab.stop() }
+        desktop.allowed = false
+        notificationCenter.post(name: NSWindow.didEndSheetNotification, object: nil)
+        XCTAssertEqual(clock.pending, 1)
+        clock.advance(by: SideTabController.sheetTransitionDuration + 0.01)
+        XCTAssertFalse(tab.panel.isVisible)
         XCTAssertEqual(clock.pending, 0)
     }
 
@@ -213,9 +262,10 @@ final class SideTabControllerTests: XCTestCase {
         let clock = RecoveryClock()
         let display = display
         let tab = SideTabController(model: model, displays: { [display] }, systemAllows: { true },
-            now: { clock.time }, recoveryScheduler: clock, onOpen: {})
-        NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: nil)
-        NotificationCenter.default.post(name: NSWindow.willBeginSheetNotification, object: nil)
+            now: { clock.time }, recoveryScheduler: clock,
+            notificationCenter: notificationCenter, workspaceCenter: workspaceCenter, onOpen: {})
+        notificationCenter.post(name: NSMenu.didBeginTrackingNotification, object: nil)
+        notificationCenter.post(name: NSWindow.willBeginSheetNotification, object: nil)
         XCTAssertEqual(clock.pending, 2)
         tab.stop()
         XCTAssertEqual(clock.pending, 0)
@@ -324,7 +374,8 @@ final class SideTabControllerTests: XCTestCase {
         let display = display
         let desktop = DesktopState(displays: [display])
         let tab = SideTabController(model: model, displays: { desktop.displays }, systemAllows: { true },
-            observeSystem: false, onOpen: { XCTFail("unexpected open") })
+            observeSystem: false,
+            notificationCenter: notificationCenter, workspaceCenter: workspaceCenter, onOpen: { XCTFail("unexpected open") })
         defer { tab.stop() }
         desktop.displays = [SideTabDisplay(id: "replacement", name: "Replacement", frame: display.frame,
             visibleFrame: display.visibleFrame)]
@@ -340,12 +391,13 @@ final class SideTabControllerTests: XCTestCase {
 
     func testMenuAndWorkspaceNotificationsHideTab() throws {
         let model = try enabledModel()
-        let tab = controller(model, observeSystem: true)
-        NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: nil)
+        let clock = RecoveryClock()
+        let tab = controller(model, observeSystem: true, clock: clock)
+        notificationCenter.post(name: NSMenu.didBeginTrackingNotification, object: nil)
         XCTAssertFalse(tab.panel.isVisible)
-        NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: nil)
+        notificationCenter.post(name: NSMenu.didEndTrackingNotification, object: nil)
         XCTAssertTrue(tab.panel.isVisible)
-        let center = NSWorkspace.shared.notificationCenter
+        let center = workspaceCenter
         center.post(name: NSWorkspace.willSleepNotification, object: nil)
         XCTAssertFalse(tab.panel.isVisible)
         center.post(name: NSWorkspace.didWakeNotification, object: nil)
@@ -366,9 +418,36 @@ final class SideTabControllerTests: XCTestCase {
         XCTAssertFalse(tab.panel.isVisible)
         center.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
         XCTAssertTrue(tab.panel.isVisible)
-        NotificationCenter.default.post(name: NSWindow.willBeginSheetNotification, object: nil)
+        notificationCenter.post(name: NSWindow.willBeginSheetNotification, object: nil)
         XCTAssertFalse(tab.panel.isVisible)
-        NotificationCenter.default.post(name: NSWindow.didEndSheetNotification, object: nil)
+        notificationCenter.post(name: NSWindow.didEndSheetNotification, object: nil)
+        XCTAssertFalse(tab.panel.isVisible)
+        clock.advance(by: SideTabController.sheetTransitionDuration + 0.01)
         XCTAssertTrue(tab.panel.isVisible)
+    }
+
+    func testInjectedCentersKeepSyntheticEventsWithinTheirController() throws {
+        let model = try enabledModel()
+        let clock = RecoveryClock()
+        let first = controller(model, observeSystem: true, clock: clock)
+        let otherNotifications = NotificationCenter()
+        let otherWorkspace = NotificationCenter()
+        let display = display
+        let second = SideTabController(model: model, displays: { [display] }, systemAllows: { true },
+            now: { clock.time }, recoveryScheduler: clock,
+            notificationCenter: otherNotifications, workspaceCenter: otherWorkspace, onOpen: {})
+        defer { second.stop() }
+        notificationCenter.post(name: NSMenu.didBeginTrackingNotification, object: nil)
+        XCTAssertFalse(first.panel.isVisible)
+        XCTAssertTrue(second.panel.isVisible)
+        notificationCenter.post(name: NSMenu.didEndTrackingNotification, object: nil)
+        workspaceCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
+        XCTAssertFalse(first.panel.isVisible)
+        XCTAssertTrue(second.panel.isVisible)
+        workspaceCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        XCTAssertTrue(first.panel.isVisible)
+        otherNotifications.post(name: NSMenu.didBeginTrackingNotification, object: nil)
+        XCTAssertTrue(first.panel.isVisible)
+        XCTAssertFalse(second.panel.isVisible)
     }
 }
