@@ -29,11 +29,8 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
             HSplitView {
                 if showsTimeline {
                     rail
-                        .frame(
-                            minWidth: TimeRailView.width,
-                            idealWidth: min(TimeRailView.clampedWidth(railWidth), ceiling),
-                            maxWidth: ceiling)
-                        .background(DividerWatch(onMove: onRailResize))
+                        .frame(minWidth: TimeRailView.width, idealWidth: TimeRailView.width, maxWidth: ceiling)
+                        .background(DividerWatch(startWidth: railWidth, onMove: onRailResize))
                 }
                 content
                     .frame(minWidth: TimelineSplit.pageMinWidth, maxWidth: .infinity, maxHeight: .infinity)
@@ -58,13 +55,15 @@ enum TimelineSplit {
     }
 }
 
-/// Reports the leading pane's width after the enclosing split view's divider moves.
+/// Opens the leading pane at `startWidth` and reports its width after each divider move.
 private struct DividerWatch: NSViewRepresentable {
+    let startWidth: CGFloat
     let onMove: @MainActor (CGFloat) -> Void
 
     func makeNSView(context: Context) -> DividerWatchView {
         let view = DividerWatchView()
         view.setAccessibilityElement(false)
+        view.startWidth = startWidth
         view.onMove = onMove
         return view
     }
@@ -79,7 +78,12 @@ private struct DividerWatch: NSViewRepresentable {
 }
 
 final class DividerWatchView: NSView {
+    /// Applied once per mount: `HSplitView` opens a pane at its minimum, not its ideal width.
+    var startWidth: CGFloat = TimeRailView.width
     var onMove: (@MainActor (CGFloat) -> Void)?
+    private weak var split: NSSplitView?
+    private var started = false
+    private var starting = false
     /// Copied out by the nonisolated deinit, as `WheelRelayView` does for its monitor.
     private nonisolated(unsafe) var observer: NSObjectProtocol?
 
@@ -99,6 +103,11 @@ final class DividerWatchView: NSView {
         attach()
     }
 
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        startIfNeeded()
+    }
+
     func retire() {
         detach()
         onMove = nil
@@ -107,21 +116,40 @@ final class DividerWatchView: NSView {
     private func attach() {
         detach()
         guard window != nil, let split = enclosingSplitView() else { return }
+        self.split = split
         observer = NotificationCenter.default.addObserver(
-            forName: NSSplitView.didResizeSubviewsNotification, object: split, queue: .main
+            forName: NSSplitView.didResizeSubviewsNotification, object: split, queue: nil
         ) { [weak self, weak split] note in
             // Divider moves carry an index; window resizes stay unrecorded (TimelineSplitViewTests).
-            guard note.userInfo?["NSSplitViewDividerIndex"] != nil else { return }
+            let moved = note.userInfo?["NSSplitViewDividerIndex"] != nil
             MainActor.assumeIsolated {
-                guard let watch = self, let leading = split?.arrangedSubviews.first else { return }
+                guard let watch = self else { return }
+                guard moved else { return watch.startIfNeeded() }
+                guard !watch.starting, let leading = split?.arrangedSubviews.first else { return }
                 watch.onMove?(leading.frame.width)
             }
         }
+        startIfNeeded()
     }
 
     private func detach() {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
+    }
+
+    /// Moves the divider to `startWidth` once the split has laid its panes out; the move is not recorded.
+    private func startIfNeeded() {
+        guard !started, let split, split.bounds.width > 0, split.arrangedSubviews.count > 1 else { return }
+        started = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let split = self.split, split.arrangedSubviews.count > 1,
+                  let leading = split.arrangedSubviews.first,
+                  abs(leading.frame.width - self.startWidth) >= 0.5
+            else { return }
+            self.starting = true
+            split.setPosition(self.startWidth, ofDividerAt: 0)
+            self.starting = false
+        }
     }
 
     private func enclosingSplitView() -> NSSplitView? {
