@@ -297,7 +297,7 @@ public enum StreamNavigator {
 
     // MARK: What a node says
 
-    /// The node's time as hover and VoiceOver read it; the day's words when there is no birth stamp.
+    /// The node's time as hover reads it beside the day's words; those words when there is no birth stamp.
     static func timeReading(of node: Node) -> String {
         node.detailStamp.isEmpty ? node.spokenDay : node.detailStamp
     }
@@ -313,11 +313,11 @@ public enum StreamNavigator {
         return "\(first)\n\(node.title)"
     }
 
-    /// VoiceOver reads the full date, time and title, plus the retained state.
-    /// The gauge supplies its own accessibility value.
+    /// VoiceOver reads the relative day as a navigation cue, then the full date and time, the title,
+    /// and the retained state. The gauge supplies its own accessibility value.
     public static func spoken(for node: Node) -> String {
         guard node.hasPage else { return "\(node.spokenDay), no page" }
-        var parts = [timeReading(of: node)]
+        var parts = [node.spokenDay, node.detailStamp].filter { !$0.isEmpty }
         if !node.title.isEmpty { parts.append(node.title) }
         if node.trailing { parts.append("past seven days, retained because it holds content") }
         return parts.joined(separator: ", ")

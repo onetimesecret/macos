@@ -225,13 +225,13 @@ final class ContinuousPadViewTests: XCTestCase {
     func testStackedCheckpointsListEveryTimeOnHover() {
         let stacked = ContinuousPadCanvas.stackedReading(["first time", "second time"])
         XCTAssertEqual(stacked.toolTip, "first time\nsecond time")
-        XCTAssertEqual(stacked.accessibility, "Checkpoints on this line, first time, second time")
+        XCTAssertEqual(stacked.accessibility, "2 checkpoints on this line, first time, second time")
         let mixed = ContinuousPadCanvas.stackedReading([nil, "second time"])
         XCTAssertEqual(mixed.toolTip, "second time", "an unstamped checkpoint has no time to list")
-        XCTAssertEqual(mixed.accessibility, "Checkpoints on this line, second time")
+        XCTAssertEqual(mixed.accessibility, "2 checkpoints on this line, second time")
         let unstamped = ContinuousPadCanvas.stackedReading([nil, nil])
         XCTAssertNil(unstamped.toolTip)
-        XCTAssertEqual(unstamped.accessibility, "Checkpoints on this line")
+        XCTAssertEqual(unstamped.accessibility, "2 checkpoints on this line")
     }
 
     func testOneStorageSupportsNativeSelectionAndMovementAcrossCheckpoint() throws {

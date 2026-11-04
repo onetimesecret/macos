@@ -426,7 +426,7 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertEqual(nodes.map(\.title), ["", "the vault", "stdout sync"])
         let placeholder = try XCTUnwrap(nodes.first)
         XCTAssertEqual(StreamNavigator.help(for: placeholder, chord: nil), detail(born))
-        XCTAssertEqual(StreamNavigator.spoken(for: placeholder), detail(born))
+        XCTAssertEqual(StreamNavigator.spoken(for: placeholder), "today, \(detail(born))")
     }
 
     /// Today with no page is a node with no minute, and the one node
@@ -487,8 +487,8 @@ final class StreamNavigatorTests: XCTestCase {
 
     // MARK: What a node says
 
-    /// Hover and VoiceOver use the full date and seconds regardless of compact precision,
-    /// and the day's words only stand in when the page has no birth stamp.
+    /// Hover and VoiceOver use the full date and seconds regardless of compact precision. Hover
+    /// sits beside the day's words, which VoiceOver alone repeats.
     func testTheTooltipAndTheSpokenLabelSayTheSameFacts() throws {
         let page = try XCTUnwrap(nodes([slot(tab: 1, page: 11, title: "stdout sync")]).first)
         XCTAssertEqual(page.detailStamp, detail(born))
@@ -497,7 +497,7 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertEqual(
             StreamNavigator.help(for: page, chord: chord),
             "\(detail(born)) (\(chord.displaySymbol))\nstdout sync")
-        XCTAssertEqual(StreamNavigator.spoken(for: page), "\(detail(born)), stdout sync")
+        XCTAssertEqual(StreamNavigator.spoken(for: page), "today, \(detail(born)), stdout sync")
 
         let untitled = try XCTUnwrap(nodes([slot(tab: 1, page: 11)]).first)
         XCTAssertEqual(StreamNavigator.help(for: untitled, chord: nil), detail(born))
@@ -508,7 +508,7 @@ final class StreamNavigatorTests: XCTestCase {
         let retained = try XCTUnwrap(nodes([slot(tab: 1, page: 11, day: -8)]).last)
         XCTAssertEqual(
             StreamNavigator.spoken(for: retained),
-            "\(detail(born)), past seven days, retained because it holds content")
+            "8 days ago, \(detail(born)), past seven days, retained because it holds content")
     }
 
     /// The expanded reading follows the locale's own date and time, seconds included,

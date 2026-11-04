@@ -350,12 +350,12 @@ final class ContinuousPadCanvas: NSView {
         }
     }
 
-    /// One gutter label for every checkpoint on a line: each stamped time on hover and for
-    /// VoiceOver. A checkpoint without a birth stamp has no time to list and is left out.
+    /// One gutter label for every checkpoint on a line: how many for VoiceOver, and each stamped
+    /// time. A checkpoint without a birth stamp counts but has no time to list.
     static func stackedReading(_ details: [String?]) -> (toolTip: String?, accessibility: String) {
         let times = details.compactMap { $0 }
         return (times.isEmpty ? nil : times.joined(separator: "\n"),
-                (["Checkpoints on this line"] + times).joined(separator: ", "))
+                (["\(details.count) checkpoints on this line"] + times).joined(separator: ", "))
     }
 
     private func placeLabels() {

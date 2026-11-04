@@ -114,7 +114,7 @@ final class TimelineSplitViewTests: XCTestCase {
     }
 
     /// At the floor both windows share, the rail yields and the page keeps its minimum;
-    /// the yield is not recorded as the person's width.
+    /// the yield is not recorded, and widening the window gives the rail its width back.
     func testTheRailYieldsToThePageAtTheWindowFloor() throws {
         let model = timelineModel(defaults: try defaults())
         model.recordTimelineWidth(TimeRailView.maxWidth)
@@ -131,7 +131,39 @@ final class TimelineSplitViewTests: XCTestCase {
         XCTAssertEqual(
             split.arrangedSubviews[0].frame.width, TimelineSplit.railCeiling(splitWidth: floor), accuracy: 2)
         XCTAssertEqual(model.timelineWidth, TimeRailView.maxWidth, accuracy: 0.5, "a window resize was recorded")
+
+        resize(mounted, width: 640)
+        XCTAssertEqual(
+            split.arrangedSubviews[0].frame.width, TimeRailView.maxWidth, accuracy: 2,
+            "the rail stayed squeezed after the window widened")
         XCTAssertNotNil(descendants(InkTextView.self, in: mounted.host).first)
+    }
+
+    /// A window that opens too narrow for the stored width shows the ceiling and keeps the stored width.
+    func testANarrowMountKeepsTheStoredWidth() throws {
+        let model = timelineModel(defaults: try defaults())
+        model.recordTimelineWidth(TimeRailView.maxWidth)
+        let floor: CGFloat = 360
+        let mounted = mount(model, width: floor)
+        defer { mounted.window.close() }
+        let split = try splitView(in: mounted.host)
+        XCTAssertEqual(
+            split.arrangedSubviews[0].frame.width, TimelineSplit.railCeiling(splitWidth: floor), accuracy: 2)
+        XCTAssertEqual(model.timelineWidth, TimeRailView.maxWidth, accuracy: 0.5, "the clamped start was recorded")
+    }
+
+    /// A drag past the ceiling at the floor stops where the page keeps its minimum.
+    func testADragAtTheFloorLeavesThePageItsMinimum() throws {
+        let model = timelineModel(defaults: try defaults())
+        let floor: CGFloat = 360
+        let mounted = mount(model, width: floor)
+        defer { mounted.window.close() }
+        let split = try splitView(in: mounted.host)
+        split.setPosition(TimeRailView.maxWidth, ofDividerAt: 0)
+        layout(mounted.host)
+        XCTAssertEqual(
+            split.arrangedSubviews[1].frame.width, TimelineSplit.pageMinWidth, accuracy: 2,
+            "the drag took the page under its minimum")
     }
 
     /// The dragged width returns when the rail comes back and when the app relaunches.
