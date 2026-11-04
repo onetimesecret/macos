@@ -231,8 +231,9 @@ public enum StreamNavigator {
 
     /// The expanded reading for timeline and checkpoint tooltips and VoiceOver: the full date
     /// and the time with seconds, in the person's locale and system time format.
+    /// `nil` is the person's own, autoupdating locale; a test passes a fixed one.
     static func detailedStamp(
-        createdMs: UInt64, locale: Locale = .autoupdatingCurrent, timeZone: TimeZone = .current
+        createdMs: UInt64, locale: Locale? = nil, timeZone: TimeZone = .current
     ) -> String {
         DetailedStampFormatterCache.reading(createdMs: createdMs, locale: locale, timeZone: timeZone)
     }
@@ -988,11 +989,11 @@ private enum DetailedStampFormatterCache {
         DetailedStampFormatterCache.lock.unlock()
     }
 
-    static func reading(createdMs: UInt64, locale: Locale, timeZone: TimeZone) -> String {
+    static func reading(createdMs: UInt64, locale: Locale?, timeZone: TimeZone) -> String {
         _ = localeWatch
-        // The description, not the identifier: an autoupdating locale and a fixed one can share an
-        // identifier and still format differently.
-        let key = "\(timeZone.identifier)\u{1F}\(locale)"
+        // The autoupdating locale keys apart from a fixed one with the same identifier: only it
+        // carries the person's 24-hour and format overrides.
+        let key = "\(timeZone.identifier)\u{1F}\(locale?.identifier ?? "\u{1F}autoupdating")"
         let readingKey = "\(key)\u{1F}\(createdMs)"
         lock.lock()
         defer { lock.unlock() }
@@ -1002,7 +1003,7 @@ private enum DetailedStampFormatterCache {
             formatter = hit
         } else {
             formatter = DateFormatter()
-            formatter.locale = locale
+            formatter.locale = locale ?? .autoupdatingCurrent
             formatter.timeZone = timeZone
             formatter.dateStyle = .medium
             formatter.timeStyle = .medium

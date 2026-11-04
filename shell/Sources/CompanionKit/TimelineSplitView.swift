@@ -212,7 +212,7 @@ private final class DividerWatchView: NSView {
         guard !placing else { return }
         let paneMoved = leadingWidth.map { abs($0 - (lastLeadingWidth ?? $0)) >= 0.5 } ?? false
         let splitUnchanged = lastSplitWidth.map { abs($0 - width) < 0.5 } ?? false
-        if lastSplitWidth != nil, !splitUnchanged { markSplitResized() }
+        if !splitUnchanged { markSplitResized() }
         // A clamp that follows a window resize in the same turn is the split's, not the person's.
         let heldMove = dividerMoved && !splitResizedThisTurn && splitUnchanged && paneMoved && leftMouseIsDown()
         guard records, userResize || heldMove, split.arrangedSubviews.count > 1,
