@@ -79,6 +79,11 @@ enum TimelineSplit {
     static let placementRepeatLimit = 10
     static let placementRepeatWindow: TimeInterval = 2
 
+    /// A notification's `userInfo` keys, sorted, for the debug log.
+    static func keyList(_ userInfo: [AnyHashable: Any]?) -> String {
+        (userInfo?.keys).map { keys in keys.map { "\($0)" }.sorted().joined(separator: ",") } ?? ""
+    }
+
     /// The `userInfo` keys `NSSplitView.didResizeSubviewsNotification` documents.
     static let dividerIndexKey = "NSSplitViewDividerIndex"
     static let userResizeKey = "NSSplitViewUserResizeKey"
@@ -117,7 +122,7 @@ private struct DividerWatch: NSViewRepresentable {
 }
 
 private final class DividerWatchView: NSView {
-    static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "timeline")
+    private static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "timeline")
     /// The stored width at mount, then each divider move. `HSplitView` opens a pane at its
     /// minimum, so the watch places the divider itself.
     var preferredWidth: CGFloat = TimeRailView.width
@@ -137,6 +142,8 @@ private final class DividerWatchView: NSView {
     private var recordPending = false
     /// Checks left before a pending record is written even with a button still held.
     private var releaseChecks = 0
+    /// Which pending record a release poll belongs to, so a dropped record's poll ends.
+    private var recordGeneration = 0
     /// The split's and the leading pane's widths at the last notification: a divider drag moves the
     /// pane and leaves the split.
     private var lastSplitWidth: CGFloat?
@@ -217,10 +224,10 @@ private final class DividerWatchView: NSView {
         ) { [weak self, weak split] note in
             let userResize = (note.userInfo?[TimelineSplit.userResizeKey] as? NSNumber)?.boolValue == true
             let dividerMoved = note.userInfo?[TimelineSplit.dividerIndexKey] != nil
-            let keys = (note.userInfo?.keys).map { names in names.map { "\($0)" }.sorted().joined(separator: ",") } ?? ""
             MainActor.assumeIsolated {
-                // Case 13 reads these to learn which keys AppKit posts for a person's drag.
-                DividerWatchView.logger.debug("timeline split resized, userInfo keys: \(keys, privacy: .public)")
+                // Case 13 reads these to learn which keys AppKit posts for a person's drag; built only when logged.
+                DividerWatchView.logger.debug(
+                    "timeline split resized, userInfo keys: \(TimelineSplit.keyList(note.userInfo), privacy: .public)")
                 guard let watch = self, let split else { return }
                 watch.splitDidResize(split, userResize: userResize, dividerMoved: dividerMoved)
             }
@@ -265,17 +272,21 @@ private final class DividerWatchView: NSView {
         releaseChecks = 60
         guard !recordPending else { return }
         recordPending = true
-        DispatchQueue.main.async { [weak self] in self?.recordWhenReleased() }
+        recordGeneration &+= 1
+        let generation = recordGeneration
+        DispatchQueue.main.async { [weak self] in self?.recordWhenReleased(generation) }
     }
 
     /// Records once the mouse button is up, so a drag's moves coalesce into one record; a button held
     /// three seconds past the last move no longer defers it.
-    private func recordWhenReleased() {
-        guard recordPending else { return }
+    private func recordWhenReleased(_ generation: Int) {
+        guard recordPending, generation == recordGeneration else { return }
         releaseChecks -= 1
         let held = leftMouseIsDown()
         guard !held || releaseChecks <= 0 else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.recordWhenReleased() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.recordWhenReleased(generation)
+            }
             return
         }
         // A bound that expires with the button still held records without placing under the pointer.

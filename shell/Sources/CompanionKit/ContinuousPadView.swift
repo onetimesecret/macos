@@ -99,7 +99,8 @@ final class ContinuousPadCanvas: NSView {
     private(set) var extents: [RollGeometry.Extent] = []
     private(set) var checkpointLabels: [NSTextField] = []
     private weak var observedScroll: NSScrollView?
-    private var localeObserver: NSObjectProtocol?
+    /// Copied out by the nonisolated deinit, as `DividerWatchView` does for its observer.
+    private nonisolated(unsafe) var readingObservers: [NSObjectProtocol] = []
     private var selectedPage: UInt64?
     private var pendingOffset: NSPoint?
     private var pendingPlace: RollPlace?
@@ -168,22 +169,26 @@ final class ContinuousPadCanvas: NSView {
             name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         NotificationCenter.default.addObserver(self, selector: #selector(editorResized),
             name: NSView.frameDidChangeNotification, object: editor)
-        // The gutter's detailed readings follow the person's locale and clock settings.
-        localeObserver = NotificationCenter.default.addObserver(
-            forName: NSLocale.currentLocaleDidChangeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.needsMeasurement = true
-                self?.needsLayout = true
+        // The gutter's detailed readings follow the person's locale, clock settings and time zone.
+        readingObservers = [NSLocale.currentLocaleDidChangeNotification, .NSSystemTimeZoneDidChange].map { name in
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.needsMeasurement = true
+                    self?.needsLayout = true
+                }
             }
         }
     }
 
     func stopObserving() {
         NotificationCenter.default.removeObserver(self)
-        if let localeObserver { NotificationCenter.default.removeObserver(localeObserver) }
-        localeObserver = nil
+        for observer in readingObservers { NotificationCenter.default.removeObserver(observer) }
+        readingObservers = []
         observedScroll = nil
+    }
+
+    deinit {
+        for observer in readingObservers { NotificationCenter.default.removeObserver(observer) }
     }
 
     @objc private func viewportChanged(_ notification: Notification) { measure() }

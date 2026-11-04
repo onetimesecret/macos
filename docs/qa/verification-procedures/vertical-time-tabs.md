@@ -554,7 +554,7 @@ button, so if AppKit leaves the mark off, the divider returns to the
 stored width and step 8 fails. Record steps 8 and 9 in their own rows.
 
 During step 1, run
-`log stream --level debug --predicate 'subsystem == "dev.onetimesecret.pad" && category == "timeline"'`
+`log stream --level debug --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad", "dev.onetimesecret.pad.debug"} && category == "timeline"'`
 and record the `userInfo` keys logged for the drag. `NSSplitViewUserResizeKey`
 among them means AppKit marks the drag as the person's.
 
