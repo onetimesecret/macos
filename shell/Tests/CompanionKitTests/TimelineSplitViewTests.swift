@@ -240,9 +240,10 @@ final class TimelineSplitViewTests: XCTestCase {
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 200, accuracy: 2, "the watch fought the person's drag")
         XCTAssertEqual(model.timelineWidth, 200, accuracy: 2, "the held move was not recorded")
 
+        // Held across the drain, so the queued placement runs under the held button too.
         TimelineSplit.leftMouseIsDownForTests = true
         mounted.window.setContentSize(NSSize(width: 360, height: 400))
-        mounted.host.layoutSubtreeIfNeeded()
+        layout(mounted.host)
         TimelineSplit.leftMouseIsDownForTests = false
         layout(mounted.host)
         XCTAssertEqual(model.timelineWidth, 200, accuracy: 2, "a window resize under a held button was recorded")
@@ -263,7 +264,7 @@ final class TimelineSplitViewTests: XCTestCase {
 
         TimelineSplit.leftMouseIsDownForTests = true
         mounted.window.setContentSize(NSSize(width: floor, height: 520))
-        mounted.host.layoutSubtreeIfNeeded()
+        layout(mounted.host)
         TimelineSplit.leftMouseIsDownForTests = false
         layout(mounted.host)
         XCTAssertEqual(

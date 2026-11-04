@@ -290,16 +290,18 @@ renamed or re-ordered; a new sealed generation written for a flip.
 dies soonest has left, and the selected row announces as selected. On
 Today, VoiceOver also offers a **New page** action that mints another
 page. Since
-issue #131 the row says the same words on screen, so what is heard and
-what is read agree apart from the capital. The short form (`-3d`) is
+issue #131 the row says the same day words on screen, so what is heard and
+what is read agree apart from the capital; after them VoiceOver reads the
+page's full birth date and time, with seconds, the reading the row's
+tooltip shows on hover. The short form (`-3d`) is
 left only in the roll's gutter, whose header announces the phrase, so
 nothing anywhere is abbreviation-only. Each perforation announces the
-day, the page's name and its remaining time. The hidden-pages line at
+day, the page's full birth date and time, its name and its remaining time. The hidden-pages line at
 the foot of the rail, when it is there, announces the whole sentence and
 not just the number.
 
-**Fail:** a row that announces only "-3d"; a row that shows different
-words from the ones it speaks; a row with no value; Today with no
+**Fail:** a row that announces only "-3d"; a row whose spoken day differs
+from the day words it shows, or whose spoken time differs from its tooltip; a row with no value; Today with no
 **New page** action; a perforation that announces nothing; a decorative
 gauge or a minimap bar that VoiceOver reads.
 
