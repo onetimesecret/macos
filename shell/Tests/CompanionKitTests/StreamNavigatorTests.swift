@@ -533,6 +533,22 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertTrue(vancouver.contains("04:39:00"), vancouver)
     }
 
+    /// A locale or time-zone change empties the detailed-stamp cache, its formatters and its readings,
+    /// so the next reading is built under the new settings.
+    func testALocaleOrTimeZoneChangeEmptiesTheDetailedStampCache() throws {
+        // A zone no other test reads, so nothing else fills these entries between the post and the check.
+        let zone = try XCTUnwrap(TimeZone(identifier: "Pacific/Chatham"))
+        for name in [NSLocale.currentLocaleDidChangeNotification, .NSSystemTimeZoneDidChange] {
+            _ = StreamNavigator.detailedStamp(createdMs: born, timeZone: zone)
+            let before = DetailedStampFormatterCache.cached(createdMs: born, locale: nil, timeZone: zone)
+            XCTAssertTrue(before.formatter && before.reading, "the control: the reading is cached")
+            NotificationCenter.default.post(name: name, object: nil)
+            let after = DetailedStampFormatterCache.cached(createdMs: born, locale: nil, timeZone: zone)
+            XCTAssertFalse(after.formatter, "\(name.rawValue) left the formatter")
+            XCTAssertFalse(after.reading, "\(name.rawValue) left the reading")
+        }
+    }
+
     /// The gutter's words are the day and the time on a day's first
     /// page, the time alone on the pages under it, the day alone for
     /// the empty place, and the retained words past the window.

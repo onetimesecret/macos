@@ -562,7 +562,9 @@ among them means AppKit marks the drag as the person's.
    200 points over more than three seconds and release.
 2. Quit and relaunch, and raise the card.
 3. Open the editor window, drag its divider to about 150 points, close
-   the window and raise the card again.
+   the window and raise the card again. Opening the editor hides the card
+   with `orderOut`, which leaves the card's split mounted, so this step
+   checks that a hidden split takes the editor's width.
 4. With the divider at 280, narrow the card to its 360-point floor,
    then widen it again. Repeat in the editor window.
 5. Lower the card and watch the divider as the stance fades.
