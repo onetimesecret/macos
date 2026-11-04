@@ -1,6 +1,7 @@
 import AppKit
 import XCTest
 
+@testable import CompanionKit
 @testable import OnetimePad
 
 /// The primary editor window's decisions, tested as pure functions.
@@ -66,5 +67,19 @@ final class PrimaryEditorWindowControllerTests: XCTestCase {
         XCTAssertEqual(PrimaryEditorWindowController.minimumSize.height, 280)
         XCTAssertEqual(BackdropGeometry.minHeight, 260)
         XCTAssertEqual(BackdropRootView.headerHeight, 32, "the card's header over the rail")
+    }
+
+    /// `TimelineSplitViewTests.testTheRailYieldsToThePageAtTheWindowFloor` shrinks the split to
+    /// this width; at both floors the rail's start width and the page's minimum fit side by side.
+    func testTheWindowFloorsFitTheTimelineAndThePage() {
+        // The narrowest split in which the rail's start width and the page's minimum both fit.
+        let minimumSplitWidth = TimeRailView.width + TimelineSplit.dividerWidth + TimelineSplit.pageMinWidth
+        for floor in [PrimaryEditorWindowController.minimumSize.width, BackdropGeometry.minWidth] {
+            XCTAssertEqual(floor, 360)
+            XCTAssertGreaterThanOrEqual(floor, minimumSplitWidth)
+            XCTAssertEqual(
+                floor - TimelineSplit.railCeiling(splitWidth: floor) - TimelineSplit.dividerWidth,
+                TimelineSplit.pageMinWidth)
+        }
     }
 }

@@ -99,6 +99,8 @@ final class ContinuousPadCanvas: NSView {
     private(set) var extents: [RollGeometry.Extent] = []
     private(set) var checkpointLabels: [NSTextField] = []
     private weak var observedScroll: NSScrollView?
+    /// Copied out by the nonisolated deinit, as `DividerWatchView` does for its observer.
+    private nonisolated(unsafe) var readingObservers: [NSObjectProtocol] = []
     private var selectedPage: UInt64?
     private var pendingOffset: NSPoint?
     private var pendingPlace: RollPlace?
@@ -167,11 +169,26 @@ final class ContinuousPadCanvas: NSView {
             name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         NotificationCenter.default.addObserver(self, selector: #selector(editorResized),
             name: NSView.frameDidChangeNotification, object: editor)
+        // The gutter's detailed readings follow the person's locale, clock settings and time zone.
+        readingObservers = [NSLocale.currentLocaleDidChangeNotification, .NSSystemTimeZoneDidChange].map { name in
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.needsMeasurement = true
+                    self?.needsLayout = true
+                }
+            }
+        }
     }
 
     func stopObserving() {
         NotificationCenter.default.removeObserver(self)
+        for observer in readingObservers { NotificationCenter.default.removeObserver(observer) }
+        readingObservers = []
         observedScroll = nil
+    }
+
+    deinit {
+        for observer in readingObservers { NotificationCenter.default.removeObserver(observer) }
     }
 
     @objc private func viewportChanged(_ notification: Notification) { measure() }
@@ -350,6 +367,13 @@ final class ContinuousPadCanvas: NSView {
         }
     }
 
+    /// One gutter label for every checkpoint on a line: how many, then each stamped time, for hover and
+    /// VoiceOver alike. A checkpoint without a birth stamp counts but has no time to list.
+    static func stackedReading(_ details: [String?]) -> (toolTip: String, accessibility: String) {
+        let lines = [CompanionL10n.format("pad.gutter.checkpoints", details.count)] + details.compactMap { $0 }
+        return (lines.joined(separator: "\n"), lines.joined(separator: ", "))
+    }
+
     private func placeLabels() {
         let summaries = Dictionary(uniqueKeysWithValues: model.navigationTabs.compactMap { tab in
             tab.pageID.map { ($0, tab) }
@@ -366,13 +390,21 @@ final class ContinuousPadCanvas: NSView {
         }
         var previousY: CGFloat?
         var usedLabels = 0
+        // The detail readings of the checkpoints sharing the current label's line.
+        var lineDetails: [String?] = []
         for extent in extents {
-            guard let page = extent.page, summaries[page] != nil else { continue }
+            guard let page = extent.page, let summary = summaries[page] else { continue }
+            let detail = summary.pageCreatedMs.map { StreamNavigator.detailedStamp(createdMs: $0) }
             if let previousY, abs(previousY - extent.top) < 1 {
-                checkpointLabels[usedLabels - 1].stringValue = "•••"
-                checkpointLabels[usedLabels - 1].setAccessibilityLabel("Checkpoints on this line")
+                lineDetails.append(detail)
+                let label = checkpointLabels[usedLabels - 1]
+                let reading = Self.stackedReading(lineDetails)
+                label.stringValue = "•••"
+                if label.toolTip != reading.toolTip { label.toolTip = reading.toolTip }
+                if label.accessibilityLabel() != reading.accessibility { label.setAccessibilityLabel(reading.accessibility) }
                 continue
             }
+            lineDetails = [detail]
             let stamp = stamps[page] ?? ""
             let value = stamp.isEmpty ? "•" : stamp
             let label: NSTextField
@@ -383,11 +415,14 @@ final class ContinuousPadCanvas: NSView {
                 addSubview(label)
             }
             label.stringValue = value
+            if label.toolTip != detail { label.toolTip = detail }
             label.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
             label.textColor = .tertiaryLabelColor
             label.alignment = .right
             label.frame = NSRect(x: 8, y: extent.top + 2, width: Self.gutterWidth - 22, height: 16)
-            label.setAccessibilityLabel("Checkpoint, \(label.stringValue)")
+            // VoiceOver hears the full reading in place of the compact time, as `DayHeaderView` speaks it.
+            let spoken = CompanionL10n.format("pad.gutter.checkpoint", detail ?? value)
+            if label.accessibilityLabel() != spoken { label.setAccessibilityLabel(spoken) }
             usedLabels += 1
             previousY = extent.top
         }

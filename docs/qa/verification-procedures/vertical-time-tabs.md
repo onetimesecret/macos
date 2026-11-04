@@ -289,19 +289,21 @@ renamed or re-ordered; a new sealed generation written for a flip.
 "yesterday", "3 days ago") followed by how long the page on it that
 dies soonest has left, and the selected row announces as selected. On
 Today, VoiceOver also offers a **New page** action that mints another
-page. Since
-issue #131 the row says the same words on screen, so what is heard and
-what is read agree apart from the capital. The short form (`-3d`) is
+page. Since issue #131 the row says the same day words on screen, so
+what is heard and what is read agree apart from the capital; after them
+VoiceOver reads the page's full birth date and time, with seconds, the
+reading the row's tooltip shows on hover. The short form (`-3d`) is
 left only in the roll's gutter, whose header announces the phrase, so
 nothing anywhere is abbreviation-only. Each perforation announces the
-day, the page's name and its remaining time. The hidden-pages line at
-the foot of the rail, when it is there, announces the whole sentence and
-not just the number.
+day, the page's full birth date and time, its name and its remaining
+time. The hidden-pages line at the foot of the rail, when it is there,
+announces the whole sentence and not just the number.
 
-**Fail:** a row that announces only "-3d"; a row that shows different
-words from the ones it speaks; a row with no value; Today with no
-**New page** action; a perforation that announces nothing; a decorative
-gauge or a minimap bar that VoiceOver reads.
+**Fail:** a row that announces only "-3d"; a row whose spoken day
+differs from the day words it shows, or whose spoken time differs from
+its tooltip; a row with no value; Today with no **New page** action; a
+perforation that announces nothing; a decorative gauge or a minimap bar
+that VoiceOver reads.
 
 ## Case 8: reduced motion
 
@@ -540,9 +542,73 @@ horizontal-only scrolling, or preview/sealed-note regression is a failure.
 An unrun step remains pending;
 a documentation edit or automated test result is not a hardware pass.
 
+## Case 13: the timeline divider
+
+**Status: pending hardware verification; not passed.** The suite moves
+the divider with `setPosition` and posts the drag notification itself,
+so a person's drag is checked only here.
+
+**Known risk:** the watch records a divider move only when AppKit marks
+it as a drag or a left button is down. A VoiceOver adjustment presses no
+button, so if AppKit leaves the mark off, the divider returns to the
+stored width and step 8 fails. Record steps 8 and 9 in their own rows.
+
+During step 1, run
+`log stream --level debug --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad", "dev.onetimesecret.pad.debug"} && category == "timeline"'`
+and record the `userInfo` keys logged for the drag. `NSSplitViewUserResizeKey`
+among them means AppKit marks the drag as the person's.
+
+1. With Timeline on, in the card, drag the divider slowly to about
+   200 points over more than three seconds and release.
+2. Quit and relaunch, and raise the card.
+3. Open the editor window, drag its divider to about 150 points, close
+   the window and raise the card again.
+4. With the divider at 280, narrow the card to its 360-point floor,
+   then widen it again. Repeat in the editor window.
+5. Lower the card and watch the divider as the stance fades.
+6. With multiple pads on, open a window and look at the heading at the
+   110-point start width.
+7. Pin the card, let it rest, hover over the divider, then press and
+   drag on it.
+8. With the card raised, turn VoiceOver on, move to the divider and
+   adjust it with VoiceOver's increment and decrement. Then relaunch.
+9. With three-finger drag on (Accessibility, Pointer Control, Trackpad
+   Options), drag the divider and release.
+10. Press the divider, move it once, hold still for more than three
+    seconds, then release.
+
+**Pass:** the divider follows the pointer for the whole drag and stays
+where it was released; it reopens at that width after relaunch; the card
+shows the width last dragged in the editor window; at the floor the rail
+gives way and the page keeps its width, and widening returns the rail to
+its width without a drag; the divider fades with the rail and the page;
+the rail opens at its stored width with no visible jump from 110; the
+pad heading's sort menu and + fit inside the rail; on a pinned resting
+card the press leaves the divider and the stored width alone. Record
+whether the press raises the card. If `NSSplitView` takes the press
+before the card's shield does, routing it to the card needs an AppKit
+shield or an owned split view. Record whether the pointer shows the
+resize cursor over a resting card's divider; the stance comments call
+the resting card chrome-free.
+VoiceOver's adjustment and a three-finger drag each move the divider,
+the divider stays where they left it, and a relaunch opens at that
+width. A press held still past three seconds leaves the divider where
+the move put it, and a relaunch opens there. Record whether the rail
+redraws smoothly during a drag on a long roll, and whether the divider
+lags or jitters while the window is resized in step 4.
+
+**Fail:** the divider snaps back during or after a drag; a relaunch or a
+presentation switch opens at 110 or at an older width; a squeeze is
+remembered after the window widens; the divider stays bright while the
+card rests; a visible jump from 110 on opening; the + pushed out of the
+rail; a resting card's divider that moves, or a press there that
+changes the width a relaunch opens at;
+a VoiceOver adjustment or three-finger drag that the divider undoes, or
+that a relaunch forgets.
+
 ## Results
 
-Not yet run; hardware verification remains **pending**, including case 12.
+Not yet run; hardware verification remains **pending**, including cases 12 and 13.
 One row per check when a session runs it, and the rows stay: a re-run adds a row
 rather than replacing one. `Pass` in a case describes an expected outcome, not
 an executed result.
@@ -589,3 +655,13 @@ an executed result.
 | | | 12 logical reading anchors through reflow | Pending | Record source position and explicit-reveal exceptions. |
 | | | 12 no repeated measurement during horizontal-only scrolling | Pending | Measurement trace required, not visual smoothness alone. |
 | | | 12 reading anchor with scroll bars always shown | Pending | Record the Show scroll bars setting. |
+| | | 13 slow drag followed and kept, relaunch restores it | Pending | Record whether the rail redraws smoothly during the drag on a long roll. |
+| | | 13 the drag's logged `userInfo` keys | Pending | Record the keys, and whether `NSSplitViewUserResizeKey` is among them. |
+| | | 13 a dragged width shown in the other presentation | Pending | |
+| | | 13 squeeze at the floor and recovery on widening | Pending | Both presentations. Record any lag or jitter of the divider during the live resize. |
+| | | 13 divider fades with the card; no jump on opening | Pending | |
+| | | 13 multi-pad heading fits at the start width | Pending | Record the locale. |
+| | | 13 pinned resting card's divider stays put on a press | Pending | Record whether the press raised the card and whether the resize cursor showed. |
+| | | 13 VoiceOver adjusts the divider and the width is kept | Pending | Record whether it survives a relaunch. |
+| | | 13 three-finger drag moves the divider and is kept | Pending | |
+| | | 13 a press held still past three seconds is kept | Pending | Record whether the divider jumped on release. |
