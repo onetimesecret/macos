@@ -990,7 +990,9 @@ private enum DetailedStampFormatterCache {
 
     static func reading(createdMs: UInt64, locale: Locale, timeZone: TimeZone) -> String {
         _ = localeWatch
-        let key = "\(timeZone.identifier)\u{1F}\(locale.identifier)"
+        // The description, not the identifier: an autoupdating locale and a fixed one can share an
+        // identifier and still format differently.
+        let key = "\(timeZone.identifier)\u{1F}\(locale)"
         let readingKey = "\(key)\u{1F}\(createdMs)"
         lock.lock()
         defer { lock.unlock() }

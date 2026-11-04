@@ -357,5 +357,10 @@ final class TimelineSplitViewTests: XCTestCase {
             TimelineSplit.railCeiling(splitWidth: 200), TimeRailView.width,
             "the clamp only: a split under both window floors is not a layout the page minimum survives")
         XCTAssertEqual(TimelineSplit.railCeiling(splitWidth: 0), TimeRailView.maxWidth, "an unmeasured split binds nothing")
+        // place() takes the lower of the constant and the measured thickness; a thicker divider costs the rail.
+        XCTAssertEqual(
+            TimelineSplit.railCeiling(splitWidth: 360, dividerThickness: 9),
+            TimelineSplit.railCeiling(splitWidth: 360) - 8)
+        XCTAssertEqual(TimelineSplit.railCeiling(splitWidth: 270, dividerThickness: 9), TimeRailView.width)
     }
 }
