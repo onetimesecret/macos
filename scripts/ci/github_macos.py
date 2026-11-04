@@ -227,7 +227,10 @@ def controller(env, gitlab, github):
             if job.get("name") != "macos-github" or job.get("status") != "running":
                 continue
             binding = Binding(pipeline_id, positive_id(job.get("id")), sha)
-            validate_binding(gitlab, binding)
+            try:
+                validate_binding(gitlab, binding)
+            except InvalidBinding:
+                continue
             if any(matches_run(run, binding) for run in runs):
                 continue
             github.request("POST", f"{GITHUB_REPO}/actions/workflows/{WORKFLOW}/dispatches",
