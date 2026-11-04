@@ -137,10 +137,10 @@ private final class DividerWatchView: NSView {
         attach()
     }
 
-    /// Not while a drag waits to be recorded; `place()` would skip it, and the record places again.
+    /// Not while a drag waits to be recorded, which places again, nor for the watch's own placement.
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        if !recordPending { queuePlacement() }
+        if !recordPending && !placing { queuePlacement() }
     }
 
     /// A stored width changed elsewhere, such as in the other presentation, unless this split's
