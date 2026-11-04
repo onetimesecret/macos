@@ -447,16 +447,21 @@ public final class PageModel: ObservableObject {
     }
     private var presentedPadCreations: [UUID: PadCreationPresentation] = [:]
     var hasPresentedPadCreation: Bool {
-        presentedPadCreations = presentedPadCreations.filter { $0.value.anchor != nil }
-        return presentedPadCreations.values.contains { $0.anchor?.view?.window?.isVisible == true }
+        presentedPadCreations.values.contains { $0.anchor?.view?.window?.isVisible == true }
     }
 
     func registerPadCreation(_ id: UUID, anchor: PadViewAnchor) {
+        pruneExpiredPadCreations()
         presentedPadCreations[id] = PadCreationPresentation(anchor: anchor)
     }
 
     func unregisterPadCreation(_ id: UUID) {
         presentedPadCreations.removeValue(forKey: id)
+        pruneExpiredPadCreations()
+    }
+
+    private func pruneExpiredPadCreations() {
+        presentedPadCreations = presentedPadCreations.filter { $0.value.anchor != nil }
     }
 
     private var lastPadID = PadCatalog.scratchID

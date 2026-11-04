@@ -37,13 +37,13 @@ f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁m󠄁p󠄁l󠄁e󠄁t󠄁e󠄁 c�
 u󠄁s󠄁e󠄁s󠄁 `isolatedModel(defaults:)`,󠄁 a󠄁 t󠄁e󠄁m󠄁p󠄁o󠄁r󠄁a󠄁r󠄁y󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁o󠄁r󠄁y󠄁 a󠄁n󠄁d󠄁 a󠄁n󠄁 i󠄁n󠄁-󠄁m󠄁e󠄁m󠄁o󠄁r󠄁y󠄁
 c󠄁r󠄁e󠄁d󠄁e󠄁n󠄁t󠄁i󠄁a󠄁l󠄁 c󠄁l󠄁i󠄁e󠄁n󠄁t󠄁,󠄁 t󠄁h󠄁e󠄁n󠄁 m󠄁o󠄁u󠄁n󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁 i󠄁n󠄁 i󠄁t󠄁s󠄁 o󠄁w󠄁n󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁.󠄁
 
-T󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 f󠄁o󠄁u󠄁r󠄁t󠄁h󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 r󠄁u󠄁n󠄁 a󠄁t󠄁 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁4󠄁 0󠄁0󠄁:󠄁0󠄁3󠄁:󠄁2󠄁4󠄁 U󠄁T󠄁C󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 4󠄁5󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁:󠄁
-3󠄁6󠄁 `PadPickerTests` a󠄁n󠄁d󠄁 n󠄁i󠄁n󠄁e󠄁 `PadCreateFormTests`,󠄁 w󠄁i󠄁t󠄁h󠄁 z󠄁e󠄁r󠄁o󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁.󠄁
-`/private/tmp/pr343-lifetime-fixed-tests.log` i󠄁s󠄁 a󠄁n󠄁 e󠄁p󠄁h󠄁e󠄁m󠄁e󠄁r󠄁a󠄁l󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 e󠄁x󠄁e󠄁c󠄁u󠄁t󠄁i󠄁o󠄁n󠄁
+T󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 f󠄁i󠄁f󠄁t󠄁h󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 r󠄁u󠄁n󠄁 a󠄁t󠄁 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁4󠄁 0󠄁0󠄁:󠄁1󠄁8󠄁:󠄁5󠄁4󠄁 U󠄁T󠄁C󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 4󠄁7󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁:󠄁
+3󠄁7󠄁 `PadPickerTests` a󠄁n󠄁d󠄁 t󠄁e󠄁n󠄁 `PadCreateFormTests`,󠄁 w󠄁i󠄁t󠄁h󠄁 z󠄁e󠄁r󠄁o󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁s󠄁.󠄁
+`/private/tmp/pr343-presenter-restoration-tests.log` i󠄁s󠄁 a󠄁n󠄁 e󠄁p󠄁h󠄁e󠄁m󠄁e󠄁r󠄁a󠄁l󠄁 e󠄁x󠄁e󠄁c󠄁u󠄁t󠄁i󠄁o󠄁n󠄁
 a󠄁r󠄁t󠄁i󠄁f󠄁a󠄁c󠄁t󠄁,󠄁 n󠄁o󠄁t󠄁 a󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁e󠄁r󠄁-󠄁a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 r󠄁u󠄁n󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁.󠄁 T󠄁h󠄁e󠄁 n󠄁e󠄁x󠄁t󠄁 p󠄁u󠄁s󠄁h󠄁e󠄁d󠄁 h󠄁e󠄁a󠄁d󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 n󠄁e󠄁e󠄁d󠄁s󠄁
-f󠄁r󠄁e󠄁s󠄁h󠄁 C󠄁I󠄁.󠄁 T󠄁h󠄁e󠄁 [s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁f󠄁u󠄁l󠄁 C󠄁I󠄁 r󠄁u󠄁n󠄁 o󠄁n󠄁 t󠄁h󠄁e󠄁 t󠄁h󠄁i󠄁r󠄁d󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 h󠄁e󠄁a󠄁d󠄁 3󠄁c󠄁5󠄁5󠄁8󠄁4󠄁d󠄁6󠄁](https://github.com/onetimesecret/macos/actions/runs/41742284267)
+f󠄁r󠄁e󠄁s󠄁h󠄁 C󠄁I󠄁.󠄁 T󠄁h󠄁e󠄁 [s󠄁u󠄁c󠄁c󠄁e󠄁s󠄁s󠄁f󠄁u󠄁l󠄁 C󠄁I󠄁 r󠄁u󠄁n󠄁 o󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁u󠄁r󠄁t󠄁h󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 h󠄁e󠄁a󠄁d󠄁 0󠄁f󠄁2󠄁7󠄁5󠄁2󠄁9󠄁f󠄁](https://github.com/onetimesecret/macos/actions/runs/41744165278)
 p󠄁r󠄁o󠄁v󠄁i󠄁d󠄁e󠄁s󠄁 d󠄁u󠄁r󠄁a󠄁b󠄁l󠄁e󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁a󠄁t󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 r󠄁e󠄁v󠄁i󠄁s󠄁i󠄁o󠄁n󠄁;󠄁 i󠄁t󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁e󠄁 t󠄁h󠄁e󠄁
-f󠄁o󠄁u󠄁r󠄁t󠄁h󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁.󠄁 A󠄁n󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 e󠄁x󠄁p󠄁e󠄁r󠄁i󠄁m󠄁e󠄁n󠄁t󠄁a󠄁l󠄁 c󠄁a󠄁r󠄁e󠄁t󠄁-󠄁r󠄁e󠄁f󠄁o󠄁c󠄁u󠄁s󠄁 t󠄁e󠄁s󠄁t󠄁 w󠄁a󠄁s󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁
+f󠄁i󠄁f󠄁t󠄁h󠄁-󠄁r󠄁o󠄁u󠄁n󠄁d󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁.󠄁 A󠄁n󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 e󠄁x󠄁p󠄁e󠄁r󠄁i󠄁m󠄁e󠄁n󠄁t󠄁a󠄁l󠄁 c󠄁a󠄁r󠄁e󠄁t󠄁-󠄁r󠄁e󠄁f󠄁o󠄁c󠄁u󠄁s󠄁 t󠄁e󠄁s󠄁t󠄁 w󠄁a󠄁s󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁
 b󠄁e󠄁c󠄁a󠄁u󠄁s󠄁e󠄁 i󠄁t󠄁 p󠄁a󠄁s󠄁s󠄁e󠄁d󠄁 a󠄁g󠄁a󠄁i󠄁n󠄁s󠄁t󠄁 t󠄁h󠄁e󠄁 o󠄁l󠄁d󠄁 b󠄁e󠄁h󠄁a󠄁v󠄁i󠄁o󠄁r󠄁;󠄁 i󠄁t󠄁 p󠄁r󠄁o󠄁v󠄁i󠄁d󠄁e󠄁s󠄁 n󠄁o󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 c󠄁a󠄁r󠄁e󠄁t󠄁 e󠄁v󠄁i󠄁d󠄁e󠄁n󠄁c󠄁e󠄁.󠄁
 N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁a󠄁g󠄁e󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁 i󠄁s󠄁:󠄁
 
@@ -58,6 +58,7 @@ N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 c󠄁o󠄁v�
 | C󠄁l󠄁o󠄁s󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁r󠄁 h󠄁i󠄁d󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁s󠄁 s󠄁h󠄁o󠄁r󠄁t󠄁c󠄁u󠄁t󠄁 s󠄁u󠄁p󠄁p󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 | `testClosingThePresenterWindowDismissesAndUnregistersTheNativeForm` |
 | R󠄁e󠄁m󠄁o󠄁v󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁r󠄁 h󠄁o󠄁s󠄁t󠄁 h󠄁i󠄁d󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁s󠄁 s󠄁h󠄁o󠄁r󠄁t󠄁c󠄁u󠄁t󠄁 s󠄁u󠄁p󠄁p󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 | `testRemovingThePresenterHostDismissesAndUnregistersTheNativeForm` |
 | A󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁d󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁 s󠄁u󠄁s󠄁p󠄁e󠄁n󠄁d󠄁s󠄁 p󠄁a󠄁d󠄁 d󠄁i󠄁g󠄁i󠄁t󠄁s󠄁 a󠄁f󠄁t󠄁e󠄁r󠄁 i󠄁t󠄁s󠄁 n󠄁a󠄁m󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 r󠄁e󠄁s󠄁i󠄁g󠄁n󠄁s󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 | `testNativeFormSuspendsPadShortcutsAfterTheNameFieldResignsFocus` |
+| C󠄁o󠄁n󠄁d󠄁i󠄁t󠄁i󠄁o󠄁n󠄁a󠄁l󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁r󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁a󠄁l󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁;󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 | `testRemovingAndRestoringThePresenterDoesNotReopenTheNativeForm` |
 
 T󠄁h󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁b󠄁o󠄁x󠄁e󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 o󠄁p󠄁e󠄁n󠄁 f󠄁o󠄁r󠄁 t󠄁h󠄁e󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 a󠄁p󠄁p󠄁 e󠄁n󠄁t󠄁r󠄁y󠄁 s󠄁u󠄁r󠄁f󠄁a󠄁c󠄁e󠄁s󠄁,󠄁 f󠄁u󠄁l󠄁l󠄁 C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁
 c󠄁l󠄁i󠄁c󠄁k󠄁,󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁-󠄁f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁 E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁,󠄁 c󠄁a󠄁r󠄁d󠄁-󠄁t󠄁o󠄁-󠄁t󠄁o󠄁o󠄁l󠄁b󠄁a󠄁r󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 h󠄁a󠄁n󠄁d󠄁o󠄁f󠄁f󠄁,󠄁 a󠄁p󠄁p󠄁-󠄁d󠄁e󠄁a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁

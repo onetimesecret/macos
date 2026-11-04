@@ -214,11 +214,15 @@ final class PadPickerTests: XCTestCase {
     }
 
     private func commandDigit(_ digit: Int, in window: NSWindow?) throws -> NSEvent {
-        try XCTUnwrap(NSEvent.keyEvent(
+        let keyCodes: [Int: UInt16] = [
+            0: 29, 1: 18, 2: 19, 3: 20, 4: 21, 5: 23, 6: 22, 7: 26, 8: 28, 9: 25,
+        ]
+        let keyCode = try XCTUnwrap(keyCodes[digit])
+        return try XCTUnwrap(NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
             windowNumber: window?.windowNumber ?? 0, context: nil,
             characters: String(digit), charactersIgnoringModifiers: String(digit),
-            isARepeat: false, keyCode: 18))
+            isARepeat: false, keyCode: keyCode))
     }
 
     // MARK: The pad row's rename field (Law 0007, issue #249)
@@ -675,6 +679,23 @@ final class PadPickerTests: XCTestCase {
                 windows: [window], isModal: false))
             XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
         }
+    }
+
+    func testReservedDigitWithoutAPadIsConsumedOutsideFieldEditing() throws {
+        let (model, pad) = try padModel()
+        let window = shortcutWindow(fieldEditor: false)
+        let event = try commandDigit(9, in: window)
+        let selection = model.selection
+        XCTAssertFalse(model.hasPresentedPadCreation)
+        XCTAssertFalse(PadShortcutMonitor.isEditingField(for: event, fallbackWindow: nil))
+        XCTAssertTrue(PadShortcutMonitor.allows(number: 9, keymap: model.keymap))
+        XCTAssertFalse(model.pads.entries.indices.contains(9))
+
+        XCTAssertNil(PadShortcutMonitor.handle(
+            event, model: model, surface: .panel, fallbackWindow: nil,
+            windows: [window], isModal: false))
+        XCTAssertEqual(model.pads.activeID, pad.id)
+        XCTAssertEqual(model.selection, selection)
     }
 
     func testRemappedAndUnboundDigitsKeepTheirExistingRouteDuringCreation() throws {

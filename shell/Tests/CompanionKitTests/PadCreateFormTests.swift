@@ -9,7 +9,9 @@ final class PadCreateFormTests: XCTestCase {
     private final class Presentation: ObservableObject {
         var routesBinding: Binding<PadSettingsRoutes>?
         var anchors: [String: NSView] = [:]
+        weak var formView: NSView?
         @Published var isEnabled = true
+        @Published var showsPresenter = true
 
         var routes: PadSettingsRoutes {
             get { routesBinding!.wrappedValue }
@@ -36,11 +38,14 @@ final class PadCreateFormTests: XCTestCase {
 
         var body: some View {
             VStack {
-                Button("New Pad") { routes.beginCreating() }
-                    .background(Anchor { presentation.anchors["New Pad"] = $0 })
-                    .popover(isPresented: $routes.creation.isPresented, arrowEdge: .bottom) {
-                        PadCreateForm(model: model, creation: $routes.creation)
-                    }
+                if presentation.showsPresenter {
+                    Button("New Pad") { routes.beginCreating() }
+                        .background(Anchor { presentation.anchors["New Pad"] = $0 })
+                        .popover(isPresented: $routes.creation.isPresented, arrowEdge: .bottom) {
+                            PadCreateForm(model: model, creation: $routes.creation)
+                                .background(Anchor { presentation.formView = $0 })
+                        }
+                }
                 Spacer()
                 Button("Outside") {}
                     .background(Anchor { presentation.anchors["Outside"] = $0 })
@@ -106,18 +111,14 @@ final class PadCreateFormTests: XCTestCase {
         [view] + view.subviews.flatMap(descendants)
     }
 
-    private func open(_ fixture: Fixture) async throws -> NSWindow {
-        let existing = Set(NSApp.windows.filter(\.isVisible).map(ObjectIdentifier.init))
-        fixture.presentation.routes.beginCreating()
+    private func open(
+        _ fixture: Fixture, file: StaticString = #filePath, line: UInt = #line
+    ) async throws -> NSWindow {
+        try click("New Pad", in: fixture)
         var popover: NSWindow?
-        try await waitFor("No native popover window appeared") {
-            popover = NSApp.windows.first {
-                !existing.contains(ObjectIdentifier($0)) && $0.isVisible && $0 !== fixture.window
-                    && $0.contentView.map { view in
-                        descendants(view).contains { ($0 as? NSTextField)?.isEditable == true }
-                    } == true
-            }
-            return popover != nil
+        try await waitFor("No native popover window appeared", file: file, line: line) {
+            popover = fixture.presentation.formView?.window
+            return popover?.isVisible == true
         }
         let window = try XCTUnwrap(popover)
         let field = try nameField(in: window)
@@ -321,6 +322,35 @@ final class PadCreateFormTests: XCTestCase {
         try await waitFor("Removing the presenter host left a native form or registration active") {
             !popover.isVisible && !fixture.model.hasPresentedPadCreation
         }
+        if let routes = fixture.presentation.routesBinding {
+            XCTAssertFalse(routes.wrappedValue.creation.isPresented)
+        }
+    }
+
+    func testRemovingAndRestoringThePresenterDoesNotReopenTheNativeForm() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        let name = "Retained across presenter removal"
+        try await enter(name, in: popover, fixture: fixture)
+        fixture.presentation.showsPresenter = false
+        try await waitFor("Removing the conditional presenter left the form visible or registered") {
+            !popover.isVisible && !fixture.model.hasPresentedPadCreation
+        }
+        XCTAssertFalse(fixture.presentation.routes.creation.isPresented)
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, name)
+        guard !fixture.presentation.routes.creation.isPresented else { return }
+
+        fixture.presentation.showsPresenter = true
+        try await waitFor("The conditional presenter did not remount") {
+            fixture.presentation.anchors["New Pad"]?.window === fixture.window
+        }
+        XCTAssertFalse(fixture.presentation.routes.creation.isPresented)
+        XCTAssertFalse(popover.isVisible)
+        XCTAssertFalse(fixture.model.hasPresentedPadCreation)
+
+        let reopened = try await open(fixture)
+        XCTAssertEqual(try nameField(in: reopened).stringValue, name)
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, name)
     }
 
 }
