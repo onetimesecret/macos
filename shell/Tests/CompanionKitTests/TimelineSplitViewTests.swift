@@ -320,6 +320,31 @@ final class TimelineSplitViewTests: XCTestCase {
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 250, accuracy: 2, "the divider stayed fixed once raised")
     }
 
+    /// A drag still held when the card rests is not recorded on release, and the rail returns to the stored width.
+    func testADragPendingWhenTheCardRestsIsNotRecorded() throws {
+        let model = timelineModel(defaults: try defaults())
+        model.recordTimelineWidth(180)
+        let mounted = mount(model)
+        defer { mounted.window.close() }
+        let split = try splitView(in: mounted.host)
+
+        mounted.mouse.isDown = true
+        drag(split, to: 250, in: mounted.host)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 250, accuracy: 2, "the control: the held drag stands")
+        XCTAssertEqual(model.timelineWidth, 180, accuracy: 0.5, "the control: the record waits for the release")
+
+        mounted.host.rootView = mounted.resizable(false)
+        layout(mounted.host)
+        mounted.mouse.isDown = false
+        // Past the watch's next release check, which a drain alone can finish before.
+        let checked = expectation(description: "a release check ran")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { checked.fulfill() }
+        wait(for: [checked], timeout: 2)
+        layout(mounted.host)
+        XCTAssertEqual(model.timelineWidth, 180, accuracy: 0.5, "a drag released on a resting card was recorded")
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2, "the resting rail kept the dragged width")
+    }
+
     /// A presentation hidden but still mounted follows a drag made in the other one.
     func testAMountedSplitFollowsADragInTheOther() throws {
         let model = timelineModel(defaults: try defaults())

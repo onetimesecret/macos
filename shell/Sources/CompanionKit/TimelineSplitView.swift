@@ -160,15 +160,17 @@ private final class DividerWatchView: NSView {
         queuePlacement()
     }
 
-    /// SwiftUI's dismantle: a drag still waiting is recorded on the next main-queue turn, outside the
-    /// view update, since the record publishes.
     /// Turning recording on, as the press that raises a card does, refuses held moves for that turn.
+    /// Turning it off drops a drag still waiting, so the `adopt` that follows places the stored width.
     func setRecords(_ on: Bool) {
-        if on, !records { markSplitResized() }
-        if on != records { failedPlacement = nil }
+        guard on != records else { return }
+        if on { markSplitResized() } else { recordPending = false }
+        failedPlacement = nil
         records = on
     }
 
+    /// SwiftUI's dismantle: a drag still waiting is recorded on the next main-queue turn, outside the
+    /// view update, since the record publishes.
     func retire() {
         detach()
         guard recordPending else {
