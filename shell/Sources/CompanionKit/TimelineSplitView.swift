@@ -165,6 +165,7 @@ private final class DividerWatchView: NSView {
     /// Turning recording on, as the press that raises a card does, refuses held moves for that turn.
     func setRecords(_ on: Bool) {
         if on, !records { markSplitResized() }
+        if on != records { failedPlacement = nil }
         records = on
     }
 
