@@ -213,11 +213,22 @@ final class ContinuousPadViewTests: XCTestCase {
                 selection: model.selection).filter(\.hasPage)
             XCTAssertEqual(surface.canvas.checkpointLabels.count, nodes.count)
             for (label, node) in zip(surface.canvas.checkpointLabels, nodes) {
+                XCTAssertFalse(node.detailStamp.isEmpty, "the fixture's pages carry a birth stamp")
                 XCTAssertEqual(label.stringValue, node.stamp)
                 XCTAssertEqual(label.toolTip, node.detailStamp)
                 XCTAssertEqual(label.accessibilityLabel(), "Checkpoint, \(node.detailStamp)")
             }
         }
+    }
+
+    /// A line standing for several checkpoints still gives each one's full time.
+    func testStackedCheckpointsListEveryTimeOnHover() {
+        let stacked = ContinuousPadCanvas.stackedReading(["first time", "second time"])
+        XCTAssertEqual(stacked.toolTip, "first time\nsecond time")
+        XCTAssertEqual(stacked.accessibility, "Checkpoints on this line, first time, second time")
+        let unstamped = ContinuousPadCanvas.stackedReading([])
+        XCTAssertNil(unstamped.toolTip)
+        XCTAssertEqual(unstamped.accessibility, "Checkpoints on this line")
     }
 
     func testOneStorageSupportsNativeSelectionAndMovementAcrossCheckpoint() throws {

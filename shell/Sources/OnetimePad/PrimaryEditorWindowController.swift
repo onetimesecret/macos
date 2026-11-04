@@ -357,7 +357,10 @@ private struct PrimaryEditorRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TimelineSplitView(showsTimeline: pages.showsPagesDownSide && !pages.isPageExpanded) {
+            TimelineSplitView(
+                showsTimeline: pages.showsPagesDownSide && !pages.isPageExpanded,
+                railWidth: pages.timelineWidth, onRailResize: pages.recordTimelineWidth
+            ) {
                 TimeRailView(model: pages, readOnly: false)
             } content: {
                 content

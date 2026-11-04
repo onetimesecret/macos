@@ -80,8 +80,16 @@ public struct TimeRailView: View {
         drivesRoll(surface: surface, owner: owner) ? owners : unclaimed
     }
 
-    /// The initial width; the native split view lets the person adjust it.
+    /// The initial and narrowest width; the native split view lets the person widen it.
     nonisolated static let width: CGFloat = 110
+
+    /// The widest the timeline may be dragged when the window leaves the page its floor.
+    nonisolated static let maxWidth: CGFloat = 280
+
+    /// A stored or reported width brought inside the rail's own range.
+    nonisolated static func clampedWidth(_ value: CGFloat) -> CGFloat {
+        value.isFinite ? min(max(value, width), maxWidth) : width
+    }
 
     public var body: some View {
         unifiedRail
@@ -201,7 +209,7 @@ public struct TimeRailView: View {
     /// names the chord the keymap bound to `page::New`, in the strip's
     /// words, so the two buttons that do one thing cannot describe it
     /// two ways.
-    private func padHeading(nodes: [StreamNavigator.Node]) -> some View {
+    func padHeading(nodes: [StreamNavigator.Node]) -> some View {
         HStack(spacing: 0) {
             if model.pads.isEnabled {
                 sortMenu(sections: Self.sortSections(model: model, nodes: nodes)) {

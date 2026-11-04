@@ -1052,6 +1052,20 @@ public final class PageModel: ObservableObject {
     private static let stampShortKey = "stampFormatShort"
     private static let stampFineKey = "stampFormatFine"
 
+    /// The timeline's width from the last divider move, a UserDefaults presentation preference.
+    /// Not published: the split view keeps the live width and reads this when the rail mounts.
+    public var timelineWidth: CGFloat {
+        didSet { defaults.set(Double(timelineWidth), forKey: Self.timelineWidthKey) }
+    }
+    private static let timelineWidthKey = "timelineWidth"
+
+    /// Records a divider move, kept inside the rail's range.
+    public func recordTimelineWidth(_ width: CGFloat) {
+        let clamped = TimeRailView.clampedWidth(width)
+        guard abs(clamped - timelineWidth) >= 0.5 else { return }
+        timelineWidth = clamped
+    }
+
     /// ⌥Z. A page whose lines all fit shows no difference, so the toggle
     /// says what it did rather than leaving the keystroke looking dead.
     public func toggleWrap() {
@@ -1688,6 +1702,9 @@ public final class PageModel: ObservableObject {
             fine: defaults.string(forKey: Self.stampFineKey)
                 ?? StreamNavigator.StampFormat.standard.fine
         )
+        // Unset → the rail's starting width.
+        timelineWidth = TimeRailView.clampedWidth(
+            CGFloat(defaults.object(forKey: Self.timelineWidthKey) as? Double ?? Double(TimeRailView.width)))
         // Unset → on (ADR-0011 section 4). Told to the core here because
         // a property observer does not run during init.
         let snapsToBoundaries = defaults.object(forKey: Self.graceSnapKey) as? Bool ?? true

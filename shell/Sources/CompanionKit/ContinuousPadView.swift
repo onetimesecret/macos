@@ -350,6 +350,12 @@ final class ContinuousPadCanvas: NSView {
         }
     }
 
+    /// One gutter label for every checkpoint on a line: each full time on hover and for VoiceOver.
+    static func stackedReading(_ details: [String]) -> (toolTip: String?, accessibility: String) {
+        (details.isEmpty ? nil : details.joined(separator: "\n"),
+         (["Checkpoints on this line"] + details).joined(separator: ", "))
+    }
+
     private func placeLabels() {
         let summaries = Dictionary(uniqueKeysWithValues: model.navigationTabs.compactMap { tab in
             tab.pageID.map { ($0, tab) }
@@ -366,14 +372,21 @@ final class ContinuousPadCanvas: NSView {
         }
         var previousY: CGFloat?
         var usedLabels = 0
+        // The detail readings of the checkpoints sharing the current label's line.
+        var lineDetails: [String] = []
         for extent in extents {
-            guard let page = extent.page, summaries[page] != nil else { continue }
+            guard let page = extent.page, let summary = summaries[page] else { continue }
+            let detail = summary.pageCreatedMs.map { StreamNavigator.detailedStamp(createdMs: $0) }
             if let previousY, abs(previousY - extent.top) < 1 {
-                checkpointLabels[usedLabels - 1].stringValue = "•••"
-                checkpointLabels[usedLabels - 1].toolTip = nil
-                checkpointLabels[usedLabels - 1].setAccessibilityLabel("Checkpoints on this line")
+                if let detail { lineDetails.append(detail) }
+                let label = checkpointLabels[usedLabels - 1]
+                let reading = Self.stackedReading(lineDetails)
+                label.stringValue = "•••"
+                label.toolTip = reading.toolTip
+                label.setAccessibilityLabel(reading.accessibility)
                 continue
             }
+            lineDetails = detail.map { [$0] } ?? []
             let stamp = stamps[page] ?? ""
             let value = stamp.isEmpty ? "•" : stamp
             let label: NSTextField
@@ -384,14 +397,12 @@ final class ContinuousPadCanvas: NSView {
                 addSubview(label)
             }
             label.stringValue = value
-            label.toolTip = summaries[page]?.pageCreatedMs.map {
-                StreamNavigator.detailedStamp(createdMs: $0)
-            }
+            label.toolTip = detail
             label.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
             label.textColor = .tertiaryLabelColor
             label.alignment = .right
             label.frame = NSRect(x: 8, y: extent.top + 2, width: Self.gutterWidth - 22, height: 16)
-            label.setAccessibilityLabel("Checkpoint, \(label.toolTip ?? label.stringValue)")
+            label.setAccessibilityLabel("Checkpoint, \(detail ?? value)")
             usedLabels += 1
             previousY = extent.top
         }

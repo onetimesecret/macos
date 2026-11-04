@@ -640,6 +640,29 @@ final class TimeRailTests: XCTestCase {
         return window.frame.height - (window.contentView?.frame.height ?? window.frame.height)
     }
 
+    /// With pads on, the heading's sort menu and + fit the timeline's start width inside the
+    /// rail's horizontal padding, so the + is not pushed out of the column.
+    func testTheMultiPadHeadingFitsTheTimelinesStartWidth() throws {
+        let model = try makeModel()
+        model.newPage()
+        model.showsTimeUnits = true
+        model.pads.isEnabled = true
+        let nodes = StreamNavigator.nodes(
+            projection: model.timeUnits, tabs: model.navigationTabs, selection: model.selection)
+        let heading = TimeRailView(model: model, readOnly: false).padHeading(nodes: nodes)
+            .environment(\.presentationSurface, .panel)
+        let host = NSHostingView(rootView: heading)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 60), styleMask: [.titled],
+            backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(host)
+        defer { window.close() }
+        let ideal = host.fittingSize.width
+        XCTAssertGreaterThan(ideal, 40, "the control: the menu's label was measured, not only the +")
+        XCTAssertLessThanOrEqual(ideal, TimeRailView.width - 8, "the heading overflows the rail's start width")
+    }
+
     /// At each window's minimum height less its chrome, with four files open and up to three
     /// status lines, the navigator keeps its active row's room and the shelf gives way (ADR-0060).
     func testTheNavigatorKeepsItsActiveRowAtEveryWindowsMinimumHeight() throws {
@@ -671,7 +694,7 @@ final class TimeRailTests: XCTestCase {
 
         /// The rail at `height`: the clip of its bottom scroll view, the navigator's, of its top,
         /// the shelf's, and how many scroll views it drew.
-        func navigatorClip(_ model: PageModel, pads: Bool, height: CGFloat) throws -> (CGFloat, CGFloat, Int) {
+        func navigatorClip(_ model: PageModel, height: CGFloat) throws -> (CGFloat, CGFloat, Int) {
             let host = NSHostingView(rootView: AnyView(
                 TimeRailView(model: model, readOnly: false).environment(\.presentationSurface, .panel)))
             host.frame = NSRect(x: 0, y: 0, width: TimeRailView.width, height: height)
@@ -709,7 +732,7 @@ final class TimeRailTests: XCTestCase {
                     projection: model.timeUnits, tabs: model.navigationTabs, selection: model.selection))
                 let cap = FileShelfRow.shelfHeight(rows: 4)
                 for (name, padsFloor, height) in floors where padsFloor == pads {
-                    let (clip, shelf, scrolls) = try navigatorClip(model, pads: pads, height: height)
+                    let (clip, shelf, scrolls) = try navigatorClip(model, height: height)
                     XCTAssertEqual(scrolls, 2, "the control: the shelf and the navigator, \(name)")
                     XCTAssertGreaterThanOrEqual(
                         clip, room, "\(name) at \(height), \(pages) pages: the active row is cut")
@@ -724,7 +747,7 @@ final class TimeRailTests: XCTestCase {
                 }
                 // A column with less than the room after the headings: the shelf is gone, and
                 // the navigator takes what is left, which the room does not fit.
-                let (short, shelf, _) = try navigatorClip(model, pads: pads, height: 80)
+                let (short, shelf, _) = try navigatorClip(model, height: 80)
                 XCTAssertLessThan(short, room, "the control: a column under the room does cut the row")
                 XCTAssertEqual(shelf, 0, accuracy: 0.5, "the shelf gives way before the navigator")
             }

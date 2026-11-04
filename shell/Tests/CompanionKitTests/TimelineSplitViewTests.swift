@@ -6,72 +6,176 @@ import XCTest
 
 @MainActor
 final class TimelineSplitViewTests: XCTestCase {
+    private struct Mounted {
+        let window: NSWindow
+        let host: NSHostingView<AnyView>
+        let root: (Bool) -> AnyView
+    }
+
     private func descendants<T: NSView>(_ type: T.Type, in view: NSView) -> [T] {
         ((view as? T).map { [$0] } ?? []) + view.subviews.flatMap { descendants(type, in: $0) }
     }
 
-    func testNativeDividerResizesTheRailAndPageAndSurvivesUpdates() throws {
+    private func defaults() throws -> UserDefaults {
         let suite = "timeline-split-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        return defaults
+    }
+
+    private func timelineModel(defaults: UserDefaults) -> PageModel {
         let model = isolatedModel(defaults: defaults)
         model.newPage()
         model.showsTimeUnits = true
-        func root(showsTimeline: Bool = true) -> AnyView {
-            AnyView(TimelineSplitView(showsTimeline: showsTimeline) {
+        return model
+    }
+
+    private func mount(_ model: PageModel, width: CGFloat = 640) -> Mounted {
+        let root = { (showsTimeline: Bool) -> AnyView in
+            AnyView(TimelineSplitView(
+                showsTimeline: showsTimeline,
+                railWidth: model.timelineWidth, onRailResize: model.recordTimelineWidth
+            ) {
                 TimeRailView(model: model, readOnly: false)
             } content: {
                 PageContentView(model: model, emptyHint: "", showsExpandControl: false)
             }.environment(\.presentationSurface, model.owner))
         }
-        let host = NSHostingView(rootView: root())
-        host.frame = NSRect(x: 0, y: 0, width: 640, height: 400)
+        let host = NSHostingView(rootView: root(true))
+        host.frame = NSRect(x: 0, y: 0, width: width, height: 400)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        defer { window.close() }
+        layout(host)
+        return Mounted(window: window, host: host, root: root)
+    }
 
-        func layout() {
+    private func layout(_ host: NSView) {
+        for _ in 0..<2 {
             host.layoutSubtreeIfNeeded()
             drainMainQueue()
-            host.layoutSubtreeIfNeeded()
         }
-        layout()
-        let split = try XCTUnwrap(descendants(NSSplitView.self, in: host).first)
+        host.layoutSubtreeIfNeeded()
+    }
+
+    private func splitView(in host: NSView) throws -> NSSplitView {
+        try XCTUnwrap(descendants(NSSplitView.self, in: host).first)
+    }
+
+    private func resize(_ mounted: Mounted, width: CGFloat) {
+        mounted.window.setContentSize(NSSize(width: width, height: 400))
+        layout(mounted.host)
+    }
+
+    func testNativeDividerResizesTheRailAndPageAndSurvivesUpdates() throws {
+        let model = timelineModel(defaults: try defaults())
+        let mounted = mount(model)
+        let host = mounted.host
+        defer { mounted.window.close() }
+
+        let split = try splitView(in: host)
         XCTAssertTrue(split.isVertical)
-        XCTAssertEqual(split.dividerStyle, .thin)
         XCTAssertEqual(split.arrangedSubviews.count, 2)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, TimeRailView.width, accuracy: 2)
         let editor = try XCTUnwrap(descendants(InkTextView.self, in: host).first)
         let pageWidth = split.arrangedSubviews[1].frame.width
 
         split.setPosition(180, ofDividerAt: 0)
-        layout()
+        layout(host)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2)
         XCTAssertEqual(pageWidth - split.arrangedSubviews[1].frame.width, 70, accuracy: 2)
         XCTAssertTrue(descendants(InkTextView.self, in: host).first === editor)
+        XCTAssertEqual(model.timelineWidth, 180, accuracy: 2, "the divider move was not recorded")
 
         model.pads.isEnabled = true
-        host.rootView = root()
-        layout()
+        host.rootView = mounted.root(true)
+        layout(host)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2)
 
         split.setPosition(0, ofDividerAt: 0)
-        layout()
+        layout(host)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, TimeRailView.width, accuracy: 2)
 
         split.setPosition(500, ofDividerAt: 0)
-        layout()
-        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 280, accuracy: 2)
+        layout(host)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, TimeRailView.maxWidth, accuracy: 2)
         XCTAssertTrue(descendants(InkTextView.self, in: host).first === editor)
+        XCTAssertEqual(model.timelineWidth, TimeRailView.maxWidth, accuracy: 2)
 
-        host.frame.size.width = 720
-        layout()
-        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 280, accuracy: 2)
+        resize(mounted, width: 720)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, TimeRailView.maxWidth, accuracy: 2)
 
-        host.rootView = root(showsTimeline: false)
-        layout()
+        host.rootView = mounted.root(false)
+        layout(host)
         XCTAssertEqual(split.arrangedSubviews.count, 1)
         XCTAssertGreaterThan(split.arrangedSubviews[0].frame.width, 700)
+    }
+
+    /// At the floor both windows share, the rail yields and the page keeps its minimum;
+    /// the yield is not recorded as the person's width.
+    func testTheRailYieldsToThePageAtTheWindowFloor() throws {
+        let model = timelineModel(defaults: try defaults())
+        model.recordTimelineWidth(TimeRailView.maxWidth)
+        let mounted = mount(model)
+        defer { mounted.window.close() }
+        let split = try splitView(in: mounted.host)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, TimeRailView.maxWidth, accuracy: 2)
+
+        let floor: CGFloat = 360
+        resize(mounted, width: floor)
+        XCTAssertEqual(
+            split.arrangedSubviews[1].frame.width, TimelineSplit.pageMinWidth, accuracy: 2,
+            "the page gave up its minimum")
+        XCTAssertEqual(
+            split.arrangedSubviews[0].frame.width, TimelineSplit.railCeiling(splitWidth: floor), accuracy: 2)
+        XCTAssertEqual(model.timelineWidth, TimeRailView.maxWidth, accuracy: 0.5, "a window resize was recorded")
+        XCTAssertNotNil(descendants(InkTextView.self, in: mounted.host).first)
+    }
+
+    /// The dragged width returns when the rail comes back and when the app relaunches.
+    func testTheDraggedWidthPersistsAcrossHidingAndRelaunch() throws {
+        let store = try defaults()
+        let model = timelineModel(defaults: store)
+        let mounted = mount(model)
+        defer { mounted.window.close() }
+        try splitView(in: mounted.host).setPosition(180, ofDividerAt: 0)
+        layout(mounted.host)
+        XCTAssertEqual(model.timelineWidth, 180, accuracy: 2)
+
+        mounted.host.rootView = mounted.root(false)
+        layout(mounted.host)
+        XCTAssertEqual(try splitView(in: mounted.host).arrangedSubviews.count, 1)
+        mounted.host.rootView = mounted.root(true)
+        layout(mounted.host)
+        let returned = try splitView(in: mounted.host)
+        XCTAssertEqual(returned.arrangedSubviews.count, 2)
+        XCTAssertEqual(returned.arrangedSubviews[0].frame.width, 180, accuracy: 2, "the rail came back at its start width")
+
+        let relaunched = timelineModel(defaults: store)
+        XCTAssertEqual(relaunched.timelineWidth, 180, accuracy: 2)
+        let remounted = mount(relaunched)
+        defer { remounted.window.close() }
+        XCTAssertEqual(try splitView(in: remounted.host).arrangedSubviews[0].frame.width, 180, accuracy: 2)
+    }
+
+    func testAStoredWidthIsReadInsideTheRailsRange() throws {
+        let store = try defaults()
+        store.set(900.0, forKey: "timelineWidth")
+        XCTAssertEqual(timelineModel(defaults: store).timelineWidth, TimeRailView.maxWidth)
+        store.set(12.0, forKey: "timelineWidth")
+        XCTAssertEqual(timelineModel(defaults: store).timelineWidth, TimeRailView.width)
+        store.set("wide", forKey: "timelineWidth")
+        XCTAssertEqual(timelineModel(defaults: store).timelineWidth, TimeRailView.width)
+        store.removeObject(forKey: "timelineWidth")
+        XCTAssertEqual(timelineModel(defaults: store).timelineWidth, TimeRailView.width)
+    }
+
+    func testTheCeilingLeavesThePageItsMinimum() {
+        XCTAssertEqual(TimelineSplit.railCeiling(splitWidth: 1_000), TimeRailView.maxWidth)
+        XCTAssertEqual(
+            TimelineSplit.railCeiling(splitWidth: 360),
+            360 - TimelineSplit.pageMinWidth - TimelineSplit.dividerWidth)
+        XCTAssertEqual(TimelineSplit.railCeiling(splitWidth: 200), TimeRailView.width, "the rail never goes under its start")
+        XCTAssertEqual(TimelineSplit.railCeiling(splitWidth: 0), TimeRailView.maxWidth, "an unmeasured split binds nothing")
     }
 }

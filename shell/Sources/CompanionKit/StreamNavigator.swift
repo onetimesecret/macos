@@ -229,9 +229,13 @@ public enum StreamNavigator {
         return fallback.string(from: date)
     }
 
-    /// The expanded reading used by timeline and checkpoint tooltips.
-    static func detailedStamp(createdMs: UInt64, timeZone: TimeZone = .current) -> String {
-        stamp(createdMs: createdMs, pattern: "yyyy-MM-dd HH:mm:ss", timeZone: timeZone)
+    /// The expanded reading for timeline and checkpoint tooltips and VoiceOver: the full date
+    /// and the time with seconds, in the person's locale and system time format.
+    static func detailedStamp(
+        createdMs: UInt64, locale: Locale = .autoupdatingCurrent, timeZone: TimeZone = .current
+    ) -> String {
+        DetailedStampFormatterCache.formatter(locale: locale, timeZone: timeZone)
+            .string(from: Date(timeIntervalSince1970: Double(createdMs) / 1000))
     }
 
     /// The stamps for one day's pages, in the day's order: the short
@@ -293,12 +297,17 @@ public enum StreamNavigator {
 
     // MARK: What a node says
 
+    /// The node's time as hover and VoiceOver read it; the day's words when there is no birth stamp.
+    static func timeReading(of node: Node) -> String {
+        node.detailStamp.isEmpty ? node.spokenDay : node.detailStamp
+    }
+
     /// Hover expands the compact time to its full local date and seconds.
     /// The title and keyboard shortcut follow when available.
     @MainActor
     public static func help(for node: Node, chord: Keystroke?) -> String {
         guard node.hasPage else { return TimeUnitTab.todayHelp(chord: chord) }
-        var first = [node.spokenDay, node.detailStamp].filter { !$0.isEmpty }.joined(separator: " · ")
+        var first = timeReading(of: node)
         if let chord { first += " (\(chord.displaySymbol))" }
         guard !node.title.isEmpty else { return first }
         return "\(first)\n\(node.title)"
@@ -308,7 +317,7 @@ public enum StreamNavigator {
     /// The gauge supplies its own accessibility value.
     public static func spoken(for node: Node) -> String {
         guard node.hasPage else { return "\(node.spokenDay), no page" }
-        var parts = [node.spokenDay, node.detailStamp].filter { !$0.isEmpty }
+        var parts = [timeReading(of: node)]
         if !node.title.isEmpty { parts.append(node.title) }
         if node.trailing { parts.append("past seven days, retained because it holds content") }
         return parts.joined(separator: ", ")
@@ -960,6 +969,35 @@ public enum StreamNavigator {
     /// motion rule the surface has (D-02).
     public static func jumpDuration(reduceMotion: Bool) -> TimeInterval {
         reduceMotion ? 0 : 0.16
+    }
+}
+
+/// One medium-style `DateFormatter` per (locale, time zone), on `StampFormatterCache`'s terms.
+private enum DetailedStampFormatterCache {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var cache: [String: DateFormatter] = [:]
+    /// The key is only the identifier, so a change to the person's locale settings empties the cache.
+    nonisolated(unsafe) private static let localeWatch = NotificationCenter.default.addObserver(
+        forName: NSLocale.currentLocaleDidChangeNotification, object: nil, queue: nil
+    ) { _ in
+        DetailedStampFormatterCache.lock.lock()
+        DetailedStampFormatterCache.cache.removeAll()
+        DetailedStampFormatterCache.lock.unlock()
+    }
+
+    static func formatter(locale: Locale, timeZone: TimeZone) -> DateFormatter {
+        _ = localeWatch
+        let key = "\(timeZone.identifier)\u{1F}\(locale.identifier)"
+        lock.lock()
+        defer { lock.unlock() }
+        if let hit = cache[key] { return hit }
+        let made = DateFormatter()
+        made.locale = locale
+        made.timeZone = timeZone
+        made.dateStyle = .medium
+        made.timeStyle = .medium
+        cache[key] = made
+        return made
     }
 }
 

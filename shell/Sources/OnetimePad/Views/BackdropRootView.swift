@@ -190,14 +190,17 @@ struct BackdropRootView: View {
             // Placement follows the layout: Tabs along the bottom,
             // Timeline down the side. The content view answers
             // organization; this branch answers only placement.
-            TimelineSplitView(showsTimeline: pages.showsPagesDownSide && !pages.isPageExpanded) {
+            TimelineSplitView(
+                showsTimeline: pages.showsPagesDownSide && !pages.isPageExpanded,
+                railWidth: pages.timelineWidth, onRailResize: pages.recordTimelineWidth
+            ) {
                 TimeRailView(model: pages, readOnly: !raised)
-                    .stanceFaded(raised: raised, animation: stanceFade)
             } content: {
                 pageContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .stanceFaded(raised: raised, animation: stanceFade)
             }
+            // One fade over the split, so the divider dims with the rail and the page.
+            .stanceFaded(raised: raised, animation: stanceFade)
             PageStatusStack(model: pages)
             if !pages.showsPagesDownSide && !pages.isPageExpanded {
                 Divider()

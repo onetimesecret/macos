@@ -46,6 +46,11 @@ final class StreamNavigatorTests: XCTestCase {
         )
     }
 
+    /// The expanded reading `nodes` gives a page born at `ms`, in the runner's locale.
+    private func detail(_ ms: UInt64) -> String {
+        StreamNavigator.detailedStamp(createdMs: ms, timeZone: utc)
+    }
+
     private func nodes(
         _ tabs: [TabSummary], selecting tab: UInt64? = nil, showsRoll: Bool = true,
         stampFormat: StreamNavigator.StampFormat = .standard
@@ -420,8 +425,8 @@ final class StreamNavigatorTests: XCTestCase {
         ])
         XCTAssertEqual(nodes.map(\.title), ["", "the vault", "stdout sync"])
         let placeholder = try XCTUnwrap(nodes.first)
-        XCTAssertEqual(StreamNavigator.help(for: placeholder, chord: nil), "today · 2025-09-14 11:39:00")
-        XCTAssertEqual(StreamNavigator.spoken(for: placeholder), "today, 2025-09-14 11:39:00")
+        XCTAssertEqual(StreamNavigator.help(for: placeholder, chord: nil), detail(born))
+        XCTAssertEqual(StreamNavigator.spoken(for: placeholder), detail(born))
     }
 
     /// Today with no page is a node with no minute, and the one node
@@ -482,18 +487,20 @@ final class StreamNavigatorTests: XCTestCase {
 
     // MARK: What a node says
 
-    /// Hover and VoiceOver use the full date and seconds regardless of compact precision.
+    /// Hover and VoiceOver use the full date and seconds regardless of compact precision,
+    /// and the day's words only stand in when the page has no birth stamp.
     func testTheTooltipAndTheSpokenLabelSayTheSameFacts() throws {
         let page = try XCTUnwrap(nodes([slot(tab: 1, page: 11, title: "stdout sync")]).first)
-        XCTAssertEqual(StreamNavigator.help(for: page, chord: nil), "today · 2025-09-14 11:39:00\nstdout sync")
+        XCTAssertEqual(page.detailStamp, detail(born))
+        XCTAssertEqual(StreamNavigator.help(for: page, chord: nil), "\(detail(born))\nstdout sync")
         let chord = try Keystroke.parse("cmd-1").get()
         XCTAssertEqual(
             StreamNavigator.help(for: page, chord: chord),
-            "today · 2025-09-14 11:39:00 (\(chord.displaySymbol))\nstdout sync")
-        XCTAssertEqual(StreamNavigator.spoken(for: page), "today, 2025-09-14 11:39:00, stdout sync")
+            "\(detail(born)) (\(chord.displaySymbol))\nstdout sync")
+        XCTAssertEqual(StreamNavigator.spoken(for: page), "\(detail(born)), stdout sync")
 
         let untitled = try XCTUnwrap(nodes([slot(tab: 1, page: 11)]).first)
-        XCTAssertEqual(StreamNavigator.help(for: untitled, chord: nil), "today · 2025-09-14 11:39:00")
+        XCTAssertEqual(StreamNavigator.help(for: untitled, chord: nil), detail(born))
 
         let empty = try XCTUnwrap(nodes([]).first)
         XCTAssertEqual(StreamNavigator.help(for: empty, chord: nil), "Start today's page")
@@ -501,7 +508,30 @@ final class StreamNavigatorTests: XCTestCase {
         let retained = try XCTUnwrap(nodes([slot(tab: 1, page: 11, day: -8)]).last)
         XCTAssertEqual(
             StreamNavigator.spoken(for: retained),
-            "8 days ago, 2025-09-14 11:39:00, past seven days, retained because it holds content")
+            "\(detail(born)), past seven days, retained because it holds content")
+    }
+
+    /// The expanded reading follows the locale's own date and time, seconds included,
+    /// rather than an ISO run of digits.
+    func testTheDetailedStampFollowsTheLocale() {
+        let us = StreamNavigator.detailedStamp(
+            createdMs: born, locale: Locale(identifier: "en_US"), timeZone: utc)
+        XCTAssertTrue(us.contains("2025"), us)
+        XCTAssertTrue(us.contains("Sep"), us)
+        XCTAssertTrue(us.contains("11:39:00"), us)
+        XCTAssertTrue(us.contains("AM"), us)
+        XCTAssertFalse(us.contains("2025-09-14"), us)
+
+        let gb = StreamNavigator.detailedStamp(
+            createdMs: born, locale: Locale(identifier: "en_GB"), timeZone: utc)
+        XCTAssertTrue(gb.contains("2025"), gb)
+        XCTAssertTrue(gb.contains("11:39:00"), gb)
+        XCTAssertFalse(gb.contains("AM"), gb)
+
+        let vancouver = StreamNavigator.detailedStamp(
+            createdMs: born, locale: Locale(identifier: "en_GB"),
+            timeZone: TimeZone(identifier: "America/Vancouver")!)
+        XCTAssertTrue(vancouver.contains("04:39:00"), vancouver)
     }
 
     /// The gutter's words are the day and the time on a day's first
