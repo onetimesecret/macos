@@ -442,15 +442,21 @@ public final class PageModel: ObservableObject {
 
     public let pads: PadCatalog
 
-    private var presentedPadCreations: Set<UUID> = []
-    var hasPresentedPadCreation: Bool { !presentedPadCreations.isEmpty }
+    private struct PadCreationPresentation {
+        weak var anchor: PadViewAnchor?
+    }
+    private var presentedPadCreations: [UUID: PadCreationPresentation] = [:]
+    var hasPresentedPadCreation: Bool {
+        presentedPadCreations = presentedPadCreations.filter { $0.value.anchor != nil }
+        return presentedPadCreations.values.contains { $0.anchor?.view?.window?.isVisible == true }
+    }
 
-    func registerPadCreation(_ id: UUID) {
-        presentedPadCreations.insert(id)
+    func registerPadCreation(_ id: UUID, anchor: PadViewAnchor) {
+        presentedPadCreations[id] = PadCreationPresentation(anchor: anchor)
     }
 
     func unregisterPadCreation(_ id: UUID) {
-        presentedPadCreations.remove(id)
+        presentedPadCreations.removeValue(forKey: id)
     }
 
     private var lastPadID = PadCatalog.scratchID

@@ -270,10 +270,10 @@ struct PadCreateForm: View {
         .onExitCommand { creation.cancel() }
         .onAppear {
             initialDraftSelected = false
-            if creation.isPresented { model.registerPadCreation(presentationID) }
+            if creation.isPresented { model.registerPadCreation(presentationID, anchor: nameAnchor) }
         }
         .onChange(of: creation.isPresented) { presented in
-            if presented { model.registerPadCreation(presentationID) }
+            if presented { model.registerPadCreation(presentationID, anchor: nameAnchor) }
             else { model.unregisterPadCreation(presentationID) }
         }
         .task(id: isEnabled) {

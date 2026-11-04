@@ -169,6 +169,10 @@ final class PadCreateFormTests: XCTestCase {
             let queued = try XCTUnwrap(NSApp.nextEvent(
                 matching: mask, until: Date().addingTimeInterval(1), inMode: .default, dequeue: true),
                 "The posted \(phase) event for \(title) was not delivered to the fixture")
+            guard queued.windowNumber == fixture.window.windowNumber else {
+                XCTFail("The dequeued \(phase) event for \(title) targets window \(queued.windowNumber), expected fixture window \(fixture.window.windowNumber)")
+                throw NSError(domain: "PadCreateFormTests", code: 2)
+            }
             NSApp.sendEvent(queued)
         }
     }
@@ -297,6 +301,25 @@ final class PadCreateFormTests: XCTestCase {
         try await waitFor("Dismissing the native form did not unregister it") {
             !fixture.presentation.routes.creation.isPresented && !popover.isVisible
                 && !fixture.model.hasPresentedPadCreation
+        }
+    }
+
+    func testClosingThePresenterWindowDismissesAndUnregistersTheNativeForm() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        fixture.window.close()
+        try await waitFor("Closing the presenter left the native form visible") { !popover.isVisible }
+        try await waitFor("Closing the presenter left a registration active") {
+            !fixture.model.hasPresentedPadCreation
+        }
+    }
+
+    func testRemovingThePresenterHostDismissesAndUnregistersTheNativeForm() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        fixture.window.contentView = nil
+        try await waitFor("Removing the presenter host left a native form or registration active") {
+            !popover.isVisible && !fixture.model.hasPresentedPadCreation
         }
     }
 
