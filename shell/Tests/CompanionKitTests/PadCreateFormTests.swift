@@ -1,0 +1,500 @@
+import AppKit
+import SwiftUI
+import XCTest
+
+@testable import CompanionKit
+
+@MainActor
+final class PadCreateFormTests: XCTestCase {
+    /// Mirrors BackdropWindowController.swift's BackdropPanel flags and key policy.
+    private final class RepresentativeCardPanel: NSPanel {
+        var isInteractive = false
+
+        init(frame: NSRect) {
+            super.init(
+                contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered, defer: false)
+            isOpaque = false
+            backgroundColor = .clear
+            hasShadow = false
+            hidesOnDeactivate = false
+            isReleasedWhenClosed = false
+            isMovableByWindowBackground = false
+            isExcludedFromWindowsMenu = true
+            animationBehavior = .none
+            sharingType = .none
+        }
+
+        override var canBecomeKey: Bool { isInteractive }
+        override var canBecomeMain: Bool { false }
+    }
+
+    private final class Presentation: ObservableObject {
+        var routesBinding: Binding<PadSettingsRoutes>?
+        var anchors: [String: NSView] = [:]
+        weak var formView: NSView?
+        @Published var isEnabled = true
+        @Published var showsPresenter = true
+
+        var routes: PadSettingsRoutes {
+            get { routesBinding!.wrappedValue }
+            set { routesBinding!.wrappedValue = newValue }
+        }
+    }
+
+    private final class FixtureAnchorView: NSView {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    private struct Anchor: NSViewRepresentable {
+        let register: (NSView) -> Void
+
+        func makeNSView(context: Context) -> NSView {
+            let view = FixtureAnchorView()
+            register(view)
+            return view
+        }
+
+        func updateNSView(_ view: NSView, context: Context) { register(view) }
+    }
+
+    private struct Surface: View {
+        @ObservedObject var presentation: Presentation
+        let model: PageModel
+        @State private var routes = PadSettingsRoutes()
+
+        var body: some View {
+            VStack {
+                Button("New Pad") { routes.beginCreating() }
+                    .background(Anchor { presentation.anchors["New Pad"] = $0 })
+                    .popover(isPresented: $routes.creation.isPresented, arrowEdge: .bottom) {
+                        PadCreateForm(model: model, creation: $routes.creation)
+                            .background(Anchor { presentation.formView = $0 })
+                    }
+                Spacer()
+                Button("Outside") {}
+                    .background(Anchor { presentation.anchors["Outside"] = $0 })
+            }
+            .padding(24)
+            .frame(width: 360, height: 280)
+            .disabled(!presentation.isEnabled)
+            .onAppear { presentation.routesBinding = $routes }
+        }
+    }
+
+    private struct ConditionalSurface: View {
+        @ObservedObject var presentation: Presentation
+        let model: PageModel
+        @State private var routes = PadSettingsRoutes()
+
+        var body: some View {
+            VStack {
+                if presentation.showsPresenter {
+                    Button("New Pad") { routes.beginCreating() }
+                        .background(Anchor { presentation.anchors["New Pad"] = $0 })
+                        .popover(isPresented: $routes.creation.isPresented, arrowEdge: .bottom) {
+                            PadCreateForm(model: model, creation: $routes.creation)
+                                .background(Anchor { presentation.formView = $0 })
+                        }
+                }
+                Spacer()
+                Button("Outside") {}
+                    .background(Anchor { presentation.anchors["Outside"] = $0 })
+            }
+            .padding(24)
+            .frame(width: 360, height: 280)
+            .disabled(!presentation.isEnabled)
+            .onAppear { presentation.routesBinding = $routes }
+        }
+    }
+
+    private final class FixtureHostingView<Content: View>: NSHostingView<Content> {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    }
+
+    private struct Fixture {
+        let model: PageModel
+        let presentation: Presentation
+        let window: NSWindow
+    }
+
+    private func waitFor(
+        _ description: @autoclosure () -> String, file: StaticString = #filePath, line: UInt = #line,
+        until condition: () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(3)
+        while !condition() {
+            guard Date() < deadline else {
+                XCTFail(description(), file: file, line: line)
+                throw NSError(domain: "PadCreateFormTests", code: 1)
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
+    private func mount(onRaisedCard: Bool = false, removablePresenter: Bool = false) async throws -> Fixture {
+        _ = NSApplication.shared
+        let suite = "pad-create-native-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let model = isolatedModel(defaults: defaults)
+        model.pads.isEnabled = true
+        let presentation = Presentation()
+        let frame = NSRect(x: 200, y: 200, width: 360, height: 280)
+        let window: NSWindow
+        if onRaisedCard {
+            let panel = RepresentativeCardPanel(frame: frame)
+            panel.isInteractive = true
+            window = panel
+        } else {
+            window = NSWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false)
+        }
+        window.isReleasedWhenClosed = false
+        if removablePresenter {
+            window.contentView = FixtureHostingView(rootView: ConditionalSurface(presentation: presentation, model: model))
+        } else {
+            window.contentView = FixtureHostingView(rootView: Surface(presentation: presentation, model: model))
+        }
+        window.makeKeyAndOrderFront(nil)
+        addTeardownBlock { @MainActor in
+            presentation.routesBinding?.wrappedValue.creation.isPresented = false
+            window.orderOut(nil)
+            window.close()
+            window.contentView = nil
+            presentation.routesBinding = nil
+            presentation.anchors.removeAll()
+        }
+        try await waitFor("The fixture did not mount its presenter") {
+            presentation.routesBinding != nil
+                && presentation.anchors["New Pad"]?.window === window
+                && presentation.anchors["Outside"]?.window === window
+        }
+        return Fixture(model: model, presentation: presentation, window: window)
+    }
+
+    private func descendants(_ view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+
+    private func presentationDescription(_ fixture: Fixture) -> String {
+        let anchor = fixture.presentation.anchors["New Pad"]
+        let formWindow = fixture.presentation.formView?.window
+        return [
+            "appActive=\(NSApp.isActive)",
+            "windowKey=\(fixture.window.isKeyWindow)",
+            "visible=\(fixture.window.isVisible)",
+            "policy=\(NSApp.activationPolicy().rawValue)",
+            "anchorWindow=\(String(describing: anchor?.window?.windowNumber))",
+            "anchorBounds=\(String(describing: anchor?.bounds))",
+            "anchorHidden=\(String(describing: anchor?.isHiddenOrHasHiddenAncestor))",
+            "presented=\(fixture.presentation.routes.creation.isPresented)",
+            "formWindow=\(String(describing: formWindow?.windowNumber))",
+            "formVisible=\(String(describing: formWindow?.isVisible))",
+        ].joined(separator: ", ")
+    }
+
+    private func open(
+        _ fixture: Fixture, file: StaticString = #filePath, line: UInt = #line
+    ) async throws -> NSWindow {
+        fixture.window.makeKeyAndOrderFront(nil)
+        try await waitFor(
+            "The native presenter was not ready for creation (\(presentationDescription(fixture)))",
+            file: file, line: line
+        ) {
+            NSApp.updateWindows()
+            fixture.window.contentView?.layoutSubtreeIfNeeded()
+            guard let anchor = fixture.presentation.anchors["New Pad"] else { return false }
+            return fixture.window.isVisible && anchor.window === fixture.window && !anchor.isHiddenOrHasHiddenAncestor
+                && anchor.bounds.width > 0 && anchor.bounds.height > 0
+        }
+        fixture.presentation.routes.beginCreating()
+        try await waitFor(
+            "The creation route did not request presentation (\(presentationDescription(fixture)))",
+            file: file, line: line
+        ) {
+            fixture.presentation.routes.creation.isPresented
+        }
+        var popover: NSWindow?
+        try await waitFor(
+            "No native popover window appeared (\(presentationDescription(fixture)))",
+            file: file, line: line
+        ) {
+            popover = fixture.presentation.formView?.window
+            return popover?.isVisible == true
+        }
+        let window = try XCTUnwrap(popover)
+        let field = try nameField(in: window)
+        try await waitFor("The name field did not receive focus") { field.currentEditor() != nil }
+        try await waitFor("The native creation form did not register its presentation") {
+            fixture.model.hasPresentedPadCreation
+        }
+        return window
+    }
+
+    private func nameField(in window: NSWindow) throws -> NSTextField {
+        let root = try XCTUnwrap(window.contentView)
+        return try XCTUnwrap(descendants(root).compactMap { $0 as? NSTextField }.first { $0.isEditable })
+    }
+
+    private func enter(_ name: String, in popover: NSWindow, fixture: Fixture) async throws {
+        let field = try nameField(in: popover)
+        let editor = try XCTUnwrap(field.currentEditor() as? NSTextView, "The name field did not receive focus")
+        editor.selectAll(nil)
+        editor.insertText(name, replacementRange: editor.selectedRange())
+        try await waitFor("Native typing did not update the draft") {
+            fixture.presentation.routes.creation.draft == name
+        }
+    }
+
+    private func key(_ character: String, code: UInt16, in window: NSWindow) throws {
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil,
+            characters: character, charactersIgnoringModifiers: character,
+            isARepeat: false, keyCode: code))
+        window.sendEvent(event)
+    }
+
+    private func click(_ title: String, in fixture: Fixture) throws {
+        let target = try XCTUnwrap(fixture.presentation.anchors[title])
+        let frame = target.convert(target.bounds, to: nil)
+        let point = NSPoint(x: frame.midX, y: frame.midY)
+        var events: [NSEvent] = []
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(
+                with: type, location: point, modifierFlags: [], timestamp: 0,
+                windowNumber: fixture.window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1))
+            events.append(event)
+        }
+        events.forEach { NSApp.postEvent($0, atStart: false) }
+        for (mask, phase) in [(NSEvent.EventTypeMask.leftMouseDown, "mouse-down"), (.leftMouseUp, "mouse-up")] {
+            let queued = try XCTUnwrap(NSApp.nextEvent(
+                matching: mask, until: Date().addingTimeInterval(1), inMode: .default, dequeue: true),
+                "The posted \(phase) event for \(title) was not delivered to the fixture")
+            guard queued.windowNumber == fixture.window.windowNumber else {
+                XCTFail("The dequeued \(phase) event for \(title) targets window \(queued.windowNumber), expected fixture window \(fixture.window.windowNumber)")
+                throw NSError(domain: "PadCreateFormTests", code: 2)
+            }
+            NSApp.sendEvent(queued)
+        }
+    }
+
+    func testNativeNameFieldFocusAndReturnCreateThePad() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        let field = try nameField(in: popover)
+        let editor = try XCTUnwrap(popover.firstResponder as? NSTextView)
+        XCTAssertTrue(editor.isFieldEditor)
+        XCTAssertTrue(field.currentEditor() === editor)
+        try await enter("Native Return", in: popover, fixture: fixture)
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, "Native Return")
+        try key("\r", code: 36, in: popover)
+        try await waitFor("Return did not dismiss the native form") {
+            !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
+        }
+        XCTAssertFalse(fixture.presentation.routes.creation.isPresented)
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, "")
+        XCTAssertEqual(fixture.model.pads.activePad.name, "Native Return")
+        XCTAssertFalse(popover.isVisible)
+    }
+
+    func testNativeEscapeClearsTheDraftAndDismissesTheForm() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        try await enter("Cancelled by Escape", in: popover, fixture: fixture)
+        try key("\u{1b}", code: 53, in: popover)
+        try await waitFor("Escape did not dismiss the native form") {
+            !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
+        }
+        XCTAssertFalse(fixture.presentation.routes.creation.isPresented)
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, "")
+        XCTAssertEqual(fixture.model.pads.entries.count, 1)
+        XCTAssertFalse(popover.isVisible)
+    }
+
+    func testNativeOutsideDismissalRetainsTheDraftForReopening() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        try await enter("Retained outside", in: popover, fixture: fixture)
+        try click("Outside", in: fixture)
+        try await waitFor("Clicking outside did not dismiss the native form") {
+            !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
+        }
+        XCTAssertFalse(popover.isVisible)
+        XCTAssertFalse(fixture.presentation.routes.creation.isPresented)
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, "Retained outside")
+
+        let reopened = try await open(fixture)
+        let field = try nameField(in: reopened)
+        XCTAssertEqual(field.stringValue, "Retained outside")
+        let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+        try await waitFor("The retained draft was not selected whole") {
+            editor.selectedRange() == NSRange(location: 0, length: "Retained outside".utf16.count)
+        }
+    }
+
+    func testDisablingThePresenterDismissesTheFormAndRetainsItsDraft() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        try await enter("Retained on rest", in: popover, fixture: fixture)
+        fixture.presentation.isEnabled = false
+        try await waitFor("A disabled presenter left the form visible") {
+            !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
+        }
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, "Retained on rest")
+        fixture.presentation.isEnabled = true
+        let reopened = try await open(fixture)
+        let field = try nameField(in: reopened)
+        let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+        XCTAssertTrue(field.isEnabled)
+        XCTAssertEqual(field.stringValue, "Retained on rest")
+        try await waitFor("The draft restored after rest was not selected whole") {
+            editor.selectedRange() == NSRange(location: 0, length: "Retained on rest".utf16.count)
+        }
+    }
+
+    func testNativeAnchorClickClosesTheExistingForm() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        try await enter("Retained from anchor", in: popover, fixture: fixture)
+        try click("New Pad", in: fixture)
+        try await waitFor("Clicking the anchor did not dismiss the native form") {
+            !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
+        }
+        XCTAssertFalse(popover.isVisible)
+        XCTAssertFalse(fixture.presentation.routes.creation.isPresented)
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, "Retained from anchor")
+    }
+
+    func testNativeEmptyReturnExplainsTheMissingNameWithoutDismissing() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        try key("\r", code: 36, in: popover)
+        try await waitFor("Empty Return did not produce naming feedback") {
+            fixture.presentation.routes.creation.message == CompanionL10n.string("pad.name.empty")
+        }
+        XCTAssertTrue(fixture.presentation.routes.creation.isPresented)
+        XCTAssertTrue(popover.isVisible)
+        XCTAssertEqual(fixture.model.pads.entries.count, 1)
+        XCTAssertNotNil(try nameField(in: popover).currentEditor())
+    }
+
+    func testNativeFormSuspendsPadShortcutsAfterTheNameFieldResignsFocus() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        let field = try nameField(in: popover)
+        XCTAssertTrue(popover.makeFirstResponder(nil))
+        try await waitFor("The name field did not resign its editor") { field.currentEditor() == nil }
+        XCTAssertTrue(fixture.model.hasPresentedPadCreation)
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+            windowNumber: popover.windowNumber, context: nil,
+            characters: "0", charactersIgnoringModifiers: "0", isARepeat: false, keyCode: 29))
+        XCTAssertTrue(PadShortcutMonitor.allows(number: 0, keymap: fixture.model.keymap))
+        XCTAssertNil(PadShortcutMonitor.handle(
+            event, model: fixture.model, surface: .panel,
+            windows: [fixture.window, popover], isModal: false))
+        try key("\u{1b}", code: 53, in: popover)
+        try await waitFor("Dismissing the native form did not unregister it") {
+            !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
+        }
+    }
+
+    func testClosingThePresenterWindowDismissesAndUnregistersTheNativeForm() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        fixture.window.close()
+        try await waitFor("Closing the presenter left the native form visible") { !popover.isVisible }
+        try await waitFor("Closing the presenter left a registration active") {
+            !fixture.model.hasPresentedPadCreation
+        }
+    }
+
+    func testRemovingThePresenterHostDismissesAndUnregistersTheNativeForm() async throws {
+        let fixture = try await mount()
+        let popover = try await open(fixture)
+        fixture.window.contentView = nil
+        try await waitFor("Removing the presenter host left a native form or registration active") {
+            !popover.isVisible && !fixture.model.hasPresentedPadCreation
+        }
+        if let routes = fixture.presentation.routesBinding {
+            XCTAssertFalse(routes.wrappedValue.creation.isPresented)
+        }
+    }
+
+    func testRemovingAndRestoringThePresenterDoesNotReopenTheNativeForm() async throws {
+        let fixture = try await mount(removablePresenter: true)
+        let popover = try await open(fixture)
+        let name = "Retained across presenter removal"
+        try await enter(name, in: popover, fixture: fixture)
+        fixture.presentation.showsPresenter = false
+        try await waitFor("Removing the conditional presenter left the form visible or registered") {
+            !popover.isVisible && !fixture.model.hasPresentedPadCreation
+        }
+        XCTAssertFalse(fixture.presentation.routes.creation.isPresented)
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, name)
+        guard !fixture.presentation.routes.creation.isPresented else { return }
+
+        fixture.presentation.showsPresenter = true
+        try await waitFor("The conditional presenter did not remount") {
+            fixture.presentation.anchors["New Pad"]?.window === fixture.window
+        }
+        XCTAssertFalse(fixture.presentation.routes.creation.isPresented)
+        XCTAssertFalse(popover.isVisible)
+        XCTAssertFalse(fixture.model.hasPresentedPadCreation)
+
+        let reopened = try await open(fixture)
+        XCTAssertEqual(try nameField(in: reopened).stringValue, name)
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, name)
+    }
+
+    func testRepresentativeRaisedCardPanelFocusAndReturnCreateThePad() async throws {
+        let fixture = try await mount(onRaisedCard: true)
+        let panel = try XCTUnwrap(fixture.window as? RepresentativeCardPanel)
+        XCTAssertTrue(panel.styleMask.contains(.nonactivatingPanel))
+        XCTAssertTrue(panel.canBecomeKey)
+        XCTAssertFalse(panel.canBecomeMain)
+        let popover = try await open(fixture)
+        let field = try nameField(in: popover)
+        let editor = try XCTUnwrap(popover.firstResponder as? NSTextView)
+        XCTAssertTrue(editor.isFieldEditor)
+        XCTAssertTrue(field.currentEditor() === editor)
+        try await enter("Representative card Return", in: popover, fixture: fixture)
+        try key("\r", code: 36, in: popover)
+        try await waitFor("Return did not dismiss the representative card's native form") {
+            !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
+        }
+        XCTAssertEqual(fixture.model.pads.activePad.name, "Representative card Return")
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, "")
+    }
+
+    func testRepresentativeCardRestDismissesTheNativeFormAndRetainsItsDraft() async throws {
+        let fixture = try await mount(onRaisedCard: true)
+        let panel = try XCTUnwrap(fixture.window as? RepresentativeCardPanel)
+        let popover = try await open(fixture)
+        let name = "Representative card retained draft"
+        try await enter(name, in: popover, fixture: fixture)
+        panel.isInteractive = false
+        panel.makeFirstResponder(nil)
+        fixture.presentation.isEnabled = false
+        try await waitFor("Resting the representative card left its native form active") {
+            !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
+        }
+        XCTAssertFalse(panel.canBecomeKey)
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, name)
+        panel.isInteractive = true
+        fixture.presentation.isEnabled = true
+        let reopened = try await open(fixture)
+        XCTAssertEqual(try nameField(in: reopened).stringValue, name)
+    }
+}
