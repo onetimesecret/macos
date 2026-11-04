@@ -992,7 +992,7 @@ private enum DetailedStampFormatterCache {
     static func reading(createdMs: UInt64, locale: Locale?, timeZone: TimeZone) -> String {
         _ = localeWatch
         // The autoupdating locale keys apart from a fixed one with the same identifier: only it
-        // carries the person's 24-hour and format overrides.
+        // reads the person's 24-hour and format overrides.
         let key = "\(timeZone.identifier)\u{1F}\(locale?.identifier ?? "\u{1F}autoupdating")"
         let readingKey = "\(key)\u{1F}\(createdMs)"
         lock.lock()
