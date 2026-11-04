@@ -564,6 +564,8 @@ so a person's drag is checked only here.
    adjust it with VoiceOver's increment and decrement. Then relaunch.
 9. With three-finger drag on (Accessibility, Pointer Control, Trackpad
    Options), drag the divider and release.
+10. Press the divider, move it once, hold still for more than three
+    seconds, then release.
 
 **Pass:** the divider follows the pointer for the whole drag and stays
 where it was released; it reopens at that width after relaunch; the card
@@ -577,7 +579,8 @@ whether the pointer shows the resize cursor over a resting card's
 divider; the stance comments call the resting card chrome-free.
 VoiceOver's adjustment and a three-finger drag each move the divider,
 the divider stays where they left it, and a relaunch opens at that
-width.
+width. A press held still past three seconds leaves the divider where
+the move put it, and a relaunch opens there.
 
 **Fail:** the divider snaps back during or after a drag; a relaunch or a
 presentation switch opens at 110 or at an older width; a squeeze is
@@ -644,3 +647,4 @@ an executed result.
 | | | 13 pinned resting card raises on a divider press | Pending | Record whether the width changed and whether the resize cursor showed. |
 | | | 13 VoiceOver adjusts the divider and the width is kept | Pending | Record whether it survives a relaunch. |
 | | | 13 three-finger drag moves the divider and is kept | Pending | |
+| | | 13 a press held still past three seconds is kept | Pending | Record whether the divider jumped on release. |

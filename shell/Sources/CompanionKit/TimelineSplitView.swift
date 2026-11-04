@@ -32,7 +32,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
     public var body: some View {
         GeometryReader { proxy in
             let ceiling = TimelineSplit.railCeiling(splitWidth: proxy.size.width)
-            // Not resizable: the rail's range closes on its placed width, so the divider cannot move.
+            // Not resizable: the rail's range closes on its placed width.
             let pinned = min(TimeRailView.clampedWidth(railWidth), ceiling)
             HSplitView {
                 if showsTimeline {
@@ -93,7 +93,7 @@ private struct DividerWatch: NSViewRepresentable {
     }
 
     func updateNSView(_ view: DividerWatchView, context: Context) {
-        view.records = records
+        view.setRecords(records)
         view.onMove = onMove
         view.leftMouseIsDown = leftMouseIsDown
         view.adopt(startWidth)
@@ -162,6 +162,12 @@ private final class DividerWatchView: NSView {
 
     /// SwiftUI's dismantle: a drag still waiting is recorded on the next main-queue turn, outside the
     /// view update, since the record publishes.
+    /// Turning recording on, as the press that raises a card does, refuses held moves for that turn.
+    func setRecords(_ on: Bool) {
+        if on, !records { markSplitResized() }
+        records = on
+    }
+
     func retire() {
         detach()
         guard recordPending else {
@@ -250,7 +256,7 @@ private final class DividerWatchView: NSView {
         if thenPlace { queuePlacement() }
     }
 
-    private func markSplitResized() {
+    fileprivate func markSplitResized() {
         guard !splitResizedThisTurn else { return }
         splitResizedThisTurn = true
         DispatchQueue.main.async { [weak self] in self?.splitResizedThisTurn = false }
