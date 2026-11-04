@@ -38,7 +38,6 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
     private var switchingToAmbientPanel = false
     private var captureObserver: AnyCancellable?
     private var ownerObserver: AnyCancellable?
-    private var padsObserver: AnyCancellable?
 
     /// The defaults key the frame rests under between runs. State
     /// restoration is off (`isRestorable`), so this is the only thing
@@ -99,19 +98,15 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         window.title = BackdropAppDelegate.productName
         // One editor window (ADR-0033): no Show Tab Bar on the View menu.
         window.tabbingMode = .disallowed
-        // One unified band: the pad picker and the expand control are
-        // toolbar items. With pads on the picker stands where the title
-        // would and the title is hidden, still the app's name in the
-        // Window menu and Mission Control.
+        // The pad picker replaces the visible title; the app name remains
+        // available to the Window menu and Mission Control.
         window.toolbarStyle = .unified
         let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false
         window.toolbar = toolbar
-        padsObserver = model.pages.pads.$isEnabled.sink { [weak window] enabled in
-            window?.titleVisibility = Self.titleVisibility(padsEnabled: enabled)
-        }
+        window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
         window.minSize = Self.minimumSize
         // No saved application state: restoration would write a
@@ -142,7 +137,7 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
 
         window.makeKeyAndOrderFront(nil)
         model.editorWindowShown()
-        model.pages.focusEditorWhenMounted(in: window)
+        model.pages.focusEditorWhenMounted(in: window, requireKeys: true)
         Self.logger.info("editor window=open")
     }
 
@@ -249,7 +244,6 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
         let closingWindowID = window.map(ObjectIdentifier.init)
         captureObserver = nil
         ownerObserver = nil
-        padsObserver = nil
         window?.delegate = nil
         window?.toolbar = nil
         model.editorWindowClosed()
@@ -357,15 +351,11 @@ private struct PrimaryEditorRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                if pages.showsPagesDownSide && !pages.isPageExpanded {
-                    TimeRailView(model: pages, readOnly: false)
-                    Divider()
-                }
+            PadWorkspaceView(model: pages) {
                 content
             }
             PageStatusStack(model: pages)
-            if !pages.showsPagesDownSide && !pages.isPageExpanded {
+            if !pages.showsPagesDownSide && !pages.isPageExpanded && !pages.isPadInspectorVisible {
                 Divider()
                 TabStripView(model: pages, readOnly: false)
             }
@@ -392,17 +382,13 @@ private struct PrimaryEditorRootView: View {
     }
 }
 
-/// The pad picker as the editor window's leading toolbar item, drawn
-/// only while pads are on.
+/// The pad picker is the editor window's leading toolbar item.
 private struct EditorToolbarPadPicker: View {
     @ObservedObject var pages: PageModel
-    @ObservedObject var pads: PadCatalog
 
     var body: some View {
-        if pads.isEnabled {
-            PadPickerView(model: pages, placement: .toolbar)
-                .environment(\.presentationSurface, .editorWindow)
-        }
+        PadPickerView(model: pages, placement: .toolbar)
+            .environment(\.presentationSurface, .editorWindow)
     }
 }
 
@@ -425,11 +411,6 @@ extension PrimaryEditorWindowController: NSToolbarDelegate, NSToolbarItemValidat
         .editorPadPicker, .flexibleSpace, .editorExpandPage,
     ]
 
-    /// The title's text is hidden while the pad picker stands in its place.
-    nonisolated static func titleVisibility(padsEnabled: Bool) -> NSWindow.TitleVisibility {
-        padsEnabled ? .hidden : .visible
-    }
-
     nonisolated func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         Self.toolbarItems
     }
@@ -450,8 +431,7 @@ extension PrimaryEditorWindowController: NSToolbarDelegate, NSToolbarItemValidat
         case .editorPadPicker:
             let item = NSToolbarItem(itemIdentifier: identifier)
             item.label = "Pad"
-            item.view = NSHostingView(rootView: EditorToolbarPadPicker(
-                pages: model.pages, pads: model.pages.pads))
+            item.view = NSHostingView(rootView: EditorToolbarPadPicker(pages: model.pages))
             item.visibilityPriority = .high
             return item
         case .editorExpandPage:

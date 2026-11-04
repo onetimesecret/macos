@@ -91,7 +91,6 @@ final class PresentationMenuTests: XCTestCase {
         delegate.selectEditor = { selections += 1 }
         pages.loadStateIfNeeded()
         delegate.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
-        pages.pads.isEnabled = true
         pages.openFile(at: notes)
         let id = try XCTUnwrap(pages.openFiles.first?.id)
         let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "the ")]))

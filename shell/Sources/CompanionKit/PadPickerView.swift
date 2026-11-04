@@ -1,10 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The pad switcher shared by the card and the editor window's toolbar:
-/// the active pad's name opens a menu of pads, New Pad… and Manage Pads…
-/// (ADR-0039 Amendment 1). Folders, apps, renames and removals are the
-/// Pads tab of Settings (`PadSettingsView`).
+/// The pad switcher and anchored creation form, shared by both editor surfaces.
 public struct PadPickerView: View {
     /// Where the picker stands: a row of its own over the card's page,
     /// or an item in the editor window's toolbar, which has its own inset.
@@ -42,11 +39,16 @@ public struct PadPickerView: View {
                 PadCreateForm(model: model, creation: $creation)
             }
             Spacer(minLength: 0)
-            if model.pads.appAssociationsEnabled {
-                ForEach(model.pads.activePad.applicationBundleIDs, id: \.self) { bundleID in
-                    applicationButton(bundleID)
-                }
+            ForEach(model.pads.activePad.applicationBundleIDs, id: \.self) { bundleID in
+                applicationButton(bundleID)
             }
+            Button { model.isPadInspectorVisible.toggle() } label: {
+                Image(systemName: "sidebar.right")
+                    .foregroundStyle(model.isPadInspectorVisible ? Color.accentColor : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(CompanionL10n.string(model.isPadInspectorVisible ? "pad.inspector.close" : "pad.manage.menu"))
+            .accessibilityLabel(CompanionL10n.string(model.isPadInspectorVisible ? "pad.inspector.close" : "pad.manage.menu"))
         }
         .padding(.horizontal, placement == .row ? 12 : 4)
         .padding(.vertical, placement == .row ? 9 : 0)
@@ -64,7 +66,7 @@ public struct PadPickerView: View {
                 pads: model.pads.entries, activeID: model.pads.activeID, keymap: model.keymap),
             select: { [model] id in model.activatePad(id) },
             newPad: { [$creation] in $creation.wrappedValue.isPresented = true },
-            manage: { [model] in model.openSettings(.pads) }
+            manage: { [model] in model.showPadInspector() }
         )
         let below = NSPoint(x: 0, y: view.isFlipped ? view.bounds.maxY + 4 : -4)
         menu.popUp(positioning: nil, at: below, in: view)
@@ -227,7 +229,7 @@ struct PadCreation {
     }
 }
 
-/// The anchored New Pad form shared by the switcher and Settings (Law 0007).
+/// The anchored New Pad form shared by the switcher and inspector (Law 0007).
 struct PadCreateForm: View {
     @ObservedObject var model: PageModel
     @Binding var creation: PadCreation
@@ -438,7 +440,7 @@ final class PadShortcutMonitor: ObservableObject {
 
     /// User-remapped digit bindings retain their existing command. A digit
     /// still assigned to its bundled page selector can be reclaimed by the
-    /// opt-in experiment. Scratch's unbound zero has the same boundary.
+    /// pad picker. Scratch's unbound zero has the same boundary.
     nonisolated static func allows(number: Int, keymap: ResolvedKeymap) -> Bool {
         guard (0...9).contains(number),
               case .success(let stroke) = Keystroke.parse("cmd-\(number)") else { return false }
@@ -457,8 +459,7 @@ final class PadShortcutMonitor: ObservableObject {
         _ event: NSEvent, model: PageModel, surface: PresentationOwner,
         windows: [NSWindow], isModal: Bool
     ) -> NSEvent? {
-        guard model.pads.isEnabled,
-              event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
+        guard event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
               let key = event.charactersIgnoringModifiers, let number = Int(key),
               (0...9).contains(number), allows(number: number, keymap: model.keymap)
         else { return event }

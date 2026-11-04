@@ -51,7 +51,7 @@
 "Saved pages: state-key\nPage history: ledger-key\nKeychain service: %@" = "Saved pages: state-key\nPage history: ledger-key\nKeychain service: %@";
 "Keychain items used for saved pages and page history" = "Keychain items used for saved pages and page history";
 
-/* Experimental pad selection, associations, and local metadata disclosure. */
+/* Pad selection, associations, and local metadata disclosure. */
 "pad.picker.current" = "Choose pad, current pad %@";
 "pad.picker.heading" = "Pads";
 "pad.new.title" = "New Pad";
@@ -73,7 +73,6 @@
 "pad.actions" = "Actions for %@";
 "pad.move.up" = "Move %@ up";
 "pad.move.down" = "Move %@ down";
-"pad.settings.order" = "Use the arrow buttons to reorder pads and their keyboard shortcuts. Scratch stays first.";
 "pad.scratch.expiry" = "Usual page expiry across restarts.";
 "pad.folder.one" = "%ld folder";
 "pad.folder.many" = "%ld folders";
@@ -82,17 +81,12 @@
 "pad.folder.remove" = "Remove %@ from %@";
 "pad.folder.associate" = "Associate";
 "pad.folder.owned" = "This folder is already associated with a pad.";
-"pad.app.enabled" = "App associations";
-"pad.app.caption" = "Use application context to suggest recent pads.";
 "pad.app.menu" = "Applications";
 "pad.app.switch" = "Switch to %@";
 "pad.app.notRunningName" = "%@ is not running";
 "pad.app.notRunning" = "This associated application is not running.";
 "pad.app.activationFailed" = "The associated application could not be activated.";
-"pad.paths.full" = "Show full paths";
-"pad.settings.enabled" = "Multiple pads and context associations · experiment";
-"pad.settings.caption" = "Off preserves the existing single-pad navigation and shortcuts.";
-"pad.settings.storage" = "Pad names, folder paths, and associated app identifiers are stored in unencrypted local preferences. Note content stays in its existing storage.";
+"pad.links.storage" = "Pad names, folder paths, and associated app identifiers are stored in unencrypted local preferences. Note content stays in its existing storage.";
 "pad.catalog.unreadable" = "Pad metadata could not be read. The saved catalog has been preserved.";
 "pad.switch.pendingClose" = "Finish the file close decision before switching pads.";
 
@@ -262,3 +256,14 @@
 "Current File" = "Current File";
 
 "Current View" = "Current View";
+
+/* Main-window pad navigation and inspector. */
+"pad.navigation" = "Navigation";
+"pad.inspector.title" = "Pad Details";
+"pad.inspector.close" = "Back to editor";
+"pad.folder.heading" = "Linked Folders";
+"pad.app.none" = "No applications linked";
+"pad.app.add" = "Link Application…";
+"pad.app.remove" = "Unlink %@ from %@";
+"pad.app.noRunning" = "No applications available";
+"pad.links.about" = "About pad links";

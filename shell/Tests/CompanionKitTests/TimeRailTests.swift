@@ -271,25 +271,24 @@ final class TimeRailTests: XCTestCase {
 
     // MARK: What the tooltips say you can press
 
-    /// The tooltip names the chord the keymap actually bound, the way
-    /// the + button's does: a keymap that moved ⌘2 moves this with it.
-    /// ⌘1 to ⌘9 count the rail's rows while the mode is on, so the row at
-    /// index 1 is the one ⌘2 selects.
+    /// Tooltips use the page binding when it differs from the pad's reserved command digit.
     func testTheTooltipNamesTheChordBoundToThatRow() throws {
-        let model = try makeModel()
-        XCTAssertEqual(TimeRailView.chord(forRowAt: 0, keymap: model.keymap)?.displaySymbol, "⌘1")
-        XCTAssertEqual(TimeRailView.chord(forRowAt: 1, keymap: model.keymap)?.displaySymbol, "⌘2")
+        let keymap = Keymap.resolve(defaultText: """
+            [{"context":"Editor","bindings":{"ctrl-1":"page::Select1","ctrl-2":"page::Select2"}}]
+            """, overrideText: nil)
+        XCTAssertEqual(TimeRailView.chord(forRowAt: 0, keymap: keymap)?.displaySymbol, "⌃1")
+        XCTAssertEqual(TimeRailView.chord(forRowAt: 1, keymap: keymap)?.displaySymbol, "⌃2")
         XCTAssertEqual(
-            TimeUnitTab.todayHelp(chord: TimeRailView.chord(forRowAt: 0, keymap: model.keymap)),
-            "Start today's page (⌘1)")
+            TimeUnitTab.todayHelp(chord: TimeRailView.chord(forRowAt: 0, keymap: keymap)),
+            "Start today's page (⌃1)")
         let yesterday = try XCTUnwrap(
             StreamNavigator.nodes(
                 projection: project([slot(tab: 1, page: 11, day: 0), slot(tab: 2, page: 22, day: -1)]),
                 tabs: [], selection: nil
             ).last)
         XCTAssertTrue(
-            StreamNavigator.help(for: yesterday, chord: TimeRailView.chord(forRowAt: 1, keymap: model.keymap))
-                .hasSuffix("(⌘2)"))
+            StreamNavigator.help(for: yesterday, chord: TimeRailView.chord(forRowAt: 1, keymap: keymap))
+                .hasSuffix("(⌃2)"))
     }
 
     /// And says only what the row does when nothing is bound to it, a
@@ -343,7 +342,6 @@ final class TimeRailTests: XCTestCase {
     /// The active page on a pads rail, with the nodes the rail draws for it.
     private func padsModel() throws -> (PageModel, [StreamNavigator.Node], StreamNavigator.Node) {
         let model = try makeModel()
-        model.pads.isEnabled = true
         model.newPage()
         let nodes = StreamNavigator.nodes(
             projection: model.timeUnits, tabs: model.navigationTabs, selection: model.selection)
@@ -472,26 +470,13 @@ final class TimeRailTests: XCTestCase {
         }
     }
 
-    /// A checkpoint row offers its sort menu and actions only while pads are on, so a right
-    /// click with pads off opens no empty menu.
-    func testACheckpointOffersASortMenuOnlyWithPads() throws {
-        let (model, _, active) = try padsModel()
-        let menu = try XCTUnwrap(PadSortSection.checkpointMenu(of: active, in: model), "pads on offered none")
-        XCTAssertEqual(menu, PadSortSection.checkpoints(of: active, in: model))
-        model.pads.isEnabled = false
-        XCTAssertNil(PadSortSection.checkpointMenu(of: active, in: model), "pads off offered a sort menu")
-    }
-
     /// With pads on, `PadShortcutMonitor` takes ⌘1 to ⌘9 for pads, so a node names no chord
     /// the monitor would take, and still names a binding that reaches its day.
     func testPadsLeaveOutTheDigitChordsThePadMonitorTakes() throws {
         let model = try makeModel()
         for row in 0..<9 {
-            XCTAssertEqual(
-                TimeRailView.chord(forRowAt: row, keymap: model.keymap, padsEnabled: false)?.displaySymbol,
-                "⌘\(row + 1)", "the control: pads off")
             XCTAssertNil(
-                TimeRailView.chord(forRowAt: row, keymap: model.keymap, padsEnabled: true),
+                TimeRailView.chord(forRowAt: row, keymap: model.keymap),
                 "row \(row) named a chord that switches pads")
         }
 
@@ -502,13 +487,13 @@ final class TimeRailTests: XCTestCase {
             [{"context":"Editor","bindings":{"cmd-1":null,"ctrl-1":"page::Select1"}}]
             """)
         XCTAssertEqual(
-            TimeRailView.chord(forRowAt: 0, keymap: elsewhere, padsEnabled: true)?.displaySymbol, "⌃1")
+            TimeRailView.chord(forRowAt: 0, keymap: elsewhere)?.displaySymbol, "⌃1")
         let remapped = Keymap.resolve(defaultText: defaults, overrideText: """
             [{"context":"Editor","bindings":{"cmd-2":"page::Select1"}}]
             """)
         XCTAssertFalse(PadShortcutMonitor.allows(number: 2, keymap: remapped), "the control")
         XCTAssertEqual(
-            TimeRailView.chord(forRowAt: 0, keymap: remapped, padsEnabled: true)?.displaySymbol, "⌘2",
+            TimeRailView.chord(forRowAt: 0, keymap: remapped)?.displaySymbol, "⌘2",
             "a remapped digit the pads leave alone lost its hint")
 
         // The keymap's own hint, asked to pass over a chord, and with nothing passed over.
@@ -644,7 +629,6 @@ final class TimeRailTests: XCTestCase {
     /// status lines, the navigator keeps its active row's room and the shelf gives way (ADR-0060).
     func testTheNavigatorKeepsItsActiveRowAtEveryWindowsMinimumHeight() throws {
         let probe = try makeModel()
-        probe.pads.isEnabled = true
         let picker = NSHostingView(
             rootView: PadPickerView(model: probe).environment(\.presentationSurface, .panel)).fittingSize.height
         func statusHeight() -> CGFloat {
@@ -657,24 +641,21 @@ final class TimeRailTests: XCTestCase {
         XCTAssertGreaterThan(line, 15, "the control: a notice is one status line")
         let chrome = editorChrome()
         XCTAssertGreaterThan(chrome, 28, "the control: the probe has a toolbar under its title bar")
-        // The card's header stands over a divider; with pads on the picker row and its divider
-        // follow. The editor's picker is a toolbar item. Status lines stand under the rail.
+        // The card's header and pad picker precede the rail; status lines follow it.
         let card = Self.cardMinimumHeight - (Self.cardHeaderHeight + 1) - status
-        let floors: [(String, Bool, CGFloat)] = [
-            ("card", false, card),
-            ("card with pads", true, card - (picker + 1)),
-            ("card with pads and two status lines", true, card - (picker + 1) - 2 * line),
-            ("card with pads and three status lines", true, card - (picker + 1) - 3 * line),
-            ("editor", false, Self.editorMinimumHeight - chrome - status),
-            ("editor with pads", true, Self.editorMinimumHeight - chrome - status),
+        let floors: [(String, CGFloat)] = [
+            ("card", card - (picker + 1)),
+            ("card with two status lines", card - (picker + 1) - 2 * line),
+            ("card with three status lines", card - (picker + 1) - 3 * line),
+            ("editor", Self.editorMinimumHeight - chrome - status),
         ]
 
         /// The rail at `height`: the clip of its bottom scroll view, the navigator's, of its top,
         /// the shelf's, and how many scroll views it drew.
-        func navigatorClip(_ model: PageModel, pads: Bool, height: CGFloat) throws -> (CGFloat, CGFloat, Int) {
+        func navigatorClip(_ model: PageModel, height: CGFloat) throws -> (CGFloat, CGFloat, Int) {
             let host = NSHostingView(rootView: AnyView(
                 TimeRailView(model: model, readOnly: false).environment(\.presentationSurface, .panel)))
-            host.frame = NSRect(x: 0, y: 0, width: TimeRailView.width(experimental: pads), height: height)
+            host.frame = NSRect(x: 0, y: 0, width: TimeRailView.width, height: height)
             let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.contentView = host
@@ -691,43 +672,40 @@ final class TimeRailTests: XCTestCase {
             return (bottom.contentView.bounds.height, top.contentView.bounds.height, scrolls.count)
         }
 
-        for pads in [false, true] {
-            for pages in [1, 12] {
-                let model = try makeModel()
-                model.pads.isEnabled = pads
-                for _ in 0..<pages { model.newPage() }
-                for index in 0..<4 {
-                    let url = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("time-rail-floor-\(UUID().uuidString).txt")
-                    addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-                    try "file \(index)".write(to: url, atomically: true, encoding: .utf8)
-                    model.openFile(at: url)
-                }
-                model.select(target: .tab(model.tabs[0].id))
-                XCTAssertEqual(model.navigationFiles.count, 4, "the control")
-                let room = StreamNavigator.activeRowRoom(StreamNavigator.nodes(
-                    projection: model.timeUnits, tabs: model.navigationTabs, selection: model.selection))
-                let cap = FileShelfRow.shelfHeight(rows: 4)
-                for (name, padsFloor, height) in floors where padsFloor == pads {
-                    let (clip, shelf, scrolls) = try navigatorClip(model, pads: pads, height: height)
-                    XCTAssertEqual(scrolls, 2, "the control: the shelf and the navigator, \(name)")
-                    XCTAssertGreaterThanOrEqual(
-                        clip, room, "\(name) at \(height), \(pages) pages: the active row is cut")
-                    if name.contains("status") {
-                        XCTAssertLessThan(shelf, cap, "\(name): the shelf did not give way")
-                        XCTAssertGreaterThan(shelf, 0, "\(name): the shelf gave way entirely")
-                    }
-                    if name.contains("two status") {
-                        XCTAssertEqual(height, 150, accuracy: 0.5, "the control: a 150 point rail")
-                        XCTAssertEqual([shelf, clip], [48, 48], "\(pages) pages: the even split above the floor")
-                    }
-                }
-                // A column with less than the room after the headings: the shelf is gone, and
-                // the navigator takes what is left, which the room does not fit.
-                let (short, shelf, _) = try navigatorClip(model, pads: pads, height: 80)
-                XCTAssertLessThan(short, room, "the control: a column under the room does cut the row")
-                XCTAssertEqual(shelf, 0, accuracy: 0.5, "the shelf gives way before the navigator")
+        for pages in [1, 12] {
+            let model = try makeModel()
+            for _ in 0..<pages { model.newPage() }
+            for index in 0..<4 {
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("time-rail-floor-\(UUID().uuidString).txt")
+                addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+                try "file \(index)".write(to: url, atomically: true, encoding: .utf8)
+                model.openFile(at: url)
             }
+            model.select(target: .tab(model.tabs[0].id))
+            XCTAssertEqual(model.navigationFiles.count, 4, "the control")
+            let room = StreamNavigator.activeRowRoom(StreamNavigator.nodes(
+                projection: model.timeUnits, tabs: model.navigationTabs, selection: model.selection))
+            let cap = FileShelfRow.shelfHeight(rows: 4)
+            for (name, height) in floors {
+                let (clip, shelf, scrolls) = try navigatorClip(model, height: height)
+                XCTAssertEqual(scrolls, 2, "the control: the shelf and the navigator, \(name)")
+                XCTAssertGreaterThanOrEqual(
+                    clip, room, "\(name) at \(height), \(pages) pages: the active row is cut")
+                if name.contains("status") {
+                    XCTAssertLessThan(shelf, cap, "\(name): the shelf did not give way")
+                    XCTAssertGreaterThan(shelf, 0, "\(name): the shelf gave way entirely")
+                }
+                if name.contains("two status") {
+                    XCTAssertEqual(height, 150, accuracy: 0.5, "the control: a 150 point rail")
+                    XCTAssertEqual([shelf, clip], [48, 48], "\(pages) pages: the even split above the floor")
+                }
+            }
+            // A column with less than the room after the headings: the shelf is gone, and
+            // the navigator takes what is left, which the room does not fit.
+            let (short, shelf, _) = try navigatorClip(model, height: 80)
+            XCTAssertLessThan(short, room, "the control: a column under the room does cut the row")
+            XCTAssertEqual(shelf, 0, accuracy: 0.5, "the shelf gives way before the navigator")
         }
     }
 

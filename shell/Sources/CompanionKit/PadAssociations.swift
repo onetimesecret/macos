@@ -60,7 +60,7 @@ extension PageModel {
         pads.removeApplication(bundleID, from: id)
     }
     public func addFolder(toPad id: UUID) {
-        guard pads.isEnabled, !FormFactor.runningUnderTests else { return }
+        guard pads.loadFailure == nil, !FormFactor.runningUnderTests else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false

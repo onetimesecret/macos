@@ -493,7 +493,6 @@ final class CheckpointInsertionTests: XCTestCase {
     func testInsertionResetsTodaysSortToNaturalAndLaterSortsPreserveDocumentsAndTabOrder() throws {
         for initial: PadSortDirection in [.chronological, .reverseChronological, .natural] {
             let model = try makeModel()
-            model.pads.isEnabled = true
             _ = try seed("first", in: model)
             let source = try seed("left tail", in: model)
             _ = try seed("successor", in: model)
@@ -557,7 +556,6 @@ final class CheckpointInsertionTests: XCTestCase {
         let model = PageModel(formFactor: .backdrop, defaults: defaults,
             seams: .init(stateDirectory: directory, client: client, saveDebounce: 3_600))
         model.showsTimeUnits = true
-        model.pads.isEnabled = true
         return (model, client)
     }
 
@@ -701,7 +699,6 @@ final class CheckpointInsertionTests: XCTestCase {
     func testSameDayInsertionResetsCheckpointSortWithoutChangingDaySort() throws {
         for daySort: PadSortDirection in [.chronological, .reverseChronological, .natural] {
             let model = try makeModel()
-            model.pads.isEnabled = true
             let source = try seed("left tail", in: model)
             _ = try seed("successor", in: model)
             model.select(source.tab)

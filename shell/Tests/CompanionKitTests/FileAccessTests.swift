@@ -1487,6 +1487,8 @@ final class FileAccessTests: XCTestCase {
     func testAnOpenOfAHeldFilesPathHydratesItFirst() throws {
         let fixture = try makeFixture()
         let (held, url, id) = try heldFile(in: fixture)
+        held.model.select(try XCTUnwrap(held.model.navigationTabs.first?.id))
+        XCTAssertNil(held.model.selectedFile)
 
         // Still refused: the row is asked, stays held, and the open
         // is refused rather than handed the pending id.

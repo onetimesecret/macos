@@ -299,7 +299,6 @@ final class ContinuousPadViewTests: XCTestCase {
 
     func testPadSwitchKeepsEditorAndRestoresEachDocumentsSelection() throws {
         let model = try model()
-        model.pads.isEnabled = true
         _ = try seed("scratch words", in: model)
         let surface = try mount(model)
         defer { unmount(surface) }
@@ -524,7 +523,6 @@ final class ContinuousPadViewTests: XCTestCase {
 
     func testStaleCheckpointCannotSealIntoCurrentlySelectedPage() throws {
         let model = try model()
-        model.pads.isEnabled = true
         let other = try XCTUnwrap(model.createPad(named: "Other"))
         model.activatePad(PadCatalog.scratchID)
         _ = try seed("alpha", in: model)

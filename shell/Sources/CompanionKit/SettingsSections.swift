@@ -205,7 +205,7 @@ public struct GeneralSettingsView: View {
                 }
                 .pickerStyle(.segmented)
             } header: {
-                SettingsCaption(Self.pageLayoutCaption(experimental: model.pads.isEnabled))
+                SettingsCaption(Self.pageLayoutCaption)
             }
             // Timeline exposes the time-specific preferences.
             if model.showsTimeUnits {
@@ -314,17 +314,8 @@ public struct GeneralSettingsView: View {
 
     /// The caption says both what changes and what it costs (ADR-0037).
     /// User-facing copy never exposes the components' code names.
-    static var pageLayoutCaption: String { pageLayoutCaption(experimental: false) }
-
-    static func pageLayoutCaption(experimental: Bool) -> String {
-        if experimental {
-            return CompanionL10n.format("pad.settings.layout", Int(TimeRailView.width(experimental: true)))
-        }
-        return "Tabs shows named pages along the bottom at full page width. Timeline is a prototype "
-            + "that groups live pages by the day they were written, newest first, down the "
-            + "side, taking \(Int(TimeRailView.width(experimental: experimental))) points from the page; lines always wrap and older blank pages "
-            + "are hidden. Changing this moves no content and writes "
-            + "nothing new to disk."
+    static var pageLayoutCaption: String {
+        CompanionL10n.format("pad.settings.layout", Int(TimeRailView.width))
     }
 
     /// The section only exists when the switch is offered, so the

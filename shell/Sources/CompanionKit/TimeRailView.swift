@@ -80,26 +80,8 @@ public struct TimeRailView: View {
         drivesRoll(surface: surface, owner: owner) ? owners : unclaimed
     }
 
-    /// The rail's width, fixed. It eats into the page's column and not
-    /// into the header, which is why `BackdropGeometry.minWidth` and the
-    /// clamp its tests pin do not move for this mode. Whether the card
-    /// wants a wider floor while the days are showing is a question for
-    /// the dogfood window rather than a number to guess at now.
-    ///
-    /// One hundred and ten points, the navigator mockup's floor: the
-    /// track, a node's dot, the day's words beside it and the gauge
-    /// under them, with room for "10 days ago" in the monospaced
-    /// caption. Longer than that truncates at the tail, which is the
-    /// net rather than the plan.
-    nonisolated static let width: CGFloat = 110
-
-    /// The rail's width while multiple pads are on, with room for the heading's sort menu.
-    nonisolated static let experimentalWidth: CGFloat = 150
-
-    /// One measure for the rail and the layout caption in settings; with pads off it is `width`.
-    nonisolated static func width(experimental: Bool) -> CGFloat {
-        experimental ? experimentalWidth : width
-    }
+    /// The timeline column includes room for the heading's sort menu.
+    nonisolated static let width: CGFloat = 150
 
     public var body: some View {
         unifiedRail
@@ -160,7 +142,7 @@ public struct TimeRailView: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
-        .frame(width: Self.width(experimental: model.pads.isEnabled))
+        .frame(width: Self.width)
         .background(Color.panelBackground)
     }
 
@@ -221,12 +203,8 @@ public struct TimeRailView: View {
     /// two ways.
     private func padHeading(nodes: [StreamNavigator.Node]) -> some View {
         HStack(spacing: 0) {
-            if model.pads.isEnabled {
-                sortMenu(sections: Self.sortSections(model: model, nodes: nodes)) {
-                    GroupLabel(text: CompanionL10n.string("pad.timeline.heading"))
-                }
-            } else {
-                GroupLabel(text: CompanionL10n.string("pad.heading"))
+            sortMenu(sections: Self.sortSections(model: model, nodes: nodes)) {
+                GroupLabel(text: CompanionL10n.string("pad.timeline.heading"))
             }
             Spacer(minLength: 0)
             Button(action: model.newPage) {
@@ -261,7 +239,7 @@ public struct TimeRailView: View {
             // lies about the chord it names.
             if let chord = Self.chord(
                 forRowAt: Self.targetIndex(forDay: node.dayIndex, openFileCount: openFileCount),
-                keymap: model.keymap, padsEnabled: model.pads.isEnabled
+                keymap: model.keymap
             ) {
                 chords[node.id] = chord
             }
@@ -282,19 +260,13 @@ public struct TimeRailView: View {
         openFileCount + day
     }
 
-    /// The ⌘-number that lands on the day at this index.
-    ///
-    /// ⌘1 to ⌘9 count the days while the mode is on. Asked of the
-    /// keymap rather than spelled here, so moving or removing a binding
-    /// changes the tooltip with it. A tenth day simply has no chord.
-    /// With pads on, a binding `PadShortcutMonitor` takes for a pad is skipped.
+    /// A page-selection shortcut for this row, excluding digits reserved for pads.
     static func chord(
-        forRowAt index: Int, keymap: ResolvedKeymap, padsEnabled: Bool = false
+        forRowAt index: Int, keymap: ResolvedKeymap
     ) -> Keystroke? {
         let number = index + 1
         guard let command = CommandID.allCases.first(where: { $0.selectsPageNumber == number })
         else { return nil }
-        guard padsEnabled else { return keymap.hintKeystroke(for: command) }
         return keymap.hintKeystroke(for: command, excluding: { switchesPads($0, keymap: keymap) })
     }
 
@@ -673,7 +645,7 @@ struct StreamNavigatorView: View {
         let target = node.target
         let first = node.firstOfDay
         let hovered = hoverID == node.id
-        let sortMenu = PadSortSection.checkpointMenu(of: node, in: model)
+        let sortMenu = PadSortSection.checkpoints(of: node, in: model)
         // One press for the click and VoiceOver's activation, which `.ignore` does not inherit.
         let press = { jump(to: target, documentTop: placed.documentTop) }
         return Button { press() } label: {
@@ -733,7 +705,7 @@ struct StreamNavigatorView: View {
                 hoverID = nil
             }
         }
-        .modifier(PadSortContextMenu(section: sortMenu, model: model))
+        .contextMenu { PadSortPicker(section: sortMenu, model: model) }
         .help(StreamNavigator.help(for: node, chord: chords[node.id]))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(StreamNavigator.spoken(for: node)))
@@ -742,10 +714,8 @@ struct StreamNavigatorView: View {
         .accessibilityActivation(when: true) { press() }
         // The context menu's orders, by name, for VoiceOver (ADR-0060).
         .accessibilityActions {
-            if let sortMenu {
-                ForEach(PadSortCopy.orders, id: \.self) { order in
-                    Button(sortMenu.actionName(order)) { sortMenu.apply(order, to: model) }
-                }
+            ForEach(PadSortCopy.orders, id: \.self) { order in
+                Button(sortMenu.actionName(order)) { sortMenu.apply(order, to: model) }
             }
         }
     }
@@ -1191,11 +1161,6 @@ struct PadSortSection: Hashable {
             title: CompanionL10n.format("pad.sort.checkpoints.title", titleDay(bucket: node.bucket)))
     }
 
-    /// A checkpoint row's sort menu and actions, or nil while pads are off and the row offers none.
-    @MainActor static func checkpointMenu(of node: StreamNavigator.Node, in model: PageModel) -> PadSortSection? {
-        model.pads.isEnabled ? .checkpoints(of: node, in: model) : nil
-    }
-
     @MainActor func apply(_ order: PadSortDirection, to model: PageModel) {
         switch scope {
         case .days: model.setDaySort(order)
@@ -1302,21 +1267,6 @@ struct RailColumn: Layout {
             case .shelf: return split.shelf
             case .navigator: return split.navigator
             }
-        }
-    }
-}
-
-/// A context menu with the section's picker, attached only when there is a section.
-struct PadSortContextMenu: ViewModifier {
-    let section: PadSortSection?
-    let model: PageModel
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if let section {
-            content.contextMenu { PadSortPicker(section: section, model: model) }
-        } else {
-            content
         }
     }
 }
