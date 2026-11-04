@@ -124,6 +124,8 @@
 "pad.stream.retained" = "7d+ · retained";
 "pad.stream.emptyDay.one" = "%ld empty day";
 "pad.stream.emptyDay.many" = "%ld empty days";
+
+/* The continuous pad's gutter labels: one checkpoint, and a line that stands for several. */
 "pad.gutter.checkpoint" = "Checkpoint, %@";
 "pad.gutter.checkpoints" = "%ld checkpoints on this line";
 

@@ -600,7 +600,7 @@ that a relaunch forgets.
 
 ## Results
 
-Not yet run; hardware verification remains **pending**, including case 12.
+Not yet run; hardware verification remains **pending**, including cases 12 and 13.
 One row per check when a session runs it, and the rows stay: a re-run adds a row
 rather than replacing one. `Pass` in a case describes an expected outcome, not
 an executed result.

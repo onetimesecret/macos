@@ -80,7 +80,8 @@ public struct TimeRailView: View {
         drivesRoll(surface: surface, owner: owner) ? owners : unclaimed
     }
 
-    /// The initial and narrowest width; the native split view lets the person widen it.
+    /// The initial and narrowest width, the 110 of D-26's side metrics (2026-0915-ui-ux-decisions.md);
+    /// the native split view lets the person widen it.
     nonisolated static let width: CGFloat = 110
 
     /// The widest the timeline may be dragged when the window leaves the page its floor.
