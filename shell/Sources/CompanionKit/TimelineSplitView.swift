@@ -83,8 +83,6 @@ private final class DividerWatchView: NSView {
     var preferredWidth: CGFloat = TimeRailView.width
     var onMove: (@MainActor (CGFloat) -> Void)?
     private weak var split: NSSplitView?
-    /// Set by a placement until the next main-queue turn, so the resize it causes is not recorded.
-    private var placing = false
     private var placementQueued = false
     /// Copied out by the nonisolated deinit, as `WheelRelayView` does for its monitor.
     private nonisolated(unsafe) var observer: NSObjectProtocol?
@@ -122,11 +120,11 @@ private final class DividerWatchView: NSView {
         observer = NotificationCenter.default.addObserver(
             forName: NSSplitView.didResizeSubviewsNotification, object: split, queue: nil
         ) { [weak self, weak split] note in
-            // Only divider moves name a divider index; window resizes stay unrecorded (TimelineSplitViewTests).
-            let moved = note.userInfo?["NSSplitViewDividerIndex"] != nil
+            // AppKit adds NSSplitViewUserResizeKey only for a person's drag; any other resize is placed, not recorded.
+            let dragged = (note.userInfo?["NSSplitViewUserResizeKey"] as? NSNumber)?.boolValue == true
             MainActor.assumeIsolated {
                 guard let watch = self, let split else { return }
-                watch.splitDidResize(split, dividerMoved: moved)
+                watch.splitDidResize(split, dragged: dragged)
             }
         }
         queuePlacement()
@@ -137,9 +135,8 @@ private final class DividerWatchView: NSView {
         observer = nil
     }
 
-    private func splitDidResize(_ split: NSSplitView, dividerMoved: Bool) {
-        guard !placing else { return }
-        guard dividerMoved, split.arrangedSubviews.count > 1, let leading = split.arrangedSubviews.first else {
+    private func splitDidResize(_ split: NSSplitView, dragged: Bool) {
+        guard dragged, split.arrangedSubviews.count > 1, let leading = split.arrangedSubviews.first else {
             return queuePlacement()
         }
         preferredWidth = leading.frame.width
@@ -165,9 +162,7 @@ private final class DividerWatchView: NSView {
         let target = min(
             TimeRailView.clampedWidth(preferredWidth), TimelineSplit.railCeiling(splitWidth: split.bounds.width))
         guard abs(leading.frame.width - target) >= 0.5 else { return }
-        placing = true
         split.setPosition(target, ofDividerAt: 0)
-        DispatchQueue.main.async { [weak self] in self?.placing = false }
     }
 
     private func enclosingSplitView() -> NSSplitView? {

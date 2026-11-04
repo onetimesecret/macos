@@ -62,6 +62,16 @@ final class TimelineSplitViewTests: XCTestCase {
         try XCTUnwrap(descendants(NSSplitView.self, in: host).first)
     }
 
+    /// A person's drag: the divider moves, then AppKit posts the resize with the keys
+    /// `didResizeSubviewsNotification` documents for a drag. A bare `setPosition` is a program's move.
+    private func drag(_ split: NSSplitView, to position: CGFloat, in host: NSView) {
+        split.setPosition(position, ofDividerAt: 0)
+        NotificationCenter.default.post(
+            name: NSSplitView.didResizeSubviewsNotification, object: split,
+            userInfo: ["NSSplitViewDividerIndex": NSNumber(value: 0), "NSSplitViewUserResizeKey": NSNumber(value: 1)])
+        layout(host)
+    }
+
     private func resize(_ mounted: Mounted, width: CGFloat) {
         mounted.window.setContentSize(NSSize(width: width, height: 400))
         layout(mounted.host)
@@ -80,8 +90,7 @@ final class TimelineSplitViewTests: XCTestCase {
         let editor = try XCTUnwrap(descendants(InkTextView.self, in: host).first)
         let pageWidth = split.arrangedSubviews[1].frame.width
 
-        split.setPosition(180, ofDividerAt: 0)
-        layout(host)
+        drag(split, to: 180, in: host)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2)
         XCTAssertEqual(pageWidth - split.arrangedSubviews[1].frame.width, 70, accuracy: 2)
         XCTAssertTrue(descendants(InkTextView.self, in: host).first === editor)
@@ -92,15 +101,20 @@ final class TimelineSplitViewTests: XCTestCase {
         layout(host)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2)
 
-        split.setPosition(0, ofDividerAt: 0)
-        layout(host)
+        drag(split, to: 0, in: host)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, TimeRailView.width, accuracy: 2)
 
-        split.setPosition(500, ofDividerAt: 0)
-        layout(host)
+        drag(split, to: 500, in: host)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, TimeRailView.maxWidth, accuracy: 2)
         XCTAssertTrue(descendants(InkTextView.self, in: host).first === editor)
         XCTAssertEqual(model.timelineWidth, TimeRailView.maxWidth, accuracy: 2)
+
+        split.setPosition(150, ofDividerAt: 0)
+        layout(host)
+        XCTAssertEqual(model.timelineWidth, TimeRailView.maxWidth, accuracy: 2, "a program's move was recorded")
+        XCTAssertEqual(
+            split.arrangedSubviews[0].frame.width, TimeRailView.maxWidth, accuracy: 2,
+            "the divider did not return to the person's width")
 
         resize(mounted, width: 720)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, TimeRailView.maxWidth, accuracy: 2)
@@ -159,11 +173,13 @@ final class TimelineSplitViewTests: XCTestCase {
         let mounted = mount(model, width: floor)
         defer { mounted.window.close() }
         let split = try splitView(in: mounted.host)
-        split.setPosition(TimeRailView.maxWidth, ofDividerAt: 0)
-        layout(mounted.host)
+        drag(split, to: TimeRailView.maxWidth, in: mounted.host)
         XCTAssertEqual(
             split.arrangedSubviews[1].frame.width, TimelineSplit.pageMinWidth, accuracy: 2,
             "the drag took the page under its minimum")
+        XCTAssertEqual(
+            model.timelineWidth, TimelineSplit.railCeiling(splitWidth: floor), accuracy: 2,
+            "the person's drag was not recorded")
     }
 
     /// The dragged width returns when the rail comes back and when the app relaunches.
@@ -172,8 +188,8 @@ final class TimelineSplitViewTests: XCTestCase {
         let model = timelineModel(defaults: store)
         let mounted = mount(model)
         defer { mounted.window.close() }
-        try splitView(in: mounted.host).setPosition(180, ofDividerAt: 0)
-        layout(mounted.host)
+        let split = try splitView(in: mounted.host)
+        drag(split, to: 180, in: mounted.host)
         XCTAssertEqual(model.timelineWidth, 180, accuracy: 2)
 
         mounted.host.rootView = mounted.root(false)
