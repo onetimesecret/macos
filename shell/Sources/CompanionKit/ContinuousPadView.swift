@@ -384,7 +384,7 @@ final class ContinuousPadCanvas: NSView {
                 let label = checkpointLabels[usedLabels - 1]
                 let reading = Self.stackedReading(lineDetails)
                 label.stringValue = "•••"
-                label.toolTip = reading.toolTip
+                if label.toolTip != reading.toolTip { label.toolTip = reading.toolTip }
                 label.setAccessibilityLabel(reading.accessibility)
                 continue
             }
@@ -399,7 +399,7 @@ final class ContinuousPadCanvas: NSView {
                 addSubview(label)
             }
             label.stringValue = value
-            label.toolTip = detail
+            if label.toolTip != detail { label.toolTip = detail }
             label.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
             label.textColor = .tertiaryLabelColor
             label.alignment = .right

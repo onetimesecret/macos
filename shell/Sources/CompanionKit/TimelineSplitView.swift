@@ -199,14 +199,15 @@ private final class DividerWatchView: NSView {
             return queuePlacement()
         }
         preferredWidth = leading.frame.width
+        // Re-armed on every move, so the bound counts from the latest one and a slow drag is not cut short.
+        releaseChecks = 60
         guard !recordPending else { return }
         recordPending = true
-        releaseChecks = 60
         DispatchQueue.main.async { [weak self] in self?.recordWhenReleased() }
     }
 
     /// Records once the mouse button is up, so a drag's moves coalesce into one record; a button held
-    /// elsewhere for three seconds no longer defers it.
+    /// three seconds past the last move no longer defers it.
     private func recordWhenReleased() {
         guard recordPending else { return }
         releaseChecks -= 1

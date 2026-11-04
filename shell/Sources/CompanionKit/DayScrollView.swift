@@ -2079,7 +2079,8 @@ final class DayHeaderView: NSView {
         let runs = Self.runs(words, named: !titleField.isHidden)
         dayField.stringValue = runs.day
         timeField.stringValue = runs.time
-        timeField.toolTip = runs.time.isEmpty ? nil : detailStamp
+        let toolTip = runs.time.isEmpty ? nil : detailStamp
+        if timeField.toolTip != toolTip { timeField.toolTip = toolTip }
     }
 
     /// The countdown VoiceOver hears, kept beside the gauge that
