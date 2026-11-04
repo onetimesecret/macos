@@ -213,19 +213,21 @@ private final class DividerWatchView: NSView {
     private func recordWhenReleased() {
         guard recordPending else { return }
         releaseChecks -= 1
-        guard !leftMouseIsDown() || releaseChecks <= 0 else {
+        let held = leftMouseIsDown()
+        guard !held || releaseChecks <= 0 else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.recordWhenReleased() }
             return
         }
-        recordDrag()
+        // A bound that expires with the button still held records without placing under the pointer.
+        recordDrag(thenPlace: !held)
     }
 
     /// Writes the person's width, then places the divider again, since `place()` skipped any resize
     /// that arrived while the record waited.
-    private func recordDrag() {
+    private func recordDrag(thenPlace: Bool = true) {
         recordPending = false
         onMove?(preferredWidth)
-        queuePlacement()
+        if thenPlace { queuePlacement() }
     }
 
     /// Places the divider on the next main-queue turn, outside the split's own resize pass.
@@ -256,9 +258,10 @@ private final class DividerWatchView: NSView {
             return
         }
         if let failed = failedPlacement, failed.target == target, failed.splitWidth == width { return }
+        // Cleared a turn later, so a notification of this placement posted after the call is ignored too.
         placing = true
         split.setPosition(target, ofDividerAt: 0)
-        placing = false
+        DispatchQueue.main.async { [weak self] in self?.placing = false }
         lastLeadingWidth = leading.frame.width
         failedPlacement = abs(leading.frame.width - target) >= 0.5 ? (target, width) : nil
     }
