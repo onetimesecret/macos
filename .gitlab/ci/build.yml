@@ -1,0 +1,138 @@
+.checks:
+  stage: check
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '($CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api") && $CI_MODE == "checks"'
+
+.linux-rust:
+  image: rust:1.94.1-bookworm
+  tags: [saas-linux-small-amd64]
+  variables:
+    CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+  cache:
+    key:
+      prefix: "$CI_JOB_NAME-linux-amd64"
+      files: [Cargo.lock, rust-toolchain.toml]
+    paths:
+      - .cargo/registry/index/
+      - .cargo/registry/cache/
+      - .cargo/git/db/
+      - target/
+  before_script:
+    - apt-get update
+    - apt-get install --yes --no-install-recommends build-essential ca-certificates curl git libssl-dev pkg-config python3
+    - export PATH="$CARGO_HOME/bin:$PATH"
+    - rustup show
+
+.macos-rust:
+  image: macos-27-xcode-27
+  tags: [saas-macos-medium-m1]
+  variables:
+    CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+    ONETIMEPAD_ENVIRONMENTS_DIR: "$CI_PROJECT_DIR/.ci-environments/$CI_JOB_ID"
+  cache:
+    key:
+      prefix: "$CI_JOB_NAME-macos-arm64"
+      files: [Cargo.lock, rust-toolchain.toml]
+    paths:
+      - .cargo/registry/index/
+      - .cargo/registry/cache/
+      - .cargo/git/db/
+      - target/
+  before_script:
+    - export DEVELOPER_DIR="$(xcode-select --print-path)"
+    - export PATH="$CARGO_HOME/bin:$HOME/.cargo/bin:$PATH"
+    - |
+      if ! command -v rustup >/dev/null 2>&1; then
+        curl --proto '=https' --tlsv1.2 --silent --show-error --fail https://sh.rustup.rs -o "$CI_PROJECT_DIR/.rustup-init.sh"
+        sh "$CI_PROJECT_DIR/.rustup-init.sh" -y --no-modify-path --profile minimal --default-toolchain none
+      fi
+    - rustup show
+    - mkdir -p "$ONETIMEPAD_ENVIRONMENTS_DIR"
+
+logic:
+  extends: [.checks, .linux-rust]
+  script:
+    - cargo fetch --locked
+    - ./scripts/verify-betlang.py
+    - ./scripts/verify-vendored-comrak.py --upstream
+    - python3 -m unittest discover -s scripts/tests -v
+    - |
+      python3 tools/language-eval/select-thresholds.py \
+        --cases tools/language-eval/reports/2026-09-14/selection/baseline-tune-cases.jsonl \
+        --grid tools/language-eval/data/threshold-grid.json \
+        --output /tmp/threshold-selection.json \
+        --markdown-output /tmp/threshold-selection.md \
+        --expect-candidate tools/language-eval/data/tuned-candidate.json
+      cmp /tmp/threshold-selection.json tools/language-eval/reports/2026-09-14/selection/threshold-selection.json
+      cmp /tmp/threshold-selection.md tools/language-eval/reports/2026-09-14/selection/threshold-selection.md
+    - cargo fmt --check
+    - cargo clippy -p companion-core -p language-eval -p ots-client -p companion-credentials -p companion-ffi -p companion-markdown -p companion-sync -p companion-transport --all-targets -- -D warnings
+    - cargo test -p companion-core -p language-eval -p ots-client -p companion-credentials -p companion-ffi -p companion-markdown -p companion-sync -p companion-transport
+    - cargo test -p companion-ffi --features test-util
+    - cargo install cargo-deny --locked --version 0.20.2
+    - cargo deny --all-features --locked check
+    - ./scripts/verify-vendored-comrak.py --advisory-workspace "target/comrak-advisories-$CI_PIPELINE_ID-$CI_JOB_ID"
+    - cargo deny --manifest-path "target/comrak-advisories-$CI_PIPELINE_ID-$CI_JOB_ID/Cargo.toml" --locked --config "$CI_PROJECT_DIR/deny.toml" check
+
+platform:
+  extends: [.checks, .macos-rust]
+  variables:
+    RUST_BACKTRACE: "1"
+  script:
+    - cargo clippy --workspace --all-targets -- -D warnings
+    - cargo test --workspace -- --nocapture
+    - cargo test --workspace --features test-util -- --nocapture
+
+shell:
+  extends: [.checks, .macos-rust]
+  script:
+    - ./scripts/build-core.sh --if-stale --test-util
+    - swift build --package-path shell
+    - ./scripts/test-shell.sh
+    - python3 scripts/ci/check-reveal-lab.py
+    - ./scripts/package-app.sh --debug
+    - bash scripts/ci/check-bundle.sh debug
+
+package-release:
+  extends: [.checks, .macos-rust]
+  script:
+    - |
+      version="$(xcodebuild -version | awk '$1 == "Xcode" {print $2}')" || version=
+      major="${version%%.*}"
+      if [[ ! "$major" =~ ^[0-9]+$ ]] || ((major < 27)); then
+        echo "release packaging requires Xcode 27 or later (selected: ${version:-unknown})" >&2
+        exit 1
+      fi
+      xcodebuild -version
+    - python3 -m unittest discover -s scripts/tests -v
+    - ./scripts/build-core.sh
+    - ./scripts/package-app.sh
+    - bash scripts/ci/check-bundle.sh release
+
+adr-lint:
+  extends: .checks
+  image: python:3.12-slim-bookworm
+  tags: [saas-linux-small-amd64]
+  script:
+    - python3 scripts/lint-adrs.py docs/adr
+
+secret-scan:
+  extends: .checks
+  image: debian:bookworm-slim
+  tags: [saas-linux-small-amd64]
+  variables:
+    GIT_DEPTH: "0"
+    GITLEAKS_VERSION: "8.18.4"
+    GITLEAKS_SHA256: "ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d"
+  before_script:
+    - apt-get update
+    - apt-get install --yes --no-install-recommends ca-certificates curl git gzip tar
+  script:
+    - |
+      curl -sSfL -o gitleaks.tar.gz \
+        "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+      echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum --check
+      tar -xzf gitleaks.tar.gz gitleaks
+      ./gitleaks detect --source . --no-banner --redact

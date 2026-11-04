@@ -21,7 +21,7 @@ import XCTest
 /// packaging script actually produced belongs to CI, which now extracts
 /// the key from the assembled `dist/OnetimePad.app/Contents/Info.plist`
 /// in both the debug and the release packaging jobs
-/// (`.github/workflows/ci.yml`). The two are complements, not copies:
+/// (`.gitlab/ci/build.yml`). The two are complements, not copies:
 /// this test catches the key leaving the source tree, and CI catches
 /// the bundle losing it on the way in.
 final class BundleDeclarationTests: XCTestCase {
