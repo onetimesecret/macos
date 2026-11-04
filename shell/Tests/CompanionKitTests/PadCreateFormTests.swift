@@ -6,6 +6,29 @@ import XCTest
 
 @MainActor
 final class PadCreateFormTests: XCTestCase {
+    /// Mirrors BackdropWindowController.swift's BackdropPanel flags and key policy.
+    private final class RepresentativeCardPanel: NSPanel {
+        var isInteractive = false
+
+        init(frame: NSRect) {
+            super.init(
+                contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered, defer: false)
+            isOpaque = false
+            backgroundColor = .clear
+            hasShadow = false
+            hidesOnDeactivate = false
+            isReleasedWhenClosed = false
+            isMovableByWindowBackground = false
+            isExcludedFromWindowsMenu = true
+            animationBehavior = .none
+            sharingType = .none
+        }
+
+        override var canBecomeKey: Bool { isInteractive }
+        override var canBecomeMain: Bool { false }
+    }
+
     private final class Presentation: ObservableObject {
         var routesBinding: Binding<PadSettingsRoutes>?
         var anchors: [String: NSView] = [:]
@@ -77,7 +100,7 @@ final class PadCreateFormTests: XCTestCase {
         }
     }
 
-    private func mount() async throws -> Fixture {
+    private func mount(onRaisedCard: Bool = false) async throws -> Fixture {
         _ = NSApplication.shared
         let suite = "pad-create-native-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -85,9 +108,15 @@ final class PadCreateFormTests: XCTestCase {
         let model = isolatedModel(defaults: defaults)
         model.pads.isEnabled = true
         let presentation = Presentation()
-        let window = NSWindow(
-            contentRect: NSRect(x: 200, y: 200, width: 360, height: 280),
-            styleMask: [.titled], backing: .buffered, defer: false)
+        let frame = NSRect(x: 200, y: 200, width: 360, height: 280)
+        let window: NSWindow
+        if onRaisedCard {
+            let panel = RepresentativeCardPanel(frame: frame)
+            panel.isInteractive = true
+            window = panel
+        } else {
+            window = NSWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false)
+        }
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: Surface(presentation: presentation, model: model))
         window.makeKeyAndOrderFront(nil)
@@ -333,7 +362,7 @@ final class PadCreateFormTests: XCTestCase {
             characters: "0", charactersIgnoringModifiers: "0", isARepeat: false, keyCode: 29))
         XCTAssertTrue(PadShortcutMonitor.allows(number: 0, keymap: fixture.model.keymap))
         XCTAssertNil(PadShortcutMonitor.handle(
-            event, model: fixture.model, surface: .panel, fallbackWindow: fixture.window,
+            event, model: fixture.model, surface: .panel,
             windows: [fixture.window, popover], isModal: false))
         try key("\u{1b}", code: 53, in: popover)
         try await waitFor("Dismissing the native form did not unregister it") {
@@ -390,4 +419,45 @@ final class PadCreateFormTests: XCTestCase {
         XCTAssertEqual(fixture.presentation.routes.creation.draft, name)
     }
 
+    func testRepresentativeRaisedCardPanelFocusAndReturnCreateThePad() async throws {
+        let fixture = try await mount(onRaisedCard: true)
+        let panel = try XCTUnwrap(fixture.window as? RepresentativeCardPanel)
+        XCTAssertTrue(panel.styleMask.contains(.nonactivatingPanel))
+        XCTAssertTrue(panel.canBecomeKey)
+        XCTAssertFalse(panel.canBecomeMain)
+        let popover = try await open(fixture)
+        let field = try nameField(in: popover)
+        let editor = try XCTUnwrap(popover.firstResponder as? NSTextView)
+        XCTAssertTrue(editor.isFieldEditor)
+        XCTAssertTrue(field.currentEditor() === editor)
+        try await enter("Representative card Return", in: popover, fixture: fixture)
+        try key("\r", code: 36, in: popover)
+        try await waitFor("Return did not dismiss the representative card's native form") {
+            !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
+        }
+        XCTAssertEqual(fixture.model.pads.activePad.name, "Representative card Return")
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, "")
+    }
+
+    func testRepresentativeCardRestDismissesTheNativeFormAndRetainsItsDraft() async throws {
+        let fixture = try await mount(onRaisedCard: true)
+        let panel = try XCTUnwrap(fixture.window as? RepresentativeCardPanel)
+        let popover = try await open(fixture)
+        let name = "Representative card retained draft"
+        try await enter(name, in: popover, fixture: fixture)
+        panel.isInteractive = false
+        panel.makeFirstResponder(nil)
+        fixture.presentation.isEnabled = false
+        try await waitFor("Resting the representative card left its native form active") {
+            !fixture.presentation.routes.creation.isPresented && !popover.isVisible
+                && !fixture.model.hasPresentedPadCreation
+        }
+        XCTAssertFalse(panel.canBecomeKey)
+        XCTAssertEqual(fixture.presentation.routes.creation.draft, name)
+        panel.isInteractive = true
+        fixture.presentation.isEnabled = true
+        let reopened = try await open(fixture)
+        XCTAssertEqual(try nameField(in: reopened).stringValue, name)
+    }
 }

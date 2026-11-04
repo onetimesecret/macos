@@ -555,22 +555,6 @@ final class PadPickerTests: XCTestCase {
             isModal: false, windows: [parent, other]))
     }
 
-    func testPadShortcutFieldDetectionUsesTheEventWindowBeforeItsKeyWindowFallback() throws {
-        let page = shortcutWindow(fieldEditor: false)
-        let field = shortcutWindow(fieldEditor: true)
-
-        let pageEvent = try commandDigit(1, in: page)
-        XCTAssertTrue(pageEvent.window === page)
-        XCTAssertFalse(PadShortcutMonitor.isEditingField(for: pageEvent, fallbackWindow: field))
-        let fieldEvent = try commandDigit(1, in: field)
-        XCTAssertTrue(fieldEvent.window === field)
-        XCTAssertTrue(PadShortcutMonitor.isEditingField(for: fieldEvent, fallbackWindow: page))
-        let noWindowEvent = try commandDigit(1, in: nil)
-        XCTAssertNil(noWindowEvent.window)
-        XCTAssertTrue(PadShortcutMonitor.isEditingField(for: noWindowEvent, fallbackWindow: field))
-        XCTAssertFalse(PadShortcutMonitor.isEditingField(for: noWindowEvent, fallbackWindow: page))
-    }
-
     func testClaimedPadDigitsAreConsumedWhileAnyCreationFormIsPresented() throws {
         let (model, pad) = try padModel()
         model.activatePad(PadCatalog.scratchID)
@@ -588,7 +572,7 @@ final class PadPickerTests: XCTestCase {
 
         for surface in [PresentationOwner.editorWindow, .panel] {
             XCTAssertNil(PadShortcutMonitor.handle(
-                event, model: model, surface: surface, fallbackWindow: nil,
+                event, model: model, surface: surface,
                 windows: [window], isModal: false))
             XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
         }
@@ -597,7 +581,7 @@ final class PadPickerTests: XCTestCase {
         model.unregisterPadCreation(first)
         XCTAssertTrue(model.hasPresentedPadCreation)
         XCTAssertNil(PadShortcutMonitor.handle(
-            event, model: model, surface: .panel, fallbackWindow: nil,
+            event, model: model, surface: .panel,
             windows: [window], isModal: false))
         XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
 
@@ -605,7 +589,7 @@ final class PadPickerTests: XCTestCase {
         model.unregisterPadCreation(second)
         XCTAssertFalse(model.hasPresentedPadCreation)
         XCTAssertNil(PadShortcutMonitor.handle(
-            event, model: model, surface: .panel, fallbackWindow: nil,
+            event, model: model, surface: .panel,
             windows: [window], isModal: false))
         XCTAssertEqual(model.pads.activeID, pad.id)
     }
@@ -621,14 +605,14 @@ final class PadPickerTests: XCTestCase {
         let event = try commandDigit(1, in: window)
         XCTAssertTrue(model.hasPresentedPadCreation)
         XCTAssertNil(PadShortcutMonitor.handle(
-            event, model: model, surface: .panel, fallbackWindow: nil,
+            event, model: model, surface: .panel,
             windows: [window], isModal: false))
         XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
 
         window.close()
         XCTAssertFalse(model.hasPresentedPadCreation)
         XCTAssertNil(PadShortcutMonitor.handle(
-            event, model: model, surface: .panel, fallbackWindow: nil,
+            event, model: model, surface: .panel,
             windows: [], isModal: false))
         XCTAssertEqual(model.pads.activeID, pad.id)
     }
@@ -666,19 +650,66 @@ final class PadPickerTests: XCTestCase {
         XCTAssertFalse(model.hasPresentedPadCreation)
     }
 
-    func testClaimedPadDigitsAreConsumedDuringFieldEditingWithoutSwitchingPads() throws {
-        let (model, _) = try padModel()
+    func testOtherFieldEditorsKeepExistingPadShortcutActivation() throws {
+        let (model, pad) = try padModel()
         model.activatePad(PadCatalog.scratchID)
         let window = shortcutWindow(fieldEditor: true)
         XCTAssertFalse(model.hasPresentedPadCreation)
+        XCTAssertTrue((window.firstResponder as? NSTextView)?.isFieldEditor == true)
+        let event = try commandDigit(1, in: window)
 
-        for digit in [1, 9] {
-            let event = try commandDigit(digit, in: window)
-            XCTAssertNil(PadShortcutMonitor.handle(
-                event, model: model, surface: .editorWindow, fallbackWindow: nil,
-                windows: [window], isModal: false))
-            XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
-        }
+        let nonOwnerResult = PadShortcutMonitor.handle(
+            event, model: model, surface: .editorWindow,
+            windows: [window], isModal: false)
+        XCTAssertTrue(nonOwnerResult === event)
+        XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
+        XCTAssertNil(PadShortcutMonitor.handle(
+            event, model: model, surface: .panel,
+            windows: [window], isModal: false))
+        XCTAssertEqual(model.pads.activeID, pad.id)
+    }
+
+    func testClaimedPadDigitsPassThroughCreationDuringAModalSession() throws {
+        let (model, pad) = try padModel()
+        let window = shortcutWindow(fieldEditor: true)
+        window.orderFront(nil)
+        let anchor = PadViewAnchor()
+        anchor.view = window.contentView
+        model.registerPadCreation(UUID(), anchor: anchor)
+        let event = try commandDigit(1, in: window)
+        let selection = model.selection
+        XCTAssertTrue(model.hasPresentedPadCreation)
+
+        let result = PadShortcutMonitor.handle(
+            event, model: model, surface: .panel,
+            windows: [window], isModal: true)
+        XCTAssertTrue(result === event)
+        XCTAssertEqual(model.pads.activeID, pad.id)
+        XCTAssertEqual(model.selection, selection)
+    }
+
+    func testClaimedPadDigitsPassThroughCreationWhileAnotherWindowHasASheet() throws {
+        let (model, pad) = try padModel()
+        let parent = shortcutWindow(fieldEditor: false)
+        let field = shortcutWindow(fieldEditor: true)
+        let sheet = shortcutWindow(fieldEditor: false)
+        field.orderFront(nil)
+        let anchor = PadViewAnchor()
+        anchor.view = field.contentView
+        model.registerPadCreation(UUID(), anchor: anchor)
+        parent.beginSheet(sheet)
+        defer { if parent.attachedSheet === sheet { parent.endSheet(sheet) } }
+        XCTAssertTrue(parent.attachedSheet === sheet)
+        let event = try commandDigit(1, in: field)
+        let selection = model.selection
+        XCTAssertTrue(model.hasPresentedPadCreation)
+
+        let result = PadShortcutMonitor.handle(
+            event, model: model, surface: .panel,
+            windows: [parent, field], isModal: false)
+        XCTAssertTrue(result === event)
+        XCTAssertEqual(model.pads.activeID, pad.id)
+        XCTAssertEqual(model.selection, selection)
     }
 
     func testReservedDigitWithoutAPadIsConsumedOutsideFieldEditing() throws {
@@ -687,12 +718,12 @@ final class PadPickerTests: XCTestCase {
         let event = try commandDigit(9, in: window)
         let selection = model.selection
         XCTAssertFalse(model.hasPresentedPadCreation)
-        XCTAssertFalse(PadShortcutMonitor.isEditingField(for: event, fallbackWindow: nil))
+        XCTAssertFalse((window.firstResponder as? NSTextView)?.isFieldEditor == true)
         XCTAssertTrue(PadShortcutMonitor.allows(number: 9, keymap: model.keymap))
         XCTAssertFalse(model.pads.entries.indices.contains(9))
 
         XCTAssertNil(PadShortcutMonitor.handle(
-            event, model: model, surface: .panel, fallbackWindow: nil,
+            event, model: model, surface: .panel,
             windows: [window], isModal: false))
         XCTAssertEqual(model.pads.activeID, pad.id)
         XCTAssertEqual(model.selection, selection)
@@ -715,7 +746,7 @@ final class PadPickerTests: XCTestCase {
             XCTAssertFalse(PadShortcutMonitor.allows(number: 1, keymap: model.keymap))
 
             let result = PadShortcutMonitor.handle(
-                event, model: model, surface: .editorWindow, fallbackWindow: nil,
+                event, model: model, surface: .editorWindow,
                 windows: [window], isModal: false)
             XCTAssertTrue(result === event)
             XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)

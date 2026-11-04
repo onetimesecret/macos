@@ -251,6 +251,7 @@ struct PadCreateForm: View {
                     .focused($focused)
                     .background(PadViewAnchorView(anchor: nameAnchor))
                     .accessibilityLabel(CompanionL10n.string("pad.name"))
+                    .accessibilityHint(Text(creation.message ?? ""))
                     .onSubmit { creation.submit(in: model) }
                 if let message = creation.message {
                     Text(message).font(.caption).foregroundStyle(Color.emberText)
@@ -452,26 +453,18 @@ final class PadShortcutMonitor: ObservableObject {
         !isModal && !windows.contains { $0.attachedSheet != nil || $0.sheetParent != nil }
     }
 
-    static func isEditingField(for event: NSEvent, fallbackWindow: NSWindow?) -> Bool {
-        let window = event.window ?? fallbackWindow
-        return (window?.firstResponder as? NSTextView)?.isFieldEditor == true
-    }
-
     static func handle(
         _ event: NSEvent, model: PageModel, surface: PresentationOwner,
-        fallbackWindow: NSWindow?, windows: [NSWindow], isModal: Bool
+        windows: [NSWindow], isModal: Bool
     ) -> NSEvent? {
         guard model.pads.isEnabled,
               event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
               let key = event.charactersIgnoringModifiers, let number = Int(key),
               (0...9).contains(number), allows(number: number, keymap: model.keymap)
         else { return event }
-        if model.hasPresentedPadCreation || isEditingField(for: event, fallbackWindow: fallbackWindow) {
-            return nil
-        }
-        guard model.owner == surface,
-              allowsPadSwitch(isModal: isModal, windows: windows)
-        else { return event }
+        guard allowsPadSwitch(isModal: isModal, windows: windows) else { return event }
+        if model.hasPresentedPadCreation { return nil }
+        guard model.owner == surface else { return event }
         guard model.pads.entries.indices.contains(number) else { return nil }
         model.activatePad(model.pads.entries[number].id)
         return nil
@@ -483,7 +476,7 @@ final class PadShortcutMonitor: ObservableObject {
             let consumed = MainActor.assumeIsolated {
                 guard let model else { return false }
                 return Self.handle(
-                    event, model: model, surface: surface, fallbackWindow: NSApp.keyWindow,
+                    event, model: model, surface: surface,
                     windows: NSApp.windows, isModal: NSApp.modalWindow != nil) == nil
             }
             return consumed ? nil : event
