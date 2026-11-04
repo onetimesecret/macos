@@ -304,6 +304,16 @@ final class TimelineSplitViewTests: XCTestCase {
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2, "the divider moved while resting")
         XCTAssertEqual(model.timelineWidth, 180, accuracy: 0.5)
 
+        // The drag notification without the snap-back: still not recorded while resting.
+        split.setPosition(150, ofDividerAt: 0)
+        NotificationCenter.default.post(
+            name: NSSplitView.didResizeSubviewsNotification, object: split,
+            userInfo: [
+                TimelineSplit.dividerIndexKey: NSNumber(value: 0), TimelineSplit.userResizeKey: NSNumber(value: 1),
+            ])
+        layout(mounted.host)
+        XCTAssertEqual(model.timelineWidth, 180, accuracy: 0.5, "a resting card recorded a drag")
+
         mounted.host.rootView = mounted.resizable(true)
         layout(mounted.host)
         drag(split, to: 250, in: mounted.host)

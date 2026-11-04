@@ -42,7 +42,8 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
                             idealWidth: resizable ? TimeRailView.width : pinned,
                             maxWidth: resizable ? ceiling : pinned)
                         .background(DividerWatch(
-                            startWidth: railWidth, onMove: onRailResize, leftMouseIsDown: leftMouseIsDown))
+                            startWidth: railWidth, records: resizable, onMove: onRailResize,
+                            leftMouseIsDown: leftMouseIsDown))
                 }
                 content
                     .frame(minWidth: TimelineSplit.pageMinWidth, maxWidth: .infinity, maxHeight: .infinity)
@@ -74,6 +75,7 @@ enum TimelineSplit {
 /// Keeps the leading pane at the person's width within the split's ceiling, and reports their divider moves.
 private struct DividerWatch: NSViewRepresentable {
     let startWidth: CGFloat
+    let records: Bool
     let onMove: @MainActor (CGFloat) -> Void
     let leftMouseIsDown: @MainActor () -> Bool
 
@@ -81,12 +83,14 @@ private struct DividerWatch: NSViewRepresentable {
         let view = DividerWatchView()
         view.setAccessibilityElement(false)
         view.preferredWidth = startWidth
+        view.records = records
         view.onMove = onMove
         view.leftMouseIsDown = leftMouseIsDown
         return view
     }
 
     func updateNSView(_ view: DividerWatchView, context: Context) {
+        view.records = records
         view.onMove = onMove
         view.leftMouseIsDown = leftMouseIsDown
         view.adopt(startWidth)
@@ -102,6 +106,8 @@ private final class DividerWatchView: NSView {
     /// minimum, so the watch places the divider itself.
     var preferredWidth: CGFloat = TimeRailView.width
     var onMove: (@MainActor (CGFloat) -> Void)?
+    /// Off for a resting card: a resize is then placed back rather than taken as the person's.
+    var records = true
     var leftMouseIsDown: @MainActor () -> Bool = { false }
     private weak var split: NSSplitView?
     private var placementQueued = false
@@ -206,7 +212,7 @@ private final class DividerWatchView: NSView {
         if lastSplitWidth != nil, !splitUnchanged { markSplitResized() }
         // A clamp that follows a window resize in the same turn is the split's, not the person's.
         let heldMove = dividerMoved && !splitResizedThisTurn && splitUnchanged && paneMoved && leftMouseIsDown()
-        guard userResize || heldMove, split.arrangedSubviews.count > 1,
+        guard records, userResize || heldMove, split.arrangedSubviews.count > 1,
               let leading = split.arrangedSubviews.first, isDescendant(of: leading)
         else {
             return queuePlacement()
@@ -276,7 +282,9 @@ private final class DividerWatchView: NSView {
             failedPlacement = nil
             return
         }
-        if let failed = failedPlacement, failed.target == target, failed.splitWidth == width { return }
+        if let failed = failedPlacement, abs(failed.target - target) < 0.5, abs(failed.splitWidth - width) < 0.5 {
+            return
+        }
         // Cleared a turn later, so a notification of this placement posted after the call is ignored too.
         placing = true
         split.setPosition(target, ofDividerAt: 0)
