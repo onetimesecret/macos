@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A searchable command palette on Shift-Command-P** (app 0.46.0; #340).
+  Application actions come first, then the current page, file and editor
+  actions, each labelled with its shortcut from the resolved keymap. The
+  palette includes Timeline and Tabs navigation and a dated picker for
+  closed items. Escape returns focus to where it was.
+
+- **Reopen Last Closed Page or Tab and Reopen Dated Tabs** (#340). Closing
+  a page or tab hides it and keeps it saved; reopening restores the same
+  item rather than minting a new one, and an expired item reopens its
+  existing empty slot. Close Window stays separate on Shift-Command-W, and
+  Command-W dismisses the page. See
+  [ADR-0061](docs/adr/0061-close-hides-saved-page-navigation.md).
+
 - L󠄁o󠄁a󠄁d󠄁 i󠄁n󠄁d󠄁i󠄁v󠄁i󠄁d󠄁u󠄁a󠄁l󠄁 H󠄁T󠄁T󠄁P󠄁S󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁s󠄁 i󠄁n󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 L󠄁o󠄁a󠄁d󠄁,󠄁
   C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁,󠄁 R󠄁e󠄁t󠄁r󠄁y󠄁 a󠄁n󠄁d󠄁 U󠄁n󠄁l󠄁o󠄁a󠄁d󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁.󠄁 I󠄁m󠄁a󠄁g󠄁e󠄁 a󠄁l󠄁t󠄁 t󠄁e󠄁x󠄁t󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁
   l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 w󠄁h󠄁e󠄁n󠄁 c󠄁o󠄁p󠄁y󠄁i󠄁n󠄁g󠄁.󠄁 S󠄁e󠄁e󠄁 t󠄁h󠄁e󠄁 [p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁](docs/spec/design/2026-1028-preview-image-loading.md).󠄁 (󠄁#󠄁3󠄁3󠄁2󠄁)󠄁
@@ -18,6 +31,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 i󠄁m󠄁m󠄁e󠄁d󠄁i󠄁a󠄁t󠄁e󠄁l󠄁y󠄁.󠄁 (󠄁#󠄁3󠄁3󠄁2󠄁)󠄁
 
 ### Changed
+
+- **Sealed blocks select like text and keep their actions in a visible row**
+  (app 0.46.0; #339). A click on a named sealed block selects it instead
+  of copying; Copy, More and Note sit in a stable row with distinct
+  accessibility help, and native selection with Cut and Paste moves a
+  block by keyboard. Menus and presses resolve the block by identity, so
+  an edit or removal while a menu is open refuses rather than acting on
+  the wrong block. Variable-name drafts save on focus loss, pad switches
+  and editor handoffs when valid and stay open with a local error when
+  not. Sharing forms name the source, and Copy Link Again recovers the
+  latest completed one-time link for up to 60 seconds after it is
+  created. See the
+  [sealed-content interface revision](docs/spec/design/2026-1031-sealed-content-ux-revision.md).
 
 - L󠄁a󠄁r󠄁g󠄁e󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 s󠄁h󠄁o󠄁w󠄁 a󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁i󠄁n󠄁g󠄁
   t󠄁h󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁 p󠄁a󠄁g󠄁e󠄁 r󠄁e󠄁f󠄁r󠄁e󠄁s󠄁h󠄁.󠄁 (󠄁#󠄁3󠄁3󠄁2󠄁)󠄁
