@@ -640,8 +640,8 @@ final class TimeRailTests: XCTestCase {
         return window.frame.height - (window.contentView?.frame.height ?? window.frame.height)
     }
 
-    /// With pads on, the heading's sort menu and + fit the timeline's start width inside the
-    /// rail's horizontal padding, so the + is not pushed out of the column.
+    /// With pads on, the heading's ideal width, sort menu and + included, is at most the timeline's
+    /// start width less the rail's horizontal padding, measured with the package's English labels.
     func testTheMultiPadHeadingFitsTheTimelinesStartWidth() throws {
         let model = try makeModel()
         model.newPage()

@@ -384,6 +384,32 @@ final class TimelineSplitViewTests: XCTestCase {
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2, "the resting rail kept the dragged width")
     }
 
+    /// A split that keeps undoing the watch's placement at one width is left at its own width rather
+    /// than fought every turn, and a window resize places the person's width again.
+    func testAPlacementTheSplitKeepsUndoingIsGivenUp() throws {
+        let model = timelineModel(defaults: try defaults())
+        model.recordTimelineWidth(180)
+        let mounted = mount(model)
+        defer { mounted.window.close() }
+        let split = try splitView(in: mounted.host)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2, "the control: the rail is placed")
+
+        // The mount's own placement may count as the first in the row.
+        var placedBack = 0
+        for _ in 0..<(TimelineSplit.placementRepeatLimit + 2) {
+            split.setPosition(130, ofDividerAt: 0)
+            layout(mounted.host)
+            guard abs(split.arrangedSubviews[0].frame.width - 180) < 2 else { break }
+            placedBack += 1
+        }
+        XCTAssertGreaterThanOrEqual(placedBack, TimelineSplit.placementRepeatLimit - 1, "the watch gave up early")
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 130, accuracy: 2, "the watch kept fighting the split")
+        XCTAssertEqual(model.timelineWidth, 180, accuracy: 0.5, "the split's own width was recorded")
+
+        resize(mounted, width: 720)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2, "a window resize did not place again")
+    }
+
     /// A presentation hidden but still mounted follows a drag made in the other one.
     func testAMountedSplitFollowsADragInTheOther() throws {
         let model = timelineModel(defaults: try defaults())

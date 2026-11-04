@@ -70,6 +70,11 @@ enum TimelineSplit {
         return TimeRailView.clampedWidth(splitWidth - pageMinWidth - dividerThickness)
     }
 
+    /// Placements at one target and split width, each within the window of the last, after which the
+    /// watch leaves the split at its own width.
+    static let placementRepeatLimit = 10
+    static let placementRepeatWindow: TimeInterval = 2
+
     /// The `userInfo` keys `NSSplitView.didResizeSubviewsNotification` documents.
     static let dividerIndexKey = "NSSplitViewDividerIndex"
     static let userResizeKey = "NSSplitViewUserResizeKey"
@@ -125,8 +130,10 @@ private final class DividerWatchView: NSView {
     /// pane and leaves the split.
     private var lastSplitWidth: CGFloat?
     private var lastLeadingWidth: CGFloat?
-    /// A placement the split did not take, not retried until the target or the split's width changes.
+    /// A placement the split did not take or kept undoing, not retried until the target or the split's width changes.
     private var failedPlacement: (target: CGFloat, splitWidth: CGFloat)?
+    /// The last placement's target and split width, when it was made, and how many came in a row.
+    private var lastPlacement: (target: CGFloat, splitWidth: CGFloat, at: TimeInterval, count: Int)?
     /// Copied out by the nonisolated deinit, as `WheelRelayView` does for its monitor.
     private nonisolated(unsafe) var observer: NSObjectProtocol?
 
@@ -166,6 +173,7 @@ private final class DividerWatchView: NSView {
         guard on != records else { return }
         if on { markSplitResized() } else { recordPending = false }
         failedPlacement = nil
+        lastPlacement = nil
         records = on
     }
 
@@ -207,6 +215,7 @@ private final class DividerWatchView: NSView {
         lastSplitWidth = nil
         lastLeadingWidth = nil
         failedPlacement = nil
+        lastPlacement = nil
     }
 
     /// A person's drag: AppKit's user-resize key, or a divider move under a held left button in a
@@ -295,12 +304,19 @@ private final class DividerWatchView: NSView {
         if let failed = failedPlacement, abs(failed.target - target) < 0.5, abs(failed.splitWidth - width) < 0.5 {
             return
         }
+        let now = ProcessInfo.processInfo.systemUptime
+        let repeats = lastPlacement.map {
+            abs($0.target - target) < 0.5 && abs($0.splitWidth - width) < 0.5
+                && now - $0.at < TimelineSplit.placementRepeatWindow ? $0.count + 1 : 1
+        } ?? 1
+        lastPlacement = (target, width, now, repeats)
         // Cleared a turn later, so a notification of this placement posted after the call is ignored too.
         placing = true
         split.setPosition(target, ofDividerAt: 0)
         DispatchQueue.main.async { [weak self] in self?.placing = false }
         lastLeadingWidth = leading.frame.width
-        failedPlacement = abs(leading.frame.width - target) >= 0.5 ? (target, width) : nil
+        let refused = abs(leading.frame.width - target) >= 0.5
+        failedPlacement = refused || repeats >= TimelineSplit.placementRepeatLimit ? (target, width) : nil
     }
 
     /// The lower of the frame's ceiling and the measured one, within SwiftUI's `maxWidth`.

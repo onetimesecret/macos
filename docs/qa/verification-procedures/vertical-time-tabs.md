@@ -587,7 +587,9 @@ stance comments call the resting card chrome-free.
 VoiceOver's adjustment and a three-finger drag each move the divider,
 the divider stays where they left it, and a relaunch opens at that
 width. A press held still past three seconds leaves the divider where
-the move put it, and a relaunch opens there.
+the move put it, and a relaunch opens there. Record whether the rail
+redraws smoothly during a drag on a long roll, and whether the divider
+lags or jitters while the window is resized in step 4.
 
 **Fail:** the divider snaps back during or after a drag; a relaunch or a
 presentation switch opens at 110 or at an older width; a squeeze is
@@ -647,9 +649,9 @@ an executed result.
 | | | 12 logical reading anchors through reflow | Pending | Record source position and explicit-reveal exceptions. |
 | | | 12 no repeated measurement during horizontal-only scrolling | Pending | Measurement trace required, not visual smoothness alone. |
 | | | 12 reading anchor with scroll bars always shown | Pending | Record the Show scroll bars setting. |
-| | | 13 slow drag followed and kept, relaunch restores it | Pending | |
+| | | 13 slow drag followed and kept, relaunch restores it | Pending | Record whether the rail redraws smoothly during the drag on a long roll. |
 | | | 13 a dragged width shown in the other presentation | Pending | |
-| | | 13 squeeze at the floor and recovery on widening | Pending | Both presentations. |
+| | | 13 squeeze at the floor and recovery on widening | Pending | Both presentations. Record any lag or jitter of the divider during the live resize. |
 | | | 13 divider fades with the card; no jump on opening | Pending | |
 | | | 13 multi-pad heading fits at the start width | Pending | Record the locale. |
 | | | 13 pinned resting card's divider stays put on a press | Pending | Record whether the press raised the card and whether the resize cursor showed. |
