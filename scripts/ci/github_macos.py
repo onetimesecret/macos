@@ -9,6 +9,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -111,7 +112,7 @@ class API:
                     return max(0, email.utils.parsedate_to_datetime(retry_after).timestamp() - self.wall_clock())
                 except (TypeError, ValueError, OverflowError):
                     pass
-        reset = headers.get("X-RateLimit-Reset")
+        reset = headers.get("X-RateLimit-Reset") if headers.get("X-RateLimit-Remaining") == "0" else None
         if reset:
             try:
                 return max(0, float(reset) - self.wall_clock() + 1)
@@ -254,6 +255,15 @@ def report(env, gitlab):
     binding = github_binding(env)
     run_id = positive_id(env.get("GITHUB_RUN_ID"))
     target = f"https://github.com/{GITHUB_REPOSITORY}/actions/runs/{run_id}"
+    pipeline = validate_binding(gitlab, binding)
+    if not pipeline["ref"].startswith("refs/merge-requests/"):
+        branch = gitlab.request("GET", GITLAB_PROJECT + "/repository/branches/" + urllib.parse.quote(pipeline["ref"], safe=""))
+        if branch.get("name") != pipeline["ref"] or not isinstance(branch.get("protected"), bool):
+            raise InvalidBinding("Unexpected GitLab branch identity")
+        if branch["protected"]:
+            if any(env.get(job + "_RESULT") != "success" for job in ["PLATFORM", "SHELL"]):
+                raise BridgeError("The macOS jobs did not both succeed")
+            return {"reported": 0, "mode": "native-gitlab-job", "run_id": run_id}
     succeeded = True
     for job in ["platform", "shell"]:
         pipeline = validate_binding(gitlab, binding)
@@ -269,7 +279,38 @@ def report(env, gitlab):
     return {"reported": 2}
 
 
-def wait(env, github, clock=time.monotonic, sleep=time.sleep, deadline=None):
+def suite_results(github, run):
+    response = github.request("GET", f"{GITHUB_REPO}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100")
+    jobs = bounded_list(response.get("jobs"), 100, "GitHub jobs")
+    if response.get("total_count") != len(jobs) or any(job.get("run_id") != run["id"] for job in jobs):
+        raise InvalidBinding("Unexpected GitHub job identity or count")
+    results = {}
+    for name in ["platform", "shell"]:
+        matches = [job for job in jobs if job.get("name") == name]
+        if len(matches) != 1:
+            results[name] = "missing or duplicate job"
+        elif matches[0].get("status") != "completed":
+            results[name] = "incomplete"
+        else:
+            results[name] = matches[0].get("conclusion") or "incomplete"
+    return results
+
+
+def write_test_report(path, run, results):
+    suite = ET.Element("testsuite", name="GitHub macOS", tests="2",
+                       failures=str(sum(result != "success" for result in results.values())))
+    target = f"https://github.com/{GITHUB_REPOSITORY}/actions/runs/{run['id']}"
+    for name, result in results.items():
+        case = ET.SubElement(suite, "testcase", classname="GitHub macOS", name=name)
+        ET.SubElement(case, "system-out").text = f"{target}\nGitHub {name}: {result}"
+        if result != "success":
+            ET.SubElement(case, "failure", message=f"GitHub {name}: {result}").text = target
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    ET.ElementTree(suite).write(destination, encoding="utf-8", xml_declaration=True)
+
+
+def wait(env, github, clock=time.monotonic, sleep=time.sleep, deadline=None, report_path=None):
     binding = waiter_binding(env)
     deadline = deadline if deadline is not None else clock() + WAIT_SECONDS
     while clock() < deadline:
@@ -277,7 +318,10 @@ def wait(env, github, clock=time.monotonic, sleep=time.sleep, deadline=None):
         if runs:
             current = max(runs, key=lambda item: item["id"])
             if current.get("status") == "completed":
-                if current.get("conclusion") == "success":
+                results = suite_results(github, current)
+                if report_path is not None:
+                    write_test_report(report_path, current, results)
+                if current.get("conclusion") == "success" and all(result == "success" for result in results.values()):
                     return {"run_id": current["id"], "conclusion": "success"}
                 raise BridgeError("GitHub macOS worker did not succeed")
         remaining = deadline - clock()
@@ -307,7 +351,7 @@ def main(argv=None, env=None):
                 raise BridgeError("GITLAB_STATUS_TOKEN is required by the reporter")
             result = report(env, API("gitlab", env["GITLAB_STATUS_TOKEN"], deadline=deadline))
         else:
-            result = wait(env, API("github", deadline=deadline), deadline=deadline)
+            result = wait(env, API("github", deadline=deadline), deadline=deadline, report_path=".ci-reports/github-macos.xml")
         print(json.dumps(result, sort_keys=True))
         return 0
     except BridgeError as error:
