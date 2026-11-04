@@ -978,14 +978,17 @@ private enum DetailedStampFormatterCache {
     nonisolated(unsafe) private static var cache: [String: DateFormatter] = [:]
     nonisolated(unsafe) private static var readings: [String: String] = [:]
     private static let readingLimit = 1_024
-    /// The key is only the identifier, so a change to the person's locale settings empties the cache.
-    nonisolated(unsafe) private static let localeWatch = NotificationCenter.default.addObserver(
-        forName: NSLocale.currentLocaleDidChangeNotification, object: nil, queue: nil
-    ) { _ in
-        DetailedStampFormatterCache.lock.lock()
-        DetailedStampFormatterCache.cache.removeAll()
-        DetailedStampFormatterCache.readings.removeAll()
-        DetailedStampFormatterCache.lock.unlock()
+    /// The key is only the identifier, so a change to the person's locale settings empties the cache;
+    /// a time-zone change empties it too, so the old zone's formatter and readings do not linger.
+    nonisolated(unsafe) private static let localeWatch = [
+        NSLocale.currentLocaleDidChangeNotification, .NSSystemTimeZoneDidChange,
+    ].map { name in
+        NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { _ in
+            DetailedStampFormatterCache.lock.lock()
+            DetailedStampFormatterCache.cache.removeAll()
+            DetailedStampFormatterCache.readings.removeAll()
+            DetailedStampFormatterCache.lock.unlock()
+        }
     }
 
     static func reading(createdMs: UInt64, locale: Locale?, timeZone: TimeZone) -> String {

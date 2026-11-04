@@ -394,6 +394,7 @@ final class PadPickerTests: XCTestCase {
             XCTAssertTrue(caption.contains("\(Int(TimeRailView.width)) points"))
             XCTAssertTrue(caption.contains("Drag the divider to resize the timeline"))
             XCTAssertTrue(caption.contains("older blank pages are hidden"))
+            XCTAssertTrue(caption.contains("moves no content and writes nothing new to disk"), "ADR-0037's cost")
             XCTAssertFalse(caption.contains("counted"))
         }
     }
