@@ -102,6 +102,17 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     }
     private static let pinnedKey = "restingPinned"
 
+    @Published private var sideTabPreferences: SideTabPreferences
+    var sideTab: SideTabPreferences {
+        get { sideTabPreferences }
+        set {
+            let normalized = newValue.normalized
+            guard sideTabPreferences != normalized else { return }
+            sideTabPreferences = normalized
+            normalized.save(to: defaults)
+        }
+    }
+
     /// Whether a raised card that has lost the keyboard to another
     /// window still floats above other apps. The pin is a stronger
     /// promise (it lifts a resting card too, and shrinks the window
@@ -186,6 +197,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         geometry = BackdropGeometry.load(from: defaults)
         doubleClickTrip = Self.loadTrip(from: defaults)
         pinned = defaults.bool(forKey: Self.pinnedKey)
+        sideTabPreferences = SideTabPreferences.load(from: defaults)
         keepsAboveWhenInactive = defaults.bool(forKey: Self.keepsAboveKey)
         // Default on when the key is absent (a fresh install): the ADR
         // shipped with the panel on. `object(forKey:)` distinguishes

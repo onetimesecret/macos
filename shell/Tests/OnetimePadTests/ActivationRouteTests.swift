@@ -13,6 +13,14 @@ import XCTest
 /// The naming mirrors `LaunchStanceTests`: one function per row of the
 /// table, one XCTAssert per fact, so a failure names the row.
 final class ActivationRouteTests: XCTestCase {
+    func testSideTabClickSummonsOnlyAnEnabledAmbientPanel() {
+        for claimed in [false, true] {
+            XCTAssertEqual(ActivationRouter.decide(.sideTabClick,
+                in: base(claimedByAnotherWindow: claimed)), .summonPanel)
+            XCTAssertEqual(ActivationRouter.decide(.sideTabClick,
+                in: base(ambientPanelEnabled: false, claimedByAnotherWindow: claimed)), .noop)
+        }
+    }
     // MARK: The activation reasons — launch, late, reopen
 
     private static func editorRoute(_ raise: BackdropRaise) -> ActivationRoute {

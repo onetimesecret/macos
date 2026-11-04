@@ -97,6 +97,7 @@ public struct GeneralSettingsView: View {
     /// ADR-0033's ambient panel preference. Default on, persisted
     /// beside Pin. Nil hides the row, as it does for `keepsAbove`.
     private let ambientPanelEnabled: Binding<Bool>?
+    private let additionalSurfaceSettings: AnyView?
 
     public init(
         model: PageModel,
@@ -104,7 +105,8 @@ public struct GeneralSettingsView: View {
         offersCaptureToggle: Bool = true,
         resetSurface: (() -> Void)? = nil,
         keepsAbove: Binding<Bool>? = nil,
-        ambientPanelEnabled: Binding<Bool>? = nil
+        ambientPanelEnabled: Binding<Bool>? = nil,
+        additionalSurfaceSettings: AnyView? = nil
     ) {
         self.model = model
         self.loginPresence = loginPresence
@@ -112,6 +114,7 @@ public struct GeneralSettingsView: View {
         self.resetSurface = resetSurface
         self.keepsAbove = keepsAbove
         self.ambientPanelEnabled = ambientPanelEnabled
+        self.additionalSurfaceSettings = additionalSurfaceSettings
     }
 
     @State private var confirmingLedgerClear = false
@@ -142,6 +145,7 @@ public struct GeneralSettingsView: View {
                         )
                         .help("Makes the ambient panel available through its hotkey and the Show Ambient Panel command.")
                     }
+                    if let additionalSurfaceSettings { additionalSurfaceSettings }
                     Button("Reset to Default Position and Size", action: resetSurface)
                 } header: {
                     Text("Surface")
