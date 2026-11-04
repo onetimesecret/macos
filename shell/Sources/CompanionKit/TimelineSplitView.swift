@@ -250,8 +250,10 @@ private final class DividerWatchView: NSView {
         let width = split.bounds.width
         lastSplitWidth = width
         lastLeadingWidth = leading.frame.width
+        // The lower of the frame's ceiling and the measured one, so SwiftUI's `maxWidth` never refuses it.
         let target = min(
             TimeRailView.clampedWidth(preferredWidth),
+            TimelineSplit.railCeiling(splitWidth: width),
             TimelineSplit.railCeiling(splitWidth: width, dividerThickness: split.dividerThickness))
         guard abs(leading.frame.width - target) >= 0.5 else {
             failedPlacement = nil
