@@ -48,7 +48,7 @@ enum TimelineSplit {
     /// The thin divider's thickness.
     static let dividerWidth: CGFloat = 1
 
-    /// The rail's widest allowed width in a split this wide, so the page keeps `pageMinWidth`.
+    /// The rail's widest allowed width in a split this wide, never under the rail's start width.
     static func railCeiling(splitWidth: CGFloat) -> CGFloat {
         guard splitWidth > 0 else { return TimeRailView.maxWidth }
         return TimeRailView.clampedWidth(splitWidth - pageMinWidth - dividerWidth)
@@ -140,10 +140,18 @@ private final class DividerWatchView: NSView {
         queuePlacement()
     }
 
+    /// SwiftUI's dismantle: a drag still waiting is recorded on the next main-queue turn, outside the
+    /// view update, since the record publishes.
     func retire() {
-        if recordPending { recordDrag() }
         detach()
-        onMove = nil
+        guard recordPending else {
+            onMove = nil
+            return
+        }
+        DispatchQueue.main.async { [self] in
+            if recordPending { recordDrag() }
+            onMove = nil
+        }
     }
 
     private func attach() {
