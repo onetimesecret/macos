@@ -11,8 +11,8 @@ T󠄁h󠄁e󠄁 j󠄁o󠄁b󠄁s󠄁 a󠄁r󠄁e󠄁 d󠄁e󠄁f󠄁i󠄁n󠄁e�
 | J󠄁o󠄁b󠄁 | R󠄁u󠄁n󠄁n󠄁e󠄁r󠄁 | W󠄁o󠄁r󠄁k󠄁 |
 | --- | --- | --- |
 | `logic` | L󠄁i󠄁n󠄁u󠄁x󠄁 a󠄁m󠄁d󠄁6󠄁4󠄁,󠄁 R󠄁u󠄁s󠄁t󠄁 1󠄁.󠄁9󠄁4󠄁.󠄁1󠄁 | D󠄁e󠄁p󠄁e󠄁n󠄁d󠄁e󠄁n󠄁c󠄁y󠄁 v󠄁e󠄁r󠄁i󠄁f󠄁i󠄁c󠄁a󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁,󠄁 l󠄁a󠄁n󠄁g󠄁u󠄁a󠄁g󠄁e󠄁 t󠄁h󠄁r󠄁e󠄁s󠄁h󠄁o󠄁l󠄁d󠄁s󠄁,󠄁 f󠄁o󠄁r󠄁m󠄁a󠄁t󠄁t󠄁i󠄁n󠄁g󠄁,󠄁 C󠄁l󠄁i󠄁p󠄁p󠄁y󠄁,󠄁 c󠄁r󠄁a󠄁t󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁,󠄁 F󠄁F󠄁I󠄁 t󠄁e󠄁s󠄁t󠄁 u󠄁t󠄁i󠄁l󠄁i󠄁t󠄁i󠄁e󠄁s󠄁,󠄁 a󠄁n󠄁d󠄁 b󠄁o󠄁t󠄁h󠄁 c󠄁a󠄁r󠄁g󠄁o󠄁-󠄁d󠄁e󠄁n󠄁y󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 |
-| `platform` | m󠄁a󠄁c󠄁O󠄁S󠄁,󠄁 X󠄁c󠄁o󠄁d󠄁e󠄁 2󠄁7󠄁 | F󠄁u󠄁l󠄁l󠄁-󠄁w󠄁o󠄁r󠄁k󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 C󠄁l󠄁i󠄁p󠄁p󠄁y󠄁 a󠄁n󠄁d󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁,󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁n󠄁d󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁 u󠄁t󠄁i󠄁l󠄁i󠄁t󠄁i󠄁e󠄁s󠄁 |
-| `shell` | m󠄁a󠄁c󠄁O󠄁S󠄁,󠄁 X󠄁c󠄁o󠄁d󠄁e󠄁 2󠄁7󠄁 | T󠄁e󠄁s󠄁t󠄁-󠄁u󠄁t󠄁i󠄁l󠄁 x󠄁c󠄁f󠄁r󠄁a󠄁m󠄁e󠄁w󠄁o󠄁r󠄁k󠄁,󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 b󠄁u󠄁i󠄁l󠄁d󠄁 a󠄁n󠄁d󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁,󠄁 R󠄁e󠄁v󠄁e󠄁a󠄁l󠄁L󠄁a󠄁b󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁,󠄁 d󠄁e󠄁b󠄁u󠄁g󠄁 p󠄁a󠄁c󠄁k󠄁a󠄁g󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 b󠄁u󠄁n󠄁d󠄁l󠄁e󠄁 a󠄁s󠄁s󠄁e󠄁r󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 |
+| `platform` | m󠄁a󠄁c󠄁O󠄁S󠄁,󠄁 X󠄁c󠄁o󠄁d󠄁e󠄁 2󠄁6󠄁 | F󠄁u󠄁l󠄁l󠄁-󠄁w󠄁o󠄁r󠄁k󠄁s󠄁p󠄁a󠄁c󠄁e󠄁 C󠄁l󠄁i󠄁p󠄁p󠄁y󠄁 a󠄁n󠄁d󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁,󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁n󠄁d󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁 u󠄁t󠄁i󠄁l󠄁i󠄁t󠄁i󠄁e󠄁s󠄁 |
+| `shell` | m󠄁a󠄁c󠄁O󠄁S󠄁,󠄁 X󠄁c󠄁o󠄁d󠄁e󠄁 2󠄁6󠄁 | T󠄁e󠄁s󠄁t󠄁-󠄁u󠄁t󠄁i󠄁l󠄁 x󠄁c󠄁f󠄁r󠄁a󠄁m󠄁e󠄁w󠄁o󠄁r󠄁k󠄁,󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 b󠄁u󠄁i󠄁l󠄁d󠄁 a󠄁n󠄁d󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁,󠄁 R󠄁e󠄁v󠄁e󠄁a󠄁l󠄁L󠄁a󠄁b󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁,󠄁 d󠄁e󠄁b󠄁u󠄁g󠄁 p󠄁a󠄁c󠄁k󠄁a󠄁g󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 b󠄁u󠄁n󠄁d󠄁l󠄁e󠄁 a󠄁s󠄁s󠄁e󠄁r󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 |
 | `package-release` | m󠄁a󠄁c󠄁O󠄁S󠄁,󠄁 X󠄁c󠄁o󠄁d󠄁e󠄁 2󠄁7󠄁 | P󠄁a󠄁c󠄁k󠄁a󠄁g󠄁i󠄁n󠄁g󠄁 s󠄁c󠄁r󠄁i󠄁p󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁,󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁 x󠄁c󠄁f󠄁r󠄁a󠄁m󠄁e󠄁w󠄁o󠄁r󠄁k󠄁,󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁 p󠄁a󠄁c󠄁k󠄁a󠄁g󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 b󠄁u󠄁n󠄁d󠄁l󠄁e󠄁 a󠄁s󠄁s󠄁e󠄁r󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 |
 | `adr-lint` | L󠄁i󠄁n󠄁u󠄁x󠄁,󠄁 P󠄁y󠄁t󠄁h󠄁o󠄁n󠄁 3󠄁.󠄁1󠄁2󠄁 | A󠄁D󠄁R󠄁 s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁u󠄁r󠄁e󠄁 a󠄁n󠄁d󠄁 l󠄁i󠄁n󠄁k󠄁s󠄁 |
 | `secret-scan` | L󠄁i󠄁n󠄁u󠄁x󠄁 | F󠄁u󠄁l󠄁l󠄁-󠄁h󠄁i󠄁s󠄁t󠄁o󠄁r󠄁y󠄁 g󠄁i󠄁t󠄁l󠄁e󠄁a󠄁k󠄁s󠄁 8󠄁.󠄁1󠄁8󠄁.󠄁4󠄁 s󠄁c󠄁a󠄁n󠄁,󠄁 u󠄁s󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁r󠄁c󠄁h󠄁i󠄁v󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁u󠄁m󠄁 a󠄁n󠄁d󠄁 a󠄁l󠄁l󠄁o󠄁w󠄁l󠄁i󠄁s󠄁t󠄁 |
@@ -22,9 +22,10 @@ c󠄁a󠄁c󠄁h󠄁e󠄁s󠄁 a󠄁r󠄁e󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t�
 t󠄁o󠄁o󠄁l󠄁c󠄁h󠄁a󠄁i󠄁n󠄁 f󠄁i󠄁l󠄁e󠄁.󠄁 T󠄁h󠄁e󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁-󠄁u󠄁t󠄁i󠄁l󠄁 b󠄁u󠄁i󠄁l󠄁d󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁l󠄁e󠄁a󠄁s󠄁e󠄁 b󠄁u󠄁i󠄁l󠄁d󠄁 r󠄁u󠄁n󠄁 i󠄁n󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁
 j󠄁o󠄁b󠄁s󠄁.󠄁 P󠄁a󠄁c󠄁k󠄁a󠄁g󠄁i󠄁n󠄁g󠄁 s󠄁e󠄁t󠄁s󠄁 `ONETIMEPAD_ENVIRONMENTS_DIR` t󠄁o󠄁 a󠄁 j󠄁o󠄁b󠄁-󠄁s󠄁p󠄁e󠄁c󠄁i󠄁f󠄁i󠄁c󠄁 d󠄁i󠄁r󠄁e󠄁c󠄁t󠄁o󠄁r󠄁y󠄁.󠄁
 
-T󠄁h󠄁e󠄁 m󠄁a󠄁c󠄁O󠄁S󠄁 j󠄁o󠄁b󠄁s󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁 `saas-macos-medium-m1` a󠄁n󠄁d󠄁 `macos-27-xcode-27`.󠄁
+`platform` a󠄁n󠄁d󠄁 `shell` u󠄁s󠄁e󠄁 `macos-26-xcode-26`;󠄁 `package-release` u󠄁s󠄁e󠄁s󠄁
+`macos-27-xcode-27`.󠄁 B󠄁o󠄁t󠄁h󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁s󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁 `saas-macos-medium-m1`.󠄁
 [G󠄁i󠄁t󠄁L󠄁a󠄁b󠄁'󠄁s󠄁 m󠄁a󠄁c󠄁O󠄁S󠄁 r󠄁u󠄁n󠄁n󠄁e󠄁r󠄁 d󠄁o󠄁c󠄁u󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁](https://docs.gitlab.com/ci/runners/hosted_runners/macos/)
-l󠄁i󠄁s󠄁t󠄁s󠄁 t󠄁h󠄁i󠄁s󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 a󠄁s󠄁 b󠄁e󠄁t󠄁a󠄁 a󠄁n󠄁d󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁s󠄁:󠄁 “󠄁H󠄁o󠄁s󠄁t󠄁e󠄁d󠄁 r󠄁u󠄁n󠄁n󠄁e󠄁r󠄁s󠄁 o󠄁n󠄁 m󠄁a󠄁c󠄁O󠄁S󠄁 r󠄁u󠄁n󠄁 i󠄁n󠄁 h󠄁e󠄁a󠄁d󠄁l󠄁e󠄁s󠄁s󠄁
+l󠄁i󠄁s󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁 X󠄁c󠄁o󠄁d󠄁e󠄁 2󠄁7󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 a󠄁s󠄁 b󠄁e󠄁t󠄁a󠄁 a󠄁n󠄁d󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁s󠄁:󠄁 “󠄁H󠄁o󠄁s󠄁t󠄁e󠄁d󠄁 r󠄁u󠄁n󠄁n󠄁e󠄁r󠄁s󠄁 o󠄁n󠄁 m󠄁a󠄁c󠄁O󠄁S󠄁 r󠄁u󠄁n󠄁 i󠄁n󠄁 h󠄁e󠄁a󠄁d󠄁l󠄁e󠄁s󠄁s󠄁
 m󠄁o󠄁d󠄁e󠄁.󠄁 A󠄁n󠄁y󠄁 w󠄁o󠄁r󠄁k󠄁l󠄁o󠄁a󠄁d󠄁s󠄁 t󠄁h󠄁a󠄁t󠄁 r󠄁e󠄁q󠄁u󠄁i󠄁r󠄁e󠄁 U󠄁I󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 s󠄁u󠄁c󠄁h󠄁 a󠄁s󠄁 t󠄁e󠄁s󠄁t󠄁m󠄁a󠄁n󠄁a󠄁g󠄁e󠄁r󠄁d󠄁 a󠄁r󠄁e󠄁 n󠄁o󠄁t󠄁
 s󠄁u󠄁p󠄁p󠄁o󠄁r󠄁t󠄁e󠄁d󠄁.󠄁”󠄁 T󠄁h󠄁e󠄁 s󠄁h󠄁e󠄁l󠄁l󠄁 j󠄁o󠄁b󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁 f󠄁u󠄁l󠄁l󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁 t󠄁e󠄁s󠄁t󠄁 c󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁;󠄁 i󠄁t󠄁s󠄁 p󠄁i󠄁p󠄁e󠄁l󠄁i󠄁n󠄁e󠄁
 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁 n󠄁e󠄁e󠄁d󠄁s󠄁 t󠄁o󠄁 b󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁e󠄁d󠄁 o󠄁n󠄁 t󠄁h󠄁e󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 r󠄁u󠄁n󠄁n󠄁e󠄁r󠄁.󠄁

@@ -26,7 +26,7 @@
     - rustup show
 
 .macos-rust:
-  image: macos-27-xcode-27
+  image: macos-26-xcode-26
   tags: [saas-macos-medium-m1]
   variables:
     CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
@@ -97,6 +97,7 @@ shell:
 
 package-release:
   extends: [.checks, .macos-rust]
+  image: macos-27-xcode-27
   script:
     - |
       version="$(xcodebuild -version | awk '$1 == "Xcode" {print $2}')" || version=
