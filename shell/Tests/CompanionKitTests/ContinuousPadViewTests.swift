@@ -216,7 +216,7 @@ final class ContinuousPadViewTests: XCTestCase {
                 XCTAssertFalse(node.detailStamp.isEmpty, "the control: every fixture page has a birth stamp")
                 XCTAssertEqual(label.stringValue, node.stamp)
                 XCTAssertEqual(label.toolTip, node.detailStamp)
-                XCTAssertEqual(label.accessibilityLabel(), "Checkpoint, \(node.detailStamp)")
+                XCTAssertEqual(label.accessibilityLabel(), "Checkpoint, \(node.stamp), \(node.detailStamp)")
             }
         }
     }

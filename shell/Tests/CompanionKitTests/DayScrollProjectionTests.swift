@@ -336,6 +336,11 @@ final class DayScrollProjectionTests: XCTestCase {
             "today",
             "today with nothing on it is a place, and a place has only its name"
         )
+        XCTAssertEqual(
+            DayHeaderView.spokenHeader(
+                spokenLabel: "yesterday", detail: "Sep 13, 2025 at 11:39:00 AM", title: "deploy notes",
+                remainingLabel: "4h"),
+            "yesterday, Sep 13, 2025 at 11:39:00 AM, deploy notes, 4h left")
     }
 
     // MARK: A quiet day that changed anyway

@@ -404,7 +404,7 @@ final class ContinuousPadCanvas: NSView {
             label.textColor = .tertiaryLabelColor
             label.alignment = .right
             label.frame = NSRect(x: 8, y: extent.top + 2, width: Self.gutterWidth - 22, height: 16)
-            label.setAccessibilityLabel("Checkpoint, \(detail ?? value)")
+            label.setAccessibilityLabel(["Checkpoint", value, detail].compactMap { $0 }.joined(separator: ", "))
             usedLabels += 1
             previousY = extent.top
         }

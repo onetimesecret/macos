@@ -84,6 +84,7 @@ private final class DividerWatchView: NSView {
     var onMove: (@MainActor (CGFloat) -> Void)?
     private weak var split: NSSplitView?
     private var placementQueued = false
+    private var recordPending = false
     /// Copied out by the nonisolated deinit, as `WheelRelayView` does for its monitor.
     private nonisolated(unsafe) var observer: NSObjectProtocol?
 
@@ -109,6 +110,10 @@ private final class DividerWatchView: NSView {
     }
 
     func retire() {
+        if recordPending {
+            NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(recordDrag), object: nil)
+            recordDrag()
+        }
         detach()
         onMove = nil
     }
@@ -140,7 +145,15 @@ private final class DividerWatchView: NSView {
             return queuePlacement()
         }
         preferredWidth = leading.frame.width
-        onMove?(leading.frame.width)
+        // A delayed perform runs in the default run-loop mode, so a drag's moves coalesce into one record.
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(recordDrag), object: nil)
+        recordPending = true
+        perform(#selector(recordDrag), with: nil, afterDelay: 0)
+    }
+
+    @objc private func recordDrag() {
+        recordPending = false
+        onMove?(preferredWidth)
     }
 
     /// Places the divider on the next main-queue turn, outside the split's own resize pass.

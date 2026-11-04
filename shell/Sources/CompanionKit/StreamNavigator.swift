@@ -234,8 +234,7 @@ public enum StreamNavigator {
     static func detailedStamp(
         createdMs: UInt64, locale: Locale = .autoupdatingCurrent, timeZone: TimeZone = .current
     ) -> String {
-        DetailedStampFormatterCache.formatter(locale: locale, timeZone: timeZone)
-            .string(from: Date(timeIntervalSince1970: Double(createdMs) / 1000))
+        DetailedStampFormatterCache.reading(createdMs: createdMs, locale: locale, timeZone: timeZone)
     }
 
     /// The stamps for one day's pages, in the day's order: the short
@@ -972,32 +971,45 @@ public enum StreamNavigator {
     }
 }
 
-/// One medium-style `DateFormatter` per (locale, time zone), on `StampFormatterCache`'s terms.
+/// One medium-style `DateFormatter` per (locale, time zone), on `StampFormatterCache`'s terms, and
+/// each page's reading, since the rail and the gutters ask again on every refresh.
 private enum DetailedStampFormatterCache {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var cache: [String: DateFormatter] = [:]
+    nonisolated(unsafe) private static var readings: [String: String] = [:]
+    private static let readingLimit = 1_024
     /// The key is only the identifier, so a change to the person's locale settings empties the cache.
     nonisolated(unsafe) private static let localeWatch = NotificationCenter.default.addObserver(
         forName: NSLocale.currentLocaleDidChangeNotification, object: nil, queue: nil
     ) { _ in
         DetailedStampFormatterCache.lock.lock()
         DetailedStampFormatterCache.cache.removeAll()
+        DetailedStampFormatterCache.readings.removeAll()
         DetailedStampFormatterCache.lock.unlock()
     }
 
-    static func formatter(locale: Locale, timeZone: TimeZone) -> DateFormatter {
+    static func reading(createdMs: UInt64, locale: Locale, timeZone: TimeZone) -> String {
         _ = localeWatch
         let key = "\(timeZone.identifier)\u{1F}\(locale.identifier)"
+        let readingKey = "\(key)\u{1F}\(createdMs)"
         lock.lock()
         defer { lock.unlock() }
-        if let hit = cache[key] { return hit }
-        let made = DateFormatter()
-        made.locale = locale
-        made.timeZone = timeZone
-        made.dateStyle = .medium
-        made.timeStyle = .medium
-        cache[key] = made
-        return made
+        if let hit = readings[readingKey] { return hit }
+        let formatter: DateFormatter
+        if let hit = cache[key] {
+            formatter = hit
+        } else {
+            formatter = DateFormatter()
+            formatter.locale = locale
+            formatter.timeZone = timeZone
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .medium
+            cache[key] = formatter
+        }
+        let reading = formatter.string(from: Date(timeIntervalSince1970: Double(createdMs) / 1000))
+        if readings.count >= readingLimit { readings.removeAll(keepingCapacity: true) }
+        readings[readingKey] = reading
+        return reading
     }
 }
 

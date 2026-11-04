@@ -85,6 +85,7 @@ final class TimelineSplitViewTests: XCTestCase {
 
         let split = try splitView(in: host)
         XCTAssertTrue(split.isVertical)
+        XCTAssertEqual(split.dividerThickness, TimelineSplit.dividerWidth, "the ceiling assumes this thickness")
         XCTAssertEqual(split.arrangedSubviews.count, 2)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, TimeRailView.width, accuracy: 2)
         let editor = try XCTUnwrap(descendants(InkTextView.self, in: host).first)

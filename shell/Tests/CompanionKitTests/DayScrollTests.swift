@@ -4382,8 +4382,9 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(
             header.accessibilityLabel(),
             DayHeaderView.spokenHeader(
-                spokenLabel: "today", title: placeholder.title,
-                remainingLabel: placeholder.remainingLabel),
+                spokenLabel: "today",
+                detail: placeholder.pageCreatedMs.map { StreamNavigator.detailedStamp(createdMs: $0) } ?? "",
+                title: placeholder.title, remainingLabel: placeholder.remainingLabel),
             "the countdown stopped being spoken when the gauge went")
 
         try page(in: model, saying: "deploy notes\nthe rest")
@@ -4430,7 +4431,9 @@ final class DayScrollTests: XCTestCase {
         let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
         XCTAssertFalse(header.timeText.isEmpty, "the control: the page's gutter shows a time")
         let born = try XCTUnwrap(model.tabs.first { $0.pageID == selected }?.pageCreatedMs)
-        XCTAssertEqual(header.timeToolTip, StreamNavigator.detailedStamp(createdMs: born))
+        let detail = StreamNavigator.detailedStamp(createdMs: born)
+        XCTAssertEqual(header.timeToolTip, detail)
+        XCTAssertTrue(header.accessibilityLabel()?.contains(detail) == true, "VoiceOver did not hear the full time")
     }
 
     /// A click on the time opens the field on the time, selected whole, and
@@ -4678,6 +4681,7 @@ final class DayScrollTests: XCTestCase {
 
         let expected = DayHeaderView.spokenHeader(
             spokenLabel: "today",
+            detail: summary.pageCreatedMs.map { StreamNavigator.detailedStamp(createdMs: $0) } ?? "",
             title: "visible draft",
             remainingLabel: summary.remainingLabel
         )
