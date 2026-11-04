@@ -127,11 +127,11 @@ private final class DividerWatchView: NSView {
         attach()
     }
 
-    /// Only until the split has been read once: afterwards its own non-drag resizes ask for placement,
-    /// and a drag that resizes this pane leaves `placementQueued` alone for the held-button check.
+    /// Not mid-drag: a placement queued while the button is held or a record waits would block the
+    /// held-button check, and the split's own resizes ask again once the drag ends.
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        if lastSplitWidth == nil { queuePlacement() }
+        if !recordPending && !leftMouseIsDown() { queuePlacement() }
     }
 
     /// A stored width changed elsewhere, such as in the other presentation, unless this split's
