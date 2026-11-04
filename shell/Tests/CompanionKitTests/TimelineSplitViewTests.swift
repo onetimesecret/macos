@@ -4,15 +4,23 @@ import XCTest
 
 @testable import CompanionKit
 
+/// The left mouse button as a test sets it, injected through `TimelineSplitView`'s defaulted seam.
+@MainActor
+private final class MouseStandIn {
+    var isDown = false
+}
+
 /// Both root views observe the model and read its width on every body pass; so does this one.
 private struct SplitHarness: View {
     @ObservedObject var model: PageModel
     let showsTimeline: Bool
+    let mouse: MouseStandIn
 
     var body: some View {
         TimelineSplitView(
             showsTimeline: showsTimeline,
-            railWidth: model.timelineWidth, onRailResize: model.recordTimelineWidth
+            railWidth: model.timelineWidth, onRailResize: model.recordTimelineWidth,
+            leftMouseIsDown: { [mouse] in mouse.isDown }
         ) {
             TimeRailView(model: model, readOnly: false)
         } content: {
@@ -27,6 +35,7 @@ final class TimelineSplitViewTests: XCTestCase {
         let window: NSWindow
         let host: NSHostingView<AnyView>
         let root: (Bool) -> AnyView
+        let mouse: MouseStandIn
     }
 
     private func descendants<T: NSView>(_ type: T.Type, in view: NSView) -> [T] {
@@ -49,10 +58,9 @@ final class TimelineSplitViewTests: XCTestCase {
 
     private func mount(_ model: PageModel, width: CGFloat = 640) -> Mounted {
         // The runner's real button must not decide whether a drag is recorded.
-        TimelineSplit.leftMouseIsDownForTests = false
-        addTeardownBlock { @MainActor in TimelineSplit.leftMouseIsDownForTests = nil }
+        let mouse = MouseStandIn()
         let root = { (showsTimeline: Bool) -> AnyView in
-            AnyView(SplitHarness(model: model, showsTimeline: showsTimeline)
+            AnyView(SplitHarness(model: model, showsTimeline: showsTimeline, mouse: mouse)
                 .environment(\.presentationSurface, model.owner))
         }
         let host = NSHostingView(rootView: root(true))
@@ -61,7 +69,7 @@ final class TimelineSplitViewTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentView = host
         layout(host)
-        return Mounted(window: window, host: host, root: root)
+        return Mounted(window: window, host: host, root: root, mouse: mouse)
     }
 
     private func layout(_ host: NSView) {
@@ -233,18 +241,18 @@ final class TimelineSplitViewTests: XCTestCase {
         defer { mounted.window.close() }
         let split = try splitView(in: mounted.host)
 
-        TimelineSplit.leftMouseIsDownForTests = true
+        mounted.mouse.isDown = true
         split.setPosition(200, ofDividerAt: 0)
-        TimelineSplit.leftMouseIsDownForTests = false
+        mounted.mouse.isDown = false
         layout(mounted.host)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 200, accuracy: 2, "the watch fought the person's drag")
         XCTAssertEqual(model.timelineWidth, 200, accuracy: 2, "the held move was not recorded")
 
         // Held across the drain, so the queued placement runs under the held button too.
-        TimelineSplit.leftMouseIsDownForTests = true
+        mounted.mouse.isDown = true
         mounted.window.setContentSize(NSSize(width: 360, height: 400))
         layout(mounted.host)
-        TimelineSplit.leftMouseIsDownForTests = false
+        mounted.mouse.isDown = false
         layout(mounted.host)
         XCTAssertEqual(model.timelineWidth, 200, accuracy: 2, "a window resize under a held button was recorded")
     }
@@ -262,10 +270,10 @@ final class TimelineSplitViewTests: XCTestCase {
             split.arrangedSubviews[0].frame.width, TimelineSplit.railCeiling(splitWidth: floor), accuracy: 2,
             "the control: the rail sits at the ceiling")
 
-        TimelineSplit.leftMouseIsDownForTests = true
+        mounted.mouse.isDown = true
         mounted.window.setContentSize(NSSize(width: floor, height: 520))
         layout(mounted.host)
-        TimelineSplit.leftMouseIsDownForTests = false
+        mounted.mouse.isDown = false
         layout(mounted.host)
         XCTAssertEqual(
             model.timelineWidth, TimeRailView.maxWidth, accuracy: 0.5,
