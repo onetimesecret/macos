@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Pads are managed in the editor window's inspector, and the pad
+  switches are gone** (app 0.47.0; ADR-0039 Amendment 2). The sidebar
+  button beside the pad picker, or *Manage Pads…*, shows the selected
+  pad's name, linked folders and linked applications in an inspector.
+  Rename edits the name in place, removal still asks first, and Scratch
+  stays first and cannot be removed. At 900 points or wider the window
+  shows the pad list, the editor and the inspector; from 560 points the
+  list and the inspector; narrower, the inspector alone. The Pads tab of
+  Settings is removed, along with the multiple pads, app associations
+  and full path switches: pads, their ⌘0 to ⌘9 shortcuts and linked
+  applications are always on. Folders show their name and parent, with
+  the full path on hover. A catalog saved with the old switches still
+  loads. See [ADR-0039](docs/adr/0039-pad-selection-and-associations.md).
+
 - L󠄁a󠄁r󠄁g󠄁e󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 s󠄁h󠄁o󠄁w󠄁 a󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁i󠄁n󠄁g󠄁
   t󠄁h󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁 p󠄁a󠄁g󠄁e󠄁 r󠄁e󠄁f󠄁r󠄁e󠄁s󠄁h󠄁.󠄁 (󠄁#󠄁3󠄁3󠄁2󠄁)󠄁
 - I󠄁m󠄁a󠄁g󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁 k󠄁e󠄁e󠄁p󠄁 t󠄁h󠄁e󠄁i󠄁r󠄁 a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁,󠄁 s󠄁t󠄁a󠄁c󠄁k󠄁 n󠄁a󠄁r󠄁r󠄁o󠄁w󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁s󠄁,󠄁 a󠄁n󠄁d󠄁 s󠄁i󠄁z󠄁e󠄁
