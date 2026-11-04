@@ -70,6 +70,7 @@ private struct DividerWatch: NSViewRepresentable {
 
     func updateNSView(_ view: DividerWatchView, context: Context) {
         view.onMove = onMove
+        view.adopt(startWidth)
     }
 
     static func dismantleNSView(_ view: DividerWatchView, coordinator: ()) {
@@ -106,6 +107,14 @@ private final class DividerWatchView: NSView {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
+        queuePlacement()
+    }
+
+    /// A stored width changed elsewhere, such as in the other presentation, unless this split's
+    /// own drag is still waiting to be recorded.
+    func adopt(_ width: CGFloat) {
+        guard !recordPending, abs(width - preferredWidth) >= 0.5 else { return }
+        preferredWidth = width
         queuePlacement()
     }
 

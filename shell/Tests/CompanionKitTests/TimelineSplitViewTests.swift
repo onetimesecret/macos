@@ -4,6 +4,23 @@ import XCTest
 
 @testable import CompanionKit
 
+/// Both root views observe the model and read its width on every body pass; so does this one.
+private struct SplitHarness: View {
+    @ObservedObject var model: PageModel
+    let showsTimeline: Bool
+
+    var body: some View {
+        TimelineSplitView(
+            showsTimeline: showsTimeline,
+            railWidth: model.timelineWidth, onRailResize: model.recordTimelineWidth
+        ) {
+            TimeRailView(model: model, readOnly: false)
+        } content: {
+            PageContentView(model: model, emptyHint: "", showsExpandControl: false)
+        }
+    }
+}
+
 @MainActor
 final class TimelineSplitViewTests: XCTestCase {
     private struct Mounted {
@@ -32,14 +49,8 @@ final class TimelineSplitViewTests: XCTestCase {
 
     private func mount(_ model: PageModel, width: CGFloat = 640) -> Mounted {
         let root = { (showsTimeline: Bool) -> AnyView in
-            AnyView(TimelineSplitView(
-                showsTimeline: showsTimeline,
-                railWidth: model.timelineWidth, onRailResize: model.recordTimelineWidth
-            ) {
-                TimeRailView(model: model, readOnly: false)
-            } content: {
-                PageContentView(model: model, emptyHint: "", showsExpandControl: false)
-            }.environment(\.presentationSurface, model.owner))
+            AnyView(SplitHarness(model: model, showsTimeline: showsTimeline)
+                .environment(\.presentationSurface, model.owner))
         }
         let host = NSHostingView(rootView: root(true))
         host.frame = NSRect(x: 0, y: 0, width: width, height: 400)
@@ -207,6 +218,22 @@ final class TimelineSplitViewTests: XCTestCase {
         let remounted = mount(relaunched)
         defer { remounted.window.close() }
         XCTAssertEqual(try splitView(in: remounted.host).arrangedSubviews[0].frame.width, 180, accuracy: 2)
+    }
+
+    /// A presentation hidden but still mounted follows a drag made in the other one.
+    func testAMountedSplitFollowsADragInTheOther() throws {
+        let model = timelineModel(defaults: try defaults())
+        let editor = mount(model)
+        defer { editor.window.close() }
+        let panel = mount(model)
+        defer { panel.window.close() }
+        let editorSplit = try splitView(in: editor.host)
+        drag(editorSplit, to: 200, in: editor.host)
+        layout(panel.host)
+        XCTAssertEqual(model.timelineWidth, 200, accuracy: 2)
+        XCTAssertEqual(
+            try splitView(in: panel.host).arrangedSubviews[0].frame.width, 200, accuracy: 2,
+            "the other presentation kept its old width")
     }
 
     func testAStoredWidthIsReadInsideTheRailsRange() throws {

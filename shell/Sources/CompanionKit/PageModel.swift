@@ -1052,9 +1052,9 @@ public final class PageModel: ObservableObject {
     private static let stampShortKey = "stampFormatShort"
     private static let stampFineKey = "stampFormatFine"
 
-    /// The timeline's width from the last divider move, a UserDefaults presentation preference.
-    /// Not published: the split view keeps the live width and reads this when the rail mounts.
-    public private(set) var timelineWidth: CGFloat {
+    /// The timeline's width from the person's last divider drag, a UserDefaults presentation
+    /// preference. Published once per drag, so a hidden presentation's split view follows it.
+    @Published public private(set) var timelineWidth: CGFloat {
         didSet { defaults.set(Double(timelineWidth), forKey: Self.timelineWidthKey) }
     }
     private static let timelineWidthKey = "timelineWidth"
