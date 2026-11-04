@@ -103,7 +103,10 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     private static let pinnedKey = "restingPinned"
 
     @Published var sideTab: SideTabPreferences {
-        didSet { sideTab.save(to: defaults) }
+        didSet {
+            guard oldValue != sideTab else { return }
+            sideTab.save(to: defaults)
+        }
     }
 
     /// Whether a raised card that has lost the keyboard to another

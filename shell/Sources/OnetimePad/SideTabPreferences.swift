@@ -8,14 +8,24 @@ struct SideTabPreferences: Codable, Equatable {
 
     static let defaultsKey = "ambientSideTab"
 
-    static func load(from defaults: UserDefaults) -> Self {
-        guard let data = defaults.data(forKey: defaultsKey),
-              let value = try? JSONDecoder().decode(Self.self, from: data) else { return Self() }
+    var normalizedPosition: Double {
+        position.isFinite ? min(1, max(0, position)) : 0.5
+    }
+
+    private var normalized: Self {
+        var value = self
+        value.position = normalizedPosition
         return value
     }
 
+    static func load(from defaults: UserDefaults) -> Self {
+        guard let data = defaults.data(forKey: defaultsKey),
+              let value = try? JSONDecoder().decode(Self.self, from: data) else { return Self() }
+        return value.normalized
+    }
+
     func save(to defaults: UserDefaults) {
-        guard let data = try? JSONEncoder().encode(self) else { return }
+        guard let data = try? JSONEncoder().encode(normalized) else { return }
         defaults.set(data, forKey: Self.defaultsKey)
     }
 }

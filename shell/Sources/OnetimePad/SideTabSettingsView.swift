@@ -15,6 +15,7 @@ struct SideTabSettingsView: View {
                 model.sideTab.enabled = enabled
             }))
             .disabled(!model.ambientPanelEnabled)
+            .onAppear { displays = SideTabDisplays.current() }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
                 displays = SideTabDisplays.current()
             }
@@ -35,9 +36,12 @@ struct SideTabSettingsView: View {
                 }
                 HStack {
                     Text("Top")
-                    Slider(value: $model.sideTab.position, in: 0...1)
+                    Slider(value: Binding(
+                        get: { model.sideTab.normalizedPosition },
+                        set: { model.sideTab.position = $0 }
+                    ), in: 0...1)
                         .accessibilityLabel("Side tab position")
-                        .accessibilityValue("\(Int(model.sideTab.position * 100)) percent from top")
+                        .accessibilityValue("\(Int(model.sideTab.normalizedPosition * 100)) percent from top")
                     Text("Bottom")
                 }
                 Text("Click the tab to open today. It appears while the ambient panel is resting and unpinned, with the editor window closed.")
