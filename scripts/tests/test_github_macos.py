@@ -167,6 +167,36 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(ci.controller(GH_ENV, FakeGitLab(), github)["dispatched"], 0)
             self.assertFalse(any(method == "POST" for method, _, _ in github.calls))
 
+    def test_finished_binding_does_not_block_later_waiting_pipeline(self):
+        for finished in ["pipeline", "job"]:
+            with self.subTest(finished=finished):
+                api = FakeGitLab()
+                later_pipeline = {**api.pipeline, "id": 24}
+                later_job = {**api.job, "id": 46, "pipeline": later_pipeline}
+                original = api.request
+                reads = 0
+
+                def request(method, path, data=None):
+                    nonlocal reads
+                    if path.endswith("/pipelines?status=running&per_page=20"):
+                        return [copy.deepcopy(api.pipeline), copy.deepcopy(later_pipeline)]
+                    if path.endswith("/pipelines/23") and finished == "pipeline":
+                        return {**api.pipeline, "status": "success"}
+                    if path.endswith("/pipelines/23/jobs?include_retried=false&per_page=100"):
+                        reads += 1
+                        return [{**api.job, "status": "success" if reads > 1 else "running"}]
+                    if path.endswith("/pipelines/24"):
+                        return copy.deepcopy(later_pipeline)
+                    if path.endswith("/pipelines/24/jobs?include_retried=false&per_page=100"):
+                        return [copy.deepcopy(later_job)]
+                    return original(method, path, data)
+
+                api.request = request
+                github = FakeGitHub([])
+                self.assertEqual(ci.controller(GH_ENV, api, github), {"pipelines": 2, "dispatched": 1})
+                dispatches = [call[2] for call in github.calls if call[0] == "POST"]
+                self.assertEqual(dispatches, [{"ref": "main", "inputs": {"pipeline_id": "24", "job_id": "46", "sha": HEAD}}])
+
     def test_unrelated_workflow_event_branch_repository_or_attempt_does_not_dedupe(self):
         for changes in [{"display_title": BINDING.run_name.replace("/45/", "/44/")}, {"head_branch": "topic"},
                         {"event": "pull_request"}, {"path": ".github/workflows/other.yml"},
