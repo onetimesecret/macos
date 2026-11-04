@@ -182,11 +182,22 @@ private final class DividerWatchView: NSView {
             // A SwiftUI that stops backing `HSplitView` with an `NSSplitView` leaves the watch inert; say so once.
             if split == nil, !reportedNoSplit, newSize.width > 0 {
                 reportedNoSplit = true
-                TimelineSplit.logger.notice("timeline divider watch found no split view above it")
+                DispatchQueue.main.async { [weak self] in self?.reportIfStillInert() }
             }
         } else if !recordPending && !placing {
             queuePlacement()
         }
+    }
+
+    /// Checked a turn after the layout that found no split, so a pass that sizes the watch before its
+    /// pane joins the split is not logged.
+    private func reportIfStillInert() {
+        if split == nil, !retired, window != nil { attach() }
+        guard split == nil, !retired, window != nil else {
+            reportedNoSplit = false
+            return
+        }
+        TimelineSplit.logger.notice("timeline divider watch found no split view above it")
     }
 
     /// A stored width changed elsewhere, such as in the other presentation, unless this split's
