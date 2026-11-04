@@ -33,15 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Sealed blocks select like text and keep their actions in a visible row**
-  (#339). A click on a named sealed block selects it instead of copying;
-  Copy, More and Note sit in a stable row with distinct accessibility
-  help, and native selection with Cut and Paste moves a block by keyboard.
-  Menus and presses resolve the block by identity, so an edit or removal
-  while a menu is open refuses rather than acting on the wrong block.
-  Variable-name drafts save on focus loss, pad switches and editor
-  handoffs when valid and stay open with a local error when not. Sharing
-  forms name the source, and Copy Link Again recovers the latest completed
-  one-time link for 60 seconds. See the
+  (app 0.46.0; #339). A click on a named sealed block selects it instead
+  of copying; Copy, More and Note sit in a stable row with distinct
+  accessibility help, and native selection with Cut and Paste moves a
+  block by keyboard. Menus and presses resolve the block by identity, so
+  an edit or removal while a menu is open refuses rather than acting on
+  the wrong block. Variable-name drafts save on focus loss, pad switches
+  and editor handoffs when valid and stay open with a local error when
+  not. Sharing forms name the source, and Copy Link Again recovers the
+  latest completed one-time link for up to 60 seconds after it is
+  created. See the
   [sealed-content interface revision](docs/spec/design/2026-1031-sealed-content-ux-revision.md).
 
 - L󠄁a󠄁r󠄁g󠄁e󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 s󠄁h󠄁o󠄁w󠄁 a󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁i󠄁n󠄁g󠄁
