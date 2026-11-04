@@ -57,6 +57,45 @@ Triggers.
         with patch.object(LINT, "REPO_ROOT", self.root):
             self.assertEqual(LINT.check(self.path)[0], [])
 
+    def test_marked_link_paths_are_rejected_without_repair(self):
+        (self.root / "target.md").write_text("## Decision\n", encoding="utf-8")
+        self.path.write_text(self.document + "\n[Decision](tar\U000E0101get.md#decision)\n", encoding="utf-8")
+        with patch.object(LINT, "REPO_ROOT", self.root):
+            problems, _ = LINT.check(self.path)
+        self.assertTrue(any("link target contains provenance marks" in problem for problem in problems))
+
+    def test_marked_link_fragments_are_rejected_without_repair(self):
+        (self.root / "target.md").write_text("## Decision\n", encoding="utf-8")
+        self.path.write_text(self.document + "\n[Decision](target.md#deci\U000E0100sion)\n", encoding="utf-8")
+        with patch.object(LINT, "REPO_ROOT", self.root):
+            problems, _ = LINT.check(self.path)
+        self.assertTrue(any("link target contains provenance marks" in problem for problem in problems))
+
+    def test_marked_link_targets_do_not_create_relationships(self):
+        target = self.root / "0002-target.md"
+        target.write_text("## Decision\n", encoding="utf-8")
+        self.path.write_text(self.document.replace(
+            "- **Date:** 2026-11-03",
+            "- **Date:** 2026-11-03\n- **Depends on:** [Target](0002-target.md#deci\U000E0101sion)"),
+            encoding="utf-8")
+        with patch.object(LINT, "REPO_ROOT", self.root):
+            problems, relations = LINT.check(self.path)
+        self.assertNotIn("Depends on", relations)
+        self.assertTrue(any("does not link a local ADR" in problem for problem in problems))
+        self.assertTrue(any("link target contains provenance marks" in problem for problem in problems))
+
+    def test_marked_link_examples_in_code_remain_literal(self):
+        example = "[Decision](missing\U000E0101.md#deci\U000E0100sion)"
+        self.path.write_text(self.document + f"\n`{example}`\n\n```md\n{example}\n```\n", encoding="utf-8")
+        self.assertEqual(LINT.check(self.path)[0], [])
+
+    def test_vs16_in_a_real_filename_is_preserved(self):
+        name = "heart\u2764\ufe0f.md"
+        (self.root / name).write_text("## Decision\n", encoding="utf-8")
+        self.path.write_text(self.document + f"\n[Decision]({name}#decision)\n", encoding="utf-8")
+        with patch.object(LINT, "REPO_ROOT", self.root):
+            self.assertEqual(LINT.check(self.path)[0], [])
+
 
 if __name__ == "__main__":
     unittest.main()

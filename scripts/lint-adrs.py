@@ -62,7 +62,7 @@ VISIBLE_DOC_STATUS = re.compile(r"documentation[_ -]status", re.IGNORECASE)
 # A Markdown inline link, reduced to its text when a heading is slugged.
 INLINE_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 SLUG_STRIP = re.compile(r"[^\w\- ]", re.UNICODE)
-PROVENANCE_MARKS = re.compile(r"[\uFE00-\uFE0F\U000E0100-\U000E01EF]")
+PROVENANCE_MARKS = re.compile(r"[\U000E0100\U000E0101]")
 
 
 def split_frontmatter(lines: list[str]) -> tuple[list[str], int, str | None]:
@@ -128,6 +128,7 @@ def clean_link_target(target: str) -> str:
 def slugify(heading: str) -> str:
     """Slug a heading the way GitHub anchors do."""
     text = INLINE_LINK.sub(r"\1", heading).strip()
+    text = PROVENANCE_MARKS.sub("", text)
     text = SLUG_STRIP.sub("", text.lower())
     return text.replace(" ", "-")
 
@@ -144,7 +145,7 @@ def anchors(path: Path) -> set[str] | None:
     if resolved in _ANCHOR_CACHE:
         return _ANCHOR_CACHE[resolved]
     try:
-        lines = PROVENANCE_MARKS.sub("", resolved.read_text(encoding="utf-8")).splitlines()
+        lines = resolved.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
         _ANCHOR_CACHE[resolved] = None
         return None
@@ -177,6 +178,8 @@ def adr_numbers(text: str) -> list[str]:
     numbers: list[str] = []
     for raw_target in LINK.findall(CODE_SPAN.sub("", text)):
         target = clean_link_target(raw_target)
+        if PROVENANCE_MARKS.search(target):
+            continue
         if target.startswith(("http://", "https://", "mailto:", "#")):
             continue
         rel, _, _ = target.partition("#")
@@ -203,7 +206,9 @@ def check(path: Path) -> tuple[list[str], dict[str, tuple[int, list[str]]]]:
         return problems, relations
     number = name_match.group(1)
 
-    text = PROVENANCE_MARKS.sub("", path.read_text(encoding="utf-8"))
+    raw_text = path.read_text(encoding="utf-8")
+    raw_lines = raw_text.splitlines()
+    text = PROVENANCE_MARKS.sub("", raw_text)
     lines = text.splitlines()
     header = FILE_HEADER.match(lines[0]) if lines else None
     skip = 1 if header and Path(header.group(1)).name == path.name else 0
@@ -350,7 +355,7 @@ def check(path: Path) -> tuple[list[str], dict[str, tuple[int, list[str]]]]:
 
     for key in sorted(RELATION_FIELDS.intersection(fields)):
         line_no, _ = fields[key]
-        adr_targets = adr_numbers(field_block(lines, line_no))
+        adr_targets = adr_numbers(field_block(raw_lines, line_no))
         if not adr_targets:
             bad(line_no, f"'{key}' does not link a local ADR")
         else:
@@ -365,9 +370,12 @@ def check(path: Path) -> tuple[list[str], dict[str, tuple[int, list[str]]]]:
             bad(None, f"required section '## {section}' appears more than once")
 
     own_anchors = anchors(path)
-    for i, raw in visible_lines:
+    for i, raw in outside_fences(raw_lines):
         for raw_target in LINK.findall(CODE_SPAN.sub("", raw)):
             target = clean_link_target(raw_target)
+            if PROVENANCE_MARKS.search(target):
+                bad(i, f"link target contains provenance marks: {target}")
+                continue
             if target.startswith(("http://", "https://", "mailto:")):
                 continue
             rel, _, fragment = target.partition("#")
