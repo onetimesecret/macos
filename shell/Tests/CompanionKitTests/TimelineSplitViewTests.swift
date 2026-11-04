@@ -79,7 +79,9 @@ final class TimelineSplitViewTests: XCTestCase {
         split.setPosition(position, ofDividerAt: 0)
         NotificationCenter.default.post(
             name: NSSplitView.didResizeSubviewsNotification, object: split,
-            userInfo: ["NSSplitViewDividerIndex": NSNumber(value: 0), "NSSplitViewUserResizeKey": NSNumber(value: 1)])
+            userInfo: [
+                TimelineSplit.dividerIndexKey: NSNumber(value: 0), TimelineSplit.userResizeKey: NSNumber(value: 1),
+            ])
         layout(host)
     }
 
@@ -218,6 +220,30 @@ final class TimelineSplitViewTests: XCTestCase {
         let remounted = mount(relaunched)
         defer { remounted.window.close() }
         XCTAssertEqual(try splitView(in: remounted.host).arrangedSubviews[0].frame.width, 180, accuracy: 2)
+    }
+
+    /// Without AppKit's user-resize key, a divider move under a held button in a split of unchanged
+    /// width is still the person's, while a window resize under a held button is not.
+    func testAHeldDividerMoveIsTheDragEvenWithoutTheUserKey() throws {
+        let model = timelineModel(defaults: try defaults())
+        let mounted = mount(model)
+        defer { mounted.window.close() }
+        defer { TimelineSplit.leftMouseIsDownForTests = nil }
+        let split = try splitView(in: mounted.host)
+
+        TimelineSplit.leftMouseIsDownForTests = true
+        split.setPosition(200, ofDividerAt: 0)
+        TimelineSplit.leftMouseIsDownForTests = false
+        layout(mounted.host)
+        XCTAssertEqual(split.arrangedSubviews[0].frame.width, 200, accuracy: 2, "the watch fought the person's drag")
+        XCTAssertEqual(model.timelineWidth, 200, accuracy: 2, "the held move was not recorded")
+
+        TimelineSplit.leftMouseIsDownForTests = true
+        mounted.window.setContentSize(NSSize(width: 360, height: 400))
+        mounted.host.layoutSubtreeIfNeeded()
+        TimelineSplit.leftMouseIsDownForTests = false
+        layout(mounted.host)
+        XCTAssertEqual(model.timelineWidth, 200, accuracy: 2, "a window resize under a held button was recorded")
     }
 
     /// A presentation hidden but still mounted follows a drag made in the other one.

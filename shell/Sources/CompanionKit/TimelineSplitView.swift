@@ -53,6 +53,22 @@ enum TimelineSplit {
         guard splitWidth > 0 else { return TimeRailView.maxWidth }
         return TimeRailView.clampedWidth(splitWidth - pageMinWidth - dividerWidth)
     }
+
+    /// The `userInfo` keys `NSSplitView.didResizeSubviewsNotification` documents.
+    static let dividerIndexKey = "NSSplitViewDividerIndex"
+    static let userResizeKey = "NSSplitViewUserResizeKey"
+
+    #if DEBUG
+    /// Stands in for the left mouse button in tests; nil reads the real one. Not compiled into releases.
+    @MainActor static var leftMouseIsDownForTests: Bool?
+    #endif
+
+    @MainActor static func leftMouseIsDown() -> Bool {
+        #if DEBUG
+        if let forced = leftMouseIsDownForTests { return forced }
+        #endif
+        return NSEvent.pressedMouseButtons & 1 != 0
+    }
 }
 
 /// Keeps the leading pane at the person's width within the split's ceiling, and reports their divider moves.
@@ -85,7 +101,13 @@ private final class DividerWatchView: NSView {
     var onMove: (@MainActor (CGFloat) -> Void)?
     private weak var split: NSSplitView?
     private var placementQueued = false
+    /// Set across the watch's own `setPosition`, so the resize it posts is never read as a drag.
+    private var placing = false
     private var recordPending = false
+    /// The split's width at the last notification, which a divider drag leaves unchanged.
+    private var lastSplitWidth: CGFloat?
+    /// A placement the split did not take, not retried until the target or the split's width changes.
+    private var failedPlacement: (target: CGFloat, splitWidth: CGFloat)?
     /// Copied out by the nonisolated deinit, as `WheelRelayView` does for its monitor.
     private nonisolated(unsafe) var observer: NSObjectProtocol?
 
@@ -131,11 +153,11 @@ private final class DividerWatchView: NSView {
         observer = NotificationCenter.default.addObserver(
             forName: NSSplitView.didResizeSubviewsNotification, object: split, queue: nil
         ) { [weak self, weak split] note in
-            // AppKit adds NSSplitViewUserResizeKey only for a person's drag; any other resize is placed, not recorded.
-            let dragged = (note.userInfo?["NSSplitViewUserResizeKey"] as? NSNumber)?.boolValue == true
+            let userResize = (note.userInfo?[TimelineSplit.userResizeKey] as? NSNumber)?.boolValue == true
+            let dividerMoved = note.userInfo?[TimelineSplit.dividerIndexKey] != nil
             MainActor.assumeIsolated {
                 guard let watch = self, let split else { return }
-                watch.splitDidResize(split, dragged: dragged)
+                watch.splitDidResize(split, userResize: userResize, dividerMoved: dividerMoved)
             }
         }
         queuePlacement()
@@ -145,10 +167,23 @@ private final class DividerWatchView: NSView {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
         split = nil
+        lastSplitWidth = nil
     }
 
-    private func splitDidResize(_ split: NSSplitView, dragged: Bool) {
-        guard dragged, split.arrangedSubviews.count > 1, let leading = split.arrangedSubviews.first else {
+    /// A person's drag: AppKit's user-resize key, or a divider move under a held left button in a
+    /// split whose own width did not change. Anything else is placed and not recorded.
+    private func splitDidResize(_ split: NSSplitView, userResize: Bool, dividerMoved: Bool) {
+        let width = split.bounds.width
+        guard !placing else {
+            lastSplitWidth = width
+            return
+        }
+        let heldMove = dividerMoved && !placementQueued && lastSplitWidth == width
+            && TimelineSplit.leftMouseIsDown()
+        lastSplitWidth = width
+        guard userResize || heldMove, split.arrangedSubviews.count > 1,
+              let leading = split.arrangedSubviews.first
+        else {
             return queuePlacement()
         }
         preferredWidth = leading.frame.width
@@ -160,7 +195,7 @@ private final class DividerWatchView: NSView {
     /// Records once the mouse button is up, so a drag's moves coalesce into one record.
     private func recordWhenReleased() {
         guard recordPending else { return }
-        guard NSEvent.pressedMouseButtons & 1 == 0 else {
+        guard !TimelineSplit.leftMouseIsDown() else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.recordWhenReleased() }
             return
         }
@@ -188,10 +223,18 @@ private final class DividerWatchView: NSView {
         guard let split, split.bounds.width > 0, split.arrangedSubviews.count > 1,
               let leading = split.arrangedSubviews.first
         else { return }
-        let target = min(
-            TimeRailView.clampedWidth(preferredWidth), TimelineSplit.railCeiling(splitWidth: split.bounds.width))
-        guard abs(leading.frame.width - target) >= 0.5 else { return }
+        let width = split.bounds.width
+        lastSplitWidth = width
+        let target = min(TimeRailView.clampedWidth(preferredWidth), TimelineSplit.railCeiling(splitWidth: width))
+        guard abs(leading.frame.width - target) >= 0.5 else {
+            failedPlacement = nil
+            return
+        }
+        if let failed = failedPlacement, failed.target == target, failed.splitWidth == width { return }
+        placing = true
         split.setPosition(target, ofDividerAt: 0)
+        placing = false
+        failedPlacement = abs(leading.frame.width - target) >= 0.5 ? (target, width) : nil
     }
 
     private func enclosingSplitView() -> NSSplitView? {
