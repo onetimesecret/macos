@@ -1,3 +1,6 @@
+variables:
+  MACOS_GUI_RUNNER_TAG: macos-gui
+
 .checks:
   stage: check
   rules:
@@ -26,8 +29,6 @@
     - rustup show
 
 .macos-rust:
-  image: macos-26-xcode-26
-  tags: [saas-macos-medium-m1]
   variables:
     CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
     ONETIMEPAD_ENVIRONMENTS_DIR: "$CI_PROJECT_DIR/.ci-environments/$CI_JOB_ID"
@@ -50,6 +51,16 @@
       fi
     - rustup show
     - mkdir -p "$ONETIMEPAD_ENVIRONMENTS_DIR"
+
+.macos-gui-rust:
+  extends: .macos-rust
+  tags: ["$MACOS_GUI_RUNNER_TAG"]
+  resource_group: macos-gui
+
+.macos-hosted-rust:
+  extends: .macos-rust
+  image: macos-27-xcode-27
+  tags: [saas-macos-medium-m1]
 
 logic:
   extends: [.checks, .linux-rust]
@@ -77,7 +88,7 @@ logic:
     - cargo deny --manifest-path "target/comrak-advisories-$CI_PIPELINE_ID-$CI_JOB_ID/Cargo.toml" --locked --config "$CI_PROJECT_DIR/deny.toml" check
 
 platform:
-  extends: [.checks, .macos-rust]
+  extends: [.checks, .macos-gui-rust]
   variables:
     RUST_BACKTRACE: "1"
   script:
@@ -86,7 +97,7 @@ platform:
     - cargo test --workspace --features test-util -- --nocapture
 
 shell:
-  extends: [.checks, .macos-rust]
+  extends: [.checks, .macos-gui-rust]
   script:
     - ./scripts/build-core.sh --if-stale --test-util
     - swift build --package-path shell
@@ -96,8 +107,7 @@ shell:
     - bash scripts/ci/check-bundle.sh debug
 
 package-release:
-  extends: [.checks, .macos-rust]
-  image: macos-27-xcode-27
+  extends: [.checks, .macos-hosted-rust]
   script:
     - |
       version="$(xcodebuild -version | awk '$1 == "Xcode" {print $2}')" || version=
