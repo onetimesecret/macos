@@ -226,9 +226,10 @@ private final class DividerWatchView: NSView {
         }
     }
 
-    /// The person's width, or the ceiling when the split is too narrow for it.
+    /// The person's width, or the ceiling when the split is too narrow for it. Not while a drag is
+    /// waiting to be recorded: the divider is then where the person put it.
     private func place() {
-        guard let split, split.bounds.width > 0, split.arrangedSubviews.count > 1,
+        guard !recordPending, let split, split.bounds.width > 0, split.arrangedSubviews.count > 1,
               let leading = split.arrangedSubviews.first
         else { return }
         let width = split.bounds.width
