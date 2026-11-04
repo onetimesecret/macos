@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import os
 
 /// Shared native divider for the timeline and page content in both presentations.
 public struct TimelineSplitView<Rail: View, Content: View>: View {
@@ -110,6 +111,7 @@ private struct DividerWatch: NSViewRepresentable {
 }
 
 private final class DividerWatchView: NSView {
+    static let logger = Logger(subsystem: FormFactor.backdrop.loggerSubsystem, category: "timeline")
     /// The stored width at mount, then each divider move. `HSplitView` opens a pane at its
     /// minimum, so the watch places the divider itself.
     var preferredWidth: CGFloat = TimeRailView.width
@@ -200,7 +202,10 @@ private final class DividerWatchView: NSView {
         ) { [weak self, weak split] note in
             let userResize = (note.userInfo?[TimelineSplit.userResizeKey] as? NSNumber)?.boolValue == true
             let dividerMoved = note.userInfo?[TimelineSplit.dividerIndexKey] != nil
+            let keys = (note.userInfo?.keys).map { names in names.map { "\($0)" }.sorted().joined(separator: ",") } ?? ""
             MainActor.assumeIsolated {
+                // Case 13 reads these to learn which keys AppKit posts for a person's drag.
+                DividerWatchView.logger.debug("timeline split resized, userInfo keys: \(keys, privacy: .public)")
                 guard let watch = self, let split else { return }
                 watch.splitDidResize(split, userResize: userResize, dividerMoved: dividerMoved)
             }

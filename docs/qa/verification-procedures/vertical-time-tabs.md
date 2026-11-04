@@ -553,6 +553,11 @@ it as a drag or a left button is down. A VoiceOver adjustment presses no
 button, so if AppKit leaves the mark off, the divider returns to the
 stored width and step 8 fails. Record steps 8 and 9 in their own rows.
 
+During step 1, run
+`log stream --level debug --predicate 'subsystem == "dev.onetimesecret.pad" && category == "timeline"'`
+and record the `userInfo` keys logged for the drag. `NSSplitViewUserResizeKey`
+among them means AppKit marks the drag as the person's.
+
 1. With Timeline on, in the card, drag the divider slowly to about
    200 points over more than three seconds and release.
 2. Quit and relaunch, and raise the card.
@@ -580,10 +585,11 @@ its width without a drag; the divider fades with the rail and the page;
 the rail opens at its stored width with no visible jump from 110; the
 pad heading's sort menu and + fit inside the rail; on a pinned resting
 card the press leaves the divider and the stored width alone. Record
-whether the press raises the card: `NSSplitView` takes the press, and
-routing it to the card waits on an owned split view. Record whether the
-pointer shows the resize cursor over a resting card's divider; the
-stance comments call the resting card chrome-free.
+whether the press raises the card. If `NSSplitView` takes the press
+before the card's shield does, routing it to the card needs an AppKit
+shield or an owned split view. Record whether the pointer shows the
+resize cursor over a resting card's divider; the stance comments call
+the resting card chrome-free.
 VoiceOver's adjustment and a three-finger drag each move the divider,
 the divider stays where they left it, and a relaunch opens at that
 width. A press held still past three seconds leaves the divider where
@@ -650,6 +656,7 @@ an executed result.
 | | | 12 no repeated measurement during horizontal-only scrolling | Pending | Measurement trace required, not visual smoothness alone. |
 | | | 12 reading anchor with scroll bars always shown | Pending | Record the Show scroll bars setting. |
 | | | 13 slow drag followed and kept, relaunch restores it | Pending | Record whether the rail redraws smoothly during the drag on a long roll. |
+| | | 13 the drag's logged `userInfo` keys | Pending | Record the keys, and whether `NSSplitViewUserResizeKey` is among them. |
 | | | 13 a dragged width shown in the other presentation | Pending | |
 | | | 13 squeeze at the floor and recovery on widening | Pending | Both presentations. Record any lag or jitter of the divider during the live resize. |
 | | | 13 divider fades with the card; no jump on opening | Pending | |
