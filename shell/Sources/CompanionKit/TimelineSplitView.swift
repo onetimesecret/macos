@@ -127,9 +127,11 @@ private final class DividerWatchView: NSView {
         attach()
     }
 
+    /// Only until the split has been read once: afterwards its own non-drag resizes ask for placement,
+    /// and a drag that resizes this pane leaves `placementQueued` alone for the held-button check.
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        queuePlacement()
+        if lastSplitWidth == nil { queuePlacement() }
     }
 
     /// A stored width changed elsewhere, such as in the other presentation, unless this split's
