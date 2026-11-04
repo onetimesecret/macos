@@ -105,6 +105,8 @@ private final class DividerWatchView: NSView {
     var leftMouseIsDown: @MainActor () -> Bool = { false }
     private weak var split: NSSplitView?
     private var placementQueued = false
+    /// Set by a resize that changed the split's own width, until the next main-queue turn.
+    private var splitResizedThisTurn = false
     /// Set across the watch's own `setPosition`.
     private var placing = false
     private var recordPending = false
@@ -135,11 +137,10 @@ private final class DividerWatchView: NSView {
         attach()
     }
 
-    /// Not mid-drag: a placement queued while the button is held or a record waits would block the
-    /// held-button check, and the split's own resizes ask again once the drag ends.
+    /// Not while a drag waits to be recorded; `place()` would skip it, and the record places again.
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        if !recordPending && !leftMouseIsDown() { queuePlacement() }
+        if !recordPending { queuePlacement() }
     }
 
     /// A stored width changed elsewhere, such as in the other presentation, unless this split's
@@ -202,7 +203,9 @@ private final class DividerWatchView: NSView {
         guard !placing else { return }
         let paneMoved = leadingWidth.map { abs($0 - (lastLeadingWidth ?? $0)) >= 0.5 } ?? false
         let splitUnchanged = lastSplitWidth.map { abs($0 - width) < 0.5 } ?? false
-        let heldMove = dividerMoved && !placementQueued && splitUnchanged && paneMoved && leftMouseIsDown()
+        if lastSplitWidth != nil, !splitUnchanged { markSplitResized() }
+        // A clamp that follows a window resize in the same turn is the split's, not the person's.
+        let heldMove = dividerMoved && !splitResizedThisTurn && splitUnchanged && paneMoved && leftMouseIsDown()
         guard userResize || heldMove, split.arrangedSubviews.count > 1,
               let leading = split.arrangedSubviews.first, isDescendant(of: leading)
         else {
@@ -236,6 +239,12 @@ private final class DividerWatchView: NSView {
         recordPending = false
         onMove?(preferredWidth)
         if thenPlace { queuePlacement() }
+    }
+
+    private func markSplitResized() {
+        guard !splitResizedThisTurn else { return }
+        splitResizedThisTurn = true
+        DispatchQueue.main.async { [weak self] in self?.splitResizedThisTurn = false }
     }
 
     /// Places the divider on the next main-queue turn, outside the split's own resize pass.
