@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 import re
 import tempfile
@@ -15,7 +16,7 @@ class MarkedADRTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="marked-adr-")
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        self.root = Path(temporary.name).resolve()
         self.path = self.root / "0001-example.md"
         self.document = """---
 documentation_status: needs-review
@@ -51,9 +52,22 @@ Triggers.
         self.path.write_text(self.mark(self.document.replace("accepted", "unknown")), encoding="utf-8")
         self.assertTrue(any("Status" in problem for problem in LINT.check(self.path)[0]))
 
-    def test_links_to_marked_headings_resolve(self):
+    def test_plain_fragments_do_not_resolve_to_marked_headings(self):
         self.path.write_text(self.document + "\n[Decision](target.md#decision)\n", encoding="utf-8")
         (self.root / "target.md").write_text("## " + self.mark("Decision") + "\n", encoding="utf-8")
+        with patch.object(LINT, "REPO_ROOT", self.root):
+            problems, _ = LINT.check(self.path)
+        self.assertTrue(any("link fragment has no matching heading" in problem for problem in problems))
+
+    def test_marked_anchors_match_github_rendered_ids(self):
+        fixture = json.loads((Path(__file__).parent / "fixtures" / "github-marked-anchors.json").read_text())
+        for example in fixture["headings"]:
+            with self.subTest(heading=example["text"]):
+                self.assertEqual(LINT.slugify(example["text"]), example["anchor"])
+
+    def test_plain_fragments_resolve_to_plain_headings(self):
+        self.path.write_text(self.document + "\n[Decision](target.md#decision)\n", encoding="utf-8")
+        (self.root / "target.md").write_text("## Decision\n", encoding="utf-8")
         with patch.object(LINT, "REPO_ROOT", self.root):
             self.assertEqual(LINT.check(self.path)[0], [])
 

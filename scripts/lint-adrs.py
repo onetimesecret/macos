@@ -61,7 +61,7 @@ DOC_STATUS_LINE = re.compile(
 VISIBLE_DOC_STATUS = re.compile(r"documentation[_ -]status", re.IGNORECASE)
 # A Markdown inline link, reduced to its text when a heading is slugged.
 INLINE_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
-SLUG_STRIP = re.compile(r"[^\w\- ]", re.UNICODE)
+SLUG_STRIP = re.compile(r"[^\w\- \U000E0100\U000E0101]", re.UNICODE)
 PROVENANCE_MARKS = re.compile(r"[\U000E0100\U000E0101]")
 
 
@@ -128,7 +128,6 @@ def clean_link_target(target: str) -> str:
 def slugify(heading: str) -> str:
     """Slug a heading the way GitHub anchors do."""
     text = INLINE_LINK.sub(r"\1", heading).strip()
-    text = PROVENANCE_MARKS.sub("", text)
     text = SLUG_STRIP.sub("", text.lower())
     return text.replace(" ", "-")
 
