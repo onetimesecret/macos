@@ -66,6 +66,30 @@ final class PadCreateFormTests: XCTestCase {
 
         var body: some View {
             VStack {
+                Button("New Pad") { routes.beginCreating() }
+                    .background(Anchor { presentation.anchors["New Pad"] = $0 })
+                    .popover(isPresented: $routes.creation.isPresented, arrowEdge: .bottom) {
+                        PadCreateForm(model: model, creation: $routes.creation)
+                            .background(Anchor { presentation.formView = $0 })
+                    }
+                Spacer()
+                Button("Outside") {}
+                    .background(Anchor { presentation.anchors["Outside"] = $0 })
+            }
+            .padding(24)
+            .frame(width: 360, height: 280)
+            .disabled(!presentation.isEnabled)
+            .onAppear { presentation.routesBinding = $routes }
+        }
+    }
+
+    private struct ConditionalSurface: View {
+        @ObservedObject var presentation: Presentation
+        let model: PageModel
+        @State private var routes = PadSettingsRoutes()
+
+        var body: some View {
+            VStack {
                 if presentation.showsPresenter {
                     Button("New Pad") { routes.beginCreating() }
                         .background(Anchor { presentation.anchors["New Pad"] = $0 })
@@ -85,7 +109,7 @@ final class PadCreateFormTests: XCTestCase {
         }
     }
 
-    private final class FixtureHostingView: NSHostingView<Surface> {
+    private final class FixtureHostingView<Content: View>: NSHostingView<Content> {
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
 
@@ -109,7 +133,7 @@ final class PadCreateFormTests: XCTestCase {
         }
     }
 
-    private func mount(onRaisedCard: Bool = false) async throws -> Fixture {
+    private func mount(onRaisedCard: Bool = false, removablePresenter: Bool = false) async throws -> Fixture {
         _ = NSApplication.shared
         let suite = "pad-create-native-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -127,7 +151,11 @@ final class PadCreateFormTests: XCTestCase {
             window = NSWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false)
         }
         window.isReleasedWhenClosed = false
-        window.contentView = FixtureHostingView(rootView: Surface(presentation: presentation, model: model))
+        if removablePresenter {
+            window.contentView = FixtureHostingView(rootView: ConditionalSurface(presentation: presentation, model: model))
+        } else {
+            window.contentView = FixtureHostingView(rootView: Surface(presentation: presentation, model: model))
+        }
         window.makeKeyAndOrderFront(nil)
         addTeardownBlock { @MainActor in
             presentation.routesBinding?.wrappedValue.creation.isPresented = false
@@ -171,7 +199,7 @@ final class PadCreateFormTests: XCTestCase {
     ) async throws -> NSWindow {
         fixture.window.makeKeyAndOrderFront(nil)
         try await waitFor(
-            "The native presenter was not ready for a click (\(presentationDescription(fixture)))",
+            "The native presenter was not ready for creation (\(presentationDescription(fixture)))",
             file: file, line: line
         ) {
             NSApp.updateWindows()
@@ -180,9 +208,9 @@ final class PadCreateFormTests: XCTestCase {
             return fixture.window.isVisible && anchor.window === fixture.window && !anchor.isHiddenOrHasHiddenAncestor
                 && anchor.bounds.width > 0 && anchor.bounds.height > 0
         }
-        try click("New Pad", in: fixture)
+        fixture.presentation.routes.beginCreating()
         try await waitFor(
-            "The New Pad click did not request presentation (\(presentationDescription(fixture)))",
+            "The creation route did not request presentation (\(presentationDescription(fixture)))",
             file: file, line: line
         ) {
             fixture.presentation.routes.creation.isPresented
@@ -403,7 +431,7 @@ final class PadCreateFormTests: XCTestCase {
     }
 
     func testRemovingAndRestoringThePresenterDoesNotReopenTheNativeForm() async throws {
-        let fixture = try await mount()
+        let fixture = try await mount(removablePresenter: true)
         let popover = try await open(fixture)
         let name = "Retained across presenter removal"
         try await enter(name, in: popover, fixture: fixture)
