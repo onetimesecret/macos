@@ -1982,7 +1982,7 @@ final class DayHeaderView: NSView {
     /// rail already speaks the day; this speaks the page, which is what
     /// the rail deliberately does not carry. Pure.
     nonisolated static func spokenHeader(
-        spokenLabel: String, detail: String = "", title: String, remainingLabel: String
+        spokenLabel: String, detail: String, title: String, remainingLabel: String
     ) -> String {
         var parts = [spokenLabel, detail].filter { !$0.isEmpty }
         guard !title.isEmpty else { return parts.joined(separator: ", ") }

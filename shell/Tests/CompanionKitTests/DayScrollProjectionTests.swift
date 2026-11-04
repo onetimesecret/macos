@@ -320,19 +320,19 @@ final class DayScrollProjectionTests: XCTestCase {
     func testAHeaderSpeaksItsDayItsPageAndItsCountdown() {
         XCTAssertEqual(
             DayHeaderView.spokenHeader(
-                spokenLabel: "yesterday", title: "deploy notes", remainingLabel: "4h"
+                spokenLabel: "yesterday", detail: "", title: "deploy notes", remainingLabel: "4h"
             ),
             "yesterday, deploy notes, 4h left"
         )
         XCTAssertEqual(
             DayHeaderView.spokenHeader(
-                spokenLabel: "yesterday", title: "deploy notes", remainingLabel: ""
+                spokenLabel: "yesterday", detail: "", title: "deploy notes", remainingLabel: ""
             ),
             "yesterday, deploy notes",
             "a slot with no clock has no countdown to speak, as the strip already says"
         )
         XCTAssertEqual(
-            DayHeaderView.spokenHeader(spokenLabel: "today", title: "", remainingLabel: ""),
+            DayHeaderView.spokenHeader(spokenLabel: "today", detail: "", title: "", remainingLabel: ""),
             "today",
             "today with nothing on it is a place, and a place has only its name"
         )
