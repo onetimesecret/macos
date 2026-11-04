@@ -72,9 +72,11 @@ final class PrimaryEditorWindowControllerTests: XCTestCase {
     /// `TimelineSplitViewTests.testTheRailYieldsToThePageAtTheWindowFloor` shrinks the split to
     /// this width; at both floors the rail's start width and the page's minimum fit side by side.
     func testTheWindowFloorsFitTheTimelineAndThePage() {
+        // The narrowest split in which the rail's start width and the page's minimum both fit.
+        let minimumSplitWidth = TimeRailView.width + TimelineSplit.dividerWidth + TimelineSplit.pageMinWidth
         for floor in [PrimaryEditorWindowController.minimumSize.width, BackdropGeometry.minWidth] {
             XCTAssertEqual(floor, 360)
-            XCTAssertGreaterThanOrEqual(floor, TimelineSplit.minimumSplitWidth)
+            XCTAssertGreaterThanOrEqual(floor, minimumSplitWidth)
             XCTAssertEqual(
                 floor - TimelineSplit.railCeiling(splitWidth: floor) - TimelineSplit.dividerWidth,
                 TimelineSplit.pageMinWidth)

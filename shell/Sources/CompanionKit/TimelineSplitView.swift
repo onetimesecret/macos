@@ -65,9 +65,6 @@ enum TimelineSplit {
     /// The thin divider's thickness.
     static let dividerWidth: CGFloat = 1
 
-    /// The narrowest split in which the rail's start width and the page's minimum both fit.
-    static let minimumSplitWidth = TimeRailView.width + dividerWidth + pageMinWidth
-
     /// The rail's widest allowed width in a split this wide, never under the rail's start width.
     static func railCeiling(splitWidth: CGFloat, dividerThickness: CGFloat = dividerWidth) -> CGFloat {
         guard splitWidth > 0 else { return TimeRailView.maxWidth }
@@ -136,6 +133,8 @@ private final class DividerWatchView: NSView {
     private weak var split: NSSplitView?
     /// Set by SwiftUI's dismantle, after which the watch does not attach again.
     private var retired = false
+    /// Set once the watch has logged that it found no split view above it.
+    private var reportedNoSplit = false
     private var placementQueued = false
     /// Set by a resize that changed the split's own width, until the next main-queue turn.
     private var splitResizedThisTurn = false
@@ -180,6 +179,11 @@ private final class DividerWatchView: NSView {
         super.setFrameSize(newSize)
         if split == nil, !retired, window != nil {
             attach()
+            // A SwiftUI that stops backing `HSplitView` with an `NSSplitView` leaves the watch inert; say so once.
+            if split == nil, !reportedNoSplit, newSize.width > 0 {
+                reportedNoSplit = true
+                TimelineSplit.logger.notice("timeline divider watch found no split view above it")
+            }
         } else if !recordPending && !placing {
             queuePlacement()
         }

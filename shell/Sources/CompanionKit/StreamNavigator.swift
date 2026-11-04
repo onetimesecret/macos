@@ -297,16 +297,16 @@ public enum StreamNavigator {
 
     // MARK: What a node says
 
-    /// Hover's first line: the day's words, then the full local date and seconds (D-38's day and minute).
-    static func timeReading(of node: Node) -> String {
-        [node.spokenDay, node.detailStamp].filter { !$0.isEmpty }.joined(separator: " · ")
+    /// The day's words, then the full local date and seconds (D-38's day and minute), for hover and VoiceOver.
+    static func timeParts(of node: Node) -> [String] {
+        [node.spokenDay, node.detailStamp].filter { !$0.isEmpty }
     }
 
     /// Hover reads the day and the full time, then the keyboard shortcut and the title when available.
     @MainActor
     public static func help(for node: Node, chord: Keystroke?) -> String {
         guard node.hasPage else { return TimeUnitTab.todayHelp(chord: chord) }
-        var first = timeReading(of: node)
+        var first = timeParts(of: node).joined(separator: " · ")
         if let chord { first += " (\(chord.displaySymbol))" }
         guard !node.title.isEmpty else { return first }
         return "\(first)\n\(node.title)"
@@ -316,7 +316,7 @@ public enum StreamNavigator {
     /// and the retained state. The gauge supplies its own accessibility value.
     public static func spoken(for node: Node) -> String {
         guard node.hasPage else { return "\(node.spokenDay), no page" }
-        var parts = [node.spokenDay, node.detailStamp].filter { !$0.isEmpty }
+        var parts = timeParts(of: node)
         if !node.title.isEmpty { parts.append(node.title) }
         if node.trailing { parts.append("past seven days, retained because it holds content") }
         return parts.joined(separator: ", ")
