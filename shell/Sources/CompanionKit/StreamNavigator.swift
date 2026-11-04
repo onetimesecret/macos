@@ -59,6 +59,8 @@ public enum StreamNavigator {
         /// empty place. The day is not repeated: it stands above the
         /// node in the day's words.
         public let stamp: String
+        /// Full local date and time for hover and assistive technology.
+        public let detailStamp: String
         /// The page's title as the core resolves it (D-12), for the
         /// tooltip, when it is a name or a first line. Empty for the
         /// empty place and for a placeholder, which would only repeat
@@ -118,7 +120,8 @@ public enum StreamNavigator {
             guard !unit.pageIDs.isEmpty else {
                 nodes.append(Node(
                     page: nil, tab: nil, bucket: unit.bucket, dayIndex: dayIndex,
-                    dayLabel: unit.railLabel, spokenDay: unit.spokenLabel, stamp: "", title: "",
+                    dayLabel: unit.railLabel, spokenDay: unit.spokenLabel,
+                    stamp: "", detailStamp: "", title: "",
                     firstOfDay: true, active: surfaceShowsRoll && !anyPageDrawn,
                     emptyDays: gap,
                     fractionRemaining: 0, paused: false, toppedUp: false, lastHour: false,
@@ -137,6 +140,9 @@ public enum StreamNavigator {
                     page: page, tab: tab, bucket: unit.bucket, dayIndex: dayIndex,
                     dayLabel: unit.railLabel, spokenDay: unit.spokenLabel,
                     stamp: stamps[index],
+                    detailStamp: summary?.pageCreatedMs.map {
+                        detailedStamp(createdMs: $0, timeZone: timeZone)
+                    } ?? "",
                     title: title(of: summary),
                     firstOfDay: index == 0, active: surfaceShowsRoll && selection == tab,
                     emptyDays: index == 0 ? gap : 0,
@@ -223,6 +229,15 @@ public enum StreamNavigator {
         return fallback.string(from: date)
     }
 
+    /// The expanded reading for timeline and checkpoint tooltips and VoiceOver: the full date
+    /// and the time with seconds, in the person's locale and system time format.
+    /// `nil` is the person's own, autoupdating locale; a test passes a fixed one.
+    static func detailedStamp(
+        createdMs: UInt64, locale: Locale? = nil, timeZone: TimeZone = .current
+    ) -> String {
+        DetailedStampFormatterCache.reading(createdMs: createdMs, locale: locale, timeZone: timeZone)
+    }
+
     /// The stamps for one day's pages, in the day's order: the short
     /// form for each, and the fine form for every page whose short
     /// form another page on the same day also reads, so no two gutters
@@ -282,25 +297,26 @@ public enum StreamNavigator {
 
     // MARK: What a node says
 
-    /// The tooltip: the day and the minute, the chord that reaches the
-    /// day when the keymap bound one, and the page's title on a second
-    /// line. The affordance is revealed, the page is not: the title is
-    /// the one line the gutter already shows.
+    /// The day's words, then the full local date and seconds (D-38's day and minute), for hover and VoiceOver.
+    static func timeParts(of node: Node) -> [String] {
+        [node.spokenDay, node.detailStamp].filter { !$0.isEmpty }
+    }
+
+    /// Hover reads the day and the full time, then the keyboard shortcut and the title when available.
     @MainActor
     public static func help(for node: Node, chord: Keystroke?) -> String {
         guard node.hasPage else { return TimeUnitTab.todayHelp(chord: chord) }
-        var first = "\(node.spokenDay) · \(node.stamp)"
+        var first = timeParts(of: node).joined(separator: " · ")
         if let chord { first += " (\(chord.displaySymbol))" }
         guard !node.title.isEmpty else { return first }
         return "\(first)\n\(node.title)"
     }
 
-    /// What VoiceOver reads for a node: which day, which minute, what
-    /// the page is called, and that it is retained past the window
-    /// when it is. The gauge rides the value, in words, beside it.
+    /// VoiceOver reads the relative day as a navigation cue, then the full date and time, the title,
+    /// and the retained state. The gauge supplies its own accessibility value.
     public static func spoken(for node: Node) -> String {
         guard node.hasPage else { return "\(node.spokenDay), no page" }
-        var parts = [node.spokenDay, node.stamp]
+        var parts = timeParts(of: node)
         if !node.title.isEmpty { parts.append(node.title) }
         if node.trailing { parts.append("past seven days, retained because it holds content") }
         return parts.joined(separator: ", ")
@@ -952,6 +968,53 @@ public enum StreamNavigator {
     /// motion rule the surface has (D-02).
     public static func jumpDuration(reduceMotion: Bool) -> TimeInterval {
         reduceMotion ? 0 : 0.16
+    }
+}
+
+/// One medium-style `DateFormatter` per (locale, time zone), on `StampFormatterCache`'s terms, and
+/// each page's reading, since the rail and the gutters ask again on every refresh.
+private enum DetailedStampFormatterCache {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var cache: [String: DateFormatter] = [:]
+    nonisolated(unsafe) private static var readings: [String: String] = [:]
+    private static let readingLimit = 1_024
+    /// The key is only the identifier, so a change to the person's locale settings empties the cache;
+    /// a time-zone change empties it too, so the old zone's formatter and readings do not linger.
+    nonisolated(unsafe) private static let localeWatch = [
+        NSLocale.currentLocaleDidChangeNotification, .NSSystemTimeZoneDidChange,
+    ].map { name in
+        NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { _ in
+            DetailedStampFormatterCache.lock.lock()
+            DetailedStampFormatterCache.cache.removeAll()
+            DetailedStampFormatterCache.readings.removeAll()
+            DetailedStampFormatterCache.lock.unlock()
+        }
+    }
+
+    static func reading(createdMs: UInt64, locale: Locale?, timeZone: TimeZone) -> String {
+        _ = localeWatch
+        // The autoupdating locale keys apart from a fixed one with the same identifier: only it
+        // reads the person's 24-hour and format overrides.
+        let key = "\(timeZone.identifier)\u{1F}\(locale?.identifier ?? "\u{1F}autoupdating")"
+        let readingKey = "\(key)\u{1F}\(createdMs)"
+        lock.lock()
+        defer { lock.unlock() }
+        if let hit = readings[readingKey] { return hit }
+        let formatter: DateFormatter
+        if let hit = cache[key] {
+            formatter = hit
+        } else {
+            formatter = DateFormatter()
+            formatter.locale = locale ?? .autoupdatingCurrent
+            formatter.timeZone = timeZone
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .medium
+            cache[key] = formatter
+        }
+        let reading = formatter.string(from: Date(timeIntervalSince1970: Double(createdMs) / 1000))
+        if readings.count >= readingLimit { readings.removeAll(keepingCapacity: true) }
+        readings[readingKey] = reading
+        return reading
     }
 }
 

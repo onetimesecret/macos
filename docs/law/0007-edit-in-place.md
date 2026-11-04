@@ -12,6 +12,7 @@ consumed-by:
   - docs/development/sealed-objects-core-interface.md (the name's routes and the keys holder's predicate)
   - docs/mockups/sealed-name-and-note.md (the drawn states; not authoritative)
 sources:
+  - the maintainer's original 2026-11-03 chat instruction approving implementation of the anchored New Pad form (primary)
   - the maintainer's 2026-10-31 instruction to address the 28-item sealed-content UX audit (quoted in the interface revision)
   - docs/spec/design/2026-1031-sealed-content-ux-revision.md (presentation decisions; unchanged boundary decisions reference their immutable pre-task sources)
   - the maintainer's instruction in the 2026-10-13 design conversation (primary)
@@ -23,7 +24,7 @@ sources:
   - shell/Sources/CompanionKit/TabRename.swift (one rule for every field's ending; `TabRename.Field`, the SwiftUI fields' state)
   - shell/Sources/CompanionKit/DayScrollView.swift (`DayHeaderView.beginRename`, `endRename`, `opensRename`, `keyboardToReturn`, `words`, `seat`, `drawsTitle`)
   - shell/Sources/CompanionKit/TabStripView.swift (`beginRename`, `renameField`, `endRename`)
-  - shell/Sources/CompanionKit/PadPickerView.swift (`PadRename`, the row's field; `PadNameDraft`; `PadCreateSheet`, the create sheet)
+  - shell/Sources/CompanionKit/PadPickerView.swift (`PadRename`, the row's field; `PadNameDraft`; `PadCreation` and `PadCreateForm`, the anchored creation form)
   - shell/Sources/CompanionKit/PadSettingsView.swift (the Pads tab of Settings; `PadSettingsRoutes`, its routes; the row's field and the refusal under it)
   - shell/Sources/CompanionKit/PageModel.swift (`renameTab`, `renamePad`, `setChipName`)
   - shell/Sources/CompanionKit/InkEditorView.swift (`InkTextView.answersChords`, whether the page's chords and Edit menu actions are its own to answer)
@@ -121,16 +122,31 @@ the first tenet (the app is furniture, never interrupts) forbids.
   takes the seat and the default follows it to the right.
 
 Exemption: creating a pad has no seat to edit in until a new row exists
-for it. It stays as built, a sheet, until a contract row gives it a seat;
-the maintainer's instruction names the pad list's Rename only.
+for it. T󠄁h󠄁e󠄁 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁3󠄁 a󠄁p󠄁p󠄁r󠄁o󠄁v󠄁a󠄁l󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁s󠄁 i󠄁t󠄁s󠄁 s󠄁h󠄁e󠄁e󠄁t󠄁 w󠄁i󠄁t󠄁h󠄁 a f󠄁o󠄁r󠄁m󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁e󠄁d󠄁 t󠄁o󠄁
+the pad p󠄁i󠄁c󠄁k󠄁e󠄁r󠄁,󠄁 o󠄁r󠄁 t󠄁o󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 i󠄁n󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁l󠄁o󠄁w󠄁 i󠄁s󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁
+f󠄁r󠄁o󠄁m󠄁 r󠄁e󠄁n󠄁a󠄁m󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁 p󠄁a󠄁d󠄁 i󠄁n󠄁 i󠄁t󠄁s󠄁 r󠄁o󠄁w󠄁.󠄁
 
 ## The contract
 
 The table is the test list. Tests are cited by file and function; a row
 without a test says what it is owed by.
 
+E󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 P󠄁R󠄁 #󠄁3󠄁4󠄁3󠄁 i󠄁t󠄁e󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 i󠄁n󠄁t󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁d󠄁 g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁l󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁-󠄁e󠄁d󠄁i󠄁t󠄁o󠄁r󠄁 p󠄁a󠄁d󠄁-󠄁d󠄁i󠄁g󠄁i󠄁t󠄁 s󠄁u󠄁p󠄁p󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁.󠄁
+T󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁e󠄁s󠄁 u󠄁n󠄁r󠄁e󠄁l󠄁a󠄁t󠄁e󠄁d󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁s󠄁'󠄁 b󠄁a󠄁s󠄁e󠄁l󠄁i󠄁n󠄁e󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁 a󠄁n󠄁d󠄁 s󠄁u󠄁p󠄁p󠄁r󠄁e󠄁s󠄁s󠄁e󠄁s󠄁 p󠄁a󠄁d󠄁 d󠄁i󠄁g󠄁i󠄁t󠄁s󠄁
+f󠄁o󠄁r󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁s󠄁.󠄁 E󠄁a󠄁c󠄁h󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁r󠄁 o󠄁w󠄁n󠄁s󠄁 i󠄁t󠄁s󠄁 o󠄁w󠄁n󠄁 `PadCreation` v󠄁a󠄁l󠄁u󠄁e󠄁;󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁
+r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁 a󠄁n󠄁d󠄁 t󠄁y󠄁p󠄁e󠄁.󠄁 T󠄁h󠄁e󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁d󠄁 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁3󠄁 m󠄁a󠄁i󠄁n󠄁t󠄁a󠄁i󠄁n󠄁e󠄁r󠄁 a󠄁p󠄁p󠄁r󠄁o󠄁v󠄁a󠄁l󠄁
+c󠄁o󠄁n󠄁c󠄁e󠄁r󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁e󠄁d󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁a󠄁n󠄁 e󠄁s󠄁t󠄁a󠄁b󠄁l󠄁i󠄁s󠄁h󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁l󠄁
+f󠄁i󠄁e󠄁l󠄁d󠄁-󠄁e󠄁d󠄁i󠄁t󠄁o󠄁r󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁 a󠄁s󠄁 a󠄁n󠄁 a󠄁p󠄁p󠄁r󠄁o󠄁v󠄁e󠄁d󠄁 b󠄁a󠄁s󠄁e󠄁l󠄁i󠄁n󠄁e󠄁.󠄁
+
+
 | Interaction | Class | Expected behaviour | Pinned by |
 | --- | --- | --- | --- |
+| a󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁r󠄁'󠄁s󠄁 e󠄁n󠄁a󠄁b󠄁l󠄁e󠄁d󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 b󠄁e󠄁c󠄁o󠄁m󠄁e󠄁s󠄁 f󠄁a󠄁l󠄁s󠄁e󠄁 | k󠄁e󠄁e󠄁p󠄁i󠄁n󠄁g󠄁 | d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁 t󠄁h󠄁e󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁o󠄁r󠄁m󠄁 p󠄁a󠄁s󠄁s󠄁i󠄁v󠄁e󠄁l󠄁y󠄁,󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁i󠄁n󠄁g󠄁 i󠄁t󠄁s󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 a󠄁n󠄁d󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁i󠄁n󠄁g󠄁 a󠄁t󠄁t󠄁e󠄁m󠄁p󠄁t󠄁e󠄁d󠄁-󠄁s󠄁u󠄁b󠄁m󠄁i󠄁t󠄁/󠄁f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁;󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 w󠄁o󠄁r󠄁k󠄁 i󠄁s󠄁 c󠄁a󠄁n󠄁c󠄁e󠄁l󠄁l󠄁e󠄁d󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁e󠄁d󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 | `PadCreateFormTests.swift` `testDisablingThePresenterDismissesTheFormAndRetainsItsDraft`,󠄁 `testNativeOutsideDismissalRetainsTheDraftForReopening`;󠄁 t󠄁h󠄁e󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 c󠄁a󠄁r󠄁d󠄁-󠄁r󠄁e󠄁s󠄁t󠄁 a󠄁n󠄁d󠄁 a󠄁p󠄁p󠄁-󠄁d󠄁e󠄁a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 p󠄁a󠄁t󠄁h󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 o󠄁w󠄁e󠄁d󠄁 i󠄁n󠄁 [r󠄁e󠄁n󠄁a󠄁m󠄁e󠄁 i󠄁n󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁](../qa/verification-procedures/rename-in-place.md) |
+| a󠄁 p󠄁a󠄁d󠄁-󠄁n󠄁u󠄁m󠄁b󠄁e󠄁r󠄁 s󠄁h󠄁o󠄁r󠄁t󠄁c󠄁u󠄁t󠄁 i󠄁n󠄁 a󠄁n󠄁o󠄁t󠄁h󠄁e󠄁r󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 w󠄁i󠄁t󠄁h󠄁 n󠄁o󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁 | d󠄁r󠄁a󠄁f󠄁t󠄁i󠄁n󠄁g󠄁 | p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁-󠄁P󠄁R󠄁 p󠄁a󠄁d󠄁 s󠄁h󠄁o󠄁r󠄁t󠄁c󠄁u󠄁t󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁;󠄁 e󠄁d󠄁i󠄁t󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁 u󠄁n󠄁r󠄁e󠄁l󠄁a󠄁t󠄁e󠄁d󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 a󠄁l󠄁o󠄁n󠄁e󠄁 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 t󠄁r󠄁i󠄁g󠄁g󠄁e󠄁r󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 s󠄁u󠄁p󠄁p󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 | `PadPickerTests.swift` `testOtherFieldEditorsKeepExistingPadShortcutActivation` |
+| a󠄁 p󠄁a󠄁d󠄁-󠄁n󠄁u󠄁m󠄁b󠄁e󠄁r󠄁 s󠄁h󠄁o󠄁r󠄁t󠄁c󠄁u󠄁t󠄁 d󠄁u󠄁r󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁 a󠄁p󠄁p󠄁-󠄁m󠄁o󠄁d󠄁a󠄁l󠄁 s󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 o󠄁r󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 a󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 h󠄁a󠄁s󠄁 a󠄁 s󠄁h󠄁e󠄁e󠄁t󠄁 | d󠄁r󠄁a󠄁f󠄁t󠄁i󠄁n󠄁g󠄁 | r󠄁e󠄁t󠄁u󠄁r󠄁n󠄁 t󠄁h󠄁e󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁 u󠄁n󠄁c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁d󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 a󠄁p󠄁p󠄁l󠄁y󠄁i󠄁n󠄁g󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 s󠄁u󠄁p󠄁p󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 w󠄁h󠄁e󠄁n󠄁 a󠄁 l󠄁i󠄁v󠄁e󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁 i󠄁s󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁;󠄁 t󠄁h󠄁i󠄁s󠄁 h󠄁a󠄁n󠄁d󠄁l󠄁e󠄁r󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 n󠄁e󠄁i󠄁t󠄁h󠄁e󠄁r󠄁 t󠄁h󠄁e󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁e󠄁d󠄁 p󠄁a󠄁d󠄁 n󠄁o󠄁r󠄁 p󠄁a󠄁g󠄁e󠄁 | `PadPickerTests.swift` `testClaimedPadDigitsPassThroughCreationDuringAModalSession`,󠄁 `testClaimedPadDigitsPassThroughCreationWhileAnotherWindowHasASheet` |
+| a󠄁 p󠄁a󠄁d󠄁-󠄁n󠄁u󠄁m󠄁b󠄁e󠄁r󠄁 s󠄁h󠄁o󠄁r󠄁t󠄁c󠄁u󠄁t󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 a󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 f󠄁o󠄁r󠄁m󠄁 i󠄁s󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 | d󠄁r󠄁a󠄁f󠄁t󠄁i󠄁n󠄁g󠄁 | o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 t󠄁h󠄁e󠄁 m󠄁o󠄁d󠄁a󠄁l󠄁/󠄁s󠄁h󠄁e󠄁e󠄁t󠄁 c󠄁a󠄁s󠄁e󠄁 a󠄁b󠄁o󠄁v󠄁e󠄁,󠄁 c󠄁o󠄁n󠄁s󠄁u󠄁m󠄁e󠄁 a󠄁 p󠄁a󠄁d󠄁-󠄁o󠄁w󠄁n󠄁e󠄁d󠄁 C󠄁o󠄁m󠄁m󠄁a󠄁n󠄁d󠄁-󠄁d󠄁i󠄁g󠄁i󠄁t󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 a󠄁n󠄁y󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁'󠄁s󠄁 l󠄁i󠄁v󠄁e󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁 b󠄁e󠄁l󠄁o󠄁n󠄁g󠄁s󠄁 t󠄁o󠄁 a󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁,󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁i󠄁n󠄁g󠄁 w󠄁h󠄁e󠄁n󠄁 i󠄁t󠄁s󠄁 n󠄁a󠄁m󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 h󠄁a󠄁s󠄁 l󠄁o󠄁s󠄁t󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁;󠄁 a󠄁 c󠄁l󠄁o󠄁s󠄁e󠄁d󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁,󠄁 d󠄁e󠄁t󠄁a󠄁c󠄁h󠄁e󠄁d󠄁 v󠄁i󠄁e󠄁w󠄁 o󠄁r󠄁 e󠄁x󠄁p󠄁i󠄁r󠄁e󠄁d󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁 n󠄁o󠄁 l󠄁o󠄁n󠄁g󠄁e󠄁r󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁i󠄁b󠄁u󠄁t󠄁e󠄁s󠄁 t󠄁o󠄁 s󠄁u󠄁s󠄁p󠄁e󠄁n󠄁s󠄁i󠄁o󠄁n󠄁 e󠄁v󠄁e󠄁n󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁 c󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁s󠄁;󠄁 h󠄁i󠄁d󠄁d󠄁e󠄁n󠄁 e󠄁n󠄁t󠄁r󠄁i󠄁e󠄁s󠄁 n󠄁e󠄁e󠄁d󠄁 n󠄁o󠄁t󠄁 b󠄁e󠄁 p󠄁h󠄁y󠄁s󠄁i󠄁c󠄁a󠄁l󠄁l󠄁y󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁e󠄁d󠄁,󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 n󠄁o󠄁r󠄁m󠄁a󠄁l󠄁 e󠄁n󠄁d󠄁i󠄁n󠄁g󠄁s󠄁 s󠄁t󠄁i󠄁l󠄁l󠄁 u󠄁n󠄁r󠄁e󠄁g󠄁i󠄁s󠄁t󠄁e󠄁r󠄁 a󠄁n󠄁d󠄁 n󠄁i󠄁l󠄁 w󠄁e󠄁a󠄁k󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 a󠄁r󠄁e󠄁 p󠄁r󠄁u󠄁n󠄁e󠄁d󠄁 | `PadPickerTests.swift` `testClaimedPadDigitsAreConsumedWhileAnyCreationFormIsPresented`,󠄁 `testClosingTheCreationWindowResumesPadDigitsWithoutADismissalCallback`,󠄁 `testCreationRegistrationTracksLateAttachedAndDetachedNativeViews`,󠄁 `testCreationRegistrationDoesNotRetainAnExpiredAnchor`;󠄁 `PadCreateFormTests.swift` `testClosingThePresenterWindowDismissesAndUnregistersTheNativeForm`,󠄁 `testRemovingThePresenterHostDismissesAndUnregistersTheNativeForm`;󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁-󠄁f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁 a󠄁p󠄁p󠄁-󠄁s󠄁u󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 o󠄁w󠄁e󠄁d󠄁 i󠄁n󠄁 [r󠄁e󠄁n󠄁a󠄁m󠄁e󠄁 i󠄁n󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁](../qa/verification-procedures/rename-in-place.md) |
+| r󠄁e󠄁t󠄁u󠄁r󠄁n󠄁i󠄁n󠄁g󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 t󠄁o󠄁 a󠄁n󠄁 a󠄁l󠄁r󠄁e󠄁a󠄁d󠄁y󠄁 o󠄁p󠄁e󠄁n󠄁e󠄁d󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 n󠄁a󠄁m󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 | d󠄁r󠄁a󠄁f󠄁t󠄁i󠄁n󠄁g󠄁 | o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 w󠄁h󠄁o󠄁l󠄁e󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁;󠄁 s󠄁u󠄁b󠄁s󠄁e󠄁q󠄁u󠄁e󠄁n󠄁t󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 d󠄁o󠄁 n󠄁o󠄁t󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁 a󠄁 c󠄁h󠄁o󠄁s󠄁e󠄁n󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 w󠄁i󠄁t󠄁h󠄁 d󠄁e󠄁f󠄁e󠄁r󠄁r󠄁e󠄁d󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁-󠄁a󠄁l󠄁l󠄁 | o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁:󠄁 `PadCreateFormTests.swift` `testNativeOutsideDismissalRetainsTheDraftForReopening`,󠄁 `testDisablingThePresenterDismissesTheFormAndRetainsItsDraft`;󠄁 l󠄁a󠄁t󠄁e󠄁r󠄁 r󠄁e󠄁f󠄁o󠄁c󠄁u󠄁s󠄁 a󠄁n󠄁d󠄁 m󠄁o󠄁u󠄁s󠄁e󠄁 c󠄁a󠄁r󠄁e󠄁t󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 o󠄁w󠄁e󠄁d󠄁 i󠄁n󠄁 [r󠄁e󠄁n󠄁a󠄁m󠄁e󠄁 i󠄁n󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁](../qa/verification-procedures/rename-in-place.md) |
+| N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 s󠄁w󠄁i󠄁t󠄁c󠄁h󠄁e󠄁r󠄁 o󠄁r󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 | o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁,󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁i󠄁n󠄁g󠄁,󠄁 c󠄁o󠄁m󠄁m󠄁i󠄁t󠄁t󠄁i󠄁n󠄁g󠄁 o󠄁r󠄁 k󠄁e󠄁e󠄁p󠄁i󠄁n󠄁g󠄁 | a󠄁n󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁 o󠄁p󠄁e󠄁n󠄁s󠄁 a󠄁t󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁t󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁;󠄁 R󠄁e󠄁t󠄁u󠄁r󠄁n󠄁 o󠄁r󠄁 C󠄁r󠄁e󠄁a󠄁t󠄁e󠄁 P󠄁a󠄁d󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 a󠄁c󠄁t󠄁i󠄁v󠄁a󠄁t󠄁e󠄁s󠄁 a󠄁 p󠄁a󠄁d󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁 t󠄁r󠄁i󠄁m󠄁m󠄁e󠄁d󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁 n󠄁a󠄁m󠄁e󠄁;󠄁 i󠄁n󠄁v󠄁a󠄁l󠄁i󠄁d󠄁 n󠄁a󠄁m󠄁e󠄁s󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁 s󠄁t󠄁a󠄁y󠄁s󠄁 b󠄁e󠄁s󠄁i󠄁d󠄁e󠄁 t󠄁h󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁;󠄁 a󠄁n󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁l󠄁y󠄁 e󠄁m󠄁p󠄁t󠄁y󠄁 R󠄁e󠄁t󠄁u󠄁r󠄁n󠄁 e󠄁x󠄁p󠄁l󠄁a󠄁i󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁 m󠄁i󠄁s󠄁s󠄁i󠄁n󠄁g󠄁 n󠄁a󠄁m󠄁e󠄁;󠄁 a󠄁 f󠄁a󠄁i󠄁l󠄁e󠄁d󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 l󠄁e󠄁a󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 o󠄁p󠄁e󠄁n󠄁 f󠄁o󠄁r󠄁 r󠄁e󠄁t󠄁r󠄁y󠄁;󠄁 a󠄁u󠄁t󠄁o󠄁m󠄁a󠄁t󠄁i󠄁c󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁 r󠄁e󠄁t󠄁a󠄁i󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 f󠄁o󠄁r󠄁 r󠄁e󠄁o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁i󠄁n󠄁g󠄁 p󠄁r󠄁i󠄁o󠄁r󠄁 a󠄁t󠄁t󠄁e󠄁m󠄁p󠄁t󠄁e󠄁d󠄁-󠄁s󠄁u󠄁b󠄁m󠄁i󠄁t󠄁 a󠄁n󠄁d󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁;󠄁 E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁 a󠄁n󠄁d󠄁 C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 | `PadPickerTests.swift` `testCreationTrimsTheNameCreatesOnePadAndClearsTheForm`,󠄁 `testEmptyReturnExplainsTheMissingNameAndCancelClearsTheFeedback`,󠄁 `testInvalidCreationKeepsTheFormOpenWithoutChangingPads`,󠄁 `testAutomaticDismissalRetainsTheDraftWhileCancelDiscardsIt`,󠄁 `testFailedCreationKeepsTheDraftForCorrectionAndRetry`,󠄁 `testNewPadMenuDefersPresentationUntilTheActionReturns`;󠄁 `PadCreateFormTests.swift` `testNativeNameFieldFocusAndReturnCreateThePad`,󠄁 `testNativeEmptyReturnExplainsTheMissingNameWithoutDismissing`,󠄁 `testNativeEscapeClearsTheDraftAndDismissesTheForm`,󠄁 `testNativeOutsideDismissalRetainsTheDraftForReopening`,󠄁 `testRemovingAndRestoringThePresenterDoesNotReopenTheNativeForm`,󠄁 `testNativeAnchorClickClosesTheExistingForm`;󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 c󠄁a󠄁r󠄁d󠄁/󠄁e󠄁d󠄁i󠄁t󠄁o󠄁r󠄁/󠄁S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁,󠄁 C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁 c󠄁l󠄁i󠄁c󠄁k󠄁,󠄁 b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁-󠄁f󠄁o󠄁c󠄁u󠄁s󠄁e󠄁d󠄁 E󠄁s󠄁c󠄁a󠄁p󠄁e󠄁,󠄁 a󠄁p󠄁p󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁 a󠄁n󠄁d󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 o󠄁w󠄁e󠄁d󠄁 i󠄁n󠄁 [r󠄁e󠄁n󠄁a󠄁m󠄁e󠄁 i󠄁n󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁](../qa/verification-procedures/rename-in-place.md) |
 | Return over a changed draft | committing | the trimmed draft becomes the name | `TabRenameTests.swift` `testReturnOverANewNameRenames`, `testTheNameIsTrimmedBeforeItIsJudged` |
 | Return over an untouched draft | keeping | nothing changes; a default is never frozen into a typed name by a Return | `TabRenameTests.swift` `testReturnOverAnUntouchedDraftKeeps` |
 | Return over an empty draft | committing | the typed name is cleared and the default derives again; a pad, which has no default, refuses it (row below) | `TabRenameTests.swift` `testAnEmptyNameIsARenameNotACancel` |
@@ -144,7 +160,7 @@ without a test says what it is owed by.
 | the gutter's menu | opening | *Rename Page* opens the field in the gutter | `DayScrollTests.swift` `testTheDayGutterOffersTheSameVerbsAsTheStrip` |
 | a click on the gutter's time, or on the typed name standing in its seat | opening | opens the field in the time's seat on what the seat showed; the time slides right of the field and stays there once a name is typed, `today · Deploy notes · 13:00`, `Rotate keys · 13:41`; a long name gives way before the time does; Return and Escape give the keys back to the page. The name is the slot's (ADR-0017: "Tab identity, order, name, and keyboard position survive every Page that lived in the slot"), so a page minted into a named empty slot reads the name | `DayScrollTests.swift` `testAClickOnTheGutterTimeOpensTheFieldAndOnTheDayFocuses`, `testANamedGutterReadsTheDayTheNameAndTheTime`, `testAClickOnATypedNameOrItsTimeOpensTheFieldOnTheName`, `testALongNameOnANarrowGutterLeavesTheTimeWhole`, `testAFieldOpenedOverAnotherGivesTheKeysBackToThePage`, `testAPageMintedIntoALabelledSlotReadsTheSlotsLabel`; `DayScrollProjectionTests.swift` `testAnUnnamedGuttersDraftIsTheTime`; in a real key window, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | the strip's *Rename Tab* | opening | opens the field in the tab; double click stays the hold | `TabRenameTests.swift` `testTheFieldOpensOnTheCurrentTitle`, `testTheFieldsReturnKeepsAnUntouchedDraftAndRenamesAChangedOne`, `testTheFieldKeepsTheTitleOnEscapeAndEndsOnce`, over `TabRename.Field`, which the strip calls, and whose `end` takes no title but the one the field opened on; the SwiftUI field's focus and its selection on focus, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
-| a pad row's *Rename*, on its actions menu in the Pads tab of Settings | opening | opens the field in the pad's row, the only way in; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | `PadPickerTests.swift` `testReturnInTheRowRenamesThePadAndShutsTheField`, `testAnUntouchedReturnEscapeAndFocusLossKeepTheName`, `testRenameOpensTheFieldInTheRowAndRaisesNoSheet`, `testNewPadRaisesTheSheetAndKeepsAnOpenFieldsName`, `testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay`, over `PadRename` and `PadSettingsRoutes`; the menu item reaching that route, and the SwiftUI field's focus, selection and Escape, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
+| a pad row's *Rename*, on its actions menu in the Pads tab of Settings | opening | opens the field in the pad's row, the only way in; the *Rename pad* sheet, its Rename and Cancel buttons and the strings `pad.rename.title` and `pad.rename` go | `PadPickerTests.swift` `testReturnInTheRowRenamesThePadAndShutsTheField`, `testAnUntouchedReturnEscapeAndFocusLossKeepTheName`, `testRenameOpensTheFieldInTheRowAndRaisesNoSheet`, `testNewPadOpensTheFormAndKeepsAnOpenFieldsName`,󠄁 `testTheRenameStringsAreGoneAndTheCreateStringsStay`,󠄁 over `PadRename` and `PadSettingsRoutes`; the menu item reaching that route, and the SwiftUI field's focus, selection and Escape, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | a pad name the catalog refuses, empty or over 80 characters | refusing | said under the field in the pad's row with the field still open, `pad.name.empty`'s words for an empty one; nothing is said under a page, which stands in another window | `PadPickerTests.swift` `testARefusalIsSaidUnderTheFieldWithTheFieldOpen`, `testANameTheCatalogRefusesIsSaidWithTheFieldOpen`; the SwiftUI field keeping its keys after Return over a refused draft, owed: hand check, [rename in place](../qa/verification-procedures/rename-in-place.md) |
 | a sealed object's Set Variable Name… or Edit Variable Name… | opening | opens the inline field on its name, selected whole, with API_KEY as the example, format guidance and visible Save/Cancel and Return/Esc instructions; identity clicks do not open it | `SealedNameFieldTests.swift` `testTheFieldOpensWithItsVariableNameInstructionsAndActions`, `testTheMenusVerbOpensTheField`, `testAReadOnlyPageOpensNoField`, `testNamingHelpKeepsItsControlsInsideVeryNarrowAndWideBounds`; `SealedCapsuleTests.swift` `testTheIdentityRowAlwaysSelectsWithoutCopyingOrRenaming` |
 | Return, Save or valid focus loss over a sealed variable-name draft | committing | saves the trimmed draft; an empty draft clears the name; Escape or Cancel discards the draft instead | `SealedNameFieldTests.swift` `testReturnNamesTheObjectAndRedrawsItsBlock`, `testCancelKeepsWhileFocusLossAndReturnSave`, `testTheVisibleSaveAndCancelButtonsEndTheEdit`, `testTheEndingsAreTabRenamesOutcomes` |
@@ -232,6 +248,35 @@ rows land: none.
 Owed: a first run of the rename in place procedure.
 
 ## Amendments
+
+- 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁3󠄁:󠄁 T󠄁h󠄁e󠄁 t󠄁h󠄁i󠄁r󠄁d󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 p󠄁a󠄁s󠄁s󠄁 c󠄁o󠄁n󠄁s󠄁u󠄁m󠄁e󠄁s󠄁 s󠄁u󠄁s󠄁p󠄁e󠄁n󠄁d󠄁e󠄁d󠄁 p󠄁a󠄁d󠄁-󠄁o󠄁w󠄁n󠄁e󠄁d󠄁 d󠄁i󠄁g󠄁i󠄁t󠄁s󠄁
+  b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 S󠄁w󠄁i󠄁f󠄁t󠄁U󠄁I󠄁'󠄁s󠄁 p󠄁a󠄁g󠄁e󠄁-󠄁s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁 c󠄁a󠄁n󠄁 r󠄁e󠄁c󠄁e󠄁i󠄁v󠄁e󠄁 t󠄁h󠄁e󠄁m󠄁.󠄁 T󠄁h󠄁e󠄁 s󠄁h󠄁a󠄁r󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁
+  r󠄁e󠄁g󠄁i󠄁s󠄁t󠄁e󠄁r󠄁s󠄁 e󠄁a󠄁c󠄁h󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 m󠄁o󠄁d󠄁e󠄁l󠄁,󠄁 s󠄁o󠄁 s󠄁u󠄁s󠄁p󠄁e󠄁n󠄁s󠄁i󠄁o󠄁n󠄁 a󠄁l󠄁s󠄁o󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁s󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁
+  o󠄁u󠄁t󠄁s󠄁i󠄁d󠄁e󠄁 i󠄁t󠄁s󠄁 n󠄁a󠄁m󠄁e󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁.󠄁 I󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁 w󠄁h󠄁o󠄁l󠄁e󠄁-󠄁d󠄁r󠄁a󠄁f󠄁t󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁u󠄁n󠄁s󠄁 o󠄁n󠄁c󠄁e󠄁 p󠄁e󠄁r󠄁 o󠄁p󠄁e󠄁n󠄁i󠄁n󠄁g󠄁;󠄁
+  l󠄁a󠄁t󠄁e󠄁r󠄁 r󠄁e󠄁f󠄁o󠄁c󠄁u󠄁s󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁r󠄁v󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 c󠄁h󠄁o󠄁s󠄁e󠄁n󠄁 s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁s󠄁 a󠄁n󠄁d󠄁 m󠄁a󠄁n󠄁u󠄁a󠄁l󠄁
+  b󠄁u󠄁t󠄁t󠄁o󠄁n󠄁-󠄁f󠄁o󠄁c󠄁u󠄁s󠄁,󠄁 m󠄁o󠄁u󠄁s󠄁e󠄁-󠄁c󠄁a󠄁r󠄁e󠄁t󠄁 a󠄁n󠄁d󠄁 V󠄁o󠄁i󠄁c󠄁e󠄁O󠄁v󠄁e󠄁r󠄁 o󠄁b󠄁s󠄁e󠄁r󠄁v󠄁a󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁c󠄁t󠄁.󠄁
+
+- 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁3󠄁:󠄁 T󠄁h󠄁e󠄁 s󠄁e󠄁c󠄁o󠄁n󠄁d󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 p󠄁a󠄁s󠄁s󠄁 u󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 f󠄁o󠄁r󠄁 p󠄁a󠄁d󠄁-󠄁d󠄁i󠄁g󠄁i󠄁t󠄁
+  r󠄁o󠄁u󠄁t󠄁i󠄁n󠄁g󠄁,󠄁 w󠄁i󠄁t󠄁h󠄁 a󠄁 k󠄁e󠄁y󠄁-󠄁w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 f󠄁a󠄁l󠄁l󠄁b󠄁a󠄁c󠄁k󠄁 o󠄁n󠄁l󠄁y󠄁 f󠄁o󠄁r󠄁 a󠄁n󠄁 e󠄁v󠄁e󠄁n󠄁t󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁.󠄁
+  P󠄁a󠄁s󠄁s󠄁i󠄁v󠄁e󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁a󠄁l󠄁 k󠄁e󠄁e󠄁p󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁r󠄁a󠄁f󠄁t󠄁 b󠄁u󠄁t󠄁 c󠄁l󠄁e󠄁a󠄁r󠄁s󠄁 o󠄁l󠄁d󠄁 a󠄁t󠄁t󠄁e󠄁m󠄁p󠄁t󠄁e󠄁d󠄁-󠄁s󠄁u󠄁b󠄁m󠄁i󠄁t󠄁
+  a󠄁n󠄁d󠄁 f󠄁a󠄁i󠄁l󠄁u󠄁r󠄁e󠄁 f󠄁e󠄁e󠄁d󠄁b󠄁a󠄁c󠄁k󠄁.󠄁 A󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁e󠄁r󠄁 d󠄁i󠄁s󠄁m󠄁i󠄁s󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁,󠄁 a󠄁n󠄁d󠄁 f󠄁o󠄁c󠄁u󠄁s󠄁 a󠄁n󠄁d󠄁
+  s󠄁e󠄁l󠄁e󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 u󠄁s󠄁e󠄁 t󠄁h󠄁e󠄁 f󠄁o󠄁r󠄁m󠄁'󠄁s󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 l󠄁i󠄁f󠄁e󠄁t󠄁i󠄁m󠄁e󠄁 a󠄁n󠄁d󠄁 a󠄁c󠄁t󠄁u󠄁a󠄁l󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁 w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁.󠄁
+  T󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁a󠄁c󠄁t󠄁 d󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁u󠄁i󠄁s󠄁h󠄁e󠄁s󠄁 n󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 f󠄁i󠄁x󠄁t󠄁u󠄁r󠄁e󠄁 c󠄁o󠄁v󠄁e󠄁r󠄁a󠄁g󠄁e󠄁 f󠄁r󠄁o󠄁m󠄁 a󠄁p󠄁p󠄁-󠄁s󠄁u󠄁r󠄁f󠄁a󠄁c󠄁e󠄁,󠄁
+  a󠄁p󠄁p󠄁e󠄁a󠄁r󠄁a󠄁n󠄁c󠄁e󠄁 a󠄁n󠄁d󠄁 s󠄁p󠄁o󠄁k󠄁e󠄁n󠄁-󠄁a󠄁c󠄁c󠄁e󠄁s󠄁s󠄁i󠄁b󠄁i󠄁l󠄁i󠄁t󠄁y󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 t󠄁h󠄁a󠄁t󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 m󠄁a󠄁n󠄁u󠄁a󠄁l󠄁.󠄁
+
+- 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁3󠄁:󠄁 A󠄁n󠄁 e󠄁a󠄁r󠄁l󠄁i󠄁e󠄁r󠄁 P󠄁R󠄁 #󠄁3󠄁4󠄁3󠄁 i󠄁t󠄁e󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 i󠄁n󠄁t󠄁r󠄁o󠄁d󠄁u󠄁c󠄁e󠄁d󠄁 g󠄁e󠄁n󠄁e󠄁r󠄁a󠄁l󠄁 f󠄁i󠄁e󠄁l󠄁d󠄁-󠄁e󠄁d󠄁i󠄁t󠄁o󠄁r󠄁
+  p󠄁a󠄁d󠄁-󠄁d󠄁i󠄁g󠄁i󠄁t󠄁 c󠄁o󠄁n󠄁s󠄁u󠄁m󠄁p󠄁t󠄁i󠄁o󠄁n󠄁 a󠄁s󠄁 a󠄁 n󠄁e󠄁w󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁.󠄁 T󠄁h󠄁e󠄁 f󠄁i󠄁n󠄁a󠄁l󠄁 R󠄁7󠄁 s󠄁c󠄁o󠄁p󠄁e󠄁
+  r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁s󠄁 t󠄁h󠄁a󠄁t󠄁 g󠄁a󠄁t󠄁e󠄁 w󠄁i󠄁t󠄁h󠄁 v󠄁i󠄁s󠄁i󠄁b󠄁l󠄁e󠄁-󠄁N󠄁e󠄁w󠄁-󠄁P󠄁a󠄁d󠄁-󠄁o󠄁n󠄁l󠄁y󠄁 s󠄁u󠄁p󠄁p󠄁r󠄁e󠄁s󠄁s󠄁i󠄁o󠄁n󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁e󠄁s󠄁 u󠄁n󠄁r󠄁e󠄁l󠄁a󠄁t󠄁e󠄁d󠄁
+  f󠄁i󠄁e󠄁l󠄁d󠄁s󠄁'󠄁 p󠄁r󠄁i󠄁o󠄁r󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁.󠄁 T󠄁h󠄁e󠄁 p󠄁r󠄁i󠄁m󠄁a󠄁r󠄁y󠄁
+  p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 i󠄁s󠄁 t󠄁h󠄁e󠄁 m󠄁a󠄁i󠄁n󠄁t󠄁a󠄁i󠄁n󠄁e󠄁r󠄁'󠄁s󠄁 o󠄁r󠄁i󠄁g󠄁i󠄁n󠄁a󠄁l󠄁 c󠄁h󠄁a󠄁t󠄁 i󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 r󠄁a󠄁t󠄁h󠄁e󠄁r󠄁
+  t󠄁h󠄁a󠄁n󠄁 t󠄁h󠄁i󠄁s󠄁 a󠄁m󠄁e󠄁n󠄁d󠄁m󠄁e󠄁n󠄁t󠄁 o󠄁r󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 d󠄁e󠄁l󠄁i󠄁v󠄁e󠄁r󠄁y󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁.󠄁 N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
+  c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 t󠄁e󠄁s󠄁t󠄁s󠄁.󠄁
+
+- 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁3󠄁:󠄁 T󠄁h󠄁e󠄁 m󠄁a󠄁i󠄁n󠄁t󠄁a󠄁i󠄁n󠄁e󠄁r󠄁 a󠄁p󠄁p󠄁r󠄁o󠄁v󠄁e󠄁d󠄁 t󠄁h󠄁e󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁e󠄁d󠄁 N󠄁e󠄁w󠄁 P󠄁a󠄁d󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁a󠄁l󠄁:󠄁
+  “󠄁A󠄁g󠄁r󠄁e󠄁e󠄁d󠄁,󠄁 l󠄁e󠄁t󠄁'󠄁s󠄁 g󠄁o󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 a󠄁n󠄁c󠄁h󠄁o󠄁r󠄁e󠄁d󠄁 f󠄁o󠄁r󠄁m󠄁.󠄁 P󠄁l󠄁e󠄁a󠄁s󠄁e󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 i󠄁t󠄁.󠄁”󠄁 C󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁
+  n󠄁o󠄁w󠄁 u󠄁s󠄁e󠄁s󠄁 a󠄁 p󠄁o󠄁p󠄁o󠄁v󠄁e󠄁r󠄁 a󠄁t󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁t󠄁i󠄁n󠄁g󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁.󠄁 T󠄁h󠄁e󠄁 c󠄁r󠄁e󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 e󠄁x󠄁e󠄁m󠄁p󠄁t󠄁i󠄁o󠄁n󠄁,󠄁
+  c󠄁o󠄁n󠄁t󠄁r󠄁a󠄁c󠄁t󠄁 r󠄁o󠄁w󠄁 a󠄁n󠄁d󠄁 s󠄁o󠄁u󠄁r󠄁c󠄁e󠄁 r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁s󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁 t󠄁h󠄁a󠄁t󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁;󠄁 e󠄁x󠄁i󠄁s󠄁t󠄁i󠄁n󠄁g󠄁
+  p󠄁a󠄁d󠄁 r󠄁e󠄁n󠄁a󠄁m󠄁e󠄁 e󠄁n󠄁d󠄁i󠄁n󠄁g󠄁s󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁 t󠄁h󠄁e󠄁 s󠄁a󠄁m󠄁e󠄁.󠄁
 
 - 2026-10-13: Accepted. Built from the maintainer's instruction of the
   same day and the two records that already held the tab and gutter

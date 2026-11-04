@@ -60,6 +60,9 @@ public struct PadSettingsView: View {
                             .font(.caption).foregroundStyle(Color.emberText)
                     }
                     Button(CompanionL10n.string("pad.new.menu")) { routes.beginCreating() }
+                        .popover(isPresented: $routes.creation.isPresented, arrowEdge: .bottom) {
+                            PadCreateForm(model: model, creation: $routes.creation)
+                        }
                 } header: {
                     Text(CompanionL10n.string("pad.picker.heading"))
                 } footer: {
@@ -82,9 +85,6 @@ public struct PadSettingsView: View {
         }
         .formStyle(.grouped)
         .onDisappear { routes.rename.keep() }
-        .sheet(isPresented: $routes.creating) {
-            PadCreateSheet(model: model, isPresented: $routes.creating)
-        }
         .alert(CompanionL10n.format("pad.remove.title", removingPad?.name ?? ""),
                isPresented: $confirmingRemoval) {
             Button(CompanionL10n.string("pad.remove"), role: .destructive) {
@@ -116,7 +116,7 @@ private struct PadSettingsRow: View {
     let commitRename: () -> Void
     let keepRename: () -> Void
     let remove: () -> Void
-    @State private var anchor = PadMenuAnchor()
+    @State private var anchor = PadViewAnchor()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -209,7 +209,7 @@ private struct PadSettingsRow: View {
             .font(.caption)
         }
         .buttonStyle(.borderless)
-        .background(PadMenuAnchorView(anchor: anchor))
+        .background(PadViewAnchorView(anchor: anchor))
     }
 
     private func showApplications() {
@@ -256,11 +256,10 @@ private struct PadNameField: View {
     }
 }
 
-/// What the Pads tab has up: the create sheet and a row's rename field,
-/// apart from the view so a test drives the routes its buttons take.
+/// The Pads tab's creation form and inline rename routes.
 @MainActor
 struct PadSettingsRoutes {
-    var creating = false
+    var creation = PadCreation()
     var rename = PadRename()
 
     /// *Rename*: the field opens in the pad's row.
@@ -268,10 +267,9 @@ struct PadSettingsRoutes {
         rename.open(pad)
     }
 
-    /// *New Pad…*: the create sheet, which Law 0007 exempts, with any
-    /// open field's name kept.
+    /// *New Pad…* closes any rename field before opening the creation form.
     mutating func beginCreating() {
         rename.keep()
-        creating = true
+        creation.isPresented = true
     }
 }

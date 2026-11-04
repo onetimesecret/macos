@@ -97,6 +97,7 @@ public struct GeneralSettingsView: View {
     /// ADR-0033's ambient panel preference. Default on, persisted
     /// beside Pin. Nil hides the row, as it does for `keepsAbove`.
     private let ambientPanelEnabled: Binding<Bool>?
+    private let additionalSurfaceSettings: AnyView?
 
     public init(
         model: PageModel,
@@ -104,7 +105,8 @@ public struct GeneralSettingsView: View {
         offersCaptureToggle: Bool = true,
         resetSurface: (() -> Void)? = nil,
         keepsAbove: Binding<Bool>? = nil,
-        ambientPanelEnabled: Binding<Bool>? = nil
+        ambientPanelEnabled: Binding<Bool>? = nil,
+        additionalSurfaceSettings: AnyView? = nil
     ) {
         self.model = model
         self.loginPresence = loginPresence
@@ -112,6 +114,7 @@ public struct GeneralSettingsView: View {
         self.resetSurface = resetSurface
         self.keepsAbove = keepsAbove
         self.ambientPanelEnabled = ambientPanelEnabled
+        self.additionalSurfaceSettings = additionalSurfaceSettings
     }
 
     @State private var confirmingLedgerClear = false
@@ -142,6 +145,7 @@ public struct GeneralSettingsView: View {
                         )
                         .help("Makes the ambient panel available through its hotkey and the Show Ambient Panel command.")
                     }
+                    if let additionalSurfaceSettings { additionalSurfaceSettings }
                     Button("Reset to Default Position and Size", action: resetSurface)
                 } header: {
                     Text("Surface")
@@ -318,11 +322,12 @@ public struct GeneralSettingsView: View {
 
     static func pageLayoutCaption(experimental: Bool) -> String {
         if experimental {
-            return CompanionL10n.format("pad.settings.layout", Int(TimeRailView.width(experimental: true)))
+            return CompanionL10n.format("pad.settings.layoutResizable", Int(TimeRailView.width))
         }
         return "Tabs shows named pages along the bottom at full page width. Timeline is a prototype "
             + "that groups live pages by the day they were written, newest first, down the "
-            + "side, taking \(Int(TimeRailView.width(experimental: experimental))) points from the page; lines always wrap and older blank pages "
+            + "side, starting at \(Int(TimeRailView.width)) points wide. Drag the divider to resize the timeline; "
+            + "it reopens at the width you leave it. Lines always wrap and older blank pages "
             + "are hidden. Changing this moves no content and writes "
             + "nothing new to disk."
     }
@@ -341,7 +346,7 @@ public struct GeneralSettingsView: View {
     /// What the two time patterns cost and do, in the caption's own
     /// words (D-26).
     static let stampFormatCaption =
-        "How a page's birth time reads beside its day, on the rail and in the gutter. The day's words carry the date, so the time stands alone; two pages born the same minute take the second pattern so they read apart. Unicode date patterns: HH:mm, HH:mm:ss, h:mm a. Empty means the standard one."
+        "By default, times show minutes; pages sharing a minute on the same day show seconds. The day heading supplies the date; hover over a time for its full date and time, with seconds, in your system's format. Customize the timeline and page checkpoint times with Unicode date patterns: HH:mm, HH:mm:ss, h:mm a. Empty means the standard one."
 
     /// One field of the stamp format, edited in place. An empty
     /// pattern is kept as typed and read as the standard one.

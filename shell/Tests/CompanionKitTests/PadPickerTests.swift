@@ -47,13 +47,149 @@ final class PadPickerTests: XCTestCase {
         XCTAssertNotEqual(CompanionL10n.string("pad.name.long"), "pad.name.long")
     }
 
-    // MARK: The pad row's rename field (Law 0007, issue #249)
+    // MARK: Creation
 
-    private func padModel() throws -> (PageModel, PadEntry) {
-        let suite = "pad-rename-\(UUID().uuidString)"
+    func testCreationTrimsTheNameCreatesOnePadAndClearsTheForm() throws {
+        let (model, _) = try padModel()
+        let count = model.pads.entries.count
+        var creation = PadCreation()
+        creation.isPresented = true
+        creation.draft = "  Design notes \n"
+
+        creation.submit(in: model)
+        XCTAssertEqual(model.pads.activePad.name, "Design notes")
+        XCTAssertEqual(model.pads.entries.count, count + 1)
+        XCTAssertFalse(creation.isPresented)
+        XCTAssertEqual(creation.draft, "")
+        XCTAssertNil(creation.message)
+
+        creation.submit(in: model)
+        XCTAssertEqual(model.pads.entries.count, count + 1)
+    }
+
+    func testEmptyReturnExplainsTheMissingNameAndCancelClearsTheFeedback() throws {
+        let (model, pad) = try padModel()
+        let count = model.pads.entries.count
+        var creation = PadCreation()
+        creation.isPresented = true
+        XCTAssertNil(creation.message)
+
+        creation.submit(in: model)
+        XCTAssertTrue(creation.isPresented)
+        XCTAssertEqual(creation.message, CompanionL10n.string("pad.name.empty"))
+        XCTAssertEqual(model.pads.entries.count, count)
+        XCTAssertEqual(model.pads.activeID, pad.id)
+
+        creation.isPresented = false
+        creation.isPresented = true
+        XCTAssertNil(creation.message)
+        creation.cancel()
+        creation.isPresented = true
+        XCTAssertNil(creation.message)
+    }
+
+    func testInvalidCreationKeepsTheFormOpenWithoutChangingPads() throws {
+        let (model, pad) = try padModel()
+        let count = model.pads.entries.count
+        var creation = PadCreation()
+        creation.isPresented = true
+        XCTAssertFalse(creation.canSubmit)
+        XCTAssertNil(creation.message)
+
+        for draft in [" \n", String(repeating: "🐕", count: 81)] {
+            creation.draft = draft
+            XCTAssertFalse(creation.canSubmit)
+            XCTAssertEqual(creation.message, PadNameDraft.validationMessage(draft))
+            creation.submit(in: model)
+            XCTAssertTrue(creation.isPresented)
+            XCTAssertEqual(creation.draft, draft)
+            XCTAssertEqual(model.pads.entries.count, count)
+            XCTAssertEqual(model.pads.activeID, pad.id)
+        }
+
+        creation.draft = "Design notes"
+        XCTAssertTrue(creation.canSubmit)
+        XCTAssertNil(creation.message)
+    }
+
+    func testAutomaticDismissalRetainsTheDraftWhileCancelDiscardsIt() {
+        var creation = PadCreation()
+        creation.isPresented = true
+        creation.draft = "Design notes"
+        creation.isPresented = false
+        creation.isPresented = true
+        XCTAssertEqual(creation.draft, "Design notes")
+
+        creation.cancel()
+        XCTAssertFalse(creation.isPresented)
+        creation.isPresented = true
+        XCTAssertEqual(creation.draft, "")
+        XCTAssertFalse(creation.canSubmit)
+        XCTAssertNil(creation.message)
+    }
+
+    func testFailedCreationKeepsTheDraftForCorrectionAndRetry() throws {
+        let (model, _) = try padModel()
+        model.loadStateIfNeeded()
+        let count = model.pads.entries.count
+        let activePad = model.pads.activeID
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pad-create-pending-\(UUID().uuidString).txt")
+        try "hello".write(to: file, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: file) }
+        model.openFile(at: file)
+        let fileID = try XCTUnwrap(model.selectedFile)
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "dirty ")]))
+        model.applyOps(sheet: fileID, opsJSON: ops)
+        _ = model.closeActiveFile()
+        XCTAssertEqual(model.pendingFileClose?.fileID, fileID)
+        var creation = PadCreation()
+        creation.isPresented = true
+        creation.draft = "Design notes"
+
+        creation.submit(in: model)
+        XCTAssertTrue(creation.isPresented)
+        XCTAssertEqual(creation.draft, "Design notes")
+        XCTAssertEqual(creation.message, CompanionL10n.string("pad.name.failed"))
+        XCTAssertEqual(model.pads.entries.count, count)
+        XCTAssertEqual(model.pads.activeID, activePad)
+        XCTAssertNil(model.notice)
+
+        creation.isPresented = false
+        model.resolvePendingFileClose(.keepEditing)
+        XCTAssertNil(model.pendingFileClose)
+        creation.isPresented = true
+        XCTAssertEqual(creation.draft, "Design notes")
+        XCTAssertNil(creation.message)
+        creation.draft = "Design notes revised"
+        XCTAssertNil(creation.message)
+        creation.submit(in: model)
+        XCTAssertFalse(creation.isPresented)
+        XCTAssertNil(creation.message)
+        XCTAssertEqual(model.pads.activePad.name, "Design notes revised")
+    }
+
+    // MARK: Shared model fixtures
+
+    private func padModel(keymapOverride: String? = nil) throws -> (PageModel, PadEntry) {
+        let suite = "pad-picker-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-        let model = isolatedModel(defaults: defaults)
+        let model: PageModel
+        if let keymapOverride {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("pad-picker-keymap-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+            let override = directory.appendingPathComponent("keymap.json")
+            try keymapOverride.write(to: override, atomically: true, encoding: .utf8)
+            model = PageModel(
+                formFactor: .backdrop, defaults: defaults,
+                seams: .init(stateDirectory: directory.appendingPathComponent("state"),
+                             client: .ephemeral(tag: UUID().uuidString), keymapOverride: override))
+        } else {
+            model = isolatedModel(defaults: defaults)
+        }
         model.pads.isEnabled = true
         let id = try XCTUnwrap(model.createPad(named: "Otto"))
         return (model, try XCTUnwrap(model.pads.entries.first { $0.id == id }))
@@ -62,6 +198,34 @@ final class PadPickerTests: XCTestCase {
     private func name(of pad: PadEntry, in model: PageModel) -> String? {
         model.pads.entries.first { $0.id == pad.id }?.name
     }
+
+    private func shortcutWindow(fieldEditor: Bool) -> NSWindow {
+        _ = NSApplication.shared
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        editor.isFieldEditor = fieldEditor
+        window.contentView = editor
+        XCTAssertTrue(window.makeFirstResponder(editor))
+        addTeardownBlock { @MainActor in window.close() }
+        return window
+    }
+
+    private func commandDigit(_ digit: Int, in window: NSWindow?) throws -> NSEvent {
+        let keyCodes: [Int: UInt16] = [
+            0: 29, 1: 18, 2: 19, 3: 20, 4: 21, 5: 23, 6: 22, 7: 26, 8: 28, 9: 25,
+        ]
+        let keyCode = try XCTUnwrap(keyCodes[digit])
+        return try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+            windowNumber: window?.windowNumber ?? 0, context: nil,
+            characters: String(digit), charactersIgnoringModifiers: String(digit),
+            isARepeat: false, keyCode: keyCode))
+    }
+
+    // MARK: The pad row's rename field (Law 0007, issue #249)
 
     func testReturnInTheRowRenamesThePadAndShutsTheField() throws {
         let (model, pad) = try padModel()
@@ -158,7 +322,7 @@ final class PadPickerTests: XCTestCase {
         defer { NotificationCenter.default.removeObserver(token) }
         var routes = PadSettingsRoutes()
         func inTheRow(_ moment: String) {
-            XCTAssertFalse(routes.creating, "the sheet came up \(moment)")
+            XCTAssertFalse(routes.creation.isPresented, "the creation form opened \(moment)")
             XCTAssertFalse(ModalSession.isRunning, "a modal session ran \(moment)")
         }
 
@@ -175,9 +339,8 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(ends, 0)
     }
 
-    /// *New Pad…* is the one route to the sheet, and it keeps the name
-    /// under any field that was open.
-    func testNewPadRaisesTheSheetAndKeepsAnOpenFieldsName() throws {
+    /// New Pad closes the rename field before presenting the creation form.
+    func testNewPadOpensTheFormAndKeepsAnOpenFieldsName() throws {
         let (model, pad) = try padModel()
         var routes = PadSettingsRoutes()
         routes.beginRename(pad)
@@ -186,8 +349,8 @@ final class PadPickerTests: XCTestCase {
         XCTAssertNotNil(routes.rename.refusal)
 
         routes.beginCreating()
-        XCTAssertTrue(routes.creating)
-        XCTAssertFalse(routes.rename.isOpen, "the field outlived the sheet's arrival")
+        XCTAssertTrue(routes.creation.isPresented)
+        XCTAssertFalse(routes.rename.isOpen, "the rename field outlived the form's arrival")
         XCTAssertNil(routes.rename.refusal, "the refusal outlived its field")
         XCTAssertEqual(name(of: pad, in: model), "Otto")
     }
@@ -280,11 +443,25 @@ final class PadPickerTests: XCTestCase {
         XCTAssertTrue(managed)
     }
 
-    func testTheRenameSheetsStringsAreGoneAndTheCreateSheetsStay() {
+    func testNewPadMenuDefersPresentationUntilTheActionReturns() async {
+        var creation = PadCreation()
+        let presented = expectation(description: "New Pad action presented")
+        let menu = PadSwitcherMenu.menu(
+            entries: [], select: { _ in },
+            newPad: { creation.isPresented = true; presented.fulfill() }, manage: {})
+
+        menu.performActionForItem(at: 1)
+        XCTAssertFalse(creation.isPresented)
+        await fulfillment(of: [presented], timeout: 1)
+        XCTAssertTrue(creation.isPresented)
+    }
+
+    func testTheRenameStringsAreGoneAndTheCreateStringsStay() {
         for key in ["pad.rename.title", "pad.rename"] {
             XCTAssertEqual(CompanionL10n.string(key), key, "\(key) is still in the strings")
         }
-        for key in ["pad.cancel", "pad.name", "pad.new.title", "pad.create", "pad.rename.menu"] {
+        for key in ["pad.cancel", "pad.name", "pad.new.title", "pad.new.nameLabel",
+                    "pad.new.placeholder", "pad.create", "pad.rename.menu"] {
             XCTAssertNotEqual(CompanionL10n.string(key), key, "\(key) went with the rename sheet")
         }
     }
@@ -355,8 +532,10 @@ final class PadPickerTests: XCTestCase {
             if parent.attachedSheet === sheet { parent.endSheet(sheet) }
             windows.forEach { $0.orderOut(nil); $0.close() }
         }
-        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [parent, other]))
-        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: true, windows: [parent, other]))
+        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(
+            isModal: false, windows: [parent, other]))
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(
+            isModal: true, windows: [parent, other]))
         parent.beginSheet(sheet)
         XCTAssertFalse(parent.isKeyWindow)
         XCTAssertTrue(parent.attachedSheet === sheet)
@@ -365,11 +544,213 @@ final class PadPickerTests: XCTestCase {
         // incorrectly allow a shortcut to change the shared pad selection.
         XCTAssertNil(other.attachedSheet)
         XCTAssertNil(other.sheetParent)
-        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [other]))
-        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [parent, other]))
-        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [other, sheet]))
+        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(
+            isModal: false, windows: [other]))
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(
+            isModal: false, windows: [parent, other]))
+        XCTAssertFalse(PadShortcutMonitor.allowsPadSwitch(
+            isModal: false, windows: [other, sheet]))
         parent.endSheet(sheet)
-        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(isModal: false, windows: [parent, other]))
+        XCTAssertTrue(PadShortcutMonitor.allowsPadSwitch(
+            isModal: false, windows: [parent, other]))
+    }
+
+    func testClaimedPadDigitsAreConsumedWhileAnyCreationFormIsPresented() throws {
+        let (model, pad) = try padModel()
+        model.activatePad(PadCatalog.scratchID)
+        let window = shortcutWindow(fieldEditor: false)
+        XCTAssertTrue(window.makeFirstResponder(nil))
+        window.orderFront(nil)
+        let anchor = PadViewAnchor()
+        anchor.view = window.contentView
+        let event = try commandDigit(1, in: window)
+        let first = UUID(), second = UUID()
+        XCTAssertFalse(model.hasPresentedPadCreation)
+        model.registerPadCreation(first, anchor: anchor)
+        model.registerPadCreation(first, anchor: anchor)
+        model.registerPadCreation(second, anchor: anchor)
+
+        for surface in [PresentationOwner.editorWindow, .panel] {
+            XCTAssertNil(PadShortcutMonitor.handle(
+                event, model: model, surface: surface,
+                windows: [window], isModal: false))
+            XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
+        }
+
+        model.unregisterPadCreation(first)
+        model.unregisterPadCreation(first)
+        XCTAssertTrue(model.hasPresentedPadCreation)
+        XCTAssertNil(PadShortcutMonitor.handle(
+            event, model: model, surface: .panel,
+            windows: [window], isModal: false))
+        XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
+
+        model.unregisterPadCreation(second)
+        model.unregisterPadCreation(second)
+        XCTAssertFalse(model.hasPresentedPadCreation)
+        XCTAssertNil(PadShortcutMonitor.handle(
+            event, model: model, surface: .panel,
+            windows: [window], isModal: false))
+        XCTAssertEqual(model.pads.activeID, pad.id)
+    }
+
+    func testClosingTheCreationWindowResumesPadDigitsWithoutADismissalCallback() throws {
+        let (model, pad) = try padModel()
+        model.activatePad(PadCatalog.scratchID)
+        let window = shortcutWindow(fieldEditor: false)
+        window.orderFront(nil)
+        let anchor = PadViewAnchor()
+        anchor.view = window.contentView
+        model.registerPadCreation(UUID(), anchor: anchor)
+        let event = try commandDigit(1, in: window)
+        XCTAssertTrue(model.hasPresentedPadCreation)
+        XCTAssertNil(PadShortcutMonitor.handle(
+            event, model: model, surface: .panel,
+            windows: [window], isModal: false))
+        XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
+
+        window.close()
+        XCTAssertFalse(model.hasPresentedPadCreation)
+        XCTAssertNil(PadShortcutMonitor.handle(
+            event, model: model, surface: .panel,
+            windows: [], isModal: false))
+        XCTAssertEqual(model.pads.activeID, pad.id)
+    }
+
+    func testCreationRegistrationTracksLateAttachedAndDetachedNativeViews() throws {
+        let (model, _) = try padModel()
+        let anchor = PadViewAnchor()
+        model.registerPadCreation(UUID(), anchor: anchor)
+        XCTAssertFalse(model.hasPresentedPadCreation)
+
+        let window = shortcutWindow(fieldEditor: false)
+        anchor.view = window.contentView
+        XCTAssertFalse(model.hasPresentedPadCreation)
+        window.orderFront(nil)
+        XCTAssertTrue(model.hasPresentedPadCreation)
+        window.contentView = nil
+        XCTAssertFalse(model.hasPresentedPadCreation)
+    }
+
+    func testCreationRegistrationDoesNotRetainAnExpiredAnchor() throws {
+        let (model, _) = try padModel()
+        let window = shortcutWindow(fieldEditor: false)
+        window.orderFront(nil)
+        weak var expiredAnchor: PadViewAnchor?
+        func registerTemporaryAnchor() {
+            let anchor = PadViewAnchor()
+            anchor.view = window.contentView
+            expiredAnchor = anchor
+            model.registerPadCreation(UUID(), anchor: anchor)
+            XCTAssertTrue(model.hasPresentedPadCreation)
+        }
+
+        registerTemporaryAnchor()
+        XCTAssertNil(expiredAnchor)
+        XCTAssertFalse(model.hasPresentedPadCreation)
+    }
+
+    func testOtherFieldEditorsKeepExistingPadShortcutActivation() throws {
+        let (model, pad) = try padModel()
+        model.activatePad(PadCatalog.scratchID)
+        let window = shortcutWindow(fieldEditor: true)
+        XCTAssertFalse(model.hasPresentedPadCreation)
+        XCTAssertTrue((window.firstResponder as? NSTextView)?.isFieldEditor == true)
+        let event = try commandDigit(1, in: window)
+
+        let nonOwnerResult = PadShortcutMonitor.handle(
+            event, model: model, surface: .editorWindow,
+            windows: [window], isModal: false)
+        XCTAssertTrue(nonOwnerResult === event)
+        XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
+        XCTAssertNil(PadShortcutMonitor.handle(
+            event, model: model, surface: .panel,
+            windows: [window], isModal: false))
+        XCTAssertEqual(model.pads.activeID, pad.id)
+    }
+
+    func testClaimedPadDigitsPassThroughCreationDuringAModalSession() throws {
+        let (model, pad) = try padModel()
+        let window = shortcutWindow(fieldEditor: true)
+        window.orderFront(nil)
+        let anchor = PadViewAnchor()
+        anchor.view = window.contentView
+        model.registerPadCreation(UUID(), anchor: anchor)
+        let event = try commandDigit(1, in: window)
+        let selection = model.selection
+        XCTAssertTrue(model.hasPresentedPadCreation)
+
+        let result = PadShortcutMonitor.handle(
+            event, model: model, surface: .panel,
+            windows: [window], isModal: true)
+        XCTAssertTrue(result === event)
+        XCTAssertEqual(model.pads.activeID, pad.id)
+        XCTAssertEqual(model.selection, selection)
+    }
+
+    func testClaimedPadDigitsPassThroughCreationWhileAnotherWindowHasASheet() throws {
+        let (model, pad) = try padModel()
+        let parent = shortcutWindow(fieldEditor: false)
+        let field = shortcutWindow(fieldEditor: true)
+        let sheet = shortcutWindow(fieldEditor: false)
+        field.orderFront(nil)
+        let anchor = PadViewAnchor()
+        anchor.view = field.contentView
+        model.registerPadCreation(UUID(), anchor: anchor)
+        parent.beginSheet(sheet)
+        defer { if parent.attachedSheet === sheet { parent.endSheet(sheet) } }
+        XCTAssertTrue(parent.attachedSheet === sheet)
+        let event = try commandDigit(1, in: field)
+        let selection = model.selection
+        XCTAssertTrue(model.hasPresentedPadCreation)
+
+        let result = PadShortcutMonitor.handle(
+            event, model: model, surface: .panel,
+            windows: [parent, field], isModal: false)
+        XCTAssertTrue(result === event)
+        XCTAssertEqual(model.pads.activeID, pad.id)
+        XCTAssertEqual(model.selection, selection)
+    }
+
+    func testReservedDigitWithoutAPadIsConsumedOutsideFieldEditing() throws {
+        let (model, pad) = try padModel()
+        let window = shortcutWindow(fieldEditor: false)
+        let event = try commandDigit(9, in: window)
+        let selection = model.selection
+        XCTAssertFalse(model.hasPresentedPadCreation)
+        XCTAssertFalse((window.firstResponder as? NSTextView)?.isFieldEditor == true)
+        XCTAssertTrue(PadShortcutMonitor.allows(number: 9, keymap: model.keymap))
+        XCTAssertFalse(model.pads.entries.indices.contains(9))
+
+        XCTAssertNil(PadShortcutMonitor.handle(
+            event, model: model, surface: .panel,
+            windows: [window], isModal: false))
+        XCTAssertEqual(model.pads.activeID, pad.id)
+        XCTAssertEqual(model.selection, selection)
+    }
+
+    func testRemappedAndUnboundDigitsKeepTheirExistingRouteDuringCreation() throws {
+        let overrides = [
+            #"[{"context":"Editor","bindings":{"cmd-1":"app::Settings"}}]"#,
+            #"[{"context":"Editor","bindings":{"cmd-1":null}}]"#,
+        ]
+        for override in overrides {
+            let (model, _) = try padModel(keymapOverride: override)
+            model.activatePad(PadCatalog.scratchID)
+            let window = shortcutWindow(fieldEditor: true)
+            window.orderFront(nil)
+            let anchor = PadViewAnchor()
+            anchor.view = window.contentView
+            model.registerPadCreation(UUID(), anchor: anchor)
+            let event = try commandDigit(1, in: window)
+            XCTAssertFalse(PadShortcutMonitor.allows(number: 1, keymap: model.keymap))
+
+            let result = PadShortcutMonitor.handle(
+                event, model: model, surface: .editorWindow,
+                windows: [window], isModal: false)
+            XCTAssertTrue(result === event)
+            XCTAssertEqual(model.pads.activeID, PadCatalog.scratchID)
+        }
     }
 
     func testSortMenuOffersExplicitOrdersAndDescribesTheCurrentValue() {
@@ -388,15 +769,13 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(checkpoints.help, "sort checkpoints from today: Newest First")
     }
 
-    func testExperimentalRailWidthAndLayoutDisclosureUseSameMeasure() {
-        XCTAssertEqual(TimeRailView.width(experimental: false), 110)
-        XCTAssertEqual(TimeRailView.width(experimental: true), 150)
-        XCTAssertEqual(TimeRailView.width, TimeRailView.width(experimental: false))
-        XCTAssertTrue(GeneralSettingsView.pageLayoutCaption(experimental: false).contains("110 points"))
-        XCTAssertTrue(GeneralSettingsView.pageLayoutCaption(experimental: true).contains("150 points"))
+    func testLayoutDisclosureDescribesTheResizableTimeline() {
         for experimental in [false, true] {
             let caption = GeneralSettingsView.pageLayoutCaption(experimental: experimental)
+            XCTAssertTrue(caption.contains("\(Int(TimeRailView.width)) points"))
+            XCTAssertTrue(caption.contains("Drag the divider to resize the timeline"))
             XCTAssertTrue(caption.contains("older blank pages are hidden"))
+            XCTAssertTrue(caption.contains("moves no content and writes nothing new to disk"), "ADR-0037's cost")
             XCTAssertFalse(caption.contains("counted"))
         }
     }

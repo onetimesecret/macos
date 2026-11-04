@@ -55,13 +55,15 @@
 "pad.picker.current" = "Choose pad, current pad %@";
 "pad.picker.heading" = "Pads";
 "pad.new.title" = "New Pad";
+"pad.new.nameLabel" = "Name";
+"pad.new.placeholder" = "Project or topic";
 "pad.new.menu" = "New Pad…";
 "pad.manage.menu" = "Manage Pads…";
 "pad.name" = "Pad name";
 "pad.name.empty" = "Enter a pad name.";
 "pad.name.long" = "Use 80 characters or fewer for the pad name.";
 "pad.name.failed" = "The pad could not be saved. Finish any pending file decision and try again.";
-"pad.create" = "Create";
+"pad.create" = "Create Pad";
 "pad.cancel" = "Cancel";
 "pad.rename.menu" = "Rename";
 "pad.remove.title" = "Remove %@?";
@@ -125,7 +127,11 @@
 "pad.stream.emptyDay.one" = "%ld empty day";
 "pad.stream.emptyDay.many" = "%ld empty days";
 
-"pad.settings.layout" = "Tabs shows named pages along the bottom at full page width. Timeline groups live pages by day with independent day and checkpoint ordering, taking %ld points from the page. Lines wrap and older blank pages are hidden.";
+/* The continuous pad's gutter labels: one checkpoint, and a line two or more checkpoints share. */
+"pad.gutter.checkpoint" = "Checkpoint, %@";
+"pad.gutter.checkpoints" = "%ld checkpoints on this line";
+
+"pad.settings.layoutResizable" = "Tabs shows named pages along the bottom at full page width. Timeline groups live pages by day with independent day and checkpoint ordering, starting at %ld points wide. Drag the divider to resize the timeline; it reopens at the width you leave it. Lines wrap and older blank pages are hidden. Changing this moves no content and writes nothing new to disk.";
 "pad.remove.failed" = "The pad could not be removed. Finish any pending file decision and try again.";
 
 /* Variable-name field, its helper, and local validation. */
