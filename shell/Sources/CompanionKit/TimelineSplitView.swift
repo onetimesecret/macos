@@ -147,6 +147,7 @@ private final class DividerWatchView: NSView {
     private func detach() {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
+        split = nil
     }
 
     private func splitDidResize(_ split: NSSplitView, dragged: Bool) {
