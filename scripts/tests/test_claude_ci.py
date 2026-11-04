@@ -169,12 +169,15 @@ class ModelBoundaryTests(unittest.TestCase):
             root = Path(directory); (root / ".git").mkdir()
             config = root / ".git/config"
             config.write_text('[core]\nrepositoryformatversion = 0\n[remote "origin"]\nurl = https://token:secret@gitlab.example/project.git\n[http]\nextraheader = Authorization: secret\n')
-            env = dict(ENV, CI_PROJECT_DIR=directory, PATH=os.environ["PATH"], ANTHROPIC_API_KEY="anthropic-fixture", GITLAB_ACCESS_TOKEN="gitlab-secret", CI_JOB_TOKEN="job-secret", CI_REPOSITORY_URL="https://token:secret@gitlab.example/project.git", GIT_CONFIG_PARAMETERS="unsafe")
+            fixture_path = "/builds/onetimesecret/macos/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+            env = dict(ENV, CI_PROJECT_DIR=directory, PATH=fixture_path, ANTHROPIC_API_KEY="anthropic-fixture", GITLAB_ACCESS_TOKEN="gitlab-secret", CI_JOB_TOKEN="job-secret", CI_REPOSITORY_URL="https://token:secret@gitlab.example/project.git", GIT_CONFIG_PARAMETERS="unsafe")
             child = ci.model_environment(env, root / "config")
             self.assertEqual(child["ANTHROPIC_API_KEY"], "anthropic-fixture")
+            self.assertEqual(child["PATH"], fixture_path)
             self.assertFalse(any(k.startswith(("CI_", "GITLAB", "GIT_")) for k in child))
             self.assertNotIn("HOME", child)
-            self.assertNotIn("secret", json.dumps(child))
+            for key in ["GITLAB_ACCESS_TOKEN", "CI_JOB_TOKEN", "CI_REPOSITORY_URL"]:
+                self.assertNotIn(env[key], json.dumps(child))
             ci.sanitize_checkout(env)
             self.assertNotIn("secret", config.read_text())
             self.assertNotIn("remote", config.read_text())
