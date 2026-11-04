@@ -102,10 +102,14 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     }
     private static let pinnedKey = "restingPinned"
 
-    @Published var sideTab: SideTabPreferences {
-        didSet {
-            guard oldValue != sideTab else { return }
-            sideTab.save(to: defaults)
+    @Published private var sideTabPreferences: SideTabPreferences
+    var sideTab: SideTabPreferences {
+        get { sideTabPreferences }
+        set {
+            let normalized = newValue.normalized
+            guard sideTabPreferences != normalized else { return }
+            sideTabPreferences = normalized
+            normalized.save(to: defaults)
         }
     }
 
@@ -193,7 +197,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         geometry = BackdropGeometry.load(from: defaults)
         doubleClickTrip = Self.loadTrip(from: defaults)
         pinned = defaults.bool(forKey: Self.pinnedKey)
-        sideTab = SideTabPreferences.load(from: defaults)
+        sideTabPreferences = SideTabPreferences.load(from: defaults)
         keepsAboveWhenInactive = defaults.bool(forKey: Self.keepsAboveKey)
         // Default on when the key is absent (a fresh install): the ADR
         // shipped with the panel on. `object(forKey:)` distinguishes

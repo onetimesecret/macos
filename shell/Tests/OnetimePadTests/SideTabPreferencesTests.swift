@@ -87,5 +87,18 @@ final class SideTabPreferencesTests: XCTestCase {
         model.sideTab.enabled = true
         XCTAssertEqual(defaults.sideTabWrites, baseline + 2)
         XCTAssertEqual(SideTabPreferences.load(from: defaults), model.sideTab)
+
+        for (position, expected) in [(2.0, 1.0), (-1.0, 0.0), (.nan, 0.5),
+                                     (.infinity, 0.5), (-.infinity, 0.5)] {
+            let previous = model.sideTab.position
+            let writes = defaults.sideTabWrites
+            model.sideTab.position = position
+            XCTAssertEqual(model.sideTab.position, expected)
+            XCTAssertEqual(SideTabPreferences.load(from: defaults), model.sideTab)
+            let expectedWrites = writes + (previous == expected ? 0 : 1)
+            XCTAssertEqual(defaults.sideTabWrites, expectedWrites)
+            model.sideTab.position = expected
+            XCTAssertEqual(defaults.sideTabWrites, expectedWrites)
+        }
     }
 }

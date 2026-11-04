@@ -12,7 +12,7 @@ struct SideTabPreferences: Codable, Equatable {
         position.isFinite ? min(1, max(0, position)) : 0.5
     }
 
-    private var normalized: Self {
+    var normalized: Self {
         var value = self
         value.position = normalizedPosition
         return value
