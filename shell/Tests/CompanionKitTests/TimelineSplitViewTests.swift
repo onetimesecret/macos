@@ -48,6 +48,9 @@ final class TimelineSplitViewTests: XCTestCase {
     }
 
     private func mount(_ model: PageModel, width: CGFloat = 640) -> Mounted {
+        // The runner's real button must not decide whether a drag is recorded.
+        TimelineSplit.leftMouseIsDownForTests = false
+        addTeardownBlock { @MainActor in TimelineSplit.leftMouseIsDownForTests = nil }
         let root = { (showsTimeline: Bool) -> AnyView in
             AnyView(SplitHarness(model: model, showsTimeline: showsTimeline)
                 .environment(\.presentationSurface, model.owner))
@@ -228,7 +231,6 @@ final class TimelineSplitViewTests: XCTestCase {
         let model = timelineModel(defaults: try defaults())
         let mounted = mount(model)
         defer { mounted.window.close() }
-        defer { TimelineSplit.leftMouseIsDownForTests = nil }
         let split = try splitView(in: mounted.host)
 
         TimelineSplit.leftMouseIsDownForTests = true
@@ -244,6 +246,29 @@ final class TimelineSplitViewTests: XCTestCase {
         TimelineSplit.leftMouseIsDownForTests = false
         layout(mounted.host)
         XCTAssertEqual(model.timelineWidth, 200, accuracy: 2, "a window resize under a held button was recorded")
+    }
+
+    /// A height-only resize under a held button leaves the split's width alone and the squeezed rail
+    /// where it was; neither is the person's drag.
+    func testAHeightOnlyResizeUnderAHeldButtonKeepsTheStoredWidth() throws {
+        let model = timelineModel(defaults: try defaults())
+        model.recordTimelineWidth(TimeRailView.maxWidth)
+        let floor: CGFloat = 360
+        let mounted = mount(model, width: floor)
+        defer { mounted.window.close() }
+        let split = try splitView(in: mounted.host)
+        XCTAssertEqual(
+            split.arrangedSubviews[0].frame.width, TimelineSplit.railCeiling(splitWidth: floor), accuracy: 2,
+            "the control: the rail sits at the ceiling")
+
+        TimelineSplit.leftMouseIsDownForTests = true
+        mounted.window.setContentSize(NSSize(width: floor, height: 520))
+        mounted.host.layoutSubtreeIfNeeded()
+        TimelineSplit.leftMouseIsDownForTests = false
+        layout(mounted.host)
+        XCTAssertEqual(
+            model.timelineWidth, TimeRailView.maxWidth, accuracy: 0.5,
+            "a height-only resize under a held button was recorded")
     }
 
     /// A presentation hidden but still mounted follows a drag made in the other one.
