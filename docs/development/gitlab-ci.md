@@ -2,8 +2,15 @@
 
 **T󠄁h󠄁e󠄁 `macos-github` j󠄁o󠄁b󠄁 i󠄁s󠄁 d󠄁i󠄁s󠄁a󠄁b󠄁l󠄁e󠄁d󠄁.󠄁** `.gitlab-ci.yml` d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁 i󠄁t󠄁,󠄁 s󠄁o󠄁
 n󠄁o󠄁 p󠄁i󠄁p󠄁e󠄁l󠄁i󠄁n󠄁e󠄁 r󠄁u󠄁n󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁s󠄁k󠄁t󠄁o󠄁p󠄁 s󠄁u󠄁i󠄁t󠄁e󠄁s󠄁.󠄁 R󠄁u󠄁n󠄁 t󠄁h󠄁e󠄁m󠄁 w󠄁i󠄁t󠄁h󠄁 t󠄁h󠄁e󠄁 l󠄁o󠄁c󠄁a󠄁l󠄁 g󠄁a󠄁t󠄁e󠄁 i󠄁n󠄁
-[C󠄁O󠄁N󠄁T󠄁R󠄁I󠄁B󠄁U󠄁T󠄁I󠄁N󠄁G󠄁.󠄁m󠄁d󠄁](../../CONTRIBUTING.md) b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 p󠄁u󠄁s󠄁h󠄁i󠄁n󠄁g󠄁.󠄁 T󠄁h󠄁e󠄁 b󠄁r󠄁i󠄁d󠄁g󠄁e󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁d󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁
-s󠄁t󠄁a󠄁y󠄁s󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁p󠄁o󠄁s󠄁i󠄁t󠄁o󠄁r󠄁y󠄁;󠄁 a󠄁d󠄁d󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁 b󠄁a󠄁c󠄁k󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁e󠄁s󠄁 i󠄁t󠄁.󠄁
+[C󠄁O󠄁N󠄁T󠄁R󠄁I󠄁B󠄁U󠄁T󠄁I󠄁N󠄁G󠄁.󠄁m󠄁d󠄁](../../CONTRIBUTING.md) b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁 p󠄁u󠄁s󠄁h󠄁i󠄁n󠄁g󠄁.󠄁
+
+[`nightly-macos.yml`](../../.github/workflows/nightly-macos.yml) a󠄁l󠄁s󠄁o󠄁 r󠄁u󠄁n󠄁s󠄁
+`platform` a󠄁n󠄁d󠄁 `shell` o󠄁n󠄁 G󠄁i󠄁t󠄁L󠄁a󠄁b󠄁'󠄁s󠄁 `main` o󠄁n󠄁c󠄁e󠄁 a󠄁 n󠄁i󠄁g󠄁h󠄁t󠄁.󠄁 I󠄁t󠄁s󠄁 r󠄁e󠄁s󠄁u󠄁l󠄁t󠄁s󠄁 s󠄁t󠄁a󠄁y󠄁 i󠄁n󠄁
+G󠄁i󠄁t󠄁H󠄁u󠄁b󠄁 A󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 n󠄁o󠄁t󠄁h󠄁i󠄁n󠄁g󠄁 r󠄁e󠄁p󠄁o󠄁r󠄁t󠄁s󠄁 t󠄁h󠄁e󠄁m󠄁 t󠄁o󠄁 G󠄁i󠄁t󠄁L󠄁a󠄁b󠄁.󠄁 I󠄁t󠄁 r󠄁u󠄁n󠄁s󠄁 f󠄁r󠄁o󠄁m󠄁 G󠄁i󠄁t󠄁H󠄁u󠄁b󠄁'󠄁s󠄁 `main`,󠄁
+w󠄁h󠄁i󠄁c󠄁h󠄁 h󠄁a󠄁s󠄁 n󠄁o󠄁 m󠄁i󠄁r󠄁r󠄁o󠄁r󠄁,󠄁 s󠄁o󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁e󠄁s󠄁 t󠄁o󠄁 t󠄁h󠄁a󠄁t󠄁 w󠄁o󠄁r󠄁k󠄁f󠄁l󠄁o󠄁w󠄁 r󠄁e󠄁a󠄁c󠄁h󠄁 i󠄁t󠄁 o󠄁n󠄁l󠄁y󠄁 b󠄁y󠄁 p󠄁u󠄁s󠄁h󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁r󠄁e󠄁.󠄁
+
+T󠄁h󠄁e󠄁 b󠄁r󠄁i󠄁d󠄁g󠄁e󠄁 d󠄁e󠄁s󠄁c󠄁r󠄁i󠄁b󠄁e󠄁d󠄁 b󠄁e󠄁l󠄁o󠄁w󠄁 s󠄁t󠄁a󠄁y󠄁s󠄁 i󠄁n󠄁 t󠄁h󠄁e󠄁 r󠄁e󠄁p󠄁o󠄁s󠄁i󠄁t󠄁o󠄁r󠄁y󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 a󠄁 s󠄁c󠄁h󠄁e󠄁d󠄁u󠄁l󠄁e󠄁.󠄁 T󠄁o󠄁 r󠄁e󠄁s󠄁t󠄁o󠄁r󠄁e󠄁
+i󠄁t󠄁,󠄁 a󠄁d󠄁d󠄁 t󠄁h󠄁e󠄁 i󠄁n󠄁c󠄁l󠄁u󠄁d󠄁e󠄁 b󠄁a󠄁c󠄁k󠄁 a󠄁n󠄁d󠄁 p󠄁u󠄁t󠄁 t󠄁h󠄁e󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁l󠄁e󠄁r󠄁'󠄁s󠄁 f󠄁i󠄁v󠄁e󠄁 m󠄁i󠄁n󠄁u󠄁t󠄁e󠄁 s󠄁c󠄁h󠄁e󠄁d󠄁u󠄁l󠄁e󠄁 b󠄁a󠄁c󠄁k󠄁.󠄁
 
 [`.gitlab-ci.yml`](../../.gitlab-ci.yml) s󠄁t󠄁a󠄁r󠄁t󠄁s󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 f󠄁o󠄁r󠄁 m󠄁e󠄁r󠄁g󠄁e󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁s󠄁 a󠄁n󠄁d󠄁
 p󠄁u󠄁s󠄁h󠄁e󠄁s󠄁 t󠄁o󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁 b󠄁r󠄁a󠄁n󠄁c󠄁h󠄁.󠄁 W󠄁e󠄁b󠄁 a󠄁n󠄁d󠄁 A󠄁P󠄁I󠄁 p󠄁i󠄁p󠄁e󠄁l󠄁i󠄁n󠄁e󠄁s󠄁 c󠄁a󠄁n󠄁 a󠄁l󠄁s󠄁o󠄁 r󠄁u󠄁n󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁s󠄁 o󠄁n󠄁 a󠄁
