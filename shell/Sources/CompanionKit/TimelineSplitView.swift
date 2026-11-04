@@ -43,7 +43,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
                     rail
                         .frame(
                             minWidth: resizable ? TimeRailView.width : pinned,
-                            idealWidth: resizable ? TimeRailView.width : pinned,
+                            idealWidth: pinned,
                             maxWidth: resizable ? ceiling : pinned)
                         .background(DividerWatch(
                             startWidth: railWidth, records: resizable, onMove: onRailResize,
@@ -149,7 +149,7 @@ private final class DividerWatchView: NSView {
     /// pane and leaves the split.
     private var lastSplitWidth: CGFloat?
     private var lastLeadingWidth: CGFloat?
-    /// A placement the split did not take or kept undoing, retried once a window has passed or when the
+    /// A placement the split did not take or kept undoing, retried by the first attempt after a window or when the
     /// target or the split's width changes.
     private var failedPlacement: (target: CGFloat, splitWidth: CGFloat, at: TimeInterval)?
     /// The last placement's target and split width, when it was made, and how many came in a row.
@@ -234,9 +234,9 @@ private final class DividerWatchView: NSView {
             // Case 13 reads these to learn which keys AppKit posts for a person's drag; built only when logged.
             TimelineSplit.logger.debug(
                 "timeline split resized, userInfo keys: \(TimelineSplit.keyList(note.userInfo), privacy: .public)")
-            // AppKit posts this on the main thread; a development build reports any other, a release one hops.
+            // AppKit posts this on the main thread; any other is logged as a fault and handed to the main actor.
             guard Thread.isMainThread else {
-                assertionFailure("timeline split resize posted off the main thread")
+                TimelineSplit.logger.fault("timeline split resize posted off the main thread")
                 let watchRef = self, splitRef = split
                 Task { @MainActor in
                     guard let watch = watchRef, let split = splitRef else { return }

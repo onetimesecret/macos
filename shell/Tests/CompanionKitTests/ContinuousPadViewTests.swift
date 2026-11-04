@@ -241,16 +241,17 @@ final class ContinuousPadViewTests: XCTestCase {
         }
     }
 
-    /// A line standing for several checkpoints still gives each one's full time.
+    /// A line standing for several checkpoints says how many, then gives each one's full time, on hover
+    /// as to VoiceOver.
     func testStackedCheckpointsListEveryTimeOnHover() {
         let stacked = ContinuousPadCanvas.stackedReading(["first time", "second time"])
-        XCTAssertEqual(stacked.toolTip, "first time\nsecond time")
+        XCTAssertEqual(stacked.toolTip, "2 checkpoints on this line\nfirst time\nsecond time")
         XCTAssertEqual(stacked.accessibility, "2 checkpoints on this line, first time, second time")
         let mixed = ContinuousPadCanvas.stackedReading([nil, "second time"])
-        XCTAssertEqual(mixed.toolTip, "second time", "an unstamped checkpoint has no time to list")
+        XCTAssertEqual(mixed.toolTip, "2 checkpoints on this line\nsecond time", "an unstamped checkpoint has no time")
         XCTAssertEqual(mixed.accessibility, "2 checkpoints on this line, second time")
         let unstamped = ContinuousPadCanvas.stackedReading([nil, nil])
-        XCTAssertNil(unstamped.toolTip)
+        XCTAssertEqual(unstamped.toolTip, "2 checkpoints on this line")
         XCTAssertEqual(unstamped.accessibility, "2 checkpoints on this line")
     }
 

@@ -367,12 +367,11 @@ final class ContinuousPadCanvas: NSView {
         }
     }
 
-    /// One gutter label for every checkpoint on a line: how many for VoiceOver, and each stamped
-    /// time. A checkpoint without a birth stamp counts but has no time to list.
-    static func stackedReading(_ details: [String?]) -> (toolTip: String?, accessibility: String) {
-        let times = details.compactMap { $0 }
-        return (times.isEmpty ? nil : times.joined(separator: "\n"),
-                ([CompanionL10n.format("pad.gutter.checkpoints", details.count)] + times).joined(separator: ", "))
+    /// One gutter label for every checkpoint on a line: how many, then each stamped time, for hover and
+    /// VoiceOver alike. A checkpoint without a birth stamp counts but has no time to list.
+    static func stackedReading(_ details: [String?]) -> (toolTip: String, accessibility: String) {
+        let lines = [CompanionL10n.format("pad.gutter.checkpoints", details.count)] + details.compactMap { $0 }
+        return (lines.joined(separator: "\n"), lines.joined(separator: ", "))
     }
 
     private func placeLabels() {
