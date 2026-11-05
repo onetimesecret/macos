@@ -185,10 +185,13 @@ struct BackdropRootView: View {
             PadPickerView(model: pages)
                 .disabled(!raised)
             Divider()
+            // Placement follows the layout: Tabs along the bottom, Timeline down the side;
+            // the workspace answers placement and the resting card pins its divider.
             PadWorkspaceView(model: pages, readOnly: !raised) {
                 pageContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            // One fade over the workspace, so the divider dims with the rail and the page.
             .stanceFaded(raised: raised, animation: stanceFade)
             PageStatusStack(model: pages)
             if !pages.showsPagesDownSide && !pages.isPageExpanded && !pages.isPadInspectorVisible {

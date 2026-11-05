@@ -97,6 +97,7 @@ public struct GeneralSettingsView: View {
     /// ADR-0033's ambient panel preference. Default on, persisted
     /// beside Pin. Nil hides the row, as it does for `keepsAbove`.
     private let ambientPanelEnabled: Binding<Bool>?
+    private let additionalSurfaceSettings: AnyView?
 
     public init(
         model: PageModel,
@@ -104,7 +105,8 @@ public struct GeneralSettingsView: View {
         offersCaptureToggle: Bool = true,
         resetSurface: (() -> Void)? = nil,
         keepsAbove: Binding<Bool>? = nil,
-        ambientPanelEnabled: Binding<Bool>? = nil
+        ambientPanelEnabled: Binding<Bool>? = nil,
+        additionalSurfaceSettings: AnyView? = nil
     ) {
         self.model = model
         self.loginPresence = loginPresence
@@ -112,6 +114,7 @@ public struct GeneralSettingsView: View {
         self.resetSurface = resetSurface
         self.keepsAbove = keepsAbove
         self.ambientPanelEnabled = ambientPanelEnabled
+        self.additionalSurfaceSettings = additionalSurfaceSettings
     }
 
     @State private var confirmingLedgerClear = false
@@ -142,6 +145,7 @@ public struct GeneralSettingsView: View {
                         )
                         .help("Makes the ambient panel available through its hotkey and the Show Ambient Panel command.")
                     }
+                    if let additionalSurfaceSettings { additionalSurfaceSettings }
                     Button("Reset to Default Position and Size", action: resetSurface)
                 } header: {
                     Text("Surface")
@@ -315,7 +319,7 @@ public struct GeneralSettingsView: View {
     /// The caption says both what changes and what it costs (ADR-0037).
     /// User-facing copy never exposes the components' code names.
     static var pageLayoutCaption: String {
-        CompanionL10n.format("pad.settings.layout", Int(TimeRailView.width))
+        CompanionL10n.format("pad.settings.layoutResizable", Int(TimeRailView.width))
     }
 
     /// The section only exists when the switch is offered, so the
@@ -332,7 +336,7 @@ public struct GeneralSettingsView: View {
     /// What the two time patterns cost and do, in the caption's own
     /// words (D-26).
     static let stampFormatCaption =
-        "How a page's birth time reads beside its day, on the rail and in the gutter. The day's words carry the date, so the time stands alone; two pages born the same minute take the second pattern so they read apart. Unicode date patterns: HH:mm, HH:mm:ss, h:mm a. Empty means the standard one."
+        "By default, times show minutes; pages sharing a minute on the same day show seconds. The day heading supplies the date; hover over a time for its full date and time, with seconds, in your system's format. Customize the timeline and page checkpoint times with Unicode date patterns: HH:mm, HH:mm:ss, h:mm a. Empty means the standard one."
 
     /// One field of the stamp format, edited in place. An empty
     /// pattern is kept as typed and read as the standard one.

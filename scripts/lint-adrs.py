@@ -61,7 +61,8 @@ DOC_STATUS_LINE = re.compile(
 VISIBLE_DOC_STATUS = re.compile(r"documentation[_ -]status", re.IGNORECASE)
 # A Markdown inline link, reduced to its text when a heading is slugged.
 INLINE_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
-SLUG_STRIP = re.compile(r"[^\w\- ]", re.UNICODE)
+SLUG_STRIP = re.compile(r"[^\w\- \U000E0100\U000E0101]", re.UNICODE)
+PROVENANCE_MARKS = re.compile(r"[\U000E0100\U000E0101]")
 
 
 def split_frontmatter(lines: list[str]) -> tuple[list[str], int, str | None]:
@@ -176,6 +177,8 @@ def adr_numbers(text: str) -> list[str]:
     numbers: list[str] = []
     for raw_target in LINK.findall(CODE_SPAN.sub("", text)):
         target = clean_link_target(raw_target)
+        if PROVENANCE_MARKS.search(target):
+            continue
         if target.startswith(("http://", "https://", "mailto:", "#")):
             continue
         rel, _, _ = target.partition("#")
@@ -202,7 +205,9 @@ def check(path: Path) -> tuple[list[str], dict[str, tuple[int, list[str]]]]:
         return problems, relations
     number = name_match.group(1)
 
-    text = path.read_text(encoding="utf-8")
+    raw_text = path.read_text(encoding="utf-8")
+    raw_lines = raw_text.splitlines()
+    text = PROVENANCE_MARKS.sub("", raw_text)
     lines = text.splitlines()
     header = FILE_HEADER.match(lines[0]) if lines else None
     skip = 1 if header and Path(header.group(1)).name == path.name else 0
@@ -247,7 +252,8 @@ def check(path: Path) -> tuple[list[str], dict[str, tuple[int, list[str]]]]:
                 f"documentation_status '{found[0][1]}' is not one of {sorted(DOC_STATUS)}",
             )
 
-    visible_lines = outside_fences(lines)
+    raw_visible_lines = outside_fences(raw_lines)
+    visible_lines = [(i, lines[i - 1]) for i, _ in raw_visible_lines]
     body = [(i, raw) for i, raw in visible_lines if i > body_start]
 
     titles = [i for i, raw in body if raw.startswith("# ")]
@@ -349,7 +355,7 @@ def check(path: Path) -> tuple[list[str], dict[str, tuple[int, list[str]]]]:
 
     for key in sorted(RELATION_FIELDS.intersection(fields)):
         line_no, _ = fields[key]
-        adr_targets = adr_numbers(field_block(lines, line_no))
+        adr_targets = adr_numbers(field_block(raw_lines, line_no))
         if not adr_targets:
             bad(line_no, f"'{key}' does not link a local ADR")
         else:
@@ -364,9 +370,12 @@ def check(path: Path) -> tuple[list[str], dict[str, tuple[int, list[str]]]]:
             bad(None, f"required section '## {section}' appears more than once")
 
     own_anchors = anchors(path)
-    for i, raw in visible_lines:
+    for i, raw in raw_visible_lines:
         for raw_target in LINK.findall(CODE_SPAN.sub("", raw)):
             target = clean_link_target(raw_target)
+            if PROVENANCE_MARKS.search(target):
+                bad(i, f"link target contains provenance marks: {target}")
+                continue
             if target.startswith(("http://", "https://", "mailto:")):
                 continue
             rel, _, fragment = target.partition("#")

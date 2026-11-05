@@ -265,7 +265,7 @@ final class TimeRailTests: XCTestCase {
         XCTAssertTrue(peopled.hasPage)
         XCTAssertEqual(peopled.target, .tab(1))
         let help = StreamNavigator.help(for: peopled, chord: nil)
-        XCTAssertTrue(help.contains(" · "), "a page node's tooltip is its day and stamp: \(help)")
+        XCTAssertEqual(help, "today", "missing metadata must not add an empty stamp separator")
         XCTAssertFalse(help.contains("Start"), "a page node's tooltip promised a page that exists")
     }
 
@@ -623,6 +623,28 @@ final class TimeRailTests: XCTestCase {
         window.setFrame(NSRect(x: 0, y: 0, width: 640, height: 400), display: false)
         defer { window.close() }
         return window.frame.height - (window.contentView?.frame.height ?? window.frame.height)
+    }
+
+    /// With pads on, the heading's ideal width, sort menu and + included, is at most the timeline's
+    /// start width less the rail's horizontal padding, measured with the package's English labels.
+    func testTheMultiPadHeadingFitsTheTimelinesStartWidth() throws {
+        let model = try makeModel()
+        model.newPage()
+        model.showsTimeUnits = true
+        let nodes = StreamNavigator.nodes(
+            projection: model.timeUnits, tabs: model.navigationTabs, selection: model.selection)
+        let heading = TimeRailView(model: model, readOnly: false).padHeading(nodes: nodes)
+            .environment(\.presentationSurface, .panel)
+        let host = NSHostingView(rootView: heading)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 60), styleMask: [.titled],
+            backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(host)
+        defer { window.close() }
+        let ideal = host.fittingSize.width
+        XCTAssertGreaterThan(ideal, 40, "the control: the menu's label was measured, not only the +")
+        XCTAssertLessThanOrEqual(ideal, TimeRailView.width - 8, "the heading overflows the rail's start width")
     }
 
     /// At each window's minimum height less its chrome, with four files open and up to three

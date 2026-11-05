@@ -206,6 +206,6 @@ performs real external drag/drop, or checks typing in another app. Display
 unplugging, sleep/wake, Space transitions, and inactive-app click delivery still
 need manual checks; the smoke test exercises simulated inputs for those paths.
 
-The macOS [CI workflow](../../.github/workflows/ci.yml) builds this package,
+The macOS [CI c󠄁o󠄁n󠄁f󠄁i󠄁g󠄁u󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁](../../.github/workflows/gitlab-macos.yml) builds this package,
 runs the self-test, and checks bundle assembly. The AppKit smoke test remains
 a local check.

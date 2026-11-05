@@ -1,0 +1,15 @@
+claude:
+  stage: ai
+  image: node:24-bookworm
+  tags: [saas-linux-small-amd64]
+  resource_group: claude
+  timeout: 25 minutes
+  rules:
+    - if: '$CLAUDE_CI_ENABLED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "trigger"'
+    - if: '$CLAUDE_CI_ENABLED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && ($CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api") && ($CI_MODE == "claude-review" || $CI_MODE == "claude")'
+  before_script:
+    - apt-get update
+    - apt-get install --yes --no-install-recommends ca-certificates git python3
+    - npm install --global @anthropic-ai/claude-code@2.1.318
+  script:
+    - python3 scripts/ci/claude.py

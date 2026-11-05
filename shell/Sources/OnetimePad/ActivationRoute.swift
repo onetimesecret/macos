@@ -10,6 +10,7 @@ enum ActivationReason: Equatable, Sendable {
     case hotkey
     case statusItem
     case cardClick
+    case sideTabClick
     case openEditorPresentation
     case showAmbientPresentation
 }
@@ -60,6 +61,8 @@ enum ActivationRouter {
             return context.ambientPanelEnabled ? .summonPanel : .openEditorWindow(.activation)
         case .cardClick:
             return .summonPanel
+        case .sideTabClick:
+            return context.ambientPanelEnabled ? .summonPanel : .noop
         }
     }
 }

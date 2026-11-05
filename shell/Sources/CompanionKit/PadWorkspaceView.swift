@@ -40,21 +40,29 @@ public struct PadWorkspaceView<Content: View>: View {
                     }
                     .frame(width: 180)
                     Divider()
-                } else if !model.isPadInspectorVisible && model.showsPagesDownSide && !model.isPageExpanded {
+                }
+                // One split in every state keeps the editor's identity; the inspector hides the
+                // timeline, a compact window closes the split, and a resting card pins the divider.
+                TimelineSplitView(
+                    showsTimeline: !model.isPadInspectorVisible && model.showsPagesDownSide
+                        && !model.isPageExpanded,
+                    resizable: !readOnly,
+                    railWidth: model.timelineWidth, onRailResize: model.recordTimelineWidth,
+                    pageMinWidth: layout.showsEditor ? TimelineSplit.pageMinWidth : 0
+                ) {
                     VStack(spacing: 0) {
                         navigation
                         TimeRailView(model: model, readOnly: readOnly)
                     }
-                    .frame(width: TimeRailView.width)
-                    Divider()
+                } content: {
+                    content
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                content
-                    .frame(minWidth: 0, maxWidth: layout.showsEditor ? .infinity : 0,
-                           maxHeight: .infinity)
-                    .clipped()
-                    .opacity(layout.showsEditor ? 1 : 0)
-                    .allowsHitTesting(layout.showsEditor)
-                    .accessibilityHidden(!layout.showsEditor)
+                .frame(minWidth: 0, maxWidth: layout.showsEditor ? .infinity : 0, maxHeight: .infinity)
+                .clipped()
+                .opacity(layout.showsEditor ? 1 : 0)
+                .allowsHitTesting(layout.showsEditor)
+                .accessibilityHidden(!layout.showsEditor)
                 if model.isPadInspectorVisible {
                     if layout.showsEditor { Divider() }
                     PadInspectorView(model: model, pads: pads, routes: $routes,

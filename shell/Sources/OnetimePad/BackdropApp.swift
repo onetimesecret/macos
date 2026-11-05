@@ -117,6 +117,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         super.init()
     }
     private var controller: BackdropWindowController?
+    private var sideTab: SideTabController?
     private var mainMenu: MainMenuController?
     private lazy var commandPalette = CommandPaletteController(model: pages,
         performWindowCommand: { [weak self] command in
@@ -257,6 +258,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        sideTab?.stop()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         keyWindow.observe()
 
@@ -363,6 +368,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         KeychainIntroduction.showIfNeeded(defaults: FormFactor.settingsDefaults)
         controller.show()
         completeStartup(notification)
+        sideTab = SideTabController(model: model) { [weak self] in
+            self?.applySummon(.sideTabClick)
+        }
     }
 
     /// Drain queued document and application-open events after model startup.

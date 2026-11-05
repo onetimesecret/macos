@@ -80,8 +80,17 @@ public struct TimeRailView: View {
         drivesRoll(surface: surface, owner: owner) ? owners : unclaimed
     }
 
-    /// The timeline column includes room for the heading's sort menu.
-    nonisolated static let width: CGFloat = 150
+    /// The initial and narrowest width, the 110 of D-26's side metrics (2026-0915-ui-ux-decisions.md);
+    /// the native split view lets the person widen it.
+    nonisolated static let width: CGFloat = 110
+
+    /// The widest the timeline may be dragged when the window leaves the page its floor.
+    nonisolated static let maxWidth: CGFloat = 280
+
+    /// A stored or reported width brought inside the rail's own range.
+    nonisolated static func clampedWidth(_ value: CGFloat) -> CGFloat {
+        value.isFinite ? min(max(value, width), maxWidth) : width
+    }
 
     public var body: some View {
         unifiedRail
@@ -142,7 +151,7 @@ public struct TimeRailView: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
-        .frame(width: Self.width)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.panelBackground)
     }
 
@@ -201,7 +210,7 @@ public struct TimeRailView: View {
     /// names the chord the keymap bound to `page::New`, in the strip's
     /// words, so the two buttons that do one thing cannot describe it
     /// two ways.
-    private func padHeading(nodes: [StreamNavigator.Node]) -> some View {
+    func padHeading(nodes: [StreamNavigator.Node]) -> some View {
         HStack(spacing: 0) {
             sortMenu(sections: Self.sortSections(model: model, nodes: nodes)) {
                 GroupLabel(text: CompanionL10n.string("pad.timeline.heading"))

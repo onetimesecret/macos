@@ -1969,16 +1969,18 @@ final class DayHeaderView: NSView {
         return StreamNavigator.retainedLabel
     }
 
-    /// What VoiceOver hears at a perforation: which day it is, what the
-    /// page under it is called, and how long that page has left. The
+    /// What VoiceOver hears at a perforation: which day it is, the page's
+    /// full birth time, what it is called, and how long it has left. The
     /// rail already speaks the day; this speaks the page, which is what
     /// the rail deliberately does not carry. Pure.
     nonisolated static func spokenHeader(
-        spokenLabel: String, title: String, remainingLabel: String
+        spokenLabel: String, detail: String, title: String, remainingLabel: String
     ) -> String {
-        guard !title.isEmpty else { return spokenLabel }
-        guard !remainingLabel.isEmpty else { return "\(spokenLabel), \(title)" }
-        return "\(spokenLabel), \(title), \(remainingLabel) left"
+        var parts = [spokenLabel, detail].filter { !$0.isEmpty }
+        guard !title.isEmpty else { return parts.joined(separator: ", ") }
+        parts.append(title)
+        if !remainingLabel.isEmpty { parts.append("\(remainingLabel) left") }
+        return parts.joined(separator: ", ")
     }
 
     /// The height a header takes: a gutter's worth, plus room for the
@@ -2029,6 +2031,7 @@ final class DayHeaderView: NSView {
             titleField.stringValue = summaryTitle
         }
         titleSource = summary?.titleSource
+        detailStamp = summary?.pageCreatedMs.map { StreamNavigator.detailedStamp(createdMs: $0) }
         titleField.isHidden = !Self.drawsTitle(
             source: titleSource, renaming: titleBeforeRename != nil)
         remainingField.stringValue = Self.retainedText(pageDayOffset: summary?.pageDayOffset)
@@ -2057,11 +2060,19 @@ final class DayHeaderView: NSView {
         refreshPreviewButton()
     }
 
+    /// The page's full birth date and time, the reading the timeline's node gives on hover.
+    private var detailStamp: String?
+
+    /// The time's hover reading, for tests.
+    var timeToolTip: String? { timeField.toolTip }
+
     /// The day and time runs, re-joined to whatever the seat now holds.
     private func compose() {
         let runs = Self.runs(words, named: !titleField.isHidden)
         dayField.stringValue = runs.day
         timeField.stringValue = runs.time
+        let toolTip = runs.time.isEmpty ? nil : detailStamp
+        if timeField.toolTip != toolTip { timeField.toolTip = toolTip }
     }
 
     /// The countdown VoiceOver hears, kept beside the gauge that
@@ -2071,6 +2082,7 @@ final class DayHeaderView: NSView {
     private func updateAccessibilityLabel() {
         setAccessibilityLabel(Self.spokenHeader(
             spokenLabel: spokenLabel,
+            detail: detailStamp ?? "",
             title: titleField.stringValue,
             remainingLabel: remainingField.stringValue.isEmpty
                 ? spokenRemainingLabel : remainingField.stringValue

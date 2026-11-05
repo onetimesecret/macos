@@ -768,11 +768,13 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(checkpoints.help, "sort checkpoints from today: Newest First")
     }
 
-    func testRailWidthAndLayoutDisclosureUseSameMeasure() {
-        XCTAssertEqual(TimeRailView.width, 150)
+    func testLayoutDisclosureDescribesTheResizableTimeline() {
+        XCTAssertEqual(TimeRailView.width, 110)
         let caption = GeneralSettingsView.pageLayoutCaption
-        XCTAssertTrue(caption.contains("150 points"))
+        XCTAssertTrue(caption.contains("\(Int(TimeRailView.width)) points"))
+        XCTAssertTrue(caption.contains("Drag the divider to resize the timeline"))
         XCTAssertTrue(caption.contains("older blank pages are hidden"))
+        XCTAssertTrue(caption.contains("moves no content and writes nothing new to disk"), "ADR-0037's cost")
         XCTAssertFalse(caption.contains("counted"))
     }
 

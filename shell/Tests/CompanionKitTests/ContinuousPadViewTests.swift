@@ -198,6 +198,63 @@ final class ContinuousPadViewTests: XCTestCase {
         XCTAssertTrue(document.blockMetas.isEmpty)
     }
 
+    func testCheckpointTimesMatchTimelineAndExpandOnHover() throws {
+        let model = try model()
+        _ = try seed("first", in: model)
+        _ = try seed("second", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+
+        for format in [StreamNavigator.StampFormat.standard, .init(short: "h:mm a", fine: "h:mm:ss a")] {
+            model.stampFormat = format
+            ContinuousPadView.updateSurface(surface.scroll, model: model, readOnly: false,
+                coordinator: surface.coordinator)
+            let nodes = StreamNavigator.nodes(projection: model.timeUnits, tabs: model.navigationTabs,
+                selection: model.selection).filter(\.hasPage)
+            XCTAssertEqual(surface.canvas.checkpointLabels.count, nodes.count)
+            for (label, node) in zip(surface.canvas.checkpointLabels, nodes) {
+                XCTAssertFalse(node.detailStamp.isEmpty, "the control: every fixture page has a birth stamp")
+                XCTAssertEqual(label.stringValue, node.stamp)
+                XCTAssertEqual(label.toolTip, node.detailStamp)
+                XCTAssertEqual(label.accessibilityLabel(), "Checkpoint, \(node.detailStamp)")
+            }
+        }
+    }
+
+    /// A change to the person's locale settings or time zone reads the gutter's times again without a text edit.
+    func testALocaleOrTimeZoneChangeReadsTheCheckpointTimesAgain() throws {
+        let model = try model()
+        _ = try seed("first", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let label = try XCTUnwrap(surface.canvas.checkpointLabels.first)
+        let detail = try XCTUnwrap(label.toolTip, "the control: the fixture page has a birth stamp")
+
+        for name in [NSLocale.currentLocaleDidChangeNotification, .NSSystemTimeZoneDidChange] {
+            label.toolTip = "stale"
+            label.setAccessibilityLabel("stale")
+            NotificationCenter.default.post(name: name, object: nil)
+            drainMainQueue()
+            surface.scroll.layoutSubtreeIfNeeded()
+            XCTAssertEqual(label.toolTip, detail, "the gutter kept a reading from before \(name.rawValue)")
+            XCTAssertEqual(label.accessibilityLabel(), "Checkpoint, \(detail)")
+        }
+    }
+
+    /// A line standing for several checkpoints says how many, then gives each one's full time, on hover
+    /// as to VoiceOver.
+    func testStackedCheckpointsListEveryTimeOnHover() {
+        let stacked = ContinuousPadCanvas.stackedReading(["first time", "second time"])
+        XCTAssertEqual(stacked.toolTip, "2 checkpoints on this line\nfirst time\nsecond time")
+        XCTAssertEqual(stacked.accessibility, "2 checkpoints on this line, first time, second time")
+        let mixed = ContinuousPadCanvas.stackedReading([nil, "second time"])
+        XCTAssertEqual(mixed.toolTip, "2 checkpoints on this line\nsecond time", "an unstamped checkpoint has no time")
+        XCTAssertEqual(mixed.accessibility, "2 checkpoints on this line, second time")
+        let unstamped = ContinuousPadCanvas.stackedReading([nil, nil])
+        XCTAssertEqual(unstamped.toolTip, "2 checkpoints on this line")
+        XCTAssertEqual(unstamped.accessibility, "2 checkpoints on this line")
+    }
+
     func testOneStorageSupportsNativeSelectionAndMovementAcrossCheckpoint() throws {
         let model = try model()
         _ = try seed("first line", in: model)
