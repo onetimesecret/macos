@@ -297,7 +297,7 @@ public enum StreamNavigator {
 
     // MARK: What a node says
 
-    /// The day's words, then the full local date and seconds (D-38's day and minute), for hover and VoiceOver.
+    /// The day's words, then the full local date and seconds, for hover and VoiceOver.
     static func timeParts(of node: Node) -> [String] {
         [node.spokenDay, node.detailStamp].filter { !$0.isEmpty }
     }
@@ -973,7 +973,7 @@ public enum StreamNavigator {
 
 /// One medium-style `DateFormatter` per (locale, time zone), on `StampFormatterCache`'s terms, and
 /// each page's reading, since the rail and the gutters ask again on every refresh.
-private enum DetailedStampFormatterCache {
+enum DetailedStampFormatterCache {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var cache: [String: DateFormatter] = [:]
     nonisolated(unsafe) private static var readings: [String: String] = [:]
@@ -991,12 +991,24 @@ private enum DetailedStampFormatterCache {
         }
     }
 
-    static func reading(createdMs: UInt64, locale: Locale?, timeZone: TimeZone) -> String {
-        _ = localeWatch
+    private static func keys(createdMs: UInt64, locale: Locale?, timeZone: TimeZone) -> (String, String) {
         // The autoupdating locale keys apart from a fixed one with the same identifier: only it
         // reads the person's 24-hour and format overrides.
         let key = "\(timeZone.identifier)\u{1F}\(locale?.identifier ?? "\u{1F}autoupdating")"
-        let readingKey = "\(key)\u{1F}\(createdMs)"
+        return (key, "\(key)\u{1F}\(createdMs)")
+    }
+
+    /// Whether the formatter and the reading for these are cached, so a test can see a flush.
+    static func cached(createdMs: UInt64, locale: Locale?, timeZone: TimeZone) -> (formatter: Bool, reading: Bool) {
+        let (key, readingKey) = keys(createdMs: createdMs, locale: locale, timeZone: timeZone)
+        lock.lock()
+        defer { lock.unlock() }
+        return (cache[key] != nil, readings[readingKey] != nil)
+    }
+
+    static func reading(createdMs: UInt64, locale: Locale?, timeZone: TimeZone) -> String {
+        _ = localeWatch
+        let (key, readingKey) = keys(createdMs: createdMs, locale: locale, timeZone: timeZone)
         lock.lock()
         defer { lock.unlock() }
         if let hit = readings[readingKey] { return hit }
