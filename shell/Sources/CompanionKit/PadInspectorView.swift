@@ -44,12 +44,14 @@ struct PadInspectorView: View {
                         Text(CompanionL10n.string("pad.remove.failed"))
                             .font(.callout).foregroundStyle(Color.emberText)
                     }
-                    DisclosureGroup(CompanionL10n.string("pad.links.about")) {
-                        Text(CompanionL10n.string("pad.links.storage"))
-                            .font(.caption).foregroundStyle(.secondary)
-                            .padding(.top, 6)
+                    // Always in view: ADR-0039 asks the attempt to state the storage limitation clearly.
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(CompanionL10n.string("pad.links.about")).font(.caption.weight(.semibold))
+                        Text(CompanionL10n.string("pad.links.storage")).font(.caption)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .font(.caption).foregroundStyle(.secondary)
+                    .foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
