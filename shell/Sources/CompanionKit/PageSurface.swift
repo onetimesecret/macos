@@ -176,7 +176,9 @@ public struct PageContentView: View {
             // keyboard back.
             ZStack {
                 EmptyStateKeyGrant(
-                    selectedTabHoldsNoPage: { [model] in model.selectedTabHoldsNoPage },
+                    selectedTabHoldsNoPage: { [model] in
+                        !model.isPadInspectorVisible && model.selectedTabHoldsNoPage
+                    },
                     onCreate: { window in model.createPageAndFocus(in: window) },
                     onEscape: { model.escape() }
                 )

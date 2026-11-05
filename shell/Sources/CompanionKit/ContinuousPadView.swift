@@ -72,9 +72,7 @@ public struct ContinuousPadView: NSViewRepresentable {
         guard let canvas = scroll.documentView as? ContinuousPadCanvas else { return }
         canvas.savePosition()
         if coordinator.model.rollGeometry.holdsClaim(canvas) {
-            if let pad = canvas.padID {
-                coordinator.model.rememberPadReadingPlace(canvas.readingPlace, for: pad)
-            }
+            coordinator.model.rememberPadReadingPlace(canvas.readingPlace, for: canvas.padID)
             coordinator.model.rollGeometry.reset(from: canvas)
         }
         if canvas.editor.textStorage === canvas.document.storage { canvas.document.onChange = nil }
@@ -95,7 +93,7 @@ final class ContinuousPadCanvas: NSView {
     let coordinator: InkEditorView.Coordinator
     let model: PageModel
     private(set) var document: ContinuousPadDocument
-    private(set) var padID: UUID?
+    private(set) var padID: UUID
     private(set) var extents: [RollGeometry.Extent] = []
     private(set) var checkpointLabels: [NSTextField] = []
     private weak var observedScroll: NSScrollView?
@@ -129,7 +127,7 @@ final class ContinuousPadCanvas: NSView {
         self.model = model
         self.coordinator = coordinator
         self.document = document
-        self.padID = model.pads.isEnabled ? model.pads.activeID : nil
+        self.padID = model.pads.activeID
         coordinator.continuousDocument = document
         coordinator.currentSheet = nil
         InkEditorView.Coordinator.shedLayoutManagers(from: document.storage, keeping: nil)
@@ -221,7 +219,7 @@ final class ContinuousPadCanvas: NSView {
             incoming.storage.delegate = coordinator
             document = incoming
             needsMeasurement = true
-            padID = model.pads.isEnabled ? model.pads.activeID : nil
+            padID = model.pads.activeID
             coordinator.continuousDocument = incoming
             coordinator.currentSheet = nil
             bindDocument()

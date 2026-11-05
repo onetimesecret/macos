@@ -29,8 +29,7 @@ public struct PadEntry: Identifiable, Codable, Equatable, Sendable {
     public var isScratch: Bool
 }
 
-/// Experimental local navigation metadata. It is deliberately separate from
-/// encrypted note content. Names and paths in this catalog are NOT encrypted.
+/// Pad names, associations, selection and ordering in local preferences.
 @MainActor
 public final class PadCatalog: ObservableObject {
     public static let scratchID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
@@ -38,12 +37,6 @@ public final class PadCatalog: ObservableObject {
     /// Experimental app hints consider nine manually visited pads, independently
     /// of the nine numbered named-pad shortcuts. The policy remains provisional.
     static let recentPadLimit = 9
-    @Published public var isEnabled: Bool { didSet {
-        if loadFailure != nil && isEnabled { isEnabled = false }
-        if oldValue != isEnabled { changed() }
-    } }
-    @Published public var appAssociationsEnabled: Bool { didSet { if oldValue != appAssociationsEnabled { changed() } } }
-    @Published public var showFullPaths: Bool { didSet { if oldValue != showFullPaths { changed() } } }
     @Published public private(set) var entries: [PadEntry]
     @Published public private(set) var activeID: UUID
     public private(set) var loadFailure: String?
@@ -59,9 +52,6 @@ public final class PadCatalog: ObservableObject {
 
     private struct State: Codable {
         var version: Int = 1
-        var enabled: Bool
-        var appAssociationsEnabled: Bool
-        var showFullPaths: Bool
         var entries: [PadEntry]
         var activeID: UUID
         var tabOwners: [String: UUID]
@@ -90,9 +80,6 @@ public final class PadCatalog: ObservableObject {
                     == candidate.entries.flatMap(\.folderPaths).count
         } ?? false
         let loaded = valid ? state : nil
-        isEnabled = loaded?.enabled ?? false
-        appAssociationsEnabled = loaded?.appAssociationsEnabled ?? false
-        showFullPaths = loaded?.showFullPaths ?? false
         entries = loaded?.entries ?? [PadEntry(id: Self.scratchID, name: "Scratch",
             folderPaths: [], applicationBundleIDs: [], isScratch: true)]
         activeID = loaded?.activeID ?? Self.scratchID
@@ -112,8 +99,7 @@ public final class PadCatalog: ObservableObject {
     private func changed() {
         // A corrupt or newer catalog is never replaced by an empty one.
         if loadFailure == nil {
-            let state = State(enabled: isEnabled, appAssociationsEnabled: appAssociationsEnabled,
-                showFullPaths: showFullPaths, entries: entries, activeID: activeID,
+            let state = State(entries: entries, activeID: activeID,
                 tabOwners: tabOwners, fileOwners: fileOwners, lastUsed: lastUsed,
                 daySort: daySort, checkpointSort: checkpointSort, rememberedTabs: rememberedTabs, rememberedFiles: rememberedFiles)
             if let data = try? JSONEncoder().encode(state) { defaults.set(data, forKey: Self.storageKey) }
@@ -301,7 +287,7 @@ public final class PadCatalog: ObservableObject {
         }
     }
     public func pad(forApplication bundleID: String) -> UUID? {
-        guard isEnabled, appAssociationsEnabled else { return nil }
+        guard loadFailure == nil else { return nil }
         let recent = Set(orderedRecency.prefix(Self.recentPadLimit).map(\.key))
         return entries.enumerated().filter {
             (recent.contains($0.element.id) || $0.element.id == activeID)

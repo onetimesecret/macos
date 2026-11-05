@@ -138,7 +138,6 @@ final class TimelineSplitViewTests: XCTestCase {
         XCTAssertTrue(descendants(InkTextView.self, in: host).first === editor)
         XCTAssertEqual(model.timelineWidth, 180, accuracy: 2, "the divider move was not recorded")
 
-        model.pads.isEnabled = true
         host.rootView = mounted.root(true)
         layout(host)
         XCTAssertEqual(split.arrangedSubviews[0].frame.width, 180, accuracy: 2)

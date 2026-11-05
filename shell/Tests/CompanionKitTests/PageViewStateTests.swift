@@ -1469,18 +1469,21 @@ final class PageViewStateTests: XCTestCase {
         XCTAssertEqual(window.scroll.contentView.bounds.origin.y, 0)
     }
 
-    /// Only a hand off carries the roll's place. A roll rebuilt in its
-    /// own window, a ledger round trip or the mode toggled, opens at
-    /// Day 0 as it did before there were two windows.
-    func testARollRebuiltInItsOwnWindowStillOpensAtDayZero() throws {
+    /// A remounted roll restores its pad's reading place without using a window handoff.
+    func testARollRebuiltInItsOwnWindowRestoresItsPadsReadingPlace() throws {
         let model = try makeModel()
         let (first, _, _) = try aRollReadPartWayDown(model)
+        let expected = try XCTUnwrap(first.stack.currentPlace)
+        let offset = first.scroll.contentView.bounds.origin.y
+        XCTAssertGreaterThan(offset, 0)
 
         dismantle(first)
         XCTAssertNil(model.viewStates.rollPlace)
+        XCTAssertEqual(model.readingPlace(for: model.pads.activeID), expected)
         let second = try mountRoll(of: model, in: .panel, width: 420, height: 320)
         pump()
 
-        XCTAssertEqual(second.scroll.contentView.bounds.origin.y, 0)
+        XCTAssertEqual(second.stack.currentPlace, expected)
+        XCTAssertEqual(second.scroll.contentView.bounds.origin.y, offset, accuracy: 0.5)
     }
 }

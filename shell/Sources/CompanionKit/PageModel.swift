@@ -465,7 +465,6 @@ public final class PageModel: ObservableObject {
     }
 
     private var lastPadID = PadCatalog.scratchID
-    private var lastPadsEnabled = false
     private var isApplyingCatalogChange = false
     private var pendingPadTabOwners: [UInt64: UUID] = [:]
     private var padRosterDate: Date?
@@ -502,7 +501,7 @@ public final class PageModel: ObservableObject {
     /// The dirty file whose close request is awaiting an inline outcome.
     @Published public private(set) var pendingFileClose: PendingFileClose?
     /// `openFile(at:)` refuses while this is true; the Finder's opens wait on it instead.
-    public var openRefusedForCloseDecision: Bool { pads.isEnabled && pendingFileClose != nil }
+    public var openRefusedForCloseDecision: Bool { pendingFileClose != nil }
     private var selectionBeforePendingFileClose: UInt64?
     private var ledgerBeforePendingFileClose = false
 
@@ -1178,11 +1177,20 @@ public final class PageModel: ObservableObject {
     /// Settings window, the surface merely asks for it).
     public var onOpenSettings: (() -> Void)?
 
-    /// The Settings tabs the surface points to by name: the conceal
-    /// sheet's Connection Settings… and the pad switcher's Manage Pads….
+    @Published public var isPadInspectorVisible = false {
+        didSet {
+            if isPadInspectorVisible, pendingFileClose != nil {
+                isPadInspectorVisible = false
+                flash(CompanionL10n.string("pad.switch.pendingClose"))
+            }
+        }
+    }
+
+    public func showPadInspector() { isPadInspectorVisible = true }
+
+    /// The Settings tabs the surface points to by name.
     public enum SettingsPane: Sendable {
         case connection
-        case pads
     }
 
     /// Set by the app delegate: Settings opened on a named tab.
@@ -1756,7 +1764,6 @@ public final class PageModel: ObservableObject {
         sync.onRemoteChange = { [weak self] pages in self?.settleRemoteEdits(on: pages) }
         sync.onEnrolRefused = { [weak self] page in self?.settleRefusal(sheet: page, told: true) }
         lastPadID = pads.activeID
-        lastPadsEnabled = pads.isEnabled
         pads.onChange = { [weak self] in self?.padCatalogChanged() }
         updateApplicationContextObservation()
         modalEndObserver = NotificationCenter.default.addObserver(
@@ -1962,7 +1969,7 @@ public final class PageModel: ObservableObject {
         // node, the roll parked the editor, and nothing reconciled
         // again until the next edit or expiry happened along.
         refresh()
-        if pads.isEnabled { restorePadSelection() }
+        restorePadSelection()
         // The third sealed file, after the pages and after the
         // selection settles. It is licensed on its own: a state file
         // that would not open says nothing about the drafts, which are
@@ -1970,7 +1977,7 @@ public final class PageModel: ObservableObject {
         // to read them because of the other one would lose a person's
         // unsaved typing to an unrelated failure.
         restoreDrafts()
-        if pads.isEnabled { restorePadSelection() }
+        restorePadSelection()
         // The load is settled, mint included: what happens from here is
         // the user's work, and only that can block a later quit.
         mutatedSinceLoad = false
@@ -2582,8 +2589,7 @@ public final class PageModel: ObservableObject {
             }
             waiting = deferred
         }
-        // Maintain already-recorded ownership even while pad navigation is off.
-        // Unowned Scratch paths remain implicit and incur no catalog write.
+        // Transfer recorded ownership when a file changes its path.
         pads.transferFiles(client.fileRoster().compactMap { new in
             guard let old = restoredFiles.first(where: { $0.id == new.id }), old.path != new.path else { return nil }
             return (old.path, new.path)
@@ -3188,16 +3194,14 @@ public final class PageModel: ObservableObject {
     }
 
     public var navigationTabs: [TabSummary] {
-        tabs.filter { !isClosed($0) && (!pads.isEnabled || pads.owner(ofTabUUID: $0.uuid) == pads.activeID) }
+        tabs.filter { !isClosed($0) && pads.owner(ofTabUUID: $0.uuid) == pads.activeID }
     }
 
     public var closedTabs: [TabSummary] {
-        guard pads.isEnabled else { return closedPageNavigation.summaries }
         return closedPageNavigation.summaries.filter { pads.owner(ofTabUUID: $0.uuid) == pads.activeID }
     }
 
     public var hasClosedTabs: Bool {
-        guard pads.isEnabled else { return !closedPageNavigation.summaries.isEmpty }
         return closedPageNavigation.summaries.contains { pads.owner(ofTabUUID: $0.uuid) == pads.activeID }
     }
 
@@ -3256,7 +3260,7 @@ public final class PageModel: ObservableObject {
 
     func continuousPadDocument() -> ContinuousPadDocument {
         pruneContinuousDocuments()
-        let scope = pads.isEnabled ? pads.activeID.uuidString : "legacy"
+        let scope = pads.activeID.uuidString
         if let document = continuousDocuments[scope] {
             if document.isSuspended { document.refresh() }
             return document
@@ -3273,7 +3277,7 @@ public final class PageModel: ObservableObject {
     }
 
     private func pruneContinuousDocuments() {
-        let valid = pads.isEnabled ? Set(pads.entries.map { $0.id.uuidString }) : ["legacy"]
+        let valid = Set(pads.entries.map { $0.id.uuidString })
         for scope in Array(continuousDocuments.keys) where !valid.contains(scope) {
             continuousDocuments.removeValue(forKey: scope)?.suspend()
             client.continuousClearHistory(scope: scope)
@@ -3283,7 +3287,7 @@ public final class PageModel: ObservableObject {
     private func refreshContinuousDocuments() {
         pruneContinuousDocuments()
         let mounted = (activeEditor as? InkTextView)?.coordinator?.continuousDocument
-        let scope = pads.isEnabled ? pads.activeID.uuidString : "legacy"
+        let scope = pads.activeID.uuidString
         for document in continuousDocuments.values {
             if document.isApplyingLocalEdit || (document === mounted && document.scope == scope) { document.refresh() }
             else { document.suspend() }
@@ -3304,7 +3308,7 @@ public final class PageModel: ObservableObject {
     func selectContinuousPage(_ page: UInt64) {
         guard let tab = navigationTabs.first(where: { $0.pageID == page }), selection != tab.id else { return }
         selection = tab.id
-        if pads.isEnabled { pads.remember(tabUUID: tab.uuid, for: pads.activeID) }
+        pads.remember(tabUUID: tab.uuid, for: pads.activeID)
     }
 
     func writeContinuousCut(_ fragment: SealedFragment) -> Bool {
@@ -3322,20 +3326,19 @@ public final class PageModel: ObservableObject {
         refresh()
     }
     public var navigationFiles: [FileSummary] {
-        guard pads.isEnabled else { return openFiles }
         return openFiles.filter { pads.owner(ofFile: $0.path) == pads.activeID }
     }
     /// Soft application context yields to any explicit file context or an
     /// unfinished confirmation. Called by the transient workspace observer.
     func routeFromApplication(_ bundleID: String) {
-        guard !ModalSession.isRunning, !ModalSession.isBracketed,
+        guard !isPadInspectorVisible, !hasPresentedPadCreation,
+            !ModalSession.isRunning, !ModalSession.isBracketed,
             NSApp?.windows.contains(where: { $0.attachedSheet != nil || $0.sheetParent != nil }) != true,
             pendingFileClose == nil, concealDraft == nil, selectedFile == nil,
             let target = pads.pad(forApplication: bundleID) else { return }
         pads.activate(target, recordRecency: false)
     }
     public func activatePad(_ id: UUID) {
-        guard pads.isEnabled else { return }
         guard pendingFileClose == nil else {
             flash(CompanionL10n.string("pad.switch.pendingClose"))
             return
@@ -3344,66 +3347,57 @@ public final class PageModel: ObservableObject {
     }
     @discardableResult
     public func createPad(named name: String) -> UUID? {
-        guard pads.isEnabled, pendingFileClose == nil else { return nil }
+        guard pendingFileClose == nil else { return nil }
         return pads.create(named: name)
     }
     @discardableResult
     public func renamePad(_ id: UUID, to name: String) -> Bool {
-        guard pads.isEnabled, pendingFileClose == nil else { return false }
+        guard pendingFileClose == nil else { return false }
         return pads.rename(id, to: name)
     }
     @discardableResult
     public func removePad(_ id: UUID) -> Bool {
-        guard pads.isEnabled, pendingFileClose == nil else { return false }
+        guard pendingFileClose == nil else { return false }
         return pads.remove(id)
     }
     private func updateApplicationContextObservation() {
         guard !FormFactor.runningUnderTests else { return }
-        if pads.isEnabled && pads.appAssociationsEnabled {
-            if applicationContext == nil {
-                applicationContext = PadApplicationContext { [weak self] bundleID in
-                    self?.routeFromApplication(bundleID)
-                }
+        if applicationContext == nil, pads.loadFailure == nil {
+            applicationContext = PadApplicationContext { [weak self] bundleID in
+                self?.routeFromApplication(bundleID)
             }
-        } else {
-            applicationContext = nil
         }
     }
+
     private func padCatalogChanged() {
         guard !isApplyingCatalogChange else { return }
         isApplyingCatalogChange = true
         defer { isApplyingCatalogChange = false }
         updateApplicationContextObservation()
-        if pads.isEnabled != lastPadsEnabled || (pads.isEnabled && pads.activeID != lastPadID) {
+        if pads.activeID != lastPadID {
             (activeEditor as? InkTextView)?.coordinator?.finishNaming()
             // The inline conceal offer belongs to the pad surface being left.
             // Dismissing it cannot cancel a request already confirmed in flight.
             concealDraft = nil
             rollRequest = nil
-            if lastPadsEnabled {
-                if showsTimeUnits && !showingLedger && selectedFile == nil,
-                   rollGeometry.currentPadID == lastPadID {
-                    rememberPadReadingPlace(rollGeometry.currentPlace, for: lastPadID)
-                }
-                pads.rememberSelection(tabUUID: selectedTab?.uuid,
-                    filePath: activeFile?.path, for: lastPadID)
+            if showsTimeUnits && !showingLedger && selectedFile == nil,
+               rollGeometry.currentPadID == lastPadID {
+                rememberPadReadingPlace(rollGeometry.currentPlace, for: lastPadID)
             }
-            // Settings can change the experiment while a dirty-close decision
-            // stands. Keep its file visible in either layout; when enabling, use
-            // that file's owner so filtering cannot hide the decision's subject.
+            pads.rememberSelection(tabUUID: selectedTab?.uuid,
+                filePath: activeFile?.path, for: lastPadID)
+            // Direct catalog edits must also keep an unfinished close decision visible.
             let pendingFile = pendingFileClose.flatMap { pending in
                 openFiles.first { $0.id == pending.fileID }
             }
-            if pads.isEnabled, let pendingFile {
+            if let pendingFile {
                 pads.activate(pads.owner(ofFile: pendingFile.path), recordRecency: false)
             }
             lastPadID = pads.activeID
-            lastPadsEnabled = pads.isEnabled
             showingLedger = false
             selectedFile = nil
             expandedPageID = nil
-            if pads.isEnabled { restorePadSelection() }
-            else { selection = Self.reconciledSelection(current: selection, live: navigationTabs.map(\.id)) }
+            restorePadSelection()
             if let pendingFile { selectedFile = pendingFile.id }
         }
         pruneContinuousDocuments()
@@ -3469,7 +3463,6 @@ public final class PageModel: ObservableObject {
     private func sortedPadProjection(_ projection: TimeUnitProjection,
         pad requestedPad: UUID? = nil, roster requestedRoster: [TabSummary]? = nil
     ) -> TimeUnitProjection {
-        guard pads.isEnabled else { return projection }
         let pad = requestedPad ?? pads.activeID
         let roster = requestedRoster ?? navigationTabs
         let summaries = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
@@ -3999,7 +3992,7 @@ public final class PageModel: ObservableObject {
     /// separates this from `select(_:)`: a file is not a slot, and
     /// there is no empty file to conjure.
     public func selectFile(_ id: UInt64) {
-        if pads.isEnabled, let file = openFiles.first(where: { $0.id == id }) {
+        if let file = openFiles.first(where: { $0.id == id }) {
             let target = pads.owner(ofFile: file.path)
             if target != pads.activeID {
                 activatePad(target)
@@ -4012,9 +4005,7 @@ public final class PageModel: ObservableObject {
         }
         guard selectedFile != id else { return }
         selectedFile = id
-        if pads.isEnabled {
-            pads.rememberSelection(tabUUID: selectedTab?.uuid, filePath: activeFile?.path, for: pads.activeID)
-        }
+        pads.rememberSelection(tabUUID: selectedTab?.uuid, filePath: activeFile?.path, for: pads.activeID)
         refocusEditorIfKeyed()
     }
 
@@ -4026,8 +4017,7 @@ public final class PageModel: ObservableObject {
     /// selection naming a file the roster no longer holds, so a closed
     /// file cannot leave the surface pointing at nothing.
     func standOpenFiles(_ files: [FileSummary]) {
-        // Maintain already-recorded ownership even while pad navigation is off.
-        // Unowned Scratch paths remain implicit and incur no catalog write.
+        // Transfer recorded ownership when a file changes its path.
         pads.transferFiles(files.compactMap { new in
             guard let old = openFiles.first(where: { $0.id == new.id }), old.path != new.path else { return nil }
             return (old.path, new.path)
@@ -4336,19 +4326,17 @@ public final class PageModel: ObservableObject {
         }
         refreshOpenFiles()
         reconsiderFileRenderMode(for: id)
-        if pads.isEnabled {
-            let path = openFiles.first(where: { $0.id == id })?.path ?? url.path
-            let target: UUID
-            if previouslyOpenIDs.contains(id) {
-                // Reopening selects an existing document, never silently moves
-                // it to the current pad or a newly added folder association.
-                target = pads.owner(ofFile: path)
-            } else {
-                target = pads.pad(forPath: url.path) ?? pads.activeID
-                pads.assign(filePath: path, to: target)
-            }
-            activatePad(target)
+        let path = openFiles.first(where: { $0.id == id })?.path ?? url.path
+        let target: UUID
+        if previouslyOpenIDs.contains(id) {
+            // Reopening selects an existing document, never silently moves
+            // it to the current pad or a newly added folder association.
+            target = pads.owner(ofFile: path)
+        } else {
+            target = pads.pad(forPath: url.path) ?? pads.activeID
+            pads.assign(filePath: path, to: target)
         }
+        activatePad(target)
         selectFile(id)
         markFilesDirty()
     }
@@ -4642,6 +4630,9 @@ public final class PageModel: ObservableObject {
         if pendingFileClose?.fileID != id { clearPendingFileClose() }
         if file.holdsUnsavedEdits {
             let wasShowingLedger = showingLedger
+            let owner = pads.owner(ofFile: file.path)
+            activatePad(owner)
+            guard pads.activeID == owner else { return }
             selectedFile = id
             showingLedger = false
             beginPendingFileClose(
@@ -4688,9 +4679,7 @@ public final class PageModel: ObservableObject {
                     openFiles.contains(where: { $0.id == previousID }) ? previousID : nil
                 }
                 if let returningFile {
-                    // The experiment may have been enabled while the decision
-                    // stood. Restore through ownership-aware navigation rather
-                    // than leaving the file outside the active pad's roster.
+                    // Return through the previous file's pad before selecting it.
                     selectFile(returningFile)
                 } else {
                     selectedFile = nil
@@ -4704,6 +4693,7 @@ public final class PageModel: ObservableObject {
     private func beginPendingFileClose(
         _ file: FileSummary, returningTo selection: UInt64?, returningToLedger: Bool
     ) {
+        if isPadInspectorVisible { isPadInspectorVisible = false }
         guard pendingFileClose?.fileID != file.id else { return }
         pendingFileClose = PendingFileClose(fileID: file.id, name: file.name)
         selectionBeforePendingFileClose = selection
@@ -5452,7 +5442,7 @@ public final class PageModel: ObservableObject {
         let leavingLedger = showingLedger
         let fileWasShowing = selectedFile != nil
         var changedPad = false
-        if pads.isEnabled, let tab = tabs.first(where: { $0.id == id }) {
+        if let tab = tabs.first(where: { $0.id == id }) {
             let target = pads.owner(ofTabUUID: tab.uuid)
             if target != pads.activeID {
                 activatePad(target)
@@ -5480,7 +5470,7 @@ public final class PageModel: ObservableObject {
         // neither arm: it keeps its editor, keeps its focus, and asks
         // for nothing.
         if leavingLedger || leavingFile || minted { refocusEditorIfKeyed() }
-        if pads.isEnabled { pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID) }
+        pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID)
     }
 
     /// ⌘1 to ⌘9: jump by visible order. With the strip that is the
@@ -5715,7 +5705,7 @@ public final class PageModel: ObservableObject {
     /// that changes what is mounted, or where the mounted thing stands,
     /// comes through here.
     func refocusEditorIfKeyed() {
-        guard holdsKeys else { return }
+        guard holdsKeys, !isPadInspectorVisible else { return }
         focusEditorWhenMounted(in: nil, requireKeys: true)
     }
 
@@ -5739,7 +5729,7 @@ public final class PageModel: ObservableObject {
         Task { @MainActor [weak self] in
             for _ in 0..<10 {
                 guard let self else { return }
-                if requireKeys, !self.holdsKeys { return }
+                if requireKeys, !self.holdsKeys || self.isPadInspectorVisible { return }
                 if requireKeys, let window, !window.isKeyWindow { return }
                 if let editor = Self.mountedEditor(self.activeEditor, in: window) {
                     (window ?? editor.window)?.makeFirstResponder(editor)
@@ -5842,7 +5832,7 @@ public final class PageModel: ObservableObject {
         if id != 0 {
             // The immediately following refresh supplies the stable UUID once;
             // keep the requested owner until that shared roster read completes.
-            if pads.isEnabled { pendingPadTabOwners[id] = pads.activeID }
+            pendingPadTabOwners[id] = pads.activeID
             markDirty()
         }
         return id
@@ -5885,7 +5875,7 @@ public final class PageModel: ObservableObject {
                 flash("the checkpoint could not be inserted")
                 return
             }
-            if pads.isEnabled, padRosterDate != nil {
+            if padRosterDate != nil {
                 pads.setCheckpointSort(.natural, for: pads.activeID,
                     onDate: dateKey(forDayBucket: 0))
                 if let sourceDay, sourceDay < 0 {
@@ -5967,7 +5957,7 @@ public final class PageModel: ObservableObject {
         showingLedger = false
         selection = created
         requestRoll(onPickedPageLeaving: leavingStandIn)
-        if pads.isEnabled { pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID) }
+        pads.remember(tabUUID: selectedTab?.uuid, for: pads.activeID)
         refocusEditorIfKeyed()
     }
 
@@ -6192,7 +6182,7 @@ public final class PageModel: ObservableObject {
         selection = id
         refresh()
         requestRoll(onPickedPageLeaving: true)
-        if pads.isEnabled { pads.remember(tabUUID: tab.uuid, for: pads.activeID) }
+        pads.remember(tabUUID: tab.uuid, for: pads.activeID)
         if tab.pageID == nil { flash(CompanionL10n.string("page.reopen.expired")) }
         refocusEditorIfKeyed()
         return true
@@ -6266,7 +6256,7 @@ public final class PageModel: ObservableObject {
         let visibleIndex = max(0, index)
         let remaining = tabs.filter { $0.id != id }
         let visible = remaining.indices.filter {
-            !isClosed(remaining[$0]) && (!pads.isEnabled || pads.owner(ofTabUUID: remaining[$0].uuid) == pads.activeID)
+            !isClosed(remaining[$0]) && pads.owner(ofTabUUID: remaining[$0].uuid) == pads.activeID
         }
         let destination = visibleIndex < visible.count
             ? visible[visibleIndex] : visible.last.map { $0 + 1 } ?? remaining.count
@@ -8108,7 +8098,7 @@ public final class PageModel: ObservableObject {
         let pad = rollGeometry.currentPadID
         let place = rollGeometry.relinquish()
         // Also kept for the rendered pad, since a pad switch before the next mount drops the hand off.
-        if pads.isEnabled, showsTimeUnits, !showingLedger, selectedFile == nil, let pad {
+        if showsTimeUnits, !showingLedger, selectedFile == nil, let pad {
             rememberPadReadingPlace(place, for: pad)
         }
         viewStates.leaveRollPlace(place)

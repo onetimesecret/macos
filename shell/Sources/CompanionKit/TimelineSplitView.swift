@@ -8,6 +8,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
     let resizable: Bool
     let railWidth: CGFloat
     let onRailResize: @MainActor (CGFloat) -> Void
+    let pageMinWidth: CGFloat
     let leftMouseIsDown: @MainActor () -> Bool
     let clock: @MainActor () -> TimeInterval
     let rail: Rail
@@ -18,6 +19,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
         resizable: Bool = true,
         railWidth: CGFloat,
         onRailResize: @escaping @MainActor (CGFloat) -> Void,
+        pageMinWidth: CGFloat? = nil,
         leftMouseIsDown: @escaping @MainActor () -> Bool = { NSEvent.pressedMouseButtons & 1 != 0 },
         clock: @escaping @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         @ViewBuilder rail: () -> Rail,
@@ -27,6 +29,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
         self.resizable = resizable
         self.railWidth = railWidth
         self.onRailResize = onRailResize
+        self.pageMinWidth = pageMinWidth ?? TimelineSplit.pageMinWidth
         self.leftMouseIsDown = leftMouseIsDown
         self.clock = clock
         self.rail = rail()
@@ -50,7 +53,7 @@ public struct TimelineSplitView<Rail: View, Content: View>: View {
                             leftMouseIsDown: leftMouseIsDown, clock: clock))
                 }
                 content
-                    .frame(minWidth: TimelineSplit.pageMinWidth, maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(minWidth: pageMinWidth, maxWidth: .infinity, maxHeight: .infinity)
                     .layoutPriority(1)
             }
         }

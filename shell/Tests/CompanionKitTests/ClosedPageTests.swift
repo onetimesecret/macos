@@ -180,7 +180,6 @@ final class ClosedPageTests: XCTestCase {
     func testClosedRosterIsPadScopedAndInactiveContinuousProjectionAlsoFiltersIt() throws {
         let model = model(try fixture())
         let scratch = try seed("scratch saved", in: model)
-        model.pads.isEnabled = true
         let other = try XCTUnwrap(model.createPad(named: "Other"))
         model.newPage()
         let otherTab = try seed("other saved", in: model)
@@ -197,43 +196,36 @@ final class ClosedPageTests: XCTestCase {
         XCTAssertEqual(model.selection, scratch.id)
         XCTAssertEqual(model.navigationTabs.map(\.id), [scratch.id])
         model.close(scratch.id)
-        model.pads.isEnabled = false
+        model.activatePad(other)
         XCTAssertEqual(model.navigationTabs.map(\.id), [otherTab.id])
-        XCTAssertTrue(model.continuousTabs(scope: "legacy").allSatisfy { $0.id != scratch.id })
+        XCTAssertTrue(model.continuousTabs(scope: PadCatalog.scratchID.uuidString).isEmpty)
     }
 
-    func testReorderingVisibleTabsTranslatesPastHiddenSlotsWithPadsOnOrOff() throws {
-        for padsEnabled in [false, true] {
-            let model = model(try fixture())
-            let hidden = try seed("hidden saved", in: model)
-            model.close(hidden.id)
-            model.pads.isEnabled = padsEnabled
-            model.newPage()
-            let beta = try seed("visible beta", in: model)
-            model.newPage()
-            let gamma = try seed("visible gamma", in: model)
-            var otherPadTab: TabSummary?
-            if padsEnabled {
-                _ = try XCTUnwrap(model.createPad(named: "Other"))
-                model.newPage()
-                otherPadTab = try seed("other pad", in: model)
-                model.activatePad(PadCatalog.scratchID)
-            }
-            XCTAssertEqual(model.navigationTabs.map(\.id), [beta.id, gamma.id])
+    func testReorderingVisibleTabsTranslatesPastHiddenSlotsAndOtherPads() throws {
+        let model = model(try fixture())
+        let hidden = try seed("hidden saved", in: model)
+        model.close(hidden.id)
+        model.newPage()
+        let beta = try seed("visible beta", in: model)
+        model.newPage()
+        let gamma = try seed("visible gamma", in: model)
+        _ = try XCTUnwrap(model.createPad(named: "Other"))
+        model.newPage()
+        let otherPadTab = try seed("other pad", in: model)
+        model.activatePad(PadCatalog.scratchID)
+        XCTAssertEqual(model.navigationTabs.map(\.id), [beta.id, gamma.id])
 
-            model.move(beta.id, to: 1)
-            XCTAssertEqual(model.navigationTabs.map(\.id), [gamma.id, beta.id])
-            XCTAssertEqual(model.closedTabs.map(\.id), [hidden.id])
-            XCTAssertEqual(model.tabs.first?.id, hidden.id)
-            if let otherPadTab { XCTAssertEqual(model.tabs.last?.id, otherPadTab.id) }
+        model.move(beta.id, to: 1)
+        XCTAssertEqual(model.navigationTabs.map(\.id), [gamma.id, beta.id])
+        XCTAssertEqual(model.closedTabs.map(\.id), [hidden.id])
+        XCTAssertEqual(model.tabs.first?.id, hidden.id)
+        XCTAssertEqual(model.tabs.last?.id, otherPadTab.id)
 
-            model.move(beta.id, to: 0)
-            XCTAssertEqual(model.navigationTabs.map(\.id), [beta.id, gamma.id])
-            XCTAssertEqual(model.tabs.first?.id, hidden.id)
-            XCTAssertEqual(model.tabs.count, padsEnabled ? 4 : 3)
-        }
+        model.move(beta.id, to: 0)
+        XCTAssertEqual(model.navigationTabs.map(\.id), [beta.id, gamma.id])
+        XCTAssertEqual(model.tabs.first?.id, hidden.id)
+        XCTAssertEqual(model.tabs.count, 4)
     }
-
 
     func testRefusedRestoreExplainsUnavailableSaveWithoutHidingOrOverwriting() throws {
         let fixture = try fixture()
@@ -276,7 +268,6 @@ final class ClosedPageTests: XCTestCase {
         let firstClient = ClosedPageSaveClient(tag: fixture.tag)
         firstClient.uuidStyle = .uppercase
         let first = model(fixture, client: firstClient)
-        first.pads.isEnabled = true
         let pad = try XCTUnwrap(first.createPad(named: "Uppercase identities"))
         first.newPage()
         let original = try seed("case-independent saved page", in: first)

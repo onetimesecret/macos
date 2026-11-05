@@ -172,7 +172,7 @@ public struct DayScrollView: NSViewRepresentable {
         // not applied here: the rows it names are assembled by the pass
         // below, and SwiftUI may not have sized the clip yet.
         if let place = model.viewStates.takeRollPlace() {
-            if !model.pads.isEnabled || model.navigationTabs.contains(where: { $0.pageID == place.page }) {
+            if model.navigationTabs.contains(where: { $0.pageID == place.page }) {
                 stack.open(at: place)
             }
         }
@@ -211,8 +211,7 @@ public struct DayScrollView: NSViewRepresentable {
     ) {
         coordinator.invalidateOrdinaryPasteMeasurement()
         guard let stack = scroll.documentView as? DayStackView else { return }
-        if coordinator.model.pads.isEnabled,
-           coordinator.model.rollGeometry.holdsClaim(stack), let pad = stack.renderedPadID {
+        if coordinator.model.rollGeometry.holdsClaim(stack), let pad = stack.renderedPadID {
             coordinator.model.rememberPadReadingPlace(stack.departingPlace, for: pad)
         }
         stack.unobserveEditor()
@@ -326,8 +325,7 @@ final class DayStackView: NSView {
         let selected: UInt64?
         let previews: [UInt64]
         let clipWidth: CGFloat
-        let padExperiment: Bool
-        let padID: UUID?
+        let padID: UUID
     }
 
     private(set) var renderedPadID: UUID?
@@ -610,11 +608,10 @@ final class DayStackView: NSView {
             selected: selectedPage,
             previews: projection.units.flatMap(\.pageIDs).filter { model.markdownPreviewEnabled(for: $0) },
             clipWidth: clipWidth,
-            padExperiment: model.pads.isEnabled,
-            padID: model.pads.isEnabled ? model.pads.activeID : nil
+            padID: model.pads.activeID
         )
-        let changingPad = signature.padExperiment && signature.padID != renderedPadID
-        let rowsMoved = signature.padExperiment && rendered.map {
+        let changingPad = signature.padID != renderedPadID
+        let rowsMoved = rendered.map {
             $0.buckets != signature.buckets || $0.pages != signature.pages
         } == true
         if changingPad || rowsMoved {
@@ -626,7 +623,8 @@ final class DayStackView: NSView {
                 pendingPage = nil
             }
             let waiting = pendingPlace != nil || pendingPage != nil
-            if changingPad, let pad = signature.padID {
+            if changingPad {
+                let pad = signature.padID
                 // A hand off may already have supplied a newer anchor. Otherwise ADR-0060: the remembered anchor,
                 // else for a pad shown earlier (switch back, file or Ledger return) its selected page, else Today.
                 let shownBefore = model.markShown(pad: pad)
@@ -745,7 +743,7 @@ final class DayStackView: NSView {
                 header.show(
                     words: DayHeaderView.words(spokenLabel: unit.spokenLabel, stamp: nil),
                     spokenLabel: unit.spokenLabel,
-                    mark: model.pads.isEnabled && isFirstOnRoll ? .hairline :
+                    mark: isFirstOnRoll ? .hairline :
                         DayHeaderView.mark(isFirstOnRoll: isFirstOnRoll, isFirstOfDay: true),
                     summary: nil
                 )
@@ -780,7 +778,7 @@ final class DayStackView: NSView {
                         spokenLabel: unit.spokenLabel, stamp: stamps[index], firstOfDay: firstOfDay
                     ),
                     spokenLabel: unit.spokenLabel,
-                    mark: model.pads.isEnabled && isFirstOnRoll ? .hairline : DayHeaderView.mark(
+                    mark: isFirstOnRoll ? .hairline : DayHeaderView.mark(
                         isFirstOnRoll: isFirstOnRoll && firstOfDay, isFirstOfDay: firstOfDay
                     ),
                     summary: summary
@@ -1424,27 +1422,22 @@ final class DayStackView: NSView {
 
     // MARK: Anchoring
 
-    /// Summon anchors the Today region even when the experiment displays
-    /// older days above it. A fresh unsized roll waits for its first layout.
+    /// Summon anchors the Today region even when older days appear above it.
+    /// A fresh unsized roll waits for its first layout.
     private var pendingTodayAnchor = false
     func scrollToDayZero() {
         // A summon outranks a place still waiting to be opened on.
         pendingPlace = nil
         pendingPage = nil
         guard let scroll = enclosingScrollView else { return }
-        if model.pads.isEnabled {
-            guard let today = rows.first(where: { $0.bucket == 0 }),
-                  !scroll.contentView.bounds.isEmpty else {
-                pendingTodayAnchor = true
-                return
-            }
-            pendingTodayAnchor = false
-            let floor = max(frame.height - scroll.contentView.bounds.height, 0)
-            self.scroll(toDocumentOffset: min(today.header.frame.minY, floor), animated: false)
-        } else {
-            pendingTodayAnchor = false
-            self.scroll(toDocumentOffset: 0, animated: false)
+        guard let today = rows.first(where: { $0.bucket == 0 }),
+              !scroll.contentView.bounds.isEmpty else {
+            pendingTodayAnchor = true
+            return
         }
+        pendingTodayAnchor = false
+        let floor = max(frame.height - scroll.contentView.bounds.height, 0)
+        self.scroll(toDocumentOffset: min(today.header.frame.minY, floor), animated: false)
         scroll.reflectScrolledClipView(scroll.contentView)
     }
 
@@ -1462,7 +1455,6 @@ final class DayStackView: NSView {
         else { return nil }
         let isRenderingPreview = (text as? MarkdownPreviewView)?.isRendering == true
         if isRenderingPreview, let place = readingPlace, place.page == page { return place }
-        guard origin.y > 0 || origin.x > 0 || model.pads.isEnabled else { return nil }
         if isRenderingPreview {
             return RollPlace(page: page, anchor: ScrollAnchor(characterIndex: 0, x: origin.x), reading: .preview,
                              atTop: origin.y <= 0)
@@ -1547,7 +1539,7 @@ final class DayStackView: NSView {
         // A waiting place belongs to another document order, so it supersedes a travelling jump.
         if restore(place: place, supersedingJump: true) {
             readingPlace = place
-        } else if model.pads.isEnabled {
+        } else {
             scrollToDayZero()
         }
     }
@@ -2585,7 +2577,8 @@ final class EmptyTodayView: NSView {
         // `KeyGrantingClickView` gives: a page opened this instant fills
         // the selected slot before any pass could push a fresh snapshot.
         grant.selectedTabHoldsNoPage = { [weak model] in
-            model?.selectedTabHoldsNoPage ?? true
+            guard let model else { return false }
+            return !model.isPadInspectorVisible && model.selectedTabHoldsNoPage
         }
         // `startToday()` rather than `createPageAndFocus(in:)`, which is
         // what the strip's own empty state calls. The two agree on the

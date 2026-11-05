@@ -1148,7 +1148,6 @@ final class DayScrollTests: XCTestCase {
     func testScrollingALoadingPreviewUpdatesItsOriginMarkerWithoutReplacingItsTextAnchor() async throws {
         for moveOffTop in [false, true] {
             let model = try makeModel()
-            model.pads.isEnabled = true
             let source = String(repeating: "## Heading **bold**\n\n", count: 900)
             let reading = try page(in: model, saying: source)
             _ = try page(in: model, saying: longPage(lines: 80))
@@ -1214,11 +1213,14 @@ final class DayScrollTests: XCTestCase {
                 roll.stack.update(projection: projection, selectedPage: reading, readOnly: false)
                 pending = try XCTUnwrap(preview.renderingTask)
             } else {
-                XCTAssertNil(roll.stack.readingPlace)
-                roll.scroll.contentView.postsBoundsChangedNotifications = false
+                let origin = try XCTUnwrap(roll.stack.readingPlace)
+                XCTAssertEqual(origin.reading, .preview)
+                XCTAssertEqual(origin.length, 0)
+                XCTAssertTrue(origin.atTop)
+                XCTAssertEqual(origin.anchor.x, 0)
                 scroll(roll, to: NSPoint(x: 120, y: 0))
+                XCTAssertEqual(roll.stack.readingPlace?.anchor.x, 120)
                 XCTAssertEqual(roll.stack.currentPlace?.anchor.x, 120)
-                roll.scroll.contentView.postsBoundsChangedNotifications = true
             }
             XCTAssertTrue(preview.isRendering)
             scroll(roll, to: NSPoint(x: 240, y: 0))
@@ -2220,7 +2222,6 @@ final class DayScrollTests: XCTestCase {
 
     func testPadSwitchRestoresVisibleCharacterAndEmptyPadStartsAtToday() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let scratch = PadCatalog.scratchID
         let pageID = try page(in: model, saying: longPage(lines: 200))
         let roll = try mountRoll(model: model, height: 120)
@@ -2248,7 +2249,6 @@ final class DayScrollTests: XCTestCase {
 
     func testReorderingCheckpointsInBothDirectionsPreservesVisibleCharacter() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let first = try page(in: model, saying: longPage(lines: 140))
         _ = try page(in: model, saying: longPage(lines: 140))
         let roll = try mountRoll(model: model, height: 120)
@@ -2265,7 +2265,6 @@ final class DayScrollTests: XCTestCase {
 
     func testTwoPopulatedPadsRetainDistinctReadingAnchors() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let scratch = PadCatalog.scratchID
         let scratchPage = try page(in: model, saying: longPage(lines: 220))
         let roll = try mountRoll(model: model, height: 120)
@@ -2298,7 +2297,6 @@ final class DayScrollTests: XCTestCase {
 
     func testLedgerRoundTripRestoresPadReadingPositionOnNewRoll() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         _ = try page(in: model, saying: longPage(lines: 180))
         let roll = try mountRoll(model: model, height: 120)
         DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
@@ -2316,7 +2314,6 @@ final class DayScrollTests: XCTestCase {
     /// the pad still keeps the place the roll read last.
     func testARollDismantledOutsideItsWindowRemembersItsPadsPlace() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         _ = try page(in: model, saying: longPage(lines: 180))
         let roll = try mountRoll(model: model, height: 120)
         DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
@@ -2337,7 +2334,6 @@ final class DayScrollTests: XCTestCase {
     /// active before the incoming roll mounts and takes the hand off's place.
     func testAPadSwitchBeforeTheIncomingRollMountsKeepsTheOutgoingPadsPlace() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let scratch = PadCatalog.scratchID
         _ = try page(in: model, saying: longPage(lines: 180))
         let source = try mountRoll(model: model, height: 120)
@@ -2360,7 +2356,6 @@ final class DayScrollTests: XCTestCase {
     /// next opens on Today, not on the pad's saved place.
     func testASummonBeforeTheIncomingRollMountsOpensItOnToday() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         _ = try page(in: model, saying: longPage(lines: 180))
         let source = try mountRoll(model: model, height: 120)
         DayScrollView.updateRoll(source.scroll, model: model, readOnly: false, coordinator: source.coordinator)
@@ -2384,7 +2379,6 @@ final class DayScrollTests: XCTestCase {
     /// page ahead of the saved place. Closing the file restores the saved place.
     func testACheckpointPickedOverAFileOpensTheRollOnItAndClosingTheFileRestores() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let older = try page(in: model, saying: longPage(lines: 180))
         let newer = try page(in: model, saying: longPage(lines: 180))
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("pad-pick-\(UUID()).txt")
@@ -2453,7 +2447,6 @@ final class DayScrollTests: XCTestCase {
     func testTheLaterOfASummonAndAPickDecidesWhereTheIncomingRollOpens() throws {
         for summonFirst in [true, false] {
             let model = try makeModel()
-            model.pads.isEnabled = true
             _ = try page(in: model, saying: longPage(lines: 180))
             _ = try page(in: model, saying: longPage(lines: 180))
             let source = try mountRoll(model: model, height: 120)
@@ -2492,7 +2485,6 @@ final class DayScrollTests: XCTestCase {
     func testPagesMintedOrPickedOverAStandInOpenTheReturningRollOnThem() throws {
         for gesture in ["new page over a file", "new page over the ledger", "today over a file"] {
             let model = try makeModel()
-            model.pads.isEnabled = true
             _ = try page(in: model, saying: longPage(lines: 180))
             _ = try page(in: model, saying: longPage(lines: 180))
             let roll = try mountRoll(model: model, height: 120)
@@ -2520,7 +2512,6 @@ final class DayScrollTests: XCTestCase {
     func testAnOvertakenRollRequestDoesNotFireOnALaterMount() throws {
         for overtaken in ["file", "tabs"] {
             let model = try makeModel()
-            model.pads.isEnabled = true
             _ = try page(in: model, saying: longPage(lines: 180))
             let source = try mountRoll(model: model, height: 120)
             DayScrollView.updateRoll(source.scroll, model: model, readOnly: false, coordinator: source.coordinator)
@@ -2544,13 +2535,11 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
-    /// With pads off, a page picked or minted over a file or the Ledger also
-    /// opens the returning roll on that page rather than at Day 0.
-    func testWithPadsOffAPickOrMintOverAStandInOpensTheReturningRollOnIt() throws {
+    /// A page picked or minted over a file or the Ledger opens the returning roll on that page.
+    func testAPickOrMintOverAStandInOpensTheReturningRollOnIt() throws {
         for (mint, ledger) in [(false, false), (false, true), (true, false), (true, true)] {
             let label = "\(mint ? "mint" : "pick") over \(ledger ? "the ledger" : "a file")"
             let model = try makeModel()
-            model.pads.isEnabled = false
             _ = try page(in: model, saying: longPage(lines: 180))
             _ = try page(in: model, saying: longPage(lines: 180))
             let roll = try mountRoll(model: model, height: 120)
@@ -2578,7 +2567,6 @@ final class DayScrollTests: XCTestCase {
     /// waiting on a page that is still projected.
     func testAHandOffPlaceOutlivesTheExpiryOfThePageLastRead() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let read = try page(in: model, saying: longPage(lines: 180))
         let target = try page(in: model, saying: longPage(lines: 180))
         let roll = try mountRoll(model: model, height: 120)
@@ -2603,7 +2591,6 @@ final class DayScrollTests: XCTestCase {
     /// read last, so the dismantle still remembers it for the pad.
     func testABoundsChangeOutOfTheWindowKeepsTheLastReadingPlace() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         _ = try page(in: model, saying: longPage(lines: 180))
         let roll = try mountRoll(model: model, height: 120)
         DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
@@ -2622,7 +2609,6 @@ final class DayScrollTests: XCTestCase {
     func testAMoveOutOfTheWindowIsNotUndoneByTheNextPass() throws {
         for move in ["summon", "picked page"] {
             let model = try makeModel()
-            model.pads.isEnabled = true
             _ = try page(in: model, saying: longPage(lines: 180))
             _ = try page(in: model, saying: longPage(lines: 180))
             let roll = try mountRoll(model: model, height: 120)
@@ -2653,7 +2639,6 @@ final class DayScrollTests: XCTestCase {
         try XCTSkipIf(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
             "a reader who asks for less motion gets no animated jump")
         let model = try makeModel()
-        model.pads.isEnabled = true
         _ = try page(in: model, saying: longPage(lines: 220))
         let roll = try mountRoll(model: model, height: 120, ordered: true)
         DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
@@ -2701,7 +2686,6 @@ final class DayScrollTests: XCTestCase {
     /// where they were, rather than restoring the place the page replaces.
     func testAPassBeforeAQueuedPageSettlesDoesNotRestoreTheOldPlace() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         model.wrapsLines = false
         let ink = Array(repeating: longLine(repetitions: 12), count: 40).joined(separator: "\n")
         _ = try page(in: model, saying: ink)
@@ -2729,7 +2713,6 @@ final class DayScrollTests: XCTestCase {
     /// place on the oldest day, and a pad switch and back returns to it, not Today.
     func testAnOldestFirstRollAtTheOriginReturnsToTheOldestDayAfterAPadSwitch() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let scratch = PadCatalog.scratchID
         let today = try page(in: model, saying: longPage(lines: 80))
         _ = try page(in: model, saying: longPage(lines: 80))
@@ -2757,7 +2740,6 @@ final class DayScrollTests: XCTestCase {
     /// A pad of long pages mounted on a short roll, with its pages in roll order.
     private func padWithPages(_ count: Int) throws -> (model: PageModel, roll: Roll, pages: [UInt64]) {
         let model = try makeModel()
-        model.pads.isEnabled = true
         for _ in 0..<count { _ = try page(in: model, saying: longPage(lines: 180)) }
         let roll = try mountRoll(model: model, height: 120)
         DayScrollView.updateRoll(roll.scroll, model: model, readOnly: false, coordinator: roll.coordinator)
@@ -2796,7 +2778,6 @@ final class DayScrollTests: XCTestCase {
     /// a pad with its selected page off Today still opens at Today.
     func testTheFirstMountOfAPadOpensAtTodayWhateverItsSelectedPage() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         for _ in 0..<2 { _ = try page(in: model, saying: longPage(lines: 180)) }
         let lower = try XCTUnwrap(model.timeUnits.units.flatMap(\.pageIDs).last)
         model.select(try XCTUnwrap(model.tabs.first { $0.pageID == lower }?.id))
@@ -2839,7 +2820,6 @@ final class DayScrollTests: XCTestCase {
     /// empty Today and an older page selected opens at Today.
     func testASummonOnARemountOutranksTheSelectedPage() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         for _ in 0..<2 { _ = try page(in: model, saying: longPage(lines: 180)) }
         let olderDays = TimeUnitProjection.project(
             tabs: filed(model, under: [-1, -2]), selectedPageID: nil, unit: .day)
@@ -2860,7 +2840,6 @@ final class DayScrollTests: XCTestCase {
     /// last for the pad, over an older one, and passes it to the incoming roll.
     func testAHandOffFromARollOutOfItsWindowKeepsTheFreshestPlace() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let scratch = PadCatalog.scratchID
         _ = try page(in: model, saying: longPage(lines: 180))
         let source = try mountRoll(model: model, height: 120)
@@ -2884,7 +2863,6 @@ final class DayScrollTests: XCTestCase {
     /// came back, does not outlive its pass: a later pad switch restores that pad's anchor.
     func testASummonDoesNotOverrideALaterPadSwitch() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let scratch = PadCatalog.scratchID
         _ = try page(in: model, saying: longPage(lines: 180))
         let roll = try mountRoll(model: model, height: 120)
@@ -2970,7 +2948,6 @@ final class DayScrollTests: XCTestCase {
         for overFile in [false, true] {
             let label = overFile ? "over a file" : "over the Timeline"
             let model = try makeModel()
-            model.pads.isEnabled = true
             let scratch = PadCatalog.scratchID
             _ = try page(in: model, saying: longPage(lines: 180))
             let other = try XCTUnwrap(model.createPad(named: "Other"))
@@ -3023,7 +3000,6 @@ final class DayScrollTests: XCTestCase {
         try XCTSkipIf(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
             "a reader who asks for less motion gets no animated jump")
         let model = try makeModel()
-        model.pads.isEnabled = true
         let first = try page(in: model, saying: longPage(lines: 200))
         _ = try page(in: model, saying: longPage(lines: 200))
         let roll = try mountRoll(model: model, height: 120, ordered: true)
@@ -3050,7 +3026,6 @@ final class DayScrollTests: XCTestCase {
         try XCTSkipIf(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
             "a reader who asks for less motion gets no animated jump")
         let model = try makeModel()
-        model.pads.isEnabled = true
         let scratch = PadCatalog.scratchID
         _ = try page(in: model, saying: longPage(lines: 220))
         let roll = try mountRoll(model: model, height: 120, ordered: true)
@@ -3078,7 +3053,6 @@ final class DayScrollTests: XCTestCase {
 
     func testDayOrderChangesPreserveVisibleCharacterInLongPage() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let first = try page(in: model, saying: longPage(lines: 180))
         _ = try page(in: model, saying: longPage(lines: 180))
         let reverse = spreadOverDays(model, selecting: first)
@@ -3096,7 +3070,6 @@ final class DayScrollTests: XCTestCase {
 
     func testReadingAnchorOmittedFromProjectionFallsBackToToday() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let omitted = try page(in: model, saying: longPage(lines: 180))
         let visible = try page(in: model, saying: longPage(lines: 180))
         let roll = try mountRoll(model: model, height: 120)
@@ -3127,7 +3100,6 @@ final class DayScrollTests: XCTestCase {
 
     func testFileViewCannotOverwritePadReadingPositionWhileSwitching() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let scratch = PadCatalog.scratchID
         _ = try page(in: model, saying: longPage(lines: 180))
         let roll = try mountRoll(model: model, height: 120)
@@ -3149,7 +3121,6 @@ final class DayScrollTests: XCTestCase {
 
     func testExperimentalChronologicalRollAnchorsTodayInsteadOfDocumentOrigin() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let today = try page(in: model, saying: longPage(lines: 80))
         _ = try page(in: model, saying: longPage(lines: 80))
         let projected = spreadOverDays(model, selecting: today)
@@ -3172,7 +3143,6 @@ final class DayScrollTests: XCTestCase {
     /// assembles it, and the pass after that finds the reader on today.
     func testASummonThatWaitedForTodayIsWhereTheNextPassFindsTheReader() throws {
         let model = try makeModel()
-        model.pads.isEnabled = true
         let today = try page(in: model, saying: longPage(lines: 80))
         let older = try page(in: model, saying: longPage(lines: 80))
         let projected = spreadOverDays(model, selecting: older)
@@ -3601,10 +3571,8 @@ final class DayScrollTests: XCTestCase {
         )
     }
 
-    /// The perforation is the mark of a day boundary, so it appears
-    /// between days and never above the first one: today is where the
-    /// roll starts and there is nothing above it to tear away from.
-    func testAPerforationSitsBetweenDaysAndNoneAboveTheFirst() throws {
+    /// The roll starts with a hairline; a perforation separates different days.
+    func testAPerforationSitsBetweenDaysAndAHairlineAboveTheFirst() throws {
         let model = try makeModel()
         let first = try page(in: model, saying: "today")
         try page(in: model, saying: "yesterday")
@@ -3617,11 +3585,10 @@ final class DayScrollTests: XCTestCase {
         )
 
         let marks = roll.stack.laidOut.map { $0.header.mark }
-        XCTAssertEqual(marks, [DayHeaderView.Mark.none, .tear])
+        XCTAssertEqual(marks, [DayHeaderView.Mark.hairline, .tear])
         XCTAssertEqual(
             roll.stack.laidOut[0].header.frame.height,
-            DayHeaderView.gutterHeight,
-            "the first header reserved room for a tear it does not draw"
+            DayHeaderView.gutterHeight + DayHeaderView.tearReserve
         )
         XCTAssertEqual(
             roll.stack.laidOut[1].header.frame.height,
@@ -3647,7 +3614,7 @@ final class DayScrollTests: XCTestCase {
 
         XCTAssertEqual(
             roll.stack.laidOut.map { $0.header.mark },
-            [DayHeaderView.Mark.none, .hairline, .tear]
+            [DayHeaderView.Mark.hairline, .hairline, .tear]
         )
     }
 
@@ -4250,7 +4217,7 @@ final class DayScrollTests: XCTestCase {
         let empty = try XCTUnwrap(parts[0].body as? EmptyTodayView)
         XCTAssertEqual(empty.lead.stringValue, "No page here yet.")
         XCTAssertEqual(empty.hint.stringValue, "click, ⌃⌥Space, or ↩ to start one")
-        XCTAssertEqual(parts[0].header.mark, DayHeaderView.Mark.none)
+        XCTAssertEqual(parts[0].header.mark, DayHeaderView.Mark.hairline)
         XCTAssertEqual(
             parts[0].body.frame.maxY,
             roll.scroll.contentView.bounds.height,

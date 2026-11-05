@@ -190,7 +190,6 @@ final class PadPickerTests: XCTestCase {
         } else {
             model = isolatedModel(defaults: defaults)
         }
-        model.pads.isEnabled = true
         let id = try XCTUnwrap(model.createPad(named: "Otto"))
         return (model, try XCTUnwrap(model.pads.entries.first { $0.id == id }))
     }
@@ -320,7 +319,7 @@ final class PadPickerTests: XCTestCase {
             forName: ModalSession.didEndNotification, object: nil, queue: nil
         ) { _ in MainActor.assumeIsolated { ends += 1 } }
         defer { NotificationCenter.default.removeObserver(token) }
-        var routes = PadSettingsRoutes()
+        var routes = PadInspectorRoutes()
         func inTheRow(_ moment: String) {
             XCTAssertFalse(routes.creation.isPresented, "the creation form opened \(moment)")
             XCTAssertFalse(ModalSession.isRunning, "a modal session ran \(moment)")
@@ -342,7 +341,7 @@ final class PadPickerTests: XCTestCase {
     /// New Pad closes the rename field before presenting the creation form.
     func testNewPadOpensTheFormAndKeepsAnOpenFieldsName() throws {
         let (model, pad) = try padModel()
-        var routes = PadSettingsRoutes()
+        var routes = PadInspectorRoutes()
         routes.beginRename(pad)
         routes.rename.edit("")
         routes.rename.commit(in: model)
@@ -473,7 +472,7 @@ final class PadPickerTests: XCTestCase {
         XCTAssertEqual(CompanionL10n.string("pad.timeline.heading"), "Timeline")
         XCTAssertEqual(CompanionL10n.string("pad.files.heading"), "Files")
         XCTAssertEqual(CompanionL10n.string("pad.app.menu"), "Applications")
-        XCTAssertEqual(CompanionL10n.string("pad.app.remove"), "pad.app.remove", "the remove items became checkmarks")
+        XCTAssertEqual(CompanionL10n.format("pad.app.remove", "Editor", "Work"), "Unlink Editor from Work")
     }
 
     /// Every key the rail reads is in the table, since a missing key reads back as itself.
@@ -770,14 +769,13 @@ final class PadPickerTests: XCTestCase {
     }
 
     func testLayoutDisclosureDescribesTheResizableTimeline() {
-        for experimental in [false, true] {
-            let caption = GeneralSettingsView.pageLayoutCaption(experimental: experimental)
-            XCTAssertTrue(caption.contains("\(Int(TimeRailView.width)) points"))
-            XCTAssertTrue(caption.contains("Drag the divider to resize the timeline"))
-            XCTAssertTrue(caption.contains("older blank pages are hidden"))
-            XCTAssertTrue(caption.contains("moves no content and writes nothing new to disk"), "ADR-0037's cost")
-            XCTAssertFalse(caption.contains("counted"))
-        }
+        XCTAssertEqual(TimeRailView.width, 110)
+        let caption = GeneralSettingsView.pageLayoutCaption
+        XCTAssertTrue(caption.contains("\(Int(TimeRailView.width)) points"))
+        XCTAssertTrue(caption.contains("Drag the divider to resize the timeline"))
+        XCTAssertTrue(caption.contains("older blank pages are hidden"))
+        XCTAssertTrue(caption.contains("moves no content and writes nothing new to disk"), "ADR-0037's cost")
+        XCTAssertFalse(caption.contains("counted"))
     }
 
     func testPadLocalizedFormatsKeepNamesAndPathsLiteral() {
@@ -795,7 +793,6 @@ final class PadPickerTests: XCTestCase {
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
         let model = isolatedModel(defaults: defaults)
         model.showsTimeUnits = true
-        model.pads.isEnabled = true
         // The existing Scratch page must not leak into the named pad's roll.
         let otherPadPages = Set(model.navigationTabs.compactMap(\.pageID))
         let namedPad = try XCTUnwrap(model.createPad(named: "Familia"))

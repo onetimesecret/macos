@@ -541,39 +541,34 @@ final class TabDropTests: XCTestCase {
 
     // MARK: The side Timeline's page nodes (issue 267)
 
-    /// Each page node of the side Timeline, in the default rail and the pads rail, seats one
-    /// target aimed at the slot its click selects, the row a person aims at, and today's
-    /// empty place, whose click takes the create path, seats none (ADR-0017).
+    /// Each Timeline page node targets the slot its click selects; today's empty place has no target.
     func testTheSideTimelineSeatsATargetOnEachPageNodeForThePageItsClickSelects() throws {
-        for pads in [false, true] {
-            let rail = pads ? "the pads rail" : "the default rail"
-            let client = DayProjectionClockClient(tag: UUID().uuidString)
-            let model = try makeModel(client: client)
-            model.pads.isEnabled = pads
-            let oldest = try unshownPage(on: model, text: "oldest")
-            XCTAssertTrue(client.advanceDay())
-            model.refresh()
-            let first = try unshownPage(on: model, text: "first")
-            let next = try unshownPage(on: model, text: "next")
-            XCTAssertTrue(client.advanceDay())
-            model.refresh()
-            XCTAssertEqual(model.timeUnits.units.map(\.bucket), [0, -1, -2], rail)
-            XCTAssertEqual(model.timeUnits.units.first?.pageIDs, [], "today holds a page in \(rail)")
+        let rail = "the pads rail"
+        let client = DayProjectionClockClient(tag: UUID().uuidString)
+        let model = try makeModel(client: client)
+        let oldest = try unshownPage(on: model, text: "oldest")
+        XCTAssertTrue(client.advanceDay())
+        model.refresh()
+        let first = try unshownPage(on: model, text: "first")
+        let next = try unshownPage(on: model, text: "next")
+        XCTAssertTrue(client.advanceDay())
+        model.refresh()
+        XCTAssertEqual(model.timeUnits.units.map(\.bucket), [0, -1, -2], rail)
+        XCTAssertEqual(model.timeUnits.units.first?.pageIDs, [], "today holds a page in \(rail)")
 
-            let host = mountTimeline(on: model, readOnly: false)
-            let targets = nodeTargets(in: host, on: model)
-            XCTAssertEqual(targets.map(\.slot), [first.slot, next.slot, oldest.slot], rail)
-            XCTAssertEqual(targets.map(\.slot), clickedSlots(on: model), "a drop and a click part in \(rail)")
-            XCTAssertEqual(targets.map(\.page), [first.sheet, next.sheet, oldest.sheet], rail)
-            XCTAssertEqual(nodes(on: model).filter { !$0.hasPage }.map(\.target), [.today], rail)
-            for target in targets {
-                XCTAssertTrue(target.takesDrops, rail)
-                XCTAssertGreaterThan(target.bounds.width, 0, rail)
-                XCTAssertGreaterThan(target.bounds.height, 0, rail)
-                XCTAssertNil(target.hitTest(NSPoint(x: target.bounds.midX, y: target.bounds.midY)), rail)
-            }
-            assertTheTargetsStack(targets, in: host, footInside: !pads, rail)
+        let host = mountTimeline(on: model, readOnly: false)
+        let targets = nodeTargets(in: host, on: model)
+        XCTAssertEqual(targets.map(\.slot), [first.slot, next.slot, oldest.slot], rail)
+        XCTAssertEqual(targets.map(\.slot), clickedSlots(on: model), "a drop and a click part in \(rail)")
+        XCTAssertEqual(targets.map(\.page), [first.sheet, next.sheet, oldest.sheet], rail)
+        XCTAssertEqual(nodes(on: model).filter { !$0.hasPage }.map(\.target), [.today], rail)
+        for target in targets {
+            XCTAssertTrue(target.takesDrops, rail)
+            XCTAssertGreaterThan(target.bounds.width, 0, rail)
+            XCTAssertGreaterThan(target.bounds.height, 0, rail)
+            XCTAssertNil(target.hitTest(NSPoint(x: target.bounds.midX, y: target.bounds.midY)), rail)
         }
+        assertTheTargetsStack(targets, in: host, footInside: false, rail)
     }
 
     /// A rail too dense for its pages' places, which both renderings scroll (issue #277), seats a
@@ -581,50 +576,47 @@ final class TabDropTests: XCTestCase {
     /// navigator's first row sits inside its column, the rows past the column's foot are clipped
     /// until the column scrolls, and a selection change scrolls the selected node into view.
     func testADenseTimelinesNodeTargetsStackInNodeOrderWithoutMeeting() throws {
-        for pads in [false, true] {
-            let rail = pads ? "the pads rail" : "the default rail"
-            let client = DayProjectionClockClient(tag: UUID().uuidString)
-            let model = try makeModel(client: client)
-            model.pads.isEnabled = pads
-            for _ in 0..<3 {
-                for index in 0..<12 { _ = try unshownPage(on: model, text: "page \(index)") }
-                XCTAssertTrue(client.advanceDay())
-                model.refresh()
-            }
-            let host = mountTimeline(on: model, readOnly: false)
-            let slots = clickedSlots(on: model)
-            let targets = nodeTargets(in: host, on: model)
-            XCTAssertEqual(targets.map(\.slot), slots, rail)
-            assertTheTargetsStack(targets, in: host, footInside: false, rail)
-
-            let bounds = host.convert(host.bounds, to: nil)
-            let first = try XCTUnwrap(targets.first, rail)
-            let last = try XCTUnwrap(targets.last, rail)
-            XCTAssertLessThanOrEqual(frame(of: first).maxY, bounds.maxY, "the first row rose above \(rail)")
-            XCTAssertFalse(try isClipped(first), "the first row is clipped in \(rail)")
-            XCTAssertLessThan(frame(of: last).minY, bounds.minY, "the control: \(rail) fits every row")
-            XCTAssertTrue(try isClipped(last), "a row past the foot of \(rail) is drawn")
-
-            model.select(target: .tab(try XCTUnwrap(slots.last)))
-            let scrolled = nodeTargets(in: host, on: model)
-            let lastAfter = try XCTUnwrap(scrolled.last, rail)
-            XCTAssertEqual(lastAfter.slot, slots.last, rail)
-            XCTAssertTrue(
-                bounds.contains(frame(of: lastAfter)), "selecting the last page left its row out of view in \(rail)")
-            XCTAssertFalse(try isClipped(lastAfter), rail)
-            XCTAssertTrue(
-                try isClipped(try XCTUnwrap(scrolled.first)),
-                "the first row is still drawn after \(rail) scrolled to its foot")
-            for target in scrolled where !bounds.intersects(frame(of: target)) {
-                XCTAssertTrue(try isClipped(target), "a row outside \(rail) at \(frame(of: target)) is drawn")
-            }
-
-            model.select(target: .tab(try XCTUnwrap(slots.first)))
-            let back = nodeTargets(in: host, on: model)
-            XCTAssertTrue(
-                bounds.contains(frame(of: try XCTUnwrap(back.first))),
-                "selecting the first page left its row out of view in \(rail)")
+        let rail = "the pads rail"
+        let client = DayProjectionClockClient(tag: UUID().uuidString)
+        let model = try makeModel(client: client)
+        for _ in 0..<3 {
+            for index in 0..<12 { _ = try unshownPage(on: model, text: "page \(index)") }
+            XCTAssertTrue(client.advanceDay())
+            model.refresh()
         }
+        let host = mountTimeline(on: model, readOnly: false)
+        let slots = clickedSlots(on: model)
+        let targets = nodeTargets(in: host, on: model)
+        XCTAssertEqual(targets.map(\.slot), slots, rail)
+        assertTheTargetsStack(targets, in: host, footInside: false, rail)
+
+        let bounds = host.convert(host.bounds, to: nil)
+        let first = try XCTUnwrap(targets.first, rail)
+        let last = try XCTUnwrap(targets.last, rail)
+        XCTAssertLessThanOrEqual(frame(of: first).maxY, bounds.maxY, "the first row rose above \(rail)")
+        XCTAssertFalse(try isClipped(first), "the first row is clipped in \(rail)")
+        XCTAssertLessThan(frame(of: last).minY, bounds.minY, "the control: \(rail) fits every row")
+        XCTAssertTrue(try isClipped(last), "a row past the foot of \(rail) is drawn")
+
+        model.select(target: .tab(try XCTUnwrap(slots.last)))
+        let scrolled = nodeTargets(in: host, on: model)
+        let lastAfter = try XCTUnwrap(scrolled.last, rail)
+        XCTAssertEqual(lastAfter.slot, slots.last, rail)
+        XCTAssertTrue(
+            bounds.contains(frame(of: lastAfter)), "selecting the last page left its row out of view in \(rail)")
+        XCTAssertFalse(try isClipped(lastAfter), rail)
+        XCTAssertTrue(
+            try isClipped(try XCTUnwrap(scrolled.first)),
+            "the first row is still drawn after \(rail) scrolled to its foot")
+        for target in scrolled where !bounds.intersects(frame(of: target)) {
+            XCTAssertTrue(try isClipped(target), "a row outside \(rail) at \(frame(of: target)) is drawn")
+        }
+
+        model.select(target: .tab(try XCTUnwrap(slots.first)))
+        let back = nodeTargets(in: host, on: model)
+        XCTAssertTrue(
+            bounds.contains(frame(of: try XCTUnwrap(back.first))),
+            "selecting the first page left its row out of view in \(rail)")
     }
 
     /// Whether the clip around `target` leaves none of it to draw or to hit: the navigator's
@@ -640,224 +632,206 @@ final class TabDropTests: XCTestCase {
     /// and a node in the window that does not own the page content takes none (ADR-0033);
     /// raised, or once its window owns, the same node seals another app's drag.
     func testANodeOnARestingCardOrInTheWindowThatDoesNotOwnTakesNoDrop() throws {
-        for pads in [false, true] {
-            let rail = pads ? "the pads rail" : "the default rail"
-            let standIn = DragStandIn(tag: UUID().uuidString)
-            let model = try makeModel(client: standIn)
-            model.pads.isEnabled = pads
-            let destination = try unshownPage(on: model, text: "xy")
-            let foreign = drag(from: nil, board: inkBoard("hunter2"), mask: copy)
-            let host = mountTimeline(on: model, readOnly: true)
+        let rail = "the pads rail"
+        let standIn = DragStandIn(tag: UUID().uuidString)
+        let model = try makeModel(client: standIn)
+        let destination = try unshownPage(on: model, text: "xy")
+        let foreign = drag(from: nil, board: inkBoard("hunter2"), mask: copy)
+        let host = mountTimeline(on: model, readOnly: true)
 
-            /// The target on the destination's node as the rail stands now.
-            func target() throws -> TabDropTarget {
-                try XCTUnwrap(nodeTargets(in: host, on: model).first { $0.slot == destination.slot }, rail)
-            }
-
-            /// The node offers nothing, places nothing, reads no board and says nothing.
-            func refuses(_ state: String) throws {
-                let node = try target()
-                XCTAssertFalse(node.takesDrops, "\(rail) \(state)")
-                XCTAssertEqual(node.dropRoute(for: foreign), .refused, "\(rail) \(state)")
-                XCTAssertEqual(node.draggingEntered(foreign), [], "\(rail) \(state)")
-                XCTAssertFalse(node.performDragOperation(foreign), "\(rail) \(state)")
-                XCTAssertEqual(standIn.drops, [], "the core read the board \(state)")
-                XCTAssertEqual(shape(model, destination.sheet), "xy", "a drop was placed \(state)")
-                XCTAssertNil(model.notice, "a refused drop said something \(state)")
-            }
-
-            XCTAssertTrue(try target().readOnly, rail)
-            try refuses("on a resting card")
-
-            host.rootView = timeline(model, readOnly: false, surface: .panel)
-            XCTAssertFalse(try target().readOnly, rail)
-            XCTAssertEqual(try target().draggingEntered(foreign), .copy, "the raised card's node refused")
-
-            host.rootView = timeline(model, readOnly: false, surface: .editorWindow)
-            XCTAssertEqual(try target().surface, .editorWindow, rail)
-            try refuses("in the window that does not own")
-
-            model.transferOwnership(to: .editorWindow)
-            let owner = try target()
-            XCTAssertTrue(owner.takesDrops, rail)
-            XCTAssertTrue(owner.performDragOperation(foreign), rail)
-            XCTAssertEqual(standIn.drops, [[destination.sheet, 2, 0]], rail)
-            XCTAssertEqual(shape(model, destination.sheet), "xy#", rail)
+        /// The target on the destination's node as the rail stands now.
+        func target() throws -> TabDropTarget {
+            try XCTUnwrap(nodeTargets(in: host, on: model).first { $0.slot == destination.slot }, rail)
         }
+
+        /// The node offers nothing, places nothing, reads no board and says nothing.
+        func refuses(_ state: String) throws {
+            let node = try target()
+            XCTAssertFalse(node.takesDrops, "\(rail) \(state)")
+            XCTAssertEqual(node.dropRoute(for: foreign), .refused, "\(rail) \(state)")
+            XCTAssertEqual(node.draggingEntered(foreign), [], "\(rail) \(state)")
+            XCTAssertFalse(node.performDragOperation(foreign), "\(rail) \(state)")
+            XCTAssertEqual(standIn.drops, [], "the core read the board \(state)")
+            XCTAssertEqual(shape(model, destination.sheet), "xy", "a drop was placed \(state)")
+            XCTAssertNil(model.notice, "a refused drop said something \(state)")
+        }
+
+        XCTAssertTrue(try target().readOnly, rail)
+        try refuses("on a resting card")
+
+        host.rootView = timeline(model, readOnly: false, surface: .panel)
+        XCTAssertFalse(try target().readOnly, rail)
+        XCTAssertEqual(try target().draggingEntered(foreign), .copy, "the raised card's node refused")
+
+        host.rootView = timeline(model, readOnly: false, surface: .editorWindow)
+        XCTAssertEqual(try target().surface, .editorWindow, rail)
+        try refuses("in the window that does not own")
+
+        model.transferOwnership(to: .editorWindow)
+        let owner = try target()
+        XCTAssertTrue(owner.takesDrops, rail)
+        XCTAssertTrue(owner.performDragOperation(foreign), rail)
+        XCTAssertEqual(standIn.drops, [[destination.sheet, 2, 0]], rail)
+        XCTAssertEqual(shape(model, destination.sheet), "xy#", rail)
     }
 
     /// A node's target moves with its node when the nodes re sort, and a new page's node
     /// seats its own, so a drop still goes where the click on that row goes.
     func testANodesTargetFollowsItsNodeThroughAResortAndANewPage() throws {
-        for pads in [false, true] {
-            let rail = pads ? "the pads rail" : "the default rail"
-            let model = try makeModel()
-            model.pads.isEnabled = pads
-            let first = try unshownPage(on: model, text: "a")
-            let second = try unshownPage(on: model, text: "b")
-            let third = try unshownPage(on: model, text: "c")
-            let host = mountTimeline(on: model, readOnly: false)
-            let before = nodeTargets(in: host, on: model)
-            XCTAssertEqual(before.map(\.slot), clickedSlots(on: model), rail)
-            XCTAssertEqual(Set(before.map(\.slot)), [first.slot, second.slot, third.slot], rail)
+        let rail = "the pads rail"
+        let model = try makeModel()
+        let first = try unshownPage(on: model, text: "a")
+        let second = try unshownPage(on: model, text: "b")
+        let third = try unshownPage(on: model, text: "c")
+        let host = mountTimeline(on: model, readOnly: false)
+        let before = nodeTargets(in: host, on: model)
+        XCTAssertEqual(before.map(\.slot), clickedSlots(on: model), rail)
+        XCTAssertEqual(Set(before.map(\.slot)), [first.slot, second.slot, third.slot], rail)
 
-            let index = try XCTUnwrap(model.navigationTabs.firstIndex { $0.id == before[0].slot })
-            model.move(try XCTUnwrap(before.last?.slot), to: index)
-            let resorted = nodeTargets(in: host, on: model)
-            XCTAssertNotEqual(clickedSlots(on: model), before.map(\.slot), "the move re sorted nothing")
-            XCTAssertEqual(resorted.map(\.slot), clickedSlots(on: model), "a target kept its old row in \(rail)")
-            for target in resorted {
-                XCTAssertEqual(target.page, model.tabs.first { $0.id == target.slot }?.pageID, rail)
-            }
-
-            model.newPage()
-            let made = try XCTUnwrap(model.selectedPageID)
-            let madeSlot = try slot(of: made, on: model)
-            let grown = nodeTargets(in: host, on: model)
-            XCTAssertEqual(grown.count, 4, rail)
-            XCTAssertEqual(grown.map(\.slot), clickedSlots(on: model), "the new node's row aims elsewhere in \(rail)")
-            XCTAssertEqual(grown.first { $0.slot == madeSlot }?.page, made, rail)
+        let index = try XCTUnwrap(model.navigationTabs.firstIndex { $0.id == before[0].slot })
+        model.move(try XCTUnwrap(before.last?.slot), to: index)
+        let resorted = nodeTargets(in: host, on: model)
+        XCTAssertNotEqual(clickedSlots(on: model), before.map(\.slot), "the move re sorted nothing")
+        XCTAssertEqual(resorted.map(\.slot), clickedSlots(on: model), "a target kept its old row in \(rail)")
+        for target in resorted {
+            XCTAssertEqual(target.page, model.tabs.first { $0.id == target.slot }?.pageID, rail)
         }
+
+        model.newPage()
+        let made = try XCTUnwrap(model.selectedPageID)
+        let madeSlot = try slot(of: made, on: model)
+        let grown = nodeTargets(in: host, on: model)
+        XCTAssertEqual(grown.count, 4, rail)
+        XCTAssertEqual(grown.map(\.slot), clickedSlots(on: model), "the new node's row aims elsewhere in \(rail)")
+        XCTAssertEqual(grown.first { $0.slot == madeSlot }?.page, made, rail)
     }
 
     /// A page's drag dropped on another page's node moves its range to the end of the page
     /// that node names, keeping the object, through the same target a tab seats.
     func testADragDroppedOnAPageNodeMovesItsRangeToTheEndOfThatNodesPage() throws {
-        for pads in [false, true] {
-            let rail = pads ? "the pads rail" : "the default rail"
-            let model = try makeModel()
-            model.pads.isEnabled = pads
-            let source = try mountPage(on: model)
-            let ids = chips(model, source.sheet).map(\.chipId)
-            let destination = try unshownPage(on: model, text: "xy")
-            let sourceSlot = try slot(of: source.sheet, on: model)
-            model.select(sourceSlot)
-            let host = mountTimeline(on: model, readOnly: false)
-            let targets = nodeTargets(in: host, on: model)
-            XCTAssertEqual(targets.map(\.slot), clickedSlots(on: model), rail)
-            let target = try XCTUnwrap(targets.first { $0.slot == destination.slot }, rail)
-            let board = try beginDrag(source, NSRange(location: 0, length: 4))
-            let drop = drag(from: source.textView, board: board, mask: move)
+        let rail = "the pads rail"
+        let model = try makeModel()
+        let source = try mountPage(on: model)
+        let ids = chips(model, source.sheet).map(\.chipId)
+        let destination = try unshownPage(on: model, text: "xy")
+        let sourceSlot = try slot(of: source.sheet, on: model)
+        model.select(sourceSlot)
+        let host = mountTimeline(on: model, readOnly: false)
+        let targets = nodeTargets(in: host, on: model)
+        XCTAssertEqual(targets.map(\.slot), clickedSlots(on: model), rail)
+        let target = try XCTUnwrap(targets.first { $0.slot == destination.slot }, rail)
+        let board = try beginDrag(source, NSRange(location: 0, length: 4))
+        let drop = drag(from: source.textView, board: board, mask: move)
 
-            XCTAssertEqual(target.draggingEntered(drop), .move, rail)
-            XCTAssertTrue(target.performDragOperation(drop), rail)
-            XCTAssertEqual(shape(model, destination.sheet), "xyab #", "the run was not placed at the end")
-            XCTAssertEqual(chips(model, destination.sheet).map(\.chipId), [ids[0]], "the move took a new identity")
-            XCTAssertEqual(shape(model, source.sheet), " cd # ef", "the move left its source run")
-            XCTAssertEqual(model.selection, sourceSlot, "a drop on a node selected its page in \(rail)")
-            source.coordinator.endPageDrag()
-        }
+        XCTAssertEqual(target.draggingEntered(drop), .move, rail)
+        XCTAssertTrue(target.performDragOperation(drop), rail)
+        XCTAssertEqual(shape(model, destination.sheet), "xyab #", "the run was not placed at the end")
+        XCTAssertEqual(chips(model, destination.sheet).map(\.chipId), [ids[0]], "the move took a new identity")
+        XCTAssertEqual(shape(model, source.sheet), " cd # ef", "the move left its source run")
+        XCTAssertEqual(model.selection, sourceSlot, "a drop on a node selected its page in \(rail)")
+        source.coordinator.endPageDrag()
     }
 
     /// ⌥ over another page's node pastes the copy fragment at the end of that page, every
     /// object cloned, and ⌥ over the source page's own node clones the range to its end;
     /// the source keeps its run (Law 0001, ⌥ drag row).
     func testOptionOverAPageNodeClonesTheRangeToTheEndOfItsPage() throws {
-        for pads in [false, true] {
-            let rail = pads ? "the pads rail" : "the default rail"
-            let model = try makeModel()
-            model.pads.isEnabled = pads
-            let source = try mountPage(on: model)
-            let ids = chips(model, source.sheet).map(\.chipId)
-            let destination = try unshownPage(on: model, text: "xy")
-            let sourceSlot = try slot(of: source.sheet, on: model)
-            model.select(sourceSlot)
-            let host = mountTimeline(on: model, readOnly: false)
-            let targets = nodeTargets(in: host, on: model)
-            let other = try XCTUnwrap(targets.first { $0.slot == destination.slot }, rail)
-            let own = try XCTUnwrap(targets.first { $0.slot == sourceSlot }, rail)
+        let rail = "the pads rail"
+        let model = try makeModel()
+        let source = try mountPage(on: model)
+        let ids = chips(model, source.sheet).map(\.chipId)
+        let destination = try unshownPage(on: model, text: "xy")
+        let sourceSlot = try slot(of: source.sheet, on: model)
+        model.select(sourceSlot)
+        let host = mountTimeline(on: model, readOnly: false)
+        let targets = nodeTargets(in: host, on: model)
+        let other = try XCTUnwrap(targets.first { $0.slot == destination.slot }, rail)
+        let own = try XCTUnwrap(targets.first { $0.slot == sourceSlot }, rail)
 
-            var board = try beginDrag(source, NSRange(location: 0, length: 4))
-            var drop = drag(from: source.textView, board: board, mask: copy)
-            XCTAssertEqual(other.dropRoute(for: drop), .fragment, rail)
-            XCTAssertEqual(other.draggingEntered(drop), .copy, rail)
-            XCTAssertTrue(other.performDragOperation(drop), rail)
-            XCTAssertEqual(shape(model, destination.sheet), "xyab #", "the copy was not placed at the end in \(rail)")
-            let clone = try XCTUnwrap(chips(model, destination.sheet).first?.chipId, rail)
-            XCTAssertFalse(ids.contains(clone), "the clone kept the identity in \(rail)")
-            XCTAssertEqual(shape(model, source.sheet), "ab # cd # ef", "⌥ took the source run in \(rail)")
-            XCTAssertEqual(chips(model, source.sheet).map(\.chipId), ids, rail)
-            source.coordinator.endPageDrag()
+        var board = try beginDrag(source, NSRange(location: 0, length: 4))
+        var drop = drag(from: source.textView, board: board, mask: copy)
+        XCTAssertEqual(other.dropRoute(for: drop), .fragment, rail)
+        XCTAssertEqual(other.draggingEntered(drop), .copy, rail)
+        XCTAssertTrue(other.performDragOperation(drop), rail)
+        XCTAssertEqual(shape(model, destination.sheet), "xyab #", "the copy was not placed at the end in \(rail)")
+        let clone = try XCTUnwrap(chips(model, destination.sheet).first?.chipId, rail)
+        XCTAssertFalse(ids.contains(clone), "the clone kept the identity in \(rail)")
+        XCTAssertEqual(shape(model, source.sheet), "ab # cd # ef", "⌥ took the source run in \(rail)")
+        XCTAssertEqual(chips(model, source.sheet).map(\.chipId), ids, rail)
+        source.coordinator.endPageDrag()
 
-            board = try beginDrag(source, NSRange(location: 0, length: 4))
-            drop = drag(from: source.textView, board: board, mask: copy)
-            XCTAssertEqual(own.dropRoute(for: drop), .ownDrag, rail)
-            XCTAssertEqual(own.draggingEntered(drop), .copy, rail)
-            XCTAssertTrue(own.performDragOperation(drop), rail)
-            XCTAssertEqual(shape(model, source.sheet), "ab # cd # efab #", "⌥ did not clone to the end in \(rail)")
-            XCTAssertEqual(chips(model, source.sheet).count, 3, rail)
-            source.coordinator.endPageDrag()
-        }
+        board = try beginDrag(source, NSRange(location: 0, length: 4))
+        drop = drag(from: source.textView, board: board, mask: copy)
+        XCTAssertEqual(own.dropRoute(for: drop), .ownDrag, rail)
+        XCTAssertEqual(own.draggingEntered(drop), .copy, rail)
+        XCTAssertTrue(own.performDragOperation(drop), rail)
+        XCTAssertEqual(shape(model, source.sheet), "ab # cd # efab #", "⌥ did not clone to the end in \(rail)")
+        XCTAssertEqual(chips(model, source.sheet).count, 3, rail)
+        source.coordinator.endPageDrag()
     }
 
     /// The decrypted drag is refused on every page node, its own page's and another's, in
     /// every destination call before drop to seal reads the board, and its provider is never
     /// asked (Law 0001, decrypted drag row).
     func testEveryPageNodeRefusesTheDecryptedDrag() throws {
-        for pads in [false, true] {
-            let rail = pads ? "the pads rail" : "the default rail"
-            let standIn = DragStandIn(tag: UUID().uuidString)
-            let model = try makeModel(client: standIn)
-            model.pads.isEnabled = pads
-            let page = try mountPage(on: model)
-            let destination = try unshownPage(on: model, text: "xy")
-            let pageSlot = try slot(of: page.sheet, on: model)
-            let targets = nodeTargets(in: mountTimeline(on: model, readOnly: false), on: model)
-            let (source, item) = try XCTUnwrap(
-                page.coordinator.beginDecryptedDrag(at: 3), "the handle started no drag in \(rail)")
-            let board = NSPasteboard.withUniqueName()
-            addTeardownBlock { board.releaseGlobally() }
-            board.clearContents()
-            XCTAssertTrue(board.writeObjects([item]))
-            let records = model.coreClient.ledger().count
-            let drop = drag(from: source, board: board, mask: copy)
+        let rail = "the pads rail"
+        let standIn = DragStandIn(tag: UUID().uuidString)
+        let model = try makeModel(client: standIn)
+        let page = try mountPage(on: model)
+        let destination = try unshownPage(on: model, text: "xy")
+        let pageSlot = try slot(of: page.sheet, on: model)
+        let targets = nodeTargets(in: mountTimeline(on: model, readOnly: false), on: model)
+        let (source, item) = try XCTUnwrap(
+            page.coordinator.beginDecryptedDrag(at: 3), "the handle started no drag in \(rail)")
+        let board = NSPasteboard.withUniqueName()
+        addTeardownBlock { board.releaseGlobally() }
+        board.clearContents()
+        XCTAssertTrue(board.writeObjects([item]))
+        let records = model.coreClient.ledger().count
+        let drop = drag(from: source, board: board, mask: copy)
 
-            for (slot, name) in [(destination.slot, "another page's node"), (pageSlot, "its own node")] {
-                let target = try XCTUnwrap(targets.first { $0.slot == slot }, "\(rail): \(name)")
-                XCTAssertTrue(target.takesDrops, "the control: \(name) takes drops in \(rail)")
-                XCTAssertEqual(target.dropRoute(for: drop), .refused, "\(rail): \(name)")
-                XCTAssertEqual(target.draggingEntered(drop), [], "\(rail): \(name)")
-                XCTAssertEqual(target.draggingUpdated(drop), [], "\(rail): \(name)")
-                XCTAssertFalse(target.performDragOperation(drop), "\(rail): \(name)")
-            }
-            XCTAssertEqual(standIn.drops, [], "a node ran drop to seal in \(rail)")
-            XCTAssertEqual(source.asks, 0, "a node asked the provider in \(rail)")
-            XCTAssertEqual(shape(model, destination.sheet), "xy", "the drop stood an object in \(rail)")
-            XCTAssertEqual(shape(model, page.sheet), "ab # cd # ef", rail)
-            XCTAssertEqual(model.coreClient.ledger().count, records, "a refused drop recorded something in \(rail)")
-            XCTAssertNil(model.notice, "a refused drop said something in \(rail)")
-            source.end(with: [])
+        for (slot, name) in [(destination.slot, "another page's node"), (pageSlot, "its own node")] {
+            let target = try XCTUnwrap(targets.first { $0.slot == slot }, "\(rail): \(name)")
+            XCTAssertTrue(target.takesDrops, "the control: \(name) takes drops in \(rail)")
+            XCTAssertEqual(target.dropRoute(for: drop), .refused, "\(rail): \(name)")
+            XCTAssertEqual(target.draggingEntered(drop), [], "\(rail): \(name)")
+            XCTAssertEqual(target.draggingUpdated(drop), [], "\(rail): \(name)")
+            XCTAssertFalse(target.performDragOperation(drop), "\(rail): \(name)")
         }
+        XCTAssertEqual(standIn.drops, [], "a node ran drop to seal in \(rail)")
+        XCTAssertEqual(source.asks, 0, "a node asked the provider in \(rail)")
+        XCTAssertEqual(shape(model, destination.sheet), "xy", "the drop stood an object in \(rail)")
+        XCTAssertEqual(shape(model, page.sheet), "ab # cd # ef", rail)
+        XCTAssertEqual(model.coreClient.ledger().count, records, "a refused drop recorded something in \(rail)")
+        XCTAssertNil(model.notice, "a refused drop said something in \(rail)")
+        source.end(with: [])
     }
 
     /// A node whose page is due but not yet swept still offers the page's operation, and the
     /// drop refuses through the core and settles with the expired line; the swept page's
     /// node then seats no target (Law 0001, drag row).
     func testAPageNodeWhosePageIsDueRefusesTheDropAndSettlesWithTheExpiredLine() throws {
-        for pads in [false, true] {
-            let rail = pads ? "the pads rail" : "the default rail"
-            let model = try makeModel()
-            model.pads.isEnabled = pads
-            let client = model.coreClient
-            let source = try mountPage(on: model)
-            let destination = try unshownPage(on: model, text: "xy")
-            XCTAssertTrue(client.setRung(tab: destination.slot, rung: .oneHour), rail)
-            let host = mountTimeline(on: model, readOnly: false)
-            let target = try XCTUnwrap(nodeTargets(in: host, on: model).first { $0.slot == destination.slot }, rail)
-            let board = try beginDrag(source, NSRange(location: 0, length: 4))
-            let drop = drag(from: source.textView, board: board, mask: move)
-            XCTAssertEqual(target.dropRoute(for: drop), .move, "the control: a live page takes the move in \(rail)")
+        let rail = "the pads rail"
+        let model = try makeModel()
+        let client = model.coreClient
+        let source = try mountPage(on: model)
+        let destination = try unshownPage(on: model, text: "xy")
+        XCTAssertTrue(client.setRung(tab: destination.slot, rung: .oneHour), rail)
+        let host = mountTimeline(on: model, readOnly: false)
+        let target = try XCTUnwrap(nodeTargets(in: host, on: model).first { $0.slot == destination.slot }, rail)
+        let board = try beginDrag(source, NSRange(location: 0, length: 4))
+        let drop = drag(from: source.textView, board: board, mask: move)
+        XCTAssertEqual(target.dropRoute(for: drop), .move, "the control: a live page takes the move in \(rail)")
 
-            XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000), rail)
-            XCTAssertEqual(target.draggingEntered(drop), .move, "the rail still says the page stands in \(rail)")
-            XCTAssertFalse(target.performDragOperation(drop), "a due page took the drop in \(rail)")
-            XCTAssertEqual(model.notice, PageModel.pageExpiredLine, rail)
-            XCTAssertFalse(model.tabs.contains { $0.pageID == destination.sheet }, "the due page stayed in \(rail)")
-            XCTAssertEqual(shape(model, source.sheet), "ab # cd # ef", "the refused move changed the source in \(rail)")
-            XCTAssertFalse(
-                nodeTargets(in: host, on: model).contains { $0.slot == destination.slot },
-                "the swept page's node still seats a target in \(rail)")
-        }
+        XCTAssertTrue(client.ageForTests(byMs: 2 * 60 * 60 * 1_000), rail)
+        XCTAssertEqual(target.draggingEntered(drop), .move, "the rail still says the page stands in \(rail)")
+        XCTAssertFalse(target.performDragOperation(drop), "a due page took the drop in \(rail)")
+        XCTAssertEqual(model.notice, PageModel.pageExpiredLine, rail)
+        XCTAssertFalse(model.tabs.contains { $0.pageID == destination.sheet }, "the due page stayed in \(rail)")
+        XCTAssertEqual(shape(model, source.sheet), "ab # cd # ef", "the refused move changed the source in \(rail)")
+        XCTAssertFalse(
+            nodeTargets(in: host, on: model).contains { $0.slot == destination.slot },
+            "the swept page's node still seats a target in \(rail)")
     }
 
     /// The side Timeline as the card or editor window mounts it, under `readOnly` and `surface`.

@@ -3,17 +3,10 @@ import Combine
 import CompanionKit
 import SwiftUI
 
-/// The tabs of the Settings window, in toolbar order. General first,
-/// as every Apple app has it, then code presentation and the pads,
-/// followed by the two that reach outside the Mac: where a conceal goes,
-/// and how pages travel.
-///
-/// The symbol names are SF Symbols. A misspelt one draws nothing and
-/// complains nowhere, so `SettingsTabTests` resolves each of them.
+/// The Settings tabs in toolbar order, with names and symbols resolved by SettingsTabTests.
 enum SettingsTab: Int, CaseIterable {
     case general
     case code
-    case pads
     case connection
     case sync
 
@@ -21,7 +14,6 @@ enum SettingsTab: Int, CaseIterable {
     init(_ pane: PageModel.SettingsPane) {
         switch pane {
         case .connection: self = .connection
-        case .pads: self = .pads
         }
     }
 
@@ -29,7 +21,6 @@ enum SettingsTab: Int, CaseIterable {
         switch self {
         case .general: "General"
         case .code: "Code"
-        case .pads: "Pads"
         case .connection: "Connection"
         case .sync: "Sync"
         }
@@ -39,7 +30,6 @@ enum SettingsTab: Int, CaseIterable {
         switch self {
         case .general: "gearshape"
         case .code: "curlybraces"
-        case .pads: "square.stack"
         case .connection: "network"
         case .sync: "arrow.triangle.2.circlepath"
         }
@@ -97,7 +87,6 @@ final class BackdropSettingsWindowController: NSObject {
         switch tab {
         case .general: 640
         case .code: 390
-        case .pads: 560
         case .connection: 360
         case .sync: 380
         }
@@ -202,8 +191,6 @@ final class BackdropSettingsWindowController: NSObject {
             )
         case .code:
             hosted = host(CodeSettingsView(model: model.pages), for: tab)
-        case .pads:
-            hosted = host(PadSettingsView(model: model.pages), for: tab)
         case .connection:
             hosted = host(ConnectionSettingsView(model: model.pages), for: tab)
         case .sync:

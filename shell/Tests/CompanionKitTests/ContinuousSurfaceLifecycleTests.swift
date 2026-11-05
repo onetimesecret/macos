@@ -34,10 +34,8 @@ final class ContinuousSurfaceLifecycleTests: XCTestCase {
         let page = try XCTUnwrap(model.coreClient.tabs().first { $0.id == tab }?.pageID)
         let data = try JSONSerialization.data(withJSONObject: [["ink": text]])
         XCTAssertTrue(model.coreClient.syncDocument(sheet: page, json: try XCTUnwrap(String(data: data, encoding: .utf8))))
-        if model.pads.isEnabled {
-            let uuid = try XCTUnwrap(model.coreClient.tabs().first { $0.id == tab }?.uuid)
-            model.pads.assign(tabUUID: uuid, to: model.pads.activeID)
-        }
+        let uuid = try XCTUnwrap(model.coreClient.tabs().first { $0.id == tab }?.uuid)
+        model.pads.assign(tabUUID: uuid, to: model.pads.activeID)
         model.refresh()
         model.select(tab)
         return page
@@ -163,7 +161,6 @@ final class ContinuousSurfaceLifecycleTests: XCTestCase {
 
     func testReverseSortedCheckpointSplitUsesAdjacentNaturalDestination() throws {
         let model = try model()
-        model.pads.isEnabled = true
         let source = try seed("first second", in: model)
         model.setCheckpointSort(.reverseChronological, dayBucket: 0)
         let surface = try mount(model)
@@ -271,9 +268,8 @@ final class ContinuousSurfaceLifecycleTests: XCTestCase {
         XCTAssertEqual(remounted.canvas.editor.selectedRange(), selection)
     }
 
-    func testDeletedPadAndDisabledPadScopesAreEvicted() throws {
+    func testDeletedPadScopeIsEvicted() throws {
         let model = try model()
-        model.pads.isEnabled = true
         let pad = try XCTUnwrap(model.createPad(named: "temporary"))
         _ = try seed("text", in: model)
         weak var removedDocument: ContinuousPadDocument?
@@ -284,13 +280,6 @@ final class ContinuousSurfaceLifecycleTests: XCTestCase {
         XCTAssertNotNil(removedDocument)
         XCTAssertTrue(model.removePad(pad))
         XCTAssertNil(removedDocument)
-        weak var disabledDocument: ContinuousPadDocument?
-        do {
-            let document = model.continuousPadDocument()
-            disabledDocument = document
-        }
-        model.pads.isEnabled = false
-        XCTAssertNil(disabledDocument)
     }
 
     func testCheckpointLabelsAreReusedAcrossCursorAndTextChanges() throws {
@@ -349,7 +338,6 @@ final class ContinuousSurfaceLifecycleTests: XCTestCase {
 
     func testPadSwitchSettlesMarkedTextBeforeSuspendingTheOldDocument() throws {
         let model = try model()
-        model.pads.isEnabled = true
         let scratchPage = try seed("scratch words", in: model)
         let otherPad = try XCTUnwrap(model.createPad(named: "Other"))
         let otherPage = try seed("other words", in: model)

@@ -9,6 +9,28 @@ final class PadCatalogTests: XCTestCase {
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: name) }
         return defaults
     }
+    func testSavedGlobalFlagsDoNotDisablePadsOrApplicationAssociations() throws {
+        let defaults = try defaults()
+        let catalog = PadCatalog(defaults: defaults)
+        let pad = try XCTUnwrap(catalog.create(named: "Work"))
+        catalog.addApplication("example.editor", to: pad)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: XCTUnwrap(defaults.data(forKey: PadCatalog.storageKey))) as? [String: Any])
+        for key in ["enabled", "appAssociationsEnabled", "showFullPaths"] {
+            XCTAssertNil(json[key])
+            json[key] = false
+        }
+        defaults.set(try JSONSerialization.data(withJSONObject: json), forKey: PadCatalog.storageKey)
+        let restored = PadCatalog(defaults: defaults)
+        XCTAssertNil(restored.loadFailure)
+        XCTAssertEqual(restored.activeID, pad)
+        XCTAssertEqual(restored.pad(forApplication: "example.editor"), pad)
+        XCTAssertTrue(restored.rename(pad, to: "Renamed"))
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: XCTUnwrap(defaults.data(forKey: PadCatalog.storageKey))) as? [String: Any])
+        for key in ["enabled", "appAssociationsEnabled", "showFullPaths"] { XCTAssertNil(saved[key]) }
+    }
+
     func testFolderRootsAreExclusiveAndLongestComponentMatchWins() throws {
         let catalog = PadCatalog(defaults: try defaults())
         let familia = try XCTUnwrap(catalog.create(named: "Familia"))
@@ -40,15 +62,13 @@ final class PadCatalogTests: XCTestCase {
         XCTAssertEqual(restored.owner(ofTabUUID: "legacy-tab"), UUID(uuidString: legacy))
         XCTAssertEqual(restored.entries.first?.id, PadCatalog.scratchID)
     }
-    func testAppMatchingUsesRecentManualSelectionAndCanBeDisabled() throws {
+    func testAppMatchingUsesRecentManualSelectionWithoutGlobalEnablement() throws {
         let catalog = PadCatalog(defaults: try defaults())
-        catalog.isEnabled = true
         let familia = try XCTUnwrap(catalog.create(named: "Familia"))
         let otto = try XCTUnwrap(catalog.create(named: "Otto"))
         catalog.addApplication("dev.zed.Zed", to: familia)
         catalog.addApplication("dev.zed.Zed", to: otto)
-        XCTAssertNil(catalog.pad(forApplication: "dev.zed.Zed"))
-        catalog.appAssociationsEnabled = true
+        XCTAssertEqual(catalog.pad(forApplication: "dev.zed.Zed"), otto)
         catalog.activate(familia)
         XCTAssertEqual(catalog.pad(forApplication: "dev.zed.Zed"), familia)
         catalog.activate(otto, recordRecency: false)
@@ -59,8 +79,6 @@ final class PadCatalogTests: XCTestCase {
     func testManualVisitWinsOverLegacyFutureTimestampsAndRemainsRecentAfterReload() throws {
         let defaults = try defaults()
         let catalog = PadCatalog(defaults: defaults)
-        catalog.isEnabled = true
-        catalog.appAssociationsEnabled = true
         let pads = try (0..<10).map { try XCTUnwrap(catalog.create(named: "Pad \($0)")) }
         catalog.addApplication("dev.zed.Zed", to: pads[0])
         catalog.addApplication("dev.zed.Zed", to: pads[9])
@@ -82,8 +100,6 @@ final class PadCatalogTests: XCTestCase {
 
     func testManualReselectionPromotesAnAutomaticallySelectedOlderPadOnce() throws {
         let catalog = PadCatalog(defaults: try defaults())
-        catalog.isEnabled = true
-        catalog.appAssociationsEnabled = true
         let older = try XCTUnwrap(catalog.create(named: "Familia"))
         let newer = try XCTUnwrap(catalog.create(named: "Otto"))
         catalog.addApplication("dev.zed.Zed", to: older)
@@ -103,14 +119,12 @@ final class PadCatalogTests: XCTestCase {
     func testOwnershipAndIndependentDateSortSurviveCatalogReload() throws {
         let defaults = try defaults()
         let catalog = PadCatalog(defaults: defaults)
-        catalog.isEnabled = true
         let pad = try XCTUnwrap(catalog.create(named: "Familia"))
         catalog.assign(tabUUID: "stable-tab-uuid", to: pad)
         catalog.assign(filePath: "/work/note.md", to: pad)
         catalog.setDaySort(.chronological, for: pad)
         catalog.toggleCheckpointSort(for: pad, onDate: "2026-10-01")
         let restored = PadCatalog(defaults: defaults)
-        XCTAssertTrue(restored.isEnabled)
         XCTAssertEqual(restored.owner(ofTabUUID: "stable-tab-uuid"), pad)
         XCTAssertEqual(restored.owner(ofFile: "/work/note.md"), pad)
         XCTAssertEqual(restored.daySortDirection(for: pad), .chronological)
@@ -151,7 +165,7 @@ final class PadCatalogTests: XCTestCase {
         XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .chronological)
         XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-02"), .reverseChronological)
         XCTAssertEqual(restored.checkpointSortDirection(for: pad, onDate: "2026-10-03"), .natural)
-        restored.showFullPaths = true
+        XCTAssertTrue(restored.rename(pad, to: "Renamed"))
         let reloaded = PadCatalog(defaults: defaults)
         XCTAssertEqual(reloaded.daySortDirection(for: pad), .chronological)
         XCTAssertEqual(reloaded.checkpointSortDirection(for: pad, onDate: "2026-10-01"), .chronological)
@@ -214,14 +228,12 @@ final class PadCatalogTests: XCTestCase {
         XCTAssertEqual(PadSortDirection.reverseChronological.reversed, .chronological)
     }
 
-    func testUnreadableCatalogCannotBeEnabledOrOverwritten() throws {
+    func testUnreadableCatalogRefusesMutations() throws {
         let defaults = try defaults()
         let bytes = Data("{not readable}".utf8)
         defaults.set(bytes, forKey: PadCatalog.storageKey)
         let catalog = PadCatalog(defaults: defaults)
         XCTAssertNotNil(catalog.loadFailure)
-        catalog.isEnabled = true
-        XCTAssertFalse(catalog.isEnabled)
         XCTAssertNil(catalog.create(named: "Lost after restart"))
         XCTAssertFalse(catalog.addFolder("/work", to: PadCatalog.scratchID))
         XCTAssertEqual(defaults.data(forKey: PadCatalog.storageKey), bytes)
@@ -229,22 +241,19 @@ final class PadCatalogTests: XCTestCase {
     func testUnknownVersionIsPreserved() throws {
         let defaults = try defaults()
         let catalog = PadCatalog(defaults: defaults)
-        catalog.isEnabled = true
+        _ = try XCTUnwrap(catalog.create(named: "Existing"))
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(defaults.data(forKey: PadCatalog.storageKey))) as? [String: Any])
         json["version"] = 2
         let bytes = try JSONSerialization.data(withJSONObject: json)
         defaults.set(bytes, forKey: PadCatalog.storageKey)
         let restored = PadCatalog(defaults: defaults)
         XCTAssertNotNil(restored.loadFailure)
-        restored.showFullPaths = true
+        XCTAssertNil(restored.create(named: "Refused"))
         XCTAssertEqual(defaults.data(forKey: PadCatalog.storageKey), bytes)
     }
     func testMovingPadsReloadsOrderWithoutChangingOtherMetadata() throws {
         struct Metadata: Decodable, Equatable {
             let version: Int
-            let enabled: Bool
-            let appAssociationsEnabled: Bool
-            let showFullPaths: Bool
             let activeID: UUID
             let tabOwners: [String: UUID]
             let fileOwners: [String: UUID]
@@ -256,9 +265,6 @@ final class PadCatalogTests: XCTestCase {
         }
         let defaults = try defaults()
         let catalog = PadCatalog(defaults: defaults)
-        catalog.isEnabled = true
-        catalog.appAssociationsEnabled = true
-        catalog.showFullPaths = true
         let first = try XCTUnwrap(catalog.create(named: "Familia"))
         let second = try XCTUnwrap(catalog.create(named: "Otto"))
         let third = try XCTUnwrap(catalog.create(named: "Docs"))
@@ -387,8 +393,6 @@ final class PadCatalogTests: XCTestCase {
         catalog.activate(pad)
         catalog.assign(tabUUID: "tab", to: pad)
         catalog.remember(tabUUID: "tab", for: pad)
-        let paths = catalog.showFullPaths
-        catalog.showFullPaths = paths
         catalog.transferFiles([("/unowned.txt", "/new.txt")])
         catalog.assign(filePath: "/new.txt", to: PadCatalog.scratchID)
         XCTAssertEqual(changes, 0)

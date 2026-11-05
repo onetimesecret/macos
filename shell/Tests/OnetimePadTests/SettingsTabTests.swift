@@ -43,12 +43,10 @@ final class SettingsTabTests: XCTestCase {
         XCTAssertEqual(SettingsTab.landing(current: .connection, ledgerRestoreRefused: true), .general)
     }
 
-    /// The surface names two tabs: the conceal sheet's Connection
-    /// Settings… and the pad switcher's Manage Pads….
+    /// The conceal sheet opens Connection settings directly.
     func testEachPaneTheSurfaceNamesIsATab() {
         XCTAssertEqual(SettingsTab(.connection), .connection)
-        XCTAssertEqual(SettingsTab(.pads), .pads)
-        XCTAssertEqual(SettingsTab.pads.label, "Pads")
+        XCTAssertEqual(SettingsTab.allCases.map(\.label), ["General", "Code", "Connection", "Sync"])
     }
 
     /// A button that names a tab, the conceal sheet's Connection

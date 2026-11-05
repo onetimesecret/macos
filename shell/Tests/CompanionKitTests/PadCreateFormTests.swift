@@ -30,13 +30,13 @@ final class PadCreateFormTests: XCTestCase {
     }
 
     private final class Presentation: ObservableObject {
-        var routesBinding: Binding<PadSettingsRoutes>?
+        var routesBinding: Binding<PadInspectorRoutes>?
         var anchors: [String: NSView] = [:]
         weak var formView: NSView?
         @Published var isEnabled = true
         @Published var showsPresenter = true
 
-        var routes: PadSettingsRoutes {
+        var routes: PadInspectorRoutes {
             get { routesBinding!.wrappedValue }
             set { routesBinding!.wrappedValue = newValue }
         }
@@ -62,7 +62,7 @@ final class PadCreateFormTests: XCTestCase {
     private struct Surface: View {
         @ObservedObject var presentation: Presentation
         let model: PageModel
-        @State private var routes = PadSettingsRoutes()
+        @State private var routes = PadInspectorRoutes()
 
         var body: some View {
             VStack {
@@ -86,7 +86,7 @@ final class PadCreateFormTests: XCTestCase {
     private struct ConditionalSurface: View {
         @ObservedObject var presentation: Presentation
         let model: PageModel
-        @State private var routes = PadSettingsRoutes()
+        @State private var routes = PadInspectorRoutes()
 
         var body: some View {
             VStack {
@@ -139,7 +139,6 @@ final class PadCreateFormTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
         let model = isolatedModel(defaults: defaults)
-        model.pads.isEnabled = true
         let presentation = Presentation()
         let frame = NSRect(x: 200, y: 200, width: 360, height: 280)
         let window: NSWindow

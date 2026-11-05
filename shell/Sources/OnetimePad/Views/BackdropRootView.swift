@@ -182,28 +182,19 @@ struct BackdropRootView: View {
                 .padding(.horizontal, 12)
                 .frame(height: Self.headerHeight)
             Divider()
-            if pages.pads.isEnabled {
-                PadPickerView(model: pages)
-                    .disabled(!raised)
-                Divider()
-            }
-            // Placement follows the layout: Tabs along the bottom,
-            // Timeline down the side. The content view answers
-            // organization; this branch answers only placement.
-            TimelineSplitView(
-                showsTimeline: pages.showsPagesDownSide && !pages.isPageExpanded,
-                resizable: raised,
-                railWidth: pages.timelineWidth, onRailResize: pages.recordTimelineWidth
-            ) {
-                TimeRailView(model: pages, readOnly: !raised)
-            } content: {
+            PadPickerView(model: pages)
+                .disabled(!raised)
+            Divider()
+            // Placement follows the layout: Tabs along the bottom, Timeline down the side;
+            // the workspace answers placement and the resting card pins its divider.
+            PadWorkspaceView(model: pages, readOnly: !raised) {
                 pageContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            // One fade over the split, so the divider dims with the rail and the page.
+            // One fade over the workspace, so the divider dims with the rail and the page.
             .stanceFaded(raised: raised, animation: stanceFade)
             PageStatusStack(model: pages)
-            if !pages.showsPagesDownSide && !pages.isPageExpanded {
+            if !pages.showsPagesDownSide && !pages.isPageExpanded && !pages.isPadInspectorVisible {
                 Divider()
                 TabStripView(model: pages, readOnly: !raised)
                     .stanceFaded(raised: raised, animation: stanceFade)

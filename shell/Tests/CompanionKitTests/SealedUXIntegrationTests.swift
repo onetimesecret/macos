@@ -28,10 +28,8 @@ final class SealedUXIntegrationTests: XCTestCase {
         let data = try JSONSerialization.data(withJSONObject: [["ink": text]])
         XCTAssertTrue(model.coreClient.syncDocument(
             sheet: page, json: try XCTUnwrap(String(data: data, encoding: .utf8))))
-        if model.pads.isEnabled {
-            let uuid = try XCTUnwrap(model.coreClient.tabs().first { $0.id == tab }?.uuid)
-            model.pads.assign(tabUUID: uuid, to: model.pads.activeID)
-        }
+        let uuid = try XCTUnwrap(model.coreClient.tabs().first { $0.id == tab }?.uuid)
+        model.pads.assign(tabUUID: uuid, to: model.pads.activeID)
         model.refresh()
         model.select(tab)
         return page
@@ -189,7 +187,6 @@ final class SealedUXIntegrationTests: XCTestCase {
         enum Navigation: CaseIterable { case activate, create, remove }
         for navigation in Navigation.allCases {
             let model = try makeModel()
-            model.pads.isEnabled = true
             let sourcePad = try XCTUnwrap(model.createPad(named: "Source"))
             let page = try seed("ab SECRET cd", in: model)
             let chip = try XCTUnwrap(model.coreClient.sealText(sheet: page, "SECRET", at: 3, length: 6))

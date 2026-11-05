@@ -644,11 +644,10 @@ final class TimeUnitModeTests: XCTestCase {
     func testLayoutCaptionExplainsBothChoices() {
         let caption = GeneralSettingsView.pageLayoutCaption
         XCTAssertTrue(caption.contains("Tabs shows named pages along the bottom"))
-        XCTAssertTrue(caption.contains("Timeline is a prototype"))
-        XCTAssertTrue(caption.contains("down the side"))
+        XCTAssertTrue(caption.contains("Timeline groups live pages by day"))
+        XCTAssertTrue(caption.contains("independent day and checkpoint ordering"))
         XCTAssertTrue(caption.contains("\(Int(TimeRailView.width)) points"),
                       "the caption must say what Timeline costs, at the rail's real width")
-        XCTAssertTrue(caption.contains("moves no content and writes nothing new to disk"),
-                      "the persistence reassurance (ADR-0037) was dropped")
+        XCTAssertTrue(caption.contains("Lines wrap and older blank pages are hidden"))
     }
 }

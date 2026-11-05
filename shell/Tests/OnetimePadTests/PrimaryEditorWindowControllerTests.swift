@@ -57,8 +57,6 @@ final class PrimaryEditorWindowControllerTests: XCTestCase {
         XCTAssertEqual(
             PrimaryEditorWindowController.toolbarItems,
             [.editorPadPicker, .flexibleSpace, .editorExpandPage])
-        XCTAssertEqual(PrimaryEditorWindowController.titleVisibility(padsEnabled: true), .hidden)
-        XCTAssertEqual(PrimaryEditorWindowController.titleVisibility(padsEnabled: false), .visible)
     }
 
     /// `TimeRailTests.testTheNavigatorKeepsItsActiveRowAtEveryWindowsMinimumHeight` hosts the rail
