@@ -4,7 +4,7 @@ documentation_status: needs-review
 
 # ADR-0063: Activation shows the pad, and summons keep the editor window
 
-- **Status:** accepted
+- **Status:** proposed
 - **Date:** 2026-11-10
 - **Supersedes in part:** [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md), only the reach of its panel-off rule for the hotkey and the status item, which now also applies while the editor window is open with the panel on; [ADR-0036](0036-editing-presentations-are-mutually-exclusive.md), only the hotkey and status-item summons closing an open primary editor window, their ambient route while that window is open, and their anchor on today in that case; and [ADR-0059](0059-appkit-owns-window-presentation.md), only its rule that ordinary activation creates no editor, its Cmd-Tab return to a minimized editor, and the consequence that a return may show no editor. Their remaining decisions stand.
 - **Depends on:** [ADR-0036](0036-editing-presentations-are-mutually-exclusive.md) for one visible content presentation and the explicit switch commands, and [ADR-0059](0059-appkit-owns-window-presentation.md) for AppKit ownership of window presentation and the reopen rule.
