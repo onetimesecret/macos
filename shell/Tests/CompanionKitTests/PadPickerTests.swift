@@ -26,6 +26,17 @@ final class PadPickerTests: XCTestCase {
         XCTAssertFalse(PadShortcutMonitor.allows(number: 0, keymap: fallback))
     }
 
+    func testScratchReclaimsZeroFromTheLedgerAndFromNoOtherCommand() {
+        let ledger = Keymap.resolve(defaultText: defaultsText, overrideText: """
+            [{"context":"Editor","bindings":{"cmd-0":"ledger::Show"}}]
+            """)
+        XCTAssertTrue(PadShortcutMonitor.allows(number: 0, keymap: ledger))
+        let settings = Keymap.resolve(defaultText: defaultsText, overrideText: """
+            [{"context":"Editor","bindings":{"cmd-0":"app::Settings"}}]
+            """)
+        XCTAssertFalse(PadShortcutMonitor.allows(number: 0, keymap: settings))
+    }
+
     func testLaterRebindingClearsExplicitUnboundState() {
         let keymap = Keymap.resolve(defaultText: defaultsText, overrideText: """
             [{"context":"Editor","bindings":{"cmd-1":null}},

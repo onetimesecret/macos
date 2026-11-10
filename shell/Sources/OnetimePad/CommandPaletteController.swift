@@ -395,7 +395,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
                 return
             }
             model.perform(command)
-            if [.appOpenTimeline, .appSwitchToTabs, .pageReopenLast, .pageNew].contains(command) {
+            if [.appOpenTimeline, .appSwitchToTabs, .ledgerShow, .pageReopenLast, .pageNew].contains(command) {
                 returnToPages()
             }
         }

@@ -312,6 +312,27 @@ public struct PageStatusStack: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
         }
+        if let sentence = model.expiredWhileAwaySentence {
+            // Standing until Dismiss or typing: a page went and nobody was told at the time.
+            HStack(spacing: 8) {
+                Text(sentence)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color.secondaryInk)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                if !model.showingLedger {
+                    Button(CompanionL10n.string("Show Ledger")) { model.showLedger() }
+                        .font(.system(.caption, design: .monospaced))
+                        .controlSize(.small)
+                }
+                Button(CompanionL10n.string("expiry.away.dismiss")) { model.dismissExpiredWhileAway() }
+                    .font(.system(.caption, design: .monospaced))
+                    .controlSize(.small)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+        }
         if let sentence = sync.standingSentence {
             // Sync's one standing line (issue #102): present only while
             // sync is on AND has something to report. Off is silence,

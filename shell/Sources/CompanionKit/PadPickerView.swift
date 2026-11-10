@@ -438,13 +438,14 @@ final class PadShortcutMonitor: ObservableObject {
 
     /// User-remapped digit bindings retain their existing command. A digit
     /// still assigned to its bundled page selector can be reclaimed by the
-    /// opt-in experiment. Scratch's unbound zero has the same boundary.
+    /// opt-in experiment. Scratch's zero is reclaimed from the ledger, or unbound.
     nonisolated static func allows(number: Int, keymap: ResolvedKeymap) -> Bool {
         guard (0...9).contains(number),
               case .success(let stroke) = Keystroke.parse("cmd-\(number)") else { return false }
         guard keymap.explicitlyUnbound[.editor]?.contains(stroke) != true else { return false }
         let existing = keymap.command(for: stroke, in: .editor)
-        return number == 0 ? existing == nil : existing?.selectsPageNumber == number
+        if number == 0 { return existing == nil || existing == .ledgerShow }
+        return existing?.selectsPageNumber == number
     }
 
     /// Pad selection is shared across windows, so a sheet in any app window

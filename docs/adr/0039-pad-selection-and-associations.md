@@ -211,3 +211,8 @@ section 8 names four.
   does not assert that these conditions have been met.
 - 2026-10-14: Amendment 1 proposed: the switcher is a menu and the pads are
   managed in a Pads tab of Settings.
+- 2026-11-10: `default-keymap.json` binds `cmd-0` to `ledger::Show` again.
+  With multiple pads enabled the pad layer takes that binding for Scratch, as
+  it takes a digit still on its bundled page selector, so the ownership this
+  record decided is unchanged; the sentence above that the file leaves `cmd-0`
+  unbound describes the file as it was on 2026-10-01.

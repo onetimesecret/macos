@@ -254,34 +254,23 @@ public struct GeneralSettingsView: View {
                     SettingsCaption(captureCaption)
                 }
             }
-            // Hidden with the rest of the ledger's entry points (issue
-            // #78), except while the surface is standing there telling
-            // the user to come here and clear the ledger. That banner
-            // names this button as the one way out of a ledger that
-            // will not open, and hiding the button it names would make
-            // the instruction a dead end.
-            //
-            // The flag is `@Published`, so the section arrives with the
-            // banner and leaves the moment the clear lands: the
-            // disappearance is the receipt.
-            if HiddenUI.showsLedgerClear(ledgerRestoreRefused: model.ledgerRestoreRefused) {
-                Section {
-                    Button("Clear the Ledger", role: .destructive) { confirmingLedgerClear = true }
-                        .confirmationDialog(
-                            "Clear the ledger?",
-                            isPresented: $confirmingLedgerClear,
-                            titleVisibility: .visible
-                        ) {
-                            Button("Clear the Ledger", role: .destructive) { clearLedger() }
-                            Button("Cancel", role: .cancel) {}
-                        } message: {
-                            Text("Every record goes, and there is no undo. Pages and sealed chips are untouched.")
-                        }
-                } header: {
-                    SettingsCaption(
-                        "The ledger records what the app did with each item: never the content, but page names, and those are often the secret's label. It survives restarts and keeps 90 days."
-                    )
-                }
+            // The refused ledger's standing line names this button as its way out.
+            Section {
+                Button("Clear the Ledger", role: .destructive) { confirmingLedgerClear = true }
+                    .confirmationDialog(
+                        "Clear the ledger?",
+                        isPresented: $confirmingLedgerClear,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Clear the Ledger", role: .destructive) { clearLedger() }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Every record goes, and there is no undo. Pages and sealed chips are untouched.")
+                    }
+            } header: {
+                SettingsCaption(
+                    "The ledger records what the app did with each item: never the content, but page names, and those are often the secret's label. It survives restarts and keeps 90 days."
+                )
             }
         }
         .formStyle(.grouped)

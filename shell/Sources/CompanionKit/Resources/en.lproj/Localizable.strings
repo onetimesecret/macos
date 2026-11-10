@@ -151,6 +151,7 @@
 "Editor and Selection" = "Editor and Selection";
 "Open Timeline" = "Open Timeline";
 "Switch to Tabs View" = "Switch to Tabs View";
+"Show Ledger" = "Show Ledger";
 "Reopen Dated Tabs…" = "Reopen Dated Tabs…";
 "Reopen Last Closed Page or Tab" = "Reopen Last Closed Page or Tab";
 "Open File…" = "Open File…";
@@ -258,6 +259,13 @@
 "seal.selection.help" = "Sealing cannot be undone. To change the contents, use Copy Decrypted, edit the text, then seal a replacement.";
 
 "chip.reference.copied" = "copied the sealed reference; paste it into OnetimePad";
+
+/* The line under the page for pages that expired while nobody was there, and the last-hour warning. */
+"expiry.away.one" = "\"%1$@\" expired at %2$@.";
+"expiry.away.many" = "%1$ld pages expired since you were last here: %2$@.";
+"expiry.away.more" = "%1$ld pages expired since you were last here: %2$@ and %3$ld more.";
+"expiry.away.dismiss" = "Dismiss";
+"expiry.warning.body" = "\"%@\" expires in under an hour.";
 
 "palette.context_changed" = "the page changed; reopen the command palette to use page commands";
 

@@ -636,6 +636,22 @@ public final class PageModel: ObservableObject {
     /// whenever the ledger is shown. Metadata only, never content.
     @Published public private(set) var ledgerEntries: [LedgerEntry] = []
 
+    /// The pages that expired since a person last typed or dismissed the line, by title only.
+    @Published public private(set) var expiredWhileAway: [ExpiredPage] = []
+
+    /// The standing line for `expiredWhileAway`, or nil when no page went.
+    public var expiredWhileAwaySentence: String? {
+        ExpiryNotice.sentence(for: expiredWhileAway)
+    }
+
+    /// The line's Dismiss, and what typing in a page does to it.
+    public func dismissExpiredWhileAway() {
+        if !expiredWhileAway.isEmpty { expiredWhileAway = [] }
+    }
+
+    /// Each page inside its last hour, with the deadline it was noticed at (`LastHourWarning`).
+    private var lastHourWarned: [String: UInt64] = [:]
+
     /// A refusal or status line the surface shows briefly ("nothing to
     /// seal"). When the app declines something it says so.
     @Published public var notice: String?
@@ -1464,6 +1480,13 @@ public final class PageModel: ObservableObject {
     /// Where Quit Anyway asks for termination: `NSApp`, or a test's recorder.
     private let requestTermination: @MainActor () -> Void
 
+    /// Where a last-hour warning goes: the notification center, a test's recorder, or
+    /// nowhere under the runner.
+    private let pageWarnings: (any PageWarningPosting)?
+
+    /// Whether the app is frontmost: `NSApp`'s answer, or a test's.
+    private let applicationIsActive: @MainActor () -> Bool
+
     /// Opens a link outside the app through the seam above, for the editor's
     /// links and the Help menu alike (issue #294).
     public func openExternal(_ url: URL) {
@@ -1529,6 +1552,11 @@ public final class PageModel: ObservableObject {
         /// Where Quit Anyway asks for termination: a recorder of the test's own, so
         /// a suite never terminates its runner; nil is `NSApp`'s.
         let requestTermination: (@MainActor () -> Void)?
+        /// Where a last-hour warning goes: a recorder of the test's own. Nil under the
+        /// runner posts nothing, and nil in the app is the system's notification center.
+        let pageWarnings: (any PageWarningPosting)?
+        /// Whether the app is frontmost, for a suite with no application; nil is `NSApp`'s.
+        let applicationIsActive: (@MainActor () -> Bool)?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1548,7 +1576,9 @@ public final class PageModel: ObservableObject {
             wakeNotifications: NotificationCenter? = nil,
             openURL: (@MainActor (URL) -> Void)? = nil,
             previewImageLoad: (@MainActor (URL) async throws -> NSImage)? = nil,
-            requestTermination: (@MainActor () -> Void)? = nil
+            requestTermination: (@MainActor () -> Void)? = nil,
+            pageWarnings: (any PageWarningPosting)? = nil,
+            applicationIsActive: (@MainActor () -> Bool)? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1566,6 +1596,8 @@ public final class PageModel: ObservableObject {
             self.openURL = openURL
             self.previewImageLoad = previewImageLoad
             self.requestTermination = requestTermination
+            self.pageWarnings = pageWarnings
+            self.applicationIsActive = applicationIsActive
         }
     }
 
@@ -1660,6 +1692,14 @@ public final class PageModel: ObservableObject {
         openURL = seams.openURL ?? { NSWorkspace.shared.open($0) }
         previewImageLoad = seams.previewImageLoad ?? { try await PreviewImageLoader().load($0) }
         requestTermination = seams.requestTermination ?? { NSApp?.terminate(nil) }
+        if let seam = seams.pageWarnings {
+            pageWarnings = seam
+        } else if FormFactor.runningUnderTests {
+            pageWarnings = nil
+        } else {
+            pageWarnings = SystemPageWarnings()
+        }
+        applicationIsActive = seams.applicationIsActive ?? { NSApp?.isActive ?? false }
         wakeCenter = seams.wakeNotifications ?? NSWorkspace.shared.notificationCenter
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         ownershipLogger = Logger(subsystem: formFactor.loggerSubsystem, category: "ownership")
@@ -1897,6 +1937,8 @@ public final class PageModel: ObservableObject {
         stateLoaded = true
         let path = stateFileURL.path
         let restored = client.persistRestore(from: path)
+        // Read before the ledger file merges in: these are the expiries of the time away.
+        expiredWhileAway = ExpiryNotice.pages(expiredIn: client.ledger())
         saveLicence = Self.grantsSaveLicence(
             fileExists: FileManager.default.fileExists(atPath: path), restored: restored
         )
@@ -3318,6 +3360,7 @@ public final class PageModel: ObservableObject {
             restateStorage(sheet: page)
             invalidateQuietRendering(for: page)
         }
+        dismissExpiredWhileAway()
         markDirty()
         refresh()
     }
@@ -3617,6 +3660,7 @@ public final class PageModel: ObservableObject {
             }
         }
         ledgerEntries = client.ledger()
+        warnOfLastHours()
         armEventTimer()
         // No hand-back when the last page dies while the surface is
         // key: keyed emptiness is a legal state (ADR-0005). The window
@@ -5554,9 +5598,19 @@ public final class PageModel: ObservableObject {
         return min(max(current + delta, 0), count - 1)
     }
 
-    /// `ledger::Show`: open the ledger. Which chord reaches it, if
-    /// any, is the keymap's business; the bundled default names none
-    /// while the ledger's entry points are hidden (issue #78).
+    /// Whether `stroke` is a ⌘0 to ⌘9 the pad layer turns into a pad switch (ADR-0039).
+    public func padsTake(_ stroke: Keystroke?) -> Bool {
+        guard pads.isEnabled, let stroke else { return false }
+        return TimeRailView.switchesPads(stroke, keymap: keymap)
+    }
+
+    /// The chord a tooltip may name for the ledger, passing over one the pad layer takes.
+    public var ledgerChord: Keystroke? {
+        keymap.hintKeystroke(for: .ledgerShow, excluding: { padsTake($0) })
+    }
+
+    /// `ledger::Show`: open the ledger. Which chord reaches it is the
+    /// keymap's business; the bundled default names ⌘0.
     public func showLedger() {
         clearPendingFileClose()
         ledgerEntries = client.ledger()
@@ -7190,6 +7244,7 @@ public final class PageModel: ObservableObject {
             // mode, and the page it names is not always a page the roll
             // is on, or a page any roll is mounted over.
             invalidateQuietRendering(for: sheet)
+            if intent != .automation { dismissExpiredWhileAway() }
             markDirty()
             refresh()
         } else {
@@ -8271,14 +8326,20 @@ public final class PageModel: ObservableObject {
     private func armEventTimer() {
         eventTimer?.invalidate()
         eventTimer = nil
-        let ms = client.nextEventMs()
-        guard ms >= 0 else { return }
+        let nowMs = Self.wallNowMs()
+        guard let fire = Self.eventTimerFire(
+            coreMs: client.nextEventMs(),
+            lastHourMs: LastHourWarning.msUntilNextEntry(
+                clocks: lastHourClocks(nowMs: nowMs), nowMs: nowMs)
+        ) else { return }
+        let settles = fire.settles
         let timer = Timer(
-            timeInterval: max(0.05, Double(ms) / 1000.0),
+            timeInterval: max(0.05, Double(fire.ms) / 1000.0),
             repeats: false
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.settleCoreEvent()
+                // A last-hour entry moved nothing in the store, so it refreshes and re-arms.
+                if settles { self?.settleCoreEvent() } else { self?.refresh() }
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -8306,10 +8367,62 @@ public final class PageModel: ObservableObject {
     /// never saw, over a file that would stay stale until they typed.
     @discardableResult
     func settleCoreEvent() -> UInt64 {
+        let stood = tabs
         let expired = client.expireDue()
         markDirty()
         refresh() // re-arms for the next event
+        noteExpired(since: stood)
         return expired
+    }
+
+    /// The pages with content that `stood` at the last refresh and are gone after a settle.
+    private func noteExpired(since stood: [TabSummary]) {
+        let live = Set(tabs.compactMap(\.pageUUID))
+        let atMs = Self.wallNowMs()
+        let gone = stood.compactMap { tab -> ExpiredPage? in
+            guard tab.pageHasContent, let page = tab.pageUUID, !live.contains(page) else { return nil }
+            return ExpiredPage(title: tab.title, atMs: atMs, createdAtMs: tab.pageCreatedMs ?? atMs)
+        }
+        if !gone.isEmpty { expiredWhileAway += gone }
+    }
+
+    /// When the one timer fires, and whether it settles the core: the sooner of the core's
+    /// next event and the next page's entry into its last hour. Nil arms nothing.
+    nonisolated static func eventTimerFire(
+        coreMs: Int64, lastHourMs: UInt64?
+    ) -> (ms: UInt64, settles: Bool)? {
+        guard coreMs >= 0 else { return lastHourMs.map { (ms: $0, settles: false) } }
+        let core = UInt64(coreMs)
+        if let lastHourMs, lastHourMs < core { return (ms: lastHourMs, settles: false) }
+        return (ms: core, settles: true)
+    }
+
+    private nonisolated static func wallNowMs() -> UInt64 {
+        UInt64(max(0, Date().timeIntervalSince1970 * 1000))
+    }
+
+    /// The running pages with content, each with its wall-clock deadline as of `nowMs`.
+    private func lastHourClocks(nowMs: UInt64) -> [LastHourWarning.Clock] {
+        tabs.compactMap { tab -> LastHourWarning.Clock? in
+            guard tab.hasPage, tab.pageHasContent, !tab.paused, let page = tab.pageUUID
+            else { return nil }
+            return LastHourWarning.Clock(
+                page: page, title: tab.title, deadlineMs: nowMs + tab.remainingMs)
+        }
+    }
+
+    /// Post a warning for each page that entered its last hour while the app was not active.
+    private func warnOfLastHours() {
+        let nowMs = Self.wallNowMs()
+        let decision = LastHourWarning.decide(
+            clocks: lastHourClocks(nowMs: nowMs), nowMs: nowMs, warned: lastHourWarned,
+            appActive: applicationIsActive())
+        lastHourWarned = decision.warned
+        for clock in decision.post {
+            pageWarnings?.post(
+                title: "OnetimePad", body: LastHourWarning.body(title: clock.title),
+                identifier: "last-hour-\(clock.page)-\(clock.deadlineMs)")
+        }
     }
 
     /// Run a core transfer, which may sweep before it refuses (Law 0001, expiry row); a refusal
