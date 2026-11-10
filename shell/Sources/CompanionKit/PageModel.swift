@@ -4543,13 +4543,33 @@ public final class PageModel: ObservableObject {
     /// The line when the core gave no text for a page's save, for a reason with no line of its own.
     public static let pageNotSavedLine = "this page could not be read, so nothing was saved."
 
-    /// The core's `FILE_SIZE_LIMIT`, in bytes: the core names it only in an open's refusal.
-    nonisolated static let fileSizeLimit = 4 * 1024 * 1024
-
-    /// The line when a page's text is past the size a file can have and still open.
-    public static let pageTooLargeLine =
-        "this page is larger than \(PageModel.sizePhrase(bytes: UInt64(clamping: PageModel.fileSizeLimit))), "
-        + "so it was not saved to a file."
+    /// The line for the core's answer to whether a page's text would open as a file;
+    /// nil when it would (`CompanionClient.fileContentCheckJSON(for:)`).
+    public nonisolated static func pageSaveRefusalNotice(json: String?) -> String? {
+        struct Answer: Decodable {
+            let opens: Bool?
+            let error: String?
+            let limit: UInt64?
+        }
+        guard let json,
+              let data = json.data(using: .utf8),
+              let answer = try? JSONDecoder().decode(Answer.self, from: data)
+        else {
+            return "this page could not be checked, so it was not saved to a file."
+        }
+        if answer.opens == true, answer.error == nil { return nil }
+        switch answer.error ?? "" {
+        case "binary":
+            return "this page contains binary data, so it was not saved to a file."
+        case "notUtf8":
+            return "this page uses an unsupported text encoding, so it was not saved to a file."
+        case "tooLarge":
+            let limit = answer.limit.map(Self.sizePhrase(bytes:)) ?? "the size limit"
+            return "this page is larger than \(limit), so it was not saved to a file."
+        default:
+            return "this page could not be checked, so it was not saved to a file."
+        }
+    }
 
     /// A page's whole text as a copy of all of it composes it (Law 0001, export row);
     /// nil, with a line shown, when the core refuses.
@@ -4580,8 +4600,10 @@ public final class PageModel: ObservableObject {
             return
         }
         guard let text = publicText(ofPage: page) else { return }
-        guard text.utf8.count <= Self.fileSizeLimit else {
-            flash(Self.pageTooLargeLine)
+        let bytes = Data(text.utf8)
+        if let refusal = Self.pageSaveRefusalNotice(
+            json: CompanionClient.fileContentCheckJSON(for: bytes)) {
+            flash(refusal)
             return
         }
         if let holder = client.fileRoster().first(where: { Self.samePath($0.path, url.path) }) {
@@ -4589,7 +4611,7 @@ public final class PageModel: ObservableObject {
             return
         }
         let wrote = fileCoordinator.withAccess(to: url) {
-            (try? Data(text.utf8).write(to: url, options: .atomic)) != nil
+            (try? bytes.write(to: url, options: .atomic)) != nil
         }
         guard wrote else {
             flash(Self.writeRefusalNotice(name: url.lastPathComponent), tone: .actionable)

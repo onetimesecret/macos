@@ -361,7 +361,15 @@ pub unsafe extern "C" fn companion_file_open_error_json(
     let Some(refusal) = guard.last_open_refusal else {
         return ptr::null_mut();
     };
-    let value = match refusal {
+    match serde_json::to_string(&open_refusal_json(refusal)) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// An open refusal in the shape [`companion_file_open_error_json`] answers.
+fn open_refusal_json(refusal: OpenRefusal) -> serde_json::Value {
+    match refusal {
         OpenRefusal::NotUtf8 => serde_json::json!({ "error": "notUtf8" }),
         OpenRefusal::Binary => serde_json::json!({ "error": "binary" }),
         OpenRefusal::TooLarge { limit } => {
@@ -371,6 +379,30 @@ pub unsafe extern "C" fn companion_file_open_error_json(
         OpenRefusal::Io(kind) => {
             serde_json::json!({ "error": "io", "detail": format!("{kind}") })
         }
+    }
+}
+
+/// Whether a file with these bytes would open: `{"opens":true}`, or the open error
+/// shape. Null for a bad argument; free with `companion_string_free`.
+///
+/// # Safety
+/// A non-null `bytes` must be readable for `len` bytes until return.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_content_check_json(
+    bytes: *const u8,
+    len: usize,
+) -> *mut c_char {
+    let input = if len == 0 {
+        &[]
+    } else {
+        if bytes.is_null() || isize::try_from(len).is_err() {
+            return ptr::null_mut();
+        }
+        unsafe { std::slice::from_raw_parts(bytes, len) }
+    };
+    let value = match companion_core::check_file_bytes(input) {
+        Ok(()) => serde_json::json!({ "opens": true }),
+        Err(refusal) => open_refusal_json(refusal),
     };
     match serde_json::to_string(&value) {
         Ok(json) => into_c_string(json),
@@ -2079,6 +2111,53 @@ mod tests {
             std::fs::write(&good, b"fine").unwrap();
             assert_ne!(open(handle, &good), 0);
             assert!(companion_file_open_error_json(handle).is_null());
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn a_content_check_answers_what_an_open_of_those_bytes_would() {
+        let (handle, dir) = scratch("content-check");
+        let check = |bytes: &[u8]| unsafe {
+            take_json(companion_file_content_check_json(
+                bytes.as_ptr(),
+                bytes.len(),
+            ))
+        };
+        let opened = |bytes: &[u8]| unsafe {
+            let path = dir.join("probe.txt");
+            std::fs::write(&path, bytes).unwrap();
+            let id = open(handle, &path);
+            if id == 0 {
+                take_json(companion_file_open_error_json(handle))
+            } else {
+                assert!(companion_file_close(handle, id));
+                r#"{"opens":true}"#.to_string()
+            }
+        };
+        let cases: [&[u8]; 6] = [
+            b"ordinary text\n",
+            b"pasted\0text",
+            &[0x66, 0xFF, 0xFE],
+            &[0xEF, 0xBB, 0xBF, b'a'],
+            &vec![b'x'; LIMIT],
+            &vec![b'x'; LIMIT + 1],
+        ];
+        for bytes in cases {
+            assert_eq!(check(bytes), opened(bytes));
+        }
+        assert_eq!(check(b"ordinary text\n"), r#"{"opens":true}"#);
+        assert_eq!(check(b"pasted\0text"), r#"{"error":"binary"}"#);
+        assert_eq!(check(&vec![b'x'; LIMIT]), r#"{"opens":true}"#);
+        let big: serde_json::Value = serde_json::from_str(&check(&vec![b'x'; LIMIT + 1])).unwrap();
+        assert_eq!(big["error"], serde_json::json!("tooLarge"));
+        assert_eq!(big["limit"], serde_json::json!(LIMIT as u64));
+        unsafe {
+            assert_eq!(
+                take_json(companion_file_content_check_json(ptr::null(), 0)),
+                r#"{"opens":true}"#
+            );
+            assert!(companion_file_content_check_json(ptr::null(), 1).is_null());
         }
         cleanup(handle, &dir);
     }

@@ -2198,6 +2198,24 @@ public class CompanionClient: @unchecked Sendable {
         ownedString(from: companion_file_open_error_json(handle))
     }
 
+    /// Whether a file with these bytes would open, as the raw JSON the header
+    /// describes, without a client handle. Nil when the core gave no answer.
+    public static func fileContentCheckJSON(for data: Data) -> String? {
+        let answer: UnsafeMutablePointer<CChar>? =
+            if data.isEmpty {
+                companion_file_content_check_json(nil, 0)
+            } else {
+                data.withUnsafeBytes { bytes in
+                    companion_file_content_check_json(
+                        bytes.bindMemory(to: UInt8.self).baseAddress,
+                        bytes.count
+                    )
+                }
+            }
+
+        return ownedString(from: answer)
+    }
+
     /// Close the file and drop its buffer. The draft goes with it: a
     /// draft never outlives its tab. Any dirty-close decision is settled
     /// in the shell before this call.

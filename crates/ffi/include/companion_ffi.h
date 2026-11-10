@@ -1750,6 +1750,20 @@ uint64_t companion_file_open(CompanionHandle *handle, const char *path);
 char *companion_file_open_error_json(CompanionHandle *handle);
 
 /*
+ * Whether a file with these bytes would open: the content checks
+ * companion_file_open() applies to bytes it has read, with no handle and
+ * no file involved. Returns {"opens": true}, or the
+ * companion_file_open_error_json() shape with "notUtf8", "binary" or
+ * "tooLarge". Null when bytes is NULL with a nonzero len, or len is past
+ * the platform's slice bound. Free with companion_string_free().
+ *
+ * (NULL, 0) is empty input. Non-null input must be readable for len bytes
+ * and remain unchanged until return. Embedded NUL bytes are input, not
+ * terminators.
+ */
+char *companion_file_content_check_json(const uint8_t *bytes, size_t len);
+
+/*
  * Close the file and drop its buffer. The draft goes with it: a draft
  * never outlives its tab, so reopening the file later never brings back
  * old edits. Any dirty-close decision is settled in the shell before

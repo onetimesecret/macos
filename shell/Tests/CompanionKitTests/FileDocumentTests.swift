@@ -610,6 +610,9 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertNil(model.selectedFile, "the page is no longer the one showing")
     }
 
+    /// The core's `FILE_SIZE_LIMIT`, written out: the tests below fail if the two part.
+    private static let coreFileSizeLimit = 4 * 1024 * 1024
+
     func testSavePageAsRefusesAPageOverTheFileSizeLimitAndWritesNothing() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
@@ -618,7 +621,7 @@ final class FileDocumentTests: XCTestCase {
         model.newPage()
         let tab = try XCTUnwrap(model.selection)
         let page = try XCTUnwrap(model.selectedPageID)
-        try type(String(repeating: "a", count: PageModel.fileSizeLimit + 1), at: 0, into: page, on: model)
+        try type(String(repeating: "a", count: Self.coreFileSizeLimit + 1), at: 0, into: page, on: model)
 
         let destination = try write("already here\n", named: "big.md", in: fixture)
         panels.destinationURL = destination
@@ -628,7 +631,6 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(panels.destinations, 1)
         XCTAssertEqual(
             model.notice, "this page is larger than 4 MiB, so it was not saved to a file.")
-        XCTAssertEqual(model.notice, PageModel.pageTooLargeLine)
         XCTAssertEqual(try read(destination), "already here\n", "the file there was replaced")
         XCTAssertEqual(try filesInWorkspace(fixture), ["big.md"])
         XCTAssertTrue(model.openFiles.isEmpty)
@@ -636,7 +638,6 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(model.selection, tab)
     }
 
-    /// The shell's copy of the limit against the core's: a page of exactly that size opens.
     func testSavePageAsWritesAndOpensAPageOfExactlyTheFileSizeLimit() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
@@ -644,14 +645,72 @@ final class FileDocumentTests: XCTestCase {
         model.loadStateIfNeeded()
         model.newPage()
         let page = try XCTUnwrap(model.selectedPageID)
-        try type(String(repeating: "a", count: PageModel.fileSizeLimit), at: 0, into: page, on: model)
+        try type(String(repeating: "a", count: Self.coreFileSizeLimit), at: 0, into: page, on: model)
 
         let destination = fixture.workspace.appendingPathComponent("full.md")
         panels.destinationURL = destination
         model.saveActiveFileAs()
 
-        XCTAssertEqual(try Data(contentsOf: destination).count, PageModel.fileSizeLimit)
+        XCTAssertEqual(try Data(contentsOf: destination).count, Self.coreFileSizeLimit)
         XCTAssertEqual(model.activeFile?.name, "full.md")
+    }
+
+    func testSavePageAsRefusesAPageWithANulAndWritesNothing() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.newPage()
+        let tab = try XCTUnwrap(model.selection)
+        let page = try XCTUnwrap(model.selectedPageID)
+        try type("pasted\u{0}text\n", at: 0, into: page, on: model)
+        XCTAssertEqual(model.publicText(ofPage: page), "pasted\u{0}text\n")
+
+        let destination = try write("already here\n", named: "nul.md", in: fixture)
+        panels.destinationURL = destination
+        model.notice = nil
+        model.saveActiveFileAs()
+
+        XCTAssertEqual(panels.destinations, 1)
+        XCTAssertEqual(
+            model.notice, "this page contains binary data, so it was not saved to a file.")
+        XCTAssertEqual(try read(destination), "already here\n", "the file there was replaced")
+        XCTAssertEqual(try filesInWorkspace(fixture), ["nul.md"])
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertNil(model.selectedFile)
+        XCTAssertEqual(model.selection, tab)
+    }
+
+    func testTheCoreAnswersWhetherTextWouldOpenAsAFile() {
+        XCTAssertEqual(
+            CompanionClient.fileContentCheckJSON(for: Data("ordinary text\n".utf8)),
+            #"{"opens":true}"#)
+        XCTAssertEqual(CompanionClient.fileContentCheckJSON(for: Data()), #"{"opens":true}"#)
+        XCTAssertEqual(
+            CompanionClient.fileContentCheckJSON(for: Data("pasted\u{0}text".utf8)),
+            #"{"error":"binary"}"#)
+        XCTAssertEqual(
+            CompanionClient.fileContentCheckJSON(for: Data([0x66, 0xFF, 0xFE])),
+            #"{"error":"notUtf8"}"#)
+    }
+
+    func testThePageSaveRefusalSentencesAreDerivedFromTheCoresOwnJson() {
+        XCTAssertNil(PageModel.pageSaveRefusalNotice(json: #"{"opens":true}"#))
+        XCTAssertEqual(
+            PageModel.pageSaveRefusalNotice(json: #"{"error":"binary"}"#),
+            "this page contains binary data, so it was not saved to a file.")
+        XCTAssertEqual(
+            PageModel.pageSaveRefusalNotice(json: #"{"error":"notUtf8"}"#),
+            "this page uses an unsupported text encoding, so it was not saved to a file.")
+        XCTAssertEqual(
+            PageModel.pageSaveRefusalNotice(json: #"{"error":"tooLarge","limit":4194304}"#),
+            "this page is larger than 4 MiB, so it was not saved to a file.")
+        XCTAssertEqual(
+            PageModel.pageSaveRefusalNotice(json: #"{"opens":false}"#),
+            "this page could not be checked, so it was not saved to a file.")
+        XCTAssertEqual(
+            PageModel.pageSaveRefusalNotice(json: nil),
+            "this page could not be checked, so it was not saved to a file.")
     }
 
     func testThePanelSuggestsThePagesTitleAsMarkdown() {
