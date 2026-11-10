@@ -257,8 +257,9 @@ final class KeymapEventTests: XCTestCase {
         XCTAssertEqual(model.navigationTabs.count, 1)
     }
 
-    func testControlCloseShortcutWorksWhenLedgerChromeHasFocus() throws {
-        let (model, _) = try makeStack()
+    func testAConfiguredControlCloseShortcutWorksWhenLedgerChromeHasFocus() throws {
+        let (model, _) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-w":"page::Close"}}]"#)
         model.loadStateIfNeeded()
         model.showLedger()
         XCTAssertTrue(model.showingLedger)
@@ -273,8 +274,9 @@ final class KeymapEventTests: XCTestCase {
         XCTAssertTrue(model.closedTabs.isEmpty)
     }
 
-    func testControlCloseShortcutWorksFromNontextFileChrome() throws {
-        let (model, _) = try makeStack()
+    func testAConfiguredControlCloseShortcutWorksFromNontextFileChrome() throws {
+        let (model, _) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-w":"page::Close"}}]"#)
         model.loadStateIfNeeded()
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("keymap-file-\(UUID().uuidString).txt")
         try "fixture".write(to: url, atomically: true, encoding: .utf8)
