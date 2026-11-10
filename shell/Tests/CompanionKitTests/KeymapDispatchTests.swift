@@ -38,12 +38,15 @@ final class KeymapDispatchTests: XCTestCase {
         let model = try makeModel()
         var datedPickerRequests = 0
         model.onReopenDatedTabs = { datedPickerRequests += 1 }
+        var searchRequests = 0
+        model.onSearchPages = { searchRequests += 1 }
         for command in CommandID.allCases where command.dispatch == .surface {
             XCTAssertTrue(
                 model.perform(command),
                 "\(command.rawValue) is dispatched by the surface but the model refused it")
         }
         XCTAssertEqual(datedPickerRequests, 1)
+        XCTAssertEqual(searchRequests, 1)
     }
 
     /// These commands are refused by the model on purpose: the selection,

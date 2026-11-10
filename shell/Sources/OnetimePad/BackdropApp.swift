@@ -295,6 +295,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         model.onOpenEditorWindow = { [weak self] in self?.openEditorPresentation() }
         model.pages.onOpenSettings = { [weak self] in self?.openSettings() }
         model.pages.onReopenDatedTabs = { [weak self] in self?.showCommandPalette(reopen: true) }
+        model.pages.onSearchPages = { [weak self] in self?.showCommandPalette(search: true) }
         model.pages.onOpenSettingsPane = { [weak self] pane in self?.openSettingsTab(SettingsTab(pane)) }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -730,10 +731,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         commandPalette.dismiss(restoringFocus: true)
     }
 
-    func showCommandPalette(reopen: Bool = false) {
+    func showCommandPalette(reopen: Bool = false, search: Bool = false) {
         guard let window = NSApp.keyWindow, window.sheetParent == nil,
               window.attachedSheet == nil, !ModalSession.isRunning else { return }
-        commandPalette.show(in: window, pageContext: isOwnerWindow(window), reopen: reopen)
+        commandPalette.show(in: window, pageContext: isOwnerWindow(window), reopen: reopen, search: search)
     }
 
     var ambientPanelEnabled: Bool { model.ambientPanelEnabled }

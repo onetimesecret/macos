@@ -140,6 +140,8 @@
       "cmd-s": "state::SaveNow",
       "cmd-,": "app::Settings",
       "cmd-shift-p": "app::CommandPalette",
+      // Find text across every page and open file, in the palette.
+      "cmd-shift-f": "page::Search",
       // The Help menu's product help item fires cmd-? app-wide (issue #294).
       "cmd-?": "app::Help",
       "escape": "surface::HandBackKeys",

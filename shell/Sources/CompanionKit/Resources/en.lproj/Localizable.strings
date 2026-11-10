@@ -152,6 +152,7 @@
 "Open Timeline" = "Open Timeline";
 "Switch to Tabs View" = "Switch to Tabs View";
 "Reopen Dated Tabs…" = "Reopen Dated Tabs…";
+"Search Pages and Files…" = "Search Pages and Files…";
 "Reopen Last Closed Page or Tab" = "Reopen Last Closed Page or Tab";
 "Open File…" = "Open File…";
 "Close Page or Tab" = "Close Page or Tab";
@@ -165,6 +166,9 @@
 "Command Palette…" = "Command Palette…";
 "Commands" = "Commands";
 "Search closed pages or tabs…" = "Search closed pages or tabs…";
+"Search pages and files…" = "Search pages and files…";
+"No matching pages or files" = "No matching pages or files";
+"Return Search Large Files · Esc Cancel" = "Return Search Large Files · Esc Cancel";
 "Saved tab" = "Saved tab";
 "No closed pages or tabs" = "No closed pages or tabs";
 "No matching commands" = "No matching commands";
@@ -262,6 +266,8 @@
 "palette.context_changed" = "the page changed; reopen the command palette to use page commands";
 
 "palette.reopen_unavailable" = "this page is no longer available to reopen";
+
+"palette.search_unavailable" = "this page or file is no longer available to show";
 
 "Current File" = "Current File";
 

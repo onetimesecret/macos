@@ -43,7 +43,7 @@ public struct CommandPaletteEntry: Identifiable, Equatable, Sendable {
 
 public enum CommandPaletteCatalog {
     private static let order: [CommandID] = [
-        .appOpenTimeline, .appSwitchToTabs, .pageReopenDated, .pageReopenLast,
+        .appOpenTimeline, .appSwitchToTabs, .pageSearch, .pageReopenDated, .pageReopenLast,
         .pageNew, .fileOpen, .appSettings, .appHelp, .windowClose,
         .stateSaveNow, .fileSaveAs, .pageClose, .pagePrevious, .pageNext, .editorToggleWrap,
         .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorUndo, .editorRedo,
@@ -66,6 +66,7 @@ extension CommandID {
         switch self {
         case .appOpenTimeline: ("Open Timeline", .application, "view dated pages history")
         case .appSwitchToTabs: ("Switch to Tabs View", .application, "layout navigation")
+        case .pageSearch: ("Search Pages and Files…", .application, "find text content lines")
         case .pageReopenDated: ("Reopen Dated Tabs…", .application, "closed saved pages history restore re-open")
         case .pageReopenLast: ("Reopen Last Closed Page or Tab", .application, "restore saved re-open")
         case .pageNew: ("New Page", .application, "new tab")

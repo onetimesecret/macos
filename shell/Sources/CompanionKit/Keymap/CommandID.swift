@@ -19,6 +19,7 @@ public enum CommandID: String, CaseIterable, Sendable {
     case appSwitchToTabs = "app::SwitchToTabs"
     case pageReopenLast = "page::ReopenLast"
     case pageReopenDated = "page::ReopenDated"
+    case pageSearch = "page::Search"
 
     // Pages
     case pageNew = "page::New"

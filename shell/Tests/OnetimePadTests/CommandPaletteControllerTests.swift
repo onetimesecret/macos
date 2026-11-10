@@ -1169,4 +1169,179 @@ final class CommandPaletteControllerTests: XCTestCase {
         }
     }
 
+    private func enter(_ query: String, into palette: CommandPaletteController) {
+        palette.search.stringValue = query
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+    }
+
+    func testSearchModeFindsALineInAClosedPageAndReopensItAtThatLine() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let tab = try XCTUnwrap(model.selection)
+        XCTAssertTrue(model.coreClient.syncDocument(sheet: page, json: #"[{"ink":"first line\nsecond needle line"}]"#))
+        model.refresh()
+        model.closeCurrent()
+        XCTAssertEqual(model.closedTabs.first?.id, tab)
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        var returned = 0
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: { returned += 1 })
+        palette.show(in: window, pageContext: false, search: true)
+        XCTAssertFalse(palette.backButton.isHidden)
+        XCTAssertEqual(palette.search.placeholderString, CompanionL10n.string("Search pages and files…"))
+        XCTAssertEqual(palette.table.numberOfRows, 0)
+        enter("NEEDLE second", into: palette)
+        XCTAssertEqual(palette.table.numberOfRows, 1)
+        try render(palette, named: "search-640w")
+        let cell = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+        XCTAssertEqual(cell.titleLabel.stringValue, "second needle line")
+        let closedTitle = try XCTUnwrap(model.closedTabs.first?.title)
+        XCTAssertTrue(cell.detailLabel.stringValue.hasPrefix(closedTitle))
+        enter("first needle", into: palette)
+        XCTAssertEqual(palette.table.numberOfRows, 0)
+        enter("needle", into: palette)
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertNil(palette.overlay)
+        XCTAssertEqual(model.selection, tab)
+        XCTAssertEqual(model.selectedPageID, page)
+        XCTAssertTrue(model.closedTabs.isEmpty)
+        XCTAssertEqual(model.viewStates.carets[page], NSRange(location: 11, length: 0))
+        XCTAssertEqual(returned, 1)
+    }
+
+    func testCommandModeShowsContentRowsWhenNoCommandMatchesAndNeverASealedObjectsPlaintext() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        XCTAssertTrue(model.coreClient.syncDocument(sheet: page, json: #"[{"ink":"zebra crossing notes"}]"#))
+        _ = try XCTUnwrap(model.coreClient.sealText(sheet: page, "tangerine", at: 0, length: 0))
+        model.refresh()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false)
+        XCTAssertTrue(palette.backButton.isHidden)
+        enter("zebra", into: palette)
+        XCTAssertEqual(palette.table.numberOfRows, 1)
+        let cell = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+        XCTAssertTrue(cell.titleLabel.stringValue.hasSuffix("zebra crossing notes"))
+        XCTAssertTrue(palette.backButton.isHidden)
+        enter("tangerine", into: palette)
+        XCTAssertEqual(palette.table.numberOfRows, 0)
+        enter("unavailable-zebra", into: palette)
+        XCTAssertEqual(palette.table.numberOfRows, 0)
+        palette.dismiss(restoringFocus: true)
+        palette.show(in: window, pageContext: false, search: true)
+        enter("tangerine", into: palette)
+        XCTAssertEqual(palette.table.numberOfRows, 0)
+    }
+
+    func testChoosingTheSearchCommandEntersSearchModeWithABackRoute() throws {
+        let model = try makeModel()
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: false)
+        enter("search pages files", into: palette)
+        XCTAssertEqual(palette.table.numberOfRows, 1)
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertNotNil(palette.overlay)
+        XCTAssertFalse(palette.backButton.isHidden)
+        XCTAssertEqual(palette.search.stringValue, "")
+        XCTAssertEqual(palette.table.numberOfRows, 0)
+        XCTAssertTrue(window.firstResponder === palette.search.currentEditor())
+        XCTAssertTrue(palette.table.nextKeyView === palette.backButton)
+        XCTAssertTrue(palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.deleteBackward(_:))))
+        XCTAssertTrue(palette.backButton.isHidden)
+        XCTAssertGreaterThan(palette.table.numberOfRows, 0)
+        XCTAssertEqual(palette.search.placeholderString, CompanionL10n.string("Search commands…"))
+    }
+
+    func testEscapeClearsTheSearchModeQueryThenRestoresTheOriginalSelectionAndResponder() throws {
+        let model = try makeModel()
+        let (window, editor) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        XCTAssertTrue(window.makeFirstResponder(palette.table))
+        palette.show(in: window, pageContext: true, search: true)
+        XCTAssertNotNil(palette.overlay)
+        XCTAssertFalse(palette.backButton.isHidden)
+        XCTAssertTrue(window.firstResponder === palette.search.currentEditor())
+        enter("needle", into: palette)
+        editor.setSelectedRange(NSRange(location: 0, length: 1))
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.cancelOperation(_:)))
+        XCTAssertEqual(palette.search.stringValue, "")
+        XCTAssertNotNil(palette.overlay)
+        XCTAssertFalse(palette.backButton.isHidden)
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.cancelOperation(_:)))
+        XCTAssertNil(palette.overlay)
+        XCTAssertTrue(window.firstResponder === editor)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 3, length: 5))
+    }
+
+    func testATextOverTheKeystrokeLimitIsSearchedOnReturn() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("palette-large-file-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("large.txt")
+        try (String(repeating: "filler line\n", count: 100_000) + "large needle")
+            .write(to: file, atomically: true, encoding: .utf8)
+        model.openFile(at: file)
+        let opened = try XCTUnwrap(model.activeFile)
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        var returned = 0
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: { returned += 1 })
+        palette.show(in: window, pageContext: false, search: true)
+        enter("large needle", into: palette)
+        XCTAssertEqual(palette.table.numberOfRows, 0)
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertNotNil(palette.overlay)
+        XCTAssertEqual(palette.table.numberOfRows, 1)
+        XCTAssertEqual(returned, 0)
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertNil(palette.overlay)
+        XCTAssertEqual(model.selectedFile, opened.id)
+        XCTAssertEqual(model.viewStates.carets[opened.id], NSRange(location: 1_200_000, length: 0))
+        XCTAssertEqual(returned, 1)
+    }
+
+    func testAStaleSearchRowRefusesWithANotice() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("palette-stale-file-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("stale.txt")
+        try "stale needle".write(to: file, atomically: true, encoding: .utf8)
+        model.openFile(at: file)
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        var returns = 0
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: { returns += 1 })
+        palette.show(in: window, pageContext: false, search: true)
+        enter("stale needle", into: palette)
+        XCTAssertEqual(palette.table.numberOfRows, 1)
+        XCTAssertTrue(model.closeActiveFile())
+        _ = palette.control(palette.search, textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertNil(palette.overlay)
+        XCTAssertEqual(returns, 0)
+        XCTAssertEqual(model.notice, CompanionL10n.string("palette.search_unavailable"))
+        XCTAssertEqual(model.noticeTone, .actionable)
+    }
+
 }
