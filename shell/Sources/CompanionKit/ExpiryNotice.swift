@@ -118,10 +118,8 @@ public enum LastHourWarning {
         }.min()
     }
 
-    /// The notification's body for `title`.
-    public static func body(title: String) -> String {
-        CompanionL10n.format("expiry.warning.body", title)
-    }
+    /// The notification's body. It names no page: a title is often a secret's label.
+    public static var body: String { CompanionL10n.string("expiry.warning.body") }
 
     private static func isSameDeadline(_ a: UInt64, _ b: UInt64) -> Bool {
         (a > b ? a - b : b - a) <= sameDeadlineMs

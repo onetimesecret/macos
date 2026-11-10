@@ -76,7 +76,7 @@ the seam.
   ⌘0, View > Show Ledger or the command palette; Settings clears it. A
   line under the page names the pages that expired since a person last
   typed, and a page entering its last hour while the app is not active
-  posts one local notification (ADR-0063, proposed).
+  posts one local notification (ADR-0064, proposed).
 - Every gesture route is boundary-lawful: sealed paste reads
   `NSPasteboard.general` core-side; **drop-to-seal reads the drag
   pasteboard core-side** (`companion_sheet_seal_from_drag`) — no

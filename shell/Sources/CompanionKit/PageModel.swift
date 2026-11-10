@@ -8420,7 +8420,7 @@ public final class PageModel: ObservableObject {
         lastHourWarned = decision.warned
         for clock in decision.post {
             pageWarnings?.post(
-                title: "OnetimePad", body: LastHourWarning.body(title: clock.title),
+                title: "OnetimePad", body: LastHourWarning.body,
                 identifier: "last-hour-\(clock.page)-\(clock.deadlineMs)")
         }
     }

@@ -2,7 +2,7 @@
 documentation_status: needs-review
 ---
 
-# ADR-0063: A page never expires without the person being told
+# ADR-0064: A page never expires without the person being told
 
 - **Status:** proposed
 - **Date:** 2026-11-10
@@ -71,10 +71,9 @@ no count chip.
 
 ## Consequences
 
-- A page title can now appear outside the app's own windows, in Notification
-  Center. The title is the same text the ledger keeps; it is often the label
-  of a secret. A person who does not want that turns the app's notifications
-  off in System Settings.
+- The notification names no page. A title is often the label of a secret, and
+  Notification Center is outside the app's own windows, so the person opens
+  the pad to see which page it is.
 - The time in the line for a page that came due while the app was not running
   is the time of the launch that settled it, because that is the time the
   ledger records.
@@ -87,8 +86,6 @@ no count chip.
 
 - Dogfood evidence that the last-hour notification is noise: a person turns
   the app's notifications off, or reports the warning as unwanted.
-- Evidence that a title in Notification Center disclosed something a person
-  expected to stay inside the app.
 - macOS ends provisional authorization for local notifications, or starts
   showing a dialog for it.
 

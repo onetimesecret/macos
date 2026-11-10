@@ -157,7 +157,7 @@ trigger**. VoiceOver on (⌘F5); keyboard only.
       window is open. Silent removal to the ledger — is silence the
       right promise (docs/spec/06)?
       (2026-11-10: a line under the page now names the page, with Show
-      Ledger and Dismiss; see ADR-0063, proposed.)
+      Ledger and Dismiss; see ADR-0064, proposed.)
 
 ## §E — Frugality, re-measured
 

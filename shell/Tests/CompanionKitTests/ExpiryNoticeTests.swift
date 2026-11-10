@@ -189,9 +189,8 @@ final class ExpiryNoticeTests: XCTestCase {
         XCTAssertEqual(tie?.settles, true)
     }
 
-    func testTheWarningBodyNamesThePage() {
-        XCTAssertEqual(
-            LastHourWarning.body(title: "payroll"), "\"payroll\" expires in under an hour.")
+    func testTheWarningBodyNamesNoPage() {
+        XCTAssertEqual(LastHourWarning.body, "A page expires in under an hour.")
     }
 
     // MARK: The model
@@ -281,7 +280,7 @@ final class ExpiryNoticeTests: XCTestCase {
         XCTAssertTrue(model.coreClient.ageForTests(byMs: tab.remainingMs - hour / 2))
         model.refresh()
         XCTAssertEqual(recorder.posts.map(\.title), ["OnetimePad"])
-        XCTAssertEqual(recorder.posts.map(\.body), ["\"\(tab.title)\" expires in under an hour."])
+        XCTAssertEqual(recorder.posts.map(\.body), ["A page expires in under an hour."])
 
         model.refresh()
         XCTAssertEqual(recorder.posts.count, 1, "one warning per page per deadline")

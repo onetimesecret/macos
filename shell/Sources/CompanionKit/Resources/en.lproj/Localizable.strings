@@ -265,7 +265,7 @@
 "expiry.away.many" = "%1$ld pages expired since you were last here: %2$@.";
 "expiry.away.more" = "%1$ld pages expired since you were last here: %2$@ and %3$ld more.";
 "expiry.away.dismiss" = "Dismiss";
-"expiry.warning.body" = "\"%@\" expires in under an hour.";
+"expiry.warning.body" = "A page expires in under an hour.";
 
 "palette.context_changed" = "the page changed; reopen the command palette to use page commands";
 
