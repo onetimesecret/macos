@@ -6047,7 +6047,9 @@ public final class PageModel: ObservableObject {
     public func anchorOnToday() {
         guard showsTimeUnits else { return }
         let rollStood = selectedFile == nil && !showingLedger
-        if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first,
+        // A showing file tab keeps the selection (ADR-0063).
+        if selectedFile == nil,
+           let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first,
            tab != selection {
             select(tab)
         }

@@ -209,8 +209,9 @@ final class KeymapEventTests: XCTestCase {
         XCTAssertEqual(model.tabs.count, count + 1)
     }
 
-    func testControlWPassesTheHostingKeyEquivalentStageBeforeTheIMERefusal() throws {
-        let (model, editor) = try makeStack()
+    func testAConfiguredControlWPassesTheHostingKeyEquivalentStageBeforeTheIMERefusal() throws {
+        let (model, editor) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-w":"page::Close"}}]"#)
         model.loadStateIfNeeded()
         let (window, host) = mountSurfaceMap(model)
         defer { window.close() }
@@ -310,8 +311,9 @@ final class KeymapEventTests: XCTestCase {
         XCTAssertTrue(editor.hasMarkedText())
     }
 
-    func testControlWClosesThePageInsteadOfDeletingAWord() throws {
-        let (model, editor) = try makeStack()
+    func testAConfiguredControlWClosesThePageInsteadOfDeletingAWord() throws {
+        let (model, editor) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-w":"page::Close"}}]"#)
         model.loadStateIfNeeded()
         model.newPage()
         model.newPage()
@@ -335,8 +337,9 @@ final class KeymapEventTests: XCTestCase {
         XCTAssertEqual(model.tabs.count, count + 1)
     }
 
-    func testControlWDoesNotCloseOrUnmarkAnIMEComposition() throws {
-        let (model, editor) = try makeStack()
+    func testAConfiguredControlWDoesNotCloseOrUnmarkAnIMEComposition() throws {
+        let (model, editor) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-w":"page::Close"}}]"#)
         model.loadStateIfNeeded()
         let tab = try XCTUnwrap(model.selection)
         editor.setMarkedText("ka", selectedRange: NSRange(location: 2, length: 0),

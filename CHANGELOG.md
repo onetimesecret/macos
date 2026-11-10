@@ -32,6 +32,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Every route to the app shows the pad, and the summon shortcut keeps
+  the window you arranged.** Command-Tab to OnetimePad with nothing of its
+  own showing opens the editor window, or takes it out of the Dock, without
+  moving the page or the roll. With the editor window open, the global
+  shortcut and a click on the menu bar icon bring that window forward
+  where they used to close it for the ambient panel, and a second press
+  hides the app and returns you to the app you came from. Show Ambient
+  Panel and Open in Window are the only commands that switch presentation.
+  A summon no longer moves the selection off a file tab that is showing.
+  Reopen Last Closed Page or Tab is on Shift-Command-T, and Control-W no
+  longer closes the page. See
+  [ADR-0063](docs/adr/0063-activation-shows-the-pad-and-summons-keep-the-editor-window.md).
+
 - **Sealed blocks select like text and keep their actions in a visible row**
   (app 0.46.0; #339). A click on a named sealed block selects it instead
   of copying; Copy, More and Note sit in a stable row with distinct
