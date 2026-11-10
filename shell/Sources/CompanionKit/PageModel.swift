@@ -4543,6 +4543,14 @@ public final class PageModel: ObservableObject {
     /// The line when the core gave no text for a page's save, for a reason with no line of its own.
     public static let pageNotSavedLine = "this page could not be read, so nothing was saved."
 
+    /// The core's `FILE_SIZE_LIMIT`, in bytes: the core names it only in an open's refusal.
+    nonisolated static let fileSizeLimit = 4 * 1024 * 1024
+
+    /// The line when a page's text is past the size a file can have and still open.
+    public static let pageTooLargeLine =
+        "this page is larger than \(PageModel.sizePhrase(bytes: UInt64(clamping: PageModel.fileSizeLimit))), "
+        + "so it was not saved to a file."
+
     /// A page's whole text as a copy of all of it composes it (Law 0001, export row);
     /// nil, with a line shown, when the core refuses.
     func publicText(ofPage sheet: UInt64) -> String? {
@@ -4572,6 +4580,10 @@ public final class PageModel: ObservableObject {
             return
         }
         guard let text = publicText(ofPage: page) else { return }
+        guard text.utf8.count <= Self.fileSizeLimit else {
+            flash(Self.pageTooLargeLine)
+            return
+        }
         if let holder = client.fileRoster().first(where: { Self.samePath($0.path, url.path) }) {
             flash(Self.pathInUseNotice(name: holder.name))
             return

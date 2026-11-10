@@ -610,6 +610,50 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertNil(model.selectedFile, "the page is no longer the one showing")
     }
 
+    func testSavePageAsRefusesAPageOverTheFileSizeLimitAndWritesNothing() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.newPage()
+        let tab = try XCTUnwrap(model.selection)
+        let page = try XCTUnwrap(model.selectedPageID)
+        try type(String(repeating: "a", count: PageModel.fileSizeLimit + 1), at: 0, into: page, on: model)
+
+        let destination = try write("already here\n", named: "big.md", in: fixture)
+        panels.destinationURL = destination
+        model.notice = nil
+        model.saveActiveFileAs()
+
+        XCTAssertEqual(panels.destinations, 1)
+        XCTAssertEqual(
+            model.notice, "this page is larger than 4 MiB, so it was not saved to a file.")
+        XCTAssertEqual(model.notice, PageModel.pageTooLargeLine)
+        XCTAssertEqual(try read(destination), "already here\n", "the file there was replaced")
+        XCTAssertEqual(try filesInWorkspace(fixture), ["big.md"])
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertNil(model.selectedFile)
+        XCTAssertEqual(model.selection, tab)
+    }
+
+    /// The shell's copy of the limit against the core's: a page of exactly that size opens.
+    func testSavePageAsWritesAndOpensAPageOfExactlyTheFileSizeLimit() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        try type(String(repeating: "a", count: PageModel.fileSizeLimit), at: 0, into: page, on: model)
+
+        let destination = fixture.workspace.appendingPathComponent("full.md")
+        panels.destinationURL = destination
+        model.saveActiveFileAs()
+
+        XCTAssertEqual(try Data(contentsOf: destination).count, PageModel.fileSizeLimit)
+        XCTAssertEqual(model.activeFile?.name, "full.md")
+    }
+
     func testThePanelSuggestsThePagesTitleAsMarkdown() {
         XCTAssertEqual(PageModel.pageFileName(title: "deploy friday"), "deploy friday.md")
         XCTAssertEqual(PageModel.pageFileName(title: "a/b: c"), "a-b- c.md")
