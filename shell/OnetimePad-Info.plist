@@ -39,10 +39,8 @@
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>OnetimePad</string>
-	<!-- Plain text stays at Alternate: Open With lists the pad for every
-	     text file and it takes no default by rank. Markdown, logs and
-	     dotenv files are Default rank. No NSDocumentClass: the delegate's
-	     application(_:open:) hands each file to PageModel.openFile(at:). -->
+	<!-- Plain text is Alternate rank; Markdown, logs and dotenv are Default.
+	     No NSDocumentClass: application(_:open:) calls PageModel.openFile(at:). -->
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -129,9 +127,8 @@
 	<true />
 	<key>NSHumanReadableCopyright</key>
 	<string>© Onetime Secret</string>
-	<!-- Imported, not exported: neither type is this app's to own, and
-	     three build lanes ship this sheet side by side. The Markdown
-	     extensions match FileFormatHints.markdownExtensions. -->
+	<!-- Imported, not exported: three build lanes ship this sheet side by side.
+	     The Markdown extensions match FileFormatHints.markdownExtensions. -->
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict>

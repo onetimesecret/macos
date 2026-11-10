@@ -1,19 +1,5 @@
-// default-app.swift
-//
-// Shows or sets the default application for the file kinds OnetimePad
-// declares in shell/OnetimePad-Info.plist: plain text, Markdown, logs and
-// dotenv files. macOS keeps the choice per user; the app never makes it.
-//
-//   swift scripts/default-app.swift
-//       Print the current default application for each kind.
-//   swift scripts/default-app.swift --set [APP]
-//       Make APP the default for each kind. APP defaults to
-//       /Applications/OnetimePad Local.app, the bundle scripts/install.sh
-//       installs. Plain text is the type of .txt and the fallback for
-//       every text file whose own type has no default.
-//   swift scripts/default-app.swift --type-of FILE...
-//       Print the content type macOS gives each file, which decides
-//       whether any of the above applies to it.
+// Shows or sets the default application for the file kinds OnetimePad declares.
+// Run with --help for usage; docs/dogfood/DOGFOOD.md has the walkthrough.
 
 import AppKit
 import UniformTypeIdentifiers
@@ -75,5 +61,11 @@ case "--set":
     show()
     exit(refused ? 1 : 0)
 default:
-    fail("usage: swift scripts/default-app.swift [--show | --set [APP] | --type-of FILE...]")
+    fail("""
+        usage: swift scripts/default-app.swift [--show | --set [APP] | --type-of FILE...]
+          --show            print the current default application for each kind (the default)
+          --set [APP]       make APP the default for each kind; APP defaults to
+                            /Applications/OnetimePad Local.app
+          --type-of FILE... print the content type macOS gives each file
+        """)
 }
