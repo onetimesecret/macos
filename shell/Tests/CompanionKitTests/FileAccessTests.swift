@@ -452,6 +452,25 @@ final class FileAccessTests: XCTestCase {
         assertBalanced(launched.scope)
     }
 
+    func testABatchKeepsAnOpenedFilesBookmarkWarningBesideARefusal() throws {
+        let fixture = try makeFixture()
+        let url = try write("body\n", named: "notes.txt", in: fixture)
+        let launched = launch(fixture) { coordinator in
+            coordinator.makeBookmark = { _ in throw CocoaError(.fileReadUnknown) }
+        }
+
+        launched.model.collectingOpenRefusals {
+            launched.model.openFile(at: fixture.workspace.appendingPathComponent("absent.txt"))
+            launched.model.openFile(at: url)
+        }
+
+        XCTAssertEqual(launched.model.openFiles.map(\.name), ["notes.txt"])
+        XCTAssertEqual(
+            launched.model.notice,
+            "absent.txt could not be read, so it was not opened. "
+                + PageModel.bookmarkFailureNotice(name: "notes.txt"))
+    }
+
     // MARK: Save
 
     func testASaveBracketsTheCheckTheWriteAndTheBookmarkOnce() throws {

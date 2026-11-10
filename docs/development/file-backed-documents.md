@@ -611,7 +611,7 @@ without noticing.
   file is removed, and the shell flashes "X could not be written." with
   no retry.
 - A target that is a regular file the user cannot open for writing
-  fails the save with `PermissionDenied` before any temp file is made
+  fails the save with `ReadOnlyFilesystem` before any temp file is made
   (`refuse_read_only_target`), since the rename needs only a writable
   directory and would replace it.
 - The temp file is given the mode of the file already there through
