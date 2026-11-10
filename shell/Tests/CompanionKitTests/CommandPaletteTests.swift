@@ -43,6 +43,14 @@ final class CommandPaletteTests: XCTestCase {
         XCTAssertTrue(ledger.matches("audit trail"))
     }
 
+    func testTheLedgerRowShowsNoChordWhenAnotherLayerTakesIt() throws {
+        let map = Keymap.resolve(defaultText: try XCTUnwrap(Keymap.bundledDefaultText()), overrideText: nil)
+        let zero = try Keystroke.parse("cmd-0").get()
+        let entries = CommandPaletteCatalog.entries(keymap: map, excluding: { $0 == zero })
+        XCTAssertNil(try XCTUnwrap(entries.first { $0.command == .ledgerShow }).shortcut)
+        XCTAssertEqual(entries.first { $0.command == .pageNew }?.shortcut, "⌘N")
+    }
+
     func testSearchMatchesWordsAcrossTitleAndCommandWithoutChangingOrder() throws {
         let map = Keymap.resolve(defaultText: try XCTUnwrap(Keymap.bundledDefaultText()), overrideText: nil)
         let entries = CommandPaletteCatalog.entries(keymap: map)

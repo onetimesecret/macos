@@ -651,6 +651,7 @@ public final class PageModel: ObservableObject {
 
     /// Each page inside its last hour, with the deadline it was noticed at (`LastHourWarning`).
     private var lastHourWarned: [String: UInt64] = [:]
+    private static let lastHourWarnedKey = "lastHourWarned"
 
     /// A refusal or status line the surface shows briefly ("nothing to
     /// seal"). When the app declines something it says so.
@@ -1765,6 +1766,9 @@ public final class PageModel: ObservableObject {
             fine: defaults.string(forKey: Self.stampFineKey)
                 ?? StreamNavigator.StampFormat.standard.fine
         )
+        // Unset → no page has warned. Stored as Int, which a property list keeps.
+        lastHourWarned = (defaults.dictionary(forKey: Self.lastHourWarnedKey) as? [String: Int] ?? [:])
+            .compactMapValues { UInt64(exactly: $0) }
         // Unset → the rail's starting width.
         timelineWidth = TimeRailView.clampedWidth(
             CGFloat(defaults.object(forKey: Self.timelineWidthKey) as? Double ?? Double(TimeRailView.width)))
@@ -5663,6 +5667,7 @@ public final class PageModel: ObservableObject {
         // it described: the licence is back, so the trail records again
         // from here.
         ledgerRestoreRefused = false
+        dismissExpiredWhileAway()
         markDirty()
         refresh()
     }
@@ -8413,11 +8418,17 @@ public final class PageModel: ObservableObject {
 
     /// Post a warning for each page that entered its last hour while the app was not active.
     private func warnOfLastHours() {
+        // Before the restore there are no pages, and a reading then would drop every stored entry.
+        guard stateLoaded else { return }
         let nowMs = Self.wallNowMs()
         let decision = LastHourWarning.decide(
             clocks: lastHourClocks(nowMs: nowMs), nowMs: nowMs, warned: lastHourWarned,
             appActive: applicationIsActive())
-        lastHourWarned = decision.warned
+        if decision.warned != lastHourWarned {
+            lastHourWarned = decision.warned
+            defaults.set(
+                lastHourWarned.mapValues { Int(clamping: $0) }, forKey: Self.lastHourWarnedKey)
+        }
         for clock in decision.post {
             pageWarnings?.post(
                 title: "OnetimePad", body: LastHourWarning.body,

@@ -195,9 +195,10 @@ final class ExpiryNoticeTests: XCTestCase {
 
     // MARK: The model
 
-    private func makeModel(
-        warnings: (any PageWarningPosting)? = nil, frontmost: Frontmost? = nil
-    ) throws -> PageModel {
+    private typealias Fixture = (directory: URL, defaults: UserDefaults, tag: String)
+
+    /// A state directory, a defaults suite and a credential tag that two models can share.
+    private func makeFixture() throws -> Fixture {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("expiry-notice-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -207,6 +208,14 @@ final class ExpiryNoticeTests: XCTestCase {
             UserDefaults.standard.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(at: directory)
         }
+        return (directory, defaults, suite)
+    }
+
+    private func makeModel(
+        warnings: (any PageWarningPosting)? = nil, frontmost: Frontmost? = nil,
+        over fixture: Fixture? = nil
+    ) throws -> PageModel {
+        let (directory, defaults, suite) = try fixture ?? makeFixture()
         var isActive: (@MainActor () -> Bool)?
         if let frontmost { isActive = { frontmost.isActive } }
         let model = PageModel(
@@ -284,6 +293,33 @@ final class ExpiryNoticeTests: XCTestCase {
 
         model.refresh()
         XCTAssertEqual(recorder.posts.count, 1, "one warning per page per deadline")
+    }
+
+    func testAPageThatWarnedDoesNotWarnAgainAfterARelaunch() throws {
+        let recorder = WarningRecorder()
+        let fixture = try makeFixture()
+        let model = try makeModel(warnings: recorder, frontmost: Frontmost(), over: fixture)
+        let tab = try seed("payroll notes", in: model)
+        XCTAssertTrue(model.coreClient.ageForTests(byMs: tab.remainingMs - hour / 2))
+        model.refresh()
+        XCTAssertEqual(recorder.posts.count, 1)
+        XCTAssertTrue(model.saveState())
+
+        let relaunch = try makeModel(warnings: recorder, frontmost: Frontmost(), over: fixture)
+        XCTAssertTrue(relaunch.tabs.contains { $0.pageHasContent }, "the page came back")
+        relaunch.refresh()
+        XCTAssertEqual(recorder.posts.count, 1, "one warning per page per deadline, across launches")
+    }
+
+    func testClearingTheLedgerClearsTheLine() throws {
+        let model = try makeModel()
+        _ = try seed("payroll notes", in: model)
+        expireEverything(in: model)
+        XCTAssertEqual(model.expiredWhileAway.count, 1)
+
+        model.clearLedger()
+        XCTAssertEqual(model.expiredWhileAway, [])
+        XCTAssertNil(model.expiredWhileAwaySentence)
     }
 
     func testAPageEnteringItsLastHourWhileTheAppIsActivePostsNothing() throws {

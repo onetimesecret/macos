@@ -50,13 +50,17 @@ public enum CommandPaletteCatalog {
         .editorDetectCodeLanguage, .noteToggleExpanded
     ]
 
-    public static func entries(keymap: ResolvedKeymap) -> [CommandPaletteEntry] {
+    /// `taken` names the chords another layer takes first, which no row shows.
+    public static func entries(
+        keymap: ResolvedKeymap, excluding taken: (Keystroke) -> Bool = { _ in false }
+    ) -> [CommandPaletteEntry] {
         order.compactMap { command in
             guard let definition = command.paletteDefinition else { return nil }
             return CommandPaletteEntry(command: command, title: CompanionL10n.string(definition.title),
                 scope: definition.scope, keywords: definition.keywords,
                 shortcut: (command.dispatch == .window
-                    ? keymap.menuKeystroke(for: command) : keymap.hintKeystroke(for: command))?.displaySymbol)
+                    ? keymap.menuKeystroke(for: command)
+                    : keymap.hintKeystroke(for: command, excluding: taken))?.displaySymbol)
         }
     }
 }

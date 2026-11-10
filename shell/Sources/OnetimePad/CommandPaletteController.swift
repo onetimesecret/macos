@@ -463,7 +463,9 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
             }
         } else {
             clearDatedCache()
-            rows = CommandPaletteCatalog.entries(keymap: model.keymap).compactMap { entry in
+            rows = CommandPaletteCatalog.entries(
+                keymap: model.keymap, excluding: { model.padsTake($0) }
+            ).compactMap { entry in
                 let title = entry.command == .pageClose ? CompanionL10n.string(closeChoice.title) : entry.title
                 guard entry.matches(search.stringValue, title: title), isAvailable(entry) else { return nil }
                 let detail: String
