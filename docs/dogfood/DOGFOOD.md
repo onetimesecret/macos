@@ -226,6 +226,29 @@ What changes:
   its token; if the Connection tab of Settings shows "paste your API
   token" instead of "•••• stored in the Keychain", that is the answer.
 
+## Opening your text files in the pad
+
+The bundle declares plain text, Markdown, logs and dotenv files
+(`prod.env`, and files with the `envrc` extension), so the installed
+copy can be the application those files open in. macOS keeps that
+choice per user and the app never makes it for you:
+
+```sh
+swift scripts/default-app.swift          # what opens each kind now
+swift scripts/default-app.swift --set    # the installed OnetimePad Local.app
+```
+
+`--set` takes another bundle's path to choose a different lane, or to
+give the files back to the editor that had them. Plain text is the type
+of `.txt` and also what macOS falls back to for a text file whose own
+type has no default, so setting it reaches further than `.txt`. From a
+terminal, `open -a "OnetimePad Local" .envrc` opens any file whatever
+its type. Whether a file named exactly `.env` or `.envrc` follows the
+dotenv default is not established;
+`swift scripts/default-app.swift --type-of .env` reports the type macOS
+gives it. The script has not been run on hardware yet; the hand check
+is [case 2b](../qa/verification-procedures/sandbox-file-access.md#case-2b-the-default-application-for-each-declared-kind).
+
 ## Which build am I on
 
 Right-click the tray icon: the version line (disabled, informational)
