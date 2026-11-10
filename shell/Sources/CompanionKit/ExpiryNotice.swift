@@ -132,8 +132,7 @@ public protocol PageWarningPosting: AnyObject {
     func post(title: String, body: String, identifier: String)
 }
 
-/// The shipping route: a local notification under provisional authorization, which the
-/// system grants without a dialog and delivers quietly to Notification Center.
+/// The shipping route: a local notification requested under provisional authorization (ADR-0064).
 @MainActor
 final class SystemPageWarnings: PageWarningPosting {
     func post(title: String, body: String, identifier: String) {
@@ -143,7 +142,7 @@ final class SystemPageWarnings: PageWarningPosting {
     /// Nonisolated so the center's completion handler, which arrives off the main thread,
     /// is not formed inside the main actor.
     private nonisolated static func deliver(title: String, body: String, identifier: String) {
-        // The center traps in a process with no bundle identifier, such as a bare executable.
+        // A bare executable has no bundle identifier, and so no notification center to ask.
         guard Bundle.main.bundleIdentifier != nil else { return }
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .provisional]) { granted, _ in
