@@ -126,7 +126,7 @@ final class PageSearchModelTests: XCTestCase {
 
     func testATextOverTheByteLimitIsLeftOutAndReported() throws {
         let (model, directory) = try makeModel()
-        let (tab, _) = try seed("ééééééé needle", in: model)
+        let (tab, page) = try seed("ééééééé needle", in: model)
         let all = model.pageSearchSources(byteLimit: nil)
         XCTAssertEqual(all.sources.map(\.id), [tab])
         XCTAssertFalse(all.skipped)
@@ -134,6 +134,7 @@ final class PageSearchModelTests: XCTestCase {
         let bytes = text.utf8.count
         let units = text.utf16.count
         XCTAssertLessThan(units, bytes)
+        XCTAssertEqual(model.coreClient.inkBytes(sheet: page), bytes)
 
         XCTAssertEqual(model.pageSearchSources(byteLimit: bytes), all, "a text at the limit was left out")
         // Over in bytes and within in units, then over in both.
@@ -147,10 +148,32 @@ final class PageSearchModelTests: XCTestCase {
         try String(repeating: "x", count: bytes + 1).write(to: file, atomically: true, encoding: .utf8)
         model.openFile(at: file)
         let opened = try XCTUnwrap(model.activeFile)
+        XCTAssertEqual(model.coreClient.fileTextBytes(opened.id), bytes + 1)
+        XCTAssertNil(model.coreClient.fileTextBytes(page))
+        XCTAssertNil(model.coreClient.inkBytes(sheet: opened.id))
         let found = model.pageSearchSources(byteLimit: bytes)
         XCTAssertEqual(found.sources.map(\.id), [tab])
         XCTAssertTrue(found.skipped)
         XCTAssertEqual(model.pageSearchSources(byteLimit: bytes + 1).sources.map(\.id), [tab, opened.id])
+    }
+
+    func testASealedObjectsPlaceholderCountsTowardTheByteLimit() throws {
+        let (model, _) = try makeModel()
+        let (tab, page) = try seed("visible ink\nbeside after", in: model)
+        _ = try XCTUnwrap(model.coreClient.sealText(sheet: page, "tangerine", at: 19, length: 0))
+        model.refresh()
+        let all = model.pageSearchSources(byteLimit: nil)
+        let text = try XCTUnwrap(all.sources.first?.text)
+        let ink = try XCTUnwrap(model.coreClient.inkBytes(sheet: page))
+        XCTAssertEqual(ink, "visible ink\nbeside after".utf8.count)
+        XCTAssertLessThan(ink, text.utf8.count)
+
+        // Within the limit by its ink and over it by its public text.
+        let found = model.pageSearchSources(byteLimit: ink)
+        XCTAssertTrue(found.sources.isEmpty)
+        XCTAssertTrue(found.skipped)
+        XCTAssertEqual(model.pageSearchSources(byteLimit: text.utf8.count), all)
+        XCTAssertEqual(all.sources.map(\.id), [tab])
     }
 
     func testOpeningARowReopensAClosedPageWithTheCaretAtItsLine() throws {

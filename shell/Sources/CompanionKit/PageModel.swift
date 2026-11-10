@@ -6212,13 +6212,12 @@ public final class PageModel: ObservableObject {
         var skipped = false
         for tab in navigationTabs + closedTabs {
             guard let page = tab.pageID else { continue }
-            // Measured in UTF-16 units first, so a body already past the limit is not copied.
-            let length = bodyLength(of: page)
-            if let byteLimit, length > byteLimit {
+            // The core's count of the ink alone comes first; the copied text is measured below.
+            if let byteLimit, let bytes = client.inkBytes(sheet: page), bytes > byteLimit {
                 skipped = true
                 continue
             }
-            let whole = NSRange(location: 0, length: length)
+            let whole = NSRange(location: 0, length: bodyLength(of: page))
             guard let text = client.copyFragment(sheet: page, range: whole)?.plainText else { continue }
             if let byteLimit, text.utf8.count > byteLimit {
                 skipped = true
@@ -6227,6 +6226,10 @@ public final class PageModel: ObservableObject {
             sources.append(PageSearchSource(id: tab.id, title: tab.title, stamp: tab.pageCreatedMs, text: text))
         }
         for file in navigationFiles {
+            if let byteLimit, let bytes = client.fileTextBytes(file.id), bytes > byteLimit {
+                skipped = true
+                continue
+            }
             let text = fileTextSnapshot(for: file.id)
             if let byteLimit, text.utf8.count > byteLimit {
                 skipped = true
