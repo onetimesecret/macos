@@ -2349,7 +2349,7 @@ final class FileAccessTests: XCTestCase {
             PageModel.saveRefusalNotice(.write(detail: "storage full"), for: gone),
             PageModel.writeRefusalNotice(name: "a.txt"))
         XCTAssertEqual(
-            PageModel.saveRefusalNotice(.write(detail: "permission denied"), for: gone),
+            PageModel.saveRefusalNotice(.write(detail: "read-only filesystem or storage medium"), for: gone),
             PageModel.readOnlyNotice(name: "a.txt"))
 
         XCTAssertEqual(

@@ -489,7 +489,7 @@ sentence from the reason:
 | `notFound`, row in the missing conflict | `unresolvedConflictNotice(for:)`, which offers keep mine |
 | `notFound`, row in no conflict | `saveNotFoundNotice(name:)`: "NAME is no longer at its path, so it was not saved. Choose Locate to find it, or Save As to write it somewhere." |
 | `pendingHydration` | `heldFileNotice(name:)` |
-| `write` with the detail `permission denied` | `readOnlyNotice(name:)`: "NAME is read-only, so it was not saved. Use Save As to write a copy." |
+| `write` with the detail `read-only filesystem or storage medium` | `readOnlyNotice(name:)`: "NAME is read-only, so it was not saved. Use Save As to write a copy." |
 | `write` otherwise, any other reason, or none | `writeRefusalNotice(name:)`: "NAME could not be written." |
 
 The row is read only to word the conflict, never to decide which

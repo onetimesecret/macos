@@ -248,7 +248,7 @@ fn write_atomic_preserving_mode(
     Err(last)
 }
 
-/// `PermissionDenied` when `path` is a regular file this user cannot open for
+/// `ReadOnlyFilesystem` when `path` is a regular file this user cannot open for
 /// writing, since the rename would otherwise replace it. Other errors pass.
 fn refuse_read_only_target(path: &Path, existing: Option<&std::fs::Metadata>) -> io::Result<()> {
     if !existing.is_some_and(|meta| meta.file_type().is_file()) {
@@ -262,7 +262,10 @@ fn refuse_read_only_target(path: &Path, existing: Option<&std::fs::Metadata>) ->
         options.custom_flags(persist::O_NONBLOCK);
     }
     match options.open(path) {
-        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => Err(error),
+        // Its own kind: PermissionDenied would mark the file's access refused.
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+            Err(io::ErrorKind::ReadOnlyFilesystem.into())
+        }
         _ => Ok(()),
     }
 }
@@ -1835,7 +1838,9 @@ mod tests {
             assert!(!companion_file_save(handle, id, ptr::null()));
             assert_eq!(
                 save_error(handle),
-                Some(serde_json::json!({ "error": "write", "detail": "permission denied" }))
+                Some(
+                    serde_json::json!({ "error": "write", "detail": "read-only filesystem or storage medium" })
+                )
             );
         }
         assert_eq!(std::fs::read(&file).unwrap(), b"KEY=1");

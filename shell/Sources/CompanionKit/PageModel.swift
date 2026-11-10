@@ -5332,7 +5332,7 @@ public final class PageModel: ObservableObject {
                 : unresolvedConflictNotice(for: file)
         case .pendingHydration:
             return heldFileNotice(name: file.name)
-        case .write(let detail) where detail == "permission denied":
+        case .write(let detail) where detail == "read-only filesystem or storage medium":
             return readOnlyNotice(name: file.name)
         case .write, .pathInUse, .unknownFile, nil:
             return writeRefusalNotice(name: file.name)
