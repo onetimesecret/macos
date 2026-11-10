@@ -4801,8 +4801,8 @@ final class DayScrollTests: XCTestCase {
             )
         }
         XCTAssertEqual(
-            try XCTUnwrap(header.menu(for: click)).items.count, 5,
-            "with sync on the gutter carries the four gated verbs and the enrol item"
+            try XCTUnwrap(header.menu(for: click)).items.count, 6,
+            "with sync on the gutter carries the five gated verbs and the enrol item"
         )
     }
 }
