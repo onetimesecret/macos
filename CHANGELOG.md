@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A page that turned out to matter has a way to stay.** With a page
+  showing, File > Save As (Shift-Command-S) writes the page's text to a
+  file you choose and opens that file as a tab; the page stays on its
+  clock, and a sealed object is written as its placeholder, never its
+  contents. The tab menu gains Restart the Countdown, which starts the
+  page's current rung again at full length. In Tabs layout the selected
+  page's tab shows its remaining time in words, and every page tab's
+  tooltip says it.
+
 - **A searchable command palette on Shift-Command-P** (app 0.46.0; #340).
   Application actions come first, then the current page, file and editor
   actions, each labelled with its shortcut from the resolved keymap. The

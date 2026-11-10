@@ -1699,6 +1699,12 @@ public class CompanionClient: @unchecked Sendable {
         Rung(rawValue: companion_tab_cycle_rung(handle, tab))
     }
 
+    /// The tab's own rung reapplied: the clock starts again at full length.
+    @discardableResult
+    public func restartRung(tab: UInt64) -> Rung? {
+        Rung(rawValue: companion_tab_restart_rung(handle, tab))
+    }
+
     @discardableResult
     public func setRung(tab: UInt64, rung: Rung) -> Bool {
         companion_tab_set_rung(handle, tab, rung.rawValue)

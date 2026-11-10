@@ -198,6 +198,16 @@ Saving is explicit. There is no autosave to the file.
   file is left exactly as it was. Save As onto a path another open file
   already holds is refused before anything is written, because two tabs
   over one file would race each other's saves.
+- **Save Page As.** With a page showing, the same Save As item and
+  chord raise the save panel, suggesting the page's title with `.md`.
+  The page's text is written to the chosen file as UTF-8 and that file
+  opens as a file tab, selected. The page is left as it was, still on
+  its clock. A sealed object is written as the placeholder a copy of
+  the page puts on the pasteboard, `[sealed content · SIZE]`, and its
+  contents are not decrypted for the file. The write is atomic and is
+  the shell's own, since the core saves only files it has open. A path
+  another open file tab already has is refused before anything is
+  written, and a cancelled panel changes nothing.
 - **A save never makes a file where there is none.** Cmd S on a file
   whose path holds nothing is refused and nothing is written, because
   the pad does not recreate a file at a path a person deleted. With no
@@ -575,12 +585,14 @@ Two ids are new:
 
 - **`file::Open`**, bound to Cmd O, raises the open panel.
 - **`file::SaveAs`**, bound to Cmd Shift S, raises the save panel for
-  the active file.
+  the active file, or for the page that is showing (Save Page As under
+  Saving).
 
 The app gains its first **File** menu, listing Open, Save, Save As and
 Close File, and reading each chord from the keymap rather than spelling
-it in the menu code. Save, Save As and Close File are inert when the
-active tab is a page rather than a file.
+it in the menu code. Save and Close File are inert when the active tab
+is a page rather than a file. Save As is enabled on a file and on a
+showing page, and inert on an empty slot and over the ledger.
 
 Note, 2026-10-21 (issue #201): the close item follows the key window.
 While the owner's window is key it reads Close File on a file and Close

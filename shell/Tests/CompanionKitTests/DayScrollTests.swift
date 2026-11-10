@@ -4748,6 +4748,7 @@ final class DayScrollTests: XCTestCase {
         var titles = [
             "Rename Tab",
             SheetTab.holdMenuTitle(paused: tab.paused, toppedUp: tab.holdToppedUp),
+            SheetTab.restartMenuTitle,
             SheetTab.rungMenuTitle(hasPage: tab.hasPage),
         ]
         if model.sync.enabled, let pageID = tab.pageID {

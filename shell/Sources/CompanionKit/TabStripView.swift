@@ -291,6 +291,14 @@ struct SheetTab: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
+                // The selected page's time left in words; the gauge below draws it for the rest.
+                if selected, sheet.hasPage, !renaming {
+                    Text(sheet.remainingLabel)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(Color.secondaryInk)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
                 reorderHandle
                 // The ✕ keeps its seat whether or not it is visible, since
                 // revealing it must never nudge the title (the browsers'
@@ -355,7 +363,8 @@ struct SheetTab: View {
         // opened its menu.
         .gesture(TapGesture(count: 2).onEnded { if !renaming { model.pause(sheet.id) } })
         .simultaneousGesture(TapGesture().onEnded { if !renaming { model.select(sheet.id) } })
-        .help(holdDescription)
+        .help(Self.pageHelp(
+            remainingLabel: sheet.hasPage ? sheet.remainingLabel : "", hold: holdDescription))
         // The tab speaks as one element until it holds the field, which
         // has to be reachable on its own for the draft to be read back.
         // Mid-rename the label stays on the container: the field speaks
@@ -380,6 +389,9 @@ struct SheetTab: View {
             // an item that says it will hold a clock there would be
             // offering a gesture the core refuses, having no clock.
             Button(holdMenuTitle) { model.pause(sheet.id) }
+                .disabled(!sheet.hasPage)
+            // Disabled on an empty slot, as the hold is: there is no countdown to restart.
+            Button(Self.restartMenuTitle) { model.restartRung(sheet.id) }
                 .disabled(!sheet.hasPage)
             Button(Self.rungMenuTitle(hasPage: sheet.hasPage)) { model.cycleRung(sheet.id) }
             // Present only while the sync switch is on: with it off the
@@ -431,6 +443,14 @@ struct SheetTab: View {
     static func holdMenuTitle(paused: Bool, toppedUp: Bool) -> String {
         if toppedUp { return "Release the Hold" }
         return paused ? "Top the Hold Up to 24h" : "Hold the Clock for 1h"
+    }
+
+    /// The restart item's label: the page's own rung again, from the top.
+    static let restartMenuTitle = "Restart the Countdown"
+
+    /// A tab's tooltip: the page's time left in words, then the hold hint.
+    nonisolated static func pageHelp(remainingLabel: String, hold: String) -> String {
+        remainingLabel.isEmpty ? hold : "\(remainingLabel) left. \(hold)"
     }
 
     /// The rung item's label. On an empty slot the gesture sets the

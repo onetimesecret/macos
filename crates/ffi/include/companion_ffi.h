@@ -1080,6 +1080,11 @@ char *companion_take_restated_pages_json(CompanionHandle *handle);
  * property and never a countdown of the slot's own. */
 int companion_tab_cycle_rung(CompanionHandle *handle, uint64_t tab);
 
+/* Reapply a TAB's own rung: the clock is reset to the full rung as
+ * companion_tab_cycle_rung() resets it, and the rung is unchanged.
+ * Returns the rung's code, or -1 if the tab is gone or its page is due. */
+int companion_tab_restart_rung(CompanionHandle *handle, uint64_t tab);
+
 /* Set a TAB to an explicit rung (its page's clock reset to it). Returns
  * success; a tab holding no page stores the rung and succeeds, having
  * no clock to reset. */

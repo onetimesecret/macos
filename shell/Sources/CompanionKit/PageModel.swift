@@ -4519,9 +4519,71 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// Write the selected file somewhere else and adopt that path.
+    /// Write the selected file somewhere else and adopt that path; with
+    /// a page showing, write its public text to a file and open that file.
     public func saveActiveFileAs() {
-        duringFilePanel { saveActiveFileAsThroughPanel() }
+        duringFilePanel {
+            if selectedFile == nil { savePageAsThroughPanel() } else { saveActiveFileAsThroughPanel() }
+        }
+    }
+
+    /// Whether Save As has a page to write: one is showing, and no file or ledger is.
+    public var canSavePageAs: Bool {
+        selectedFile == nil && !showingLedger && selectedPageID != nil
+    }
+
+    /// The name the save panel suggests for a page: its title, as Markdown.
+    public nonisolated static func pageFileName(title: String) -> String {
+        let name = title.replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (name.isEmpty ? "Page" : name) + ".md"
+    }
+
+    /// The line when the core gave no text for a page's save, for a reason with no line of its own.
+    public static let pageNotSavedLine = "this page could not be read, so nothing was saved."
+
+    /// A page's whole text as a copy of all of it composes it (Law 0001, export row);
+    /// nil, with a line shown, when the core refuses.
+    func publicText(ofPage sheet: UInt64) -> String? {
+        let length = client.documentRuns(sheet: sheet).reduce(0) {
+            if case .ink(let text) = $1 { $0 + text.utf16.count } else { $0 + 1 }
+        }
+        guard length > 0 else { return "" }
+        let composition = composeSelection([NSRange(location: 0, length: length)], sheet: sheet)
+        guard case .composed(let fragment) = composition else {
+            flash(Self.refusalLine(for: composition, .save) ?? Self.pageNotSavedLine)
+            return nil
+        }
+        return fragment.plainText
+    }
+
+    private func savePageAsThroughPanel() {
+        guard canSavePageAs, let tab = selectedTab, let page = tab.pageID else { return }
+        if openRefusedForCloseDecision {
+            flash("Finish the file close decision before opening another file.")
+            return
+        }
+        guard let url = fileCoordinator.chooseDestination(
+            suggestedName: Self.pageFileName(title: tab.title)) else { return }
+        // Read now the panel is down: the page may have changed or ended while it was up.
+        guard client.tabs().contains(where: { $0.pageID == page }) else {
+            flash(Self.pageExpiredLine)
+            return
+        }
+        guard let text = publicText(ofPage: page) else { return }
+        if let holder = client.fileRoster().first(where: { Self.samePath($0.path, url.path) }) {
+            flash(Self.pathInUseNotice(name: holder.name))
+            return
+        }
+        let wrote = fileCoordinator.withAccess(to: url) {
+            (try? Data(text.utf8).write(to: url, options: .atomic)) != nil
+        }
+        guard wrote else {
+            flash(Self.writeRefusalNotice(name: url.lastPathComponent), tone: .actionable)
+            return
+        }
+        openFile(at: url)
     }
 
     private func saveActiveFileAsThroughPanel() {
@@ -6283,6 +6345,13 @@ public final class PageModel: ObservableObject {
         refresh()
     }
 
+    /// The tab menu's restart: the page's own rung again, clock reset.
+    public func restartRung(_ id: UInt64) {
+        _ = client.restartRung(tab: id)
+        markDirty()
+        refresh()
+    }
+
     /// Double-click the tab: a three state cycle — hold the clock 1h,
     /// top up to 24h, then release it. The release is what keeps a
     /// stray double-click from ratcheting a page's life up by a day
@@ -6703,10 +6772,11 @@ public final class PageModel: ObservableObject {
 
     /// What a person asked of a page's selection, for the line its refusal shows.
     public enum SelectionAct: Sendable {
-        case copy, cut, drag
+        case copy, cut, drag, save
 
         var outcome: String {
             switch self {
+            case .save: "nothing was saved"
             case .copy: "nothing was copied"
             case .cut: "nothing was cut"
             case .drag: "the drag did not start"
@@ -6727,6 +6797,7 @@ public final class PageModel: ObservableObject {
             case .copy: return severalStretchesLine
             case .cut: return severalStretchesCutLine
             case .drag: return severalStretchesDragLine
+            case .save: return nil
             }
         case .pageExpired:
             return pageExpiredLine
