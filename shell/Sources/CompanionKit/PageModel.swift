@@ -6205,21 +6205,38 @@ public final class PageModel: ObservableObject {
         return reopenClosedTab(tab.id)
     }
 
-    /// What the palette's search reads in the active pad: each page as a copy's
-    /// public text (Law 0001, search row) and each open file's buffer.
-    public func pageSearchSources() -> [PageSearchSource] {
-        let pages = (navigationTabs + closedTabs).compactMap { tab -> PageSearchSource? in
-            guard let page = tab.pageID else { return nil }
-            let whole = NSRange(location: 0, length: bodyLength(of: page))
-            guard let text = client.copyFragment(sheet: page, range: whole)?.plainText else { return nil }
-            return PageSearchSource(id: tab.id, title: tab.title, stamp: tab.pageCreatedMs, text: text)
+    /// What the palette's search reads in the active pad: page copies' public text (Law 0001,
+    /// search row) and open files' buffers, less any over `byteLimit` UTF-8 bytes (nil: none).
+    public func pageSearchSources(byteLimit: Int?) -> PageSearchSources {
+        var sources: [PageSearchSource] = []
+        var skipped = false
+        for tab in navigationTabs + closedTabs {
+            guard let page = tab.pageID else { continue }
+            // Measured in UTF-16 units first, so a body already past the limit is not copied.
+            let length = bodyLength(of: page)
+            if let byteLimit, length > byteLimit {
+                skipped = true
+                continue
+            }
+            let whole = NSRange(location: 0, length: length)
+            guard let text = client.copyFragment(sheet: page, range: whole)?.plainText else { continue }
+            if let byteLimit, text.utf8.count > byteLimit {
+                skipped = true
+                continue
+            }
+            sources.append(PageSearchSource(id: tab.id, title: tab.title, stamp: tab.pageCreatedMs, text: text))
         }
-        let files = navigationFiles.map { file in
-            PageSearchSource(id: file.id, title: file.name,
+        for file in navigationFiles {
+            let text = fileTextSnapshot(for: file.id)
+            if let byteLimit, text.utf8.count > byteLimit {
+                skipped = true
+                continue
+            }
+            sources.append(PageSearchSource(id: file.id, title: file.name,
                 stamp: file.lastEditedAt > 0 ? file.lastEditedAt * 1000 : nil,
-                text: fileTextSnapshot(for: file.id))
+                text: text))
         }
-        return pages + files
+        return PageSearchSources(sources: sources, skipped: skipped)
     }
 
     /// Shows a search row's page or file, reopening a closed page first, with the

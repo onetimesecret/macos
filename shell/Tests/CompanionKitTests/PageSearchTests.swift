@@ -113,7 +113,7 @@ final class PageSearchModelTests: XCTestCase {
         _ = try XCTUnwrap(model.coreClient.sealText(sheet: page, "tangerine", at: 19, length: 0))
         model.refresh()
 
-        let sources = model.pageSearchSources()
+        let sources = model.pageSearchSources(byteLimit: nil).sources
 
         XCTAssertEqual(sources.map(\.id), [tab])
         XCTAssertTrue(PageSearch.rows(for: "tangerine", in: sources).isEmpty)
@@ -124,13 +124,42 @@ final class PageSearchModelTests: XCTestCase {
         XCTAssertTrue(placeholder.excerpt.hasSuffix("]after"))
     }
 
+    func testATextOverTheByteLimitIsLeftOutAndReported() throws {
+        let (model, directory) = try makeModel()
+        let (tab, _) = try seed("ééééééé needle", in: model)
+        let all = model.pageSearchSources(byteLimit: nil)
+        XCTAssertEqual(all.sources.map(\.id), [tab])
+        XCTAssertFalse(all.skipped)
+        let text = try XCTUnwrap(all.sources.first?.text)
+        let bytes = text.utf8.count
+        let units = text.utf16.count
+        XCTAssertLessThan(units, bytes)
+
+        XCTAssertEqual(model.pageSearchSources(byteLimit: bytes), all, "a text at the limit was left out")
+        // Over in bytes and within in units, then over in both.
+        for limit in [bytes - 1, units, units - 1] {
+            let found = model.pageSearchSources(byteLimit: limit)
+            XCTAssertTrue(found.sources.isEmpty, "limit \(limit)")
+            XCTAssertTrue(found.skipped, "limit \(limit)")
+        }
+
+        let file = directory.appendingPathComponent("notes.txt")
+        try String(repeating: "x", count: bytes + 1).write(to: file, atomically: true, encoding: .utf8)
+        model.openFile(at: file)
+        let opened = try XCTUnwrap(model.activeFile)
+        let found = model.pageSearchSources(byteLimit: bytes)
+        XCTAssertEqual(found.sources.map(\.id), [tab])
+        XCTAssertTrue(found.skipped)
+        XCTAssertEqual(model.pageSearchSources(byteLimit: bytes + 1).sources.map(\.id), [tab, opened.id])
+    }
+
     func testOpeningARowReopensAClosedPageWithTheCaretAtItsLine() throws {
         let (model, _) = try makeModel()
         let (tab, page) = try seed("first line\nsecond needle\nthird", in: model)
         model.closeCurrent()
         XCTAssertEqual(model.closedTabs.map(\.id), [tab])
 
-        let row = try XCTUnwrap(PageSearch.rows(for: "needle", in: model.pageSearchSources()).first)
+        let row = try XCTUnwrap(PageSearch.rows(for: "needle", in: model.pageSearchSources(byteLimit: nil).sources).first)
         XCTAssertEqual(row.id, tab)
         XCTAssertEqual(row.line, 1)
         XCTAssertTrue(model.openSearchRow(row))
@@ -154,7 +183,7 @@ final class PageSearchModelTests: XCTestCase {
         model.select(tab.id)
         XCTAssertNil(model.selectedFile)
 
-        let row = try XCTUnwrap(PageSearch.rows(for: "file needle", in: model.pageSearchSources()).first)
+        let row = try XCTUnwrap(PageSearch.rows(for: "file needle", in: model.pageSearchSources(byteLimit: nil).sources).first)
         XCTAssertEqual(row.id, opened.id)
         XCTAssertEqual(row.title, "notes.txt")
         XCTAssertEqual(row.line, 1)

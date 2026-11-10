@@ -459,13 +459,12 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         let query = search.stringValue
         skippedLargeText = false
         guard !query.split(whereSeparator: { $0.isWhitespace }).isEmpty else { return [] }
-        let all = model.pageSearchSources()
-        let sources = deepQuery == query
-            ? all : all.filter { $0.text.utf8.count <= PageSearch.keystrokeByteLimit }
-        skippedLargeText = sources.count != all.count
+        let found = model.pageSearchSources(
+            byteLimit: deepQuery == query ? nil : PageSearch.keystrokeByteLimit)
+        skippedLargeText = found.skipped
         dateFormatter.locale = .current
         dateFormatter.timeZone = .current
-        return PageSearch.rows(for: query, in: sources).map { hit in
+        return PageSearch.rows(for: query, in: found.sources).map { hit in
             let stamp = hit.stamp.map { dateFormatter.string(from: Date(timeIntervalSince1970: Double($0) / 1000)) }
             let unstamped: String? = hit.id.isFileID ? nil : CompanionL10n.string("Saved tab")
             let parts: [String?] = [hit.title, stamp ?? unstamped]

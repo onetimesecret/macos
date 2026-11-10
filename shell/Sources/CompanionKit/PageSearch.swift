@@ -17,6 +17,12 @@ public struct PageSearchSource: Equatable, Sendable {
     }
 }
 
+/// The texts one search reads, and whether any was left out for its size.
+public struct PageSearchSources: Equatable, Sendable {
+    public let sources: [PageSearchSource]
+    public let skipped: Bool
+}
+
 /// One matching line of one source.
 public struct PageSearchRow: Equatable, Sendable {
     public let id: UInt64
