@@ -1796,6 +1796,9 @@ public final class PageModel: ObservableObject {
     /// bracket or file-panel gesture. Consumed when both are over.
     private var activationCheckOwed = false
 
+    /// The refusals of the batch open under way, said together at its end; nil outside one.
+    private var batchOpenRefusals: [String]?
+
     // removeObserver is thread-safe; every other access is main-actor
     // isolated, but Swift 6 deinit is nonisolated.
     private nonisolated(unsafe) var modalEndObserver: NSObjectProtocol?
@@ -4243,6 +4246,16 @@ public final class PageModel: ObservableObject {
         checkOpenFilesOnActivate()
     }
 
+    /// Runs `opens`, then says every refusal `openFile(at:)` made inside it as one notice.
+    public func collectingOpenRefusals<T>(_ opens: () -> T) -> T {
+        batchOpenRefusals = []
+        let result = opens()
+        let refusals = batchOpenRefusals ?? []
+        batchOpenRefusals = nil
+        if !refusals.isEmpty { flash(refusals.joined(separator: " ")) }
+        return result
+    }
+
     /// Open the file at `url`, the path a panel or a drop produced.
     ///
     /// The core does the reading, so this refuses nothing itself: a
@@ -4303,9 +4316,9 @@ public final class PageModel: ObservableObject {
             return (id, renewBookmark(for: id, from: url))
         }
         guard let opened else {
-            flash(Self.openRefusalNotice(
-                name: url.lastPathComponent, json: client.openFileErrorJSON()
-            ))
+            let refusal = Self.openRefusalNotice(
+                name: url.lastPathComponent, json: client.openFileErrorJSON())
+            if batchOpenRefusals != nil { batchOpenRefusals?.append(refusal) } else { flash(refusal) }
             // A pending row at the path may have been dropped on the
             // way to this refusal, and the surface must not go on
             // showing it.
@@ -5285,6 +5298,11 @@ public final class PageModel: ObservableObject {
         "\(name) could not be written."
     }
 
+    /// A save the platform denied, which the core answers before staging anything.
+    public nonisolated static func readOnlyNotice(name: String) -> String {
+        "\(name) is read-only, so it was not saved. Use Save As to write a copy."
+    }
+
     /// The sentence for a save the core refused, chosen from the reason
     /// the core gave and not from what the row looks like afterwards.
     ///
@@ -5314,6 +5332,8 @@ public final class PageModel: ObservableObject {
                 : unresolvedConflictNotice(for: file)
         case .pendingHydration:
             return heldFileNotice(name: file.name)
+        case .write(let detail) where detail == "permission denied":
+            return readOnlyNotice(name: file.name)
         case .write, .pathInUse, .unknownFile, nil:
             return writeRefusalNotice(name: file.name)
         }

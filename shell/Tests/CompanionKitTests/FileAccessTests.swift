@@ -2346,8 +2346,11 @@ final class FileAccessTests: XCTestCase {
             PageModel.saveRefusalNotice(.notFound, for: gone),
             PageModel.saveNotFoundNotice(name: "a.txt"))
         XCTAssertEqual(
-            PageModel.saveRefusalNotice(.write(detail: "permission denied"), for: gone),
+            PageModel.saveRefusalNotice(.write(detail: "storage full"), for: gone),
             PageModel.writeRefusalNotice(name: "a.txt"))
+        XCTAssertEqual(
+            PageModel.saveRefusalNotice(.write(detail: "permission denied"), for: gone),
+            PageModel.readOnlyNotice(name: "a.txt"))
 
         XCTAssertEqual(
             PageModel.saveRefusalNotice(.notFound, for: missing),

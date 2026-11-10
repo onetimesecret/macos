@@ -165,7 +165,7 @@ final class SealedNameFieldCell: NSTextFieldCell {
     /// The setup gives a field editor Writing Tools back, so they are refused after it.
     override func setUpFieldEditorAttributes(_ textObj: NSText) -> NSText {
         let editor = super.setUpFieldEditorAttributes(textObj)
-        if let editor = editor as? NSTextView { TextOffers.offerUngatedReaders(false, on: editor) }
+        if let editor = editor as? NSTextView { TextOffers.refuseUngatedReaders(on: editor) }
         return editor
     }
 }

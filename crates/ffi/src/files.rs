@@ -192,6 +192,7 @@ fn write_atomic_preserving_mode(
 
     // The rename drops the old file's mode and group unless they are carried.
     let existing = std::fs::metadata(path).ok();
+    refuse_read_only_target(path, existing.as_ref())?;
 
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -247,9 +248,28 @@ fn write_atomic_preserving_mode(
     Err(last)
 }
 
+/// `PermissionDenied` when `path` is a regular file this user cannot open for
+/// writing, since the rename would otherwise replace it. Other errors pass.
+fn refuse_read_only_target(path: &Path, existing: Option<&std::fs::Metadata>) -> io::Result<()> {
+    if !existing.is_some_and(|meta| meta.file_type().is_file()) {
+        return Ok(());
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(persist::O_NONBLOCK);
+    }
+    match options.open(path) {
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => Err(error),
+        _ => Ok(()),
+    }
+}
+
 /// Give the temp file the target's mode (set past the umask; a failure fails
 /// the save) and, best effort, its group; a new file takes the group its
-/// target directory would give. Write access was already checked at open.
+/// target directory would give.
 #[cfg(unix)]
 fn carry_identity(
     file: &std::fs::File,
@@ -1791,6 +1811,59 @@ mod tests {
             assert_eq!(mode, 0o640, "the save must not restyle the file's mode");
         }
         assert_eq!(std::fs::read(&file).unwrap(), b"body!");
+        cleanup(handle, &dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_save_over_a_read_only_file_is_refused_and_leaves_its_bytes_and_mode() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let (handle, dir) = scratch("read-only");
+        let file = dir.join("r.env");
+        std::fs::write(&file, b"KEY=1").unwrap();
+        unsafe {
+            let id = open(handle, &file);
+            let ops = cstring(r#"[{"ins":{"at":5,"text":"2"}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o444)).unwrap();
+            if std::fs::OpenOptions::new().write(true).open(&file).is_ok() {
+                // Root writes through any mode.
+                cleanup(handle, &dir);
+                return;
+            }
+            assert!(!companion_file_save(handle, id, ptr::null()));
+            assert_eq!(
+                save_error(handle),
+                Some(serde_json::json!({ "error": "write", "detail": "permission denied" }))
+            );
+        }
+        assert_eq!(std::fs::read(&file).unwrap(), b"KEY=1");
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o444);
+        assert_eq!(names_in(&dir), ["r.env"], "no temp file was staged");
+        cleanup(handle, &dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_save_over_a_writable_file_still_writes() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let (handle, dir) = scratch("writable");
+        let file = dir.join("w.env");
+        std::fs::write(&file, b"KEY=1").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        unsafe {
+            let id = open(handle, &file);
+            let ops = cstring(r#"[{"ins":{"at":5,"text":"2"}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            assert!(companion_file_save(handle, id, ptr::null()));
+            assert_eq!(save_error(handle), None);
+        }
+        assert_eq!(std::fs::read(&file).unwrap(), b"KEY=12");
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644);
         cleanup(handle, &dir);
     }
 
