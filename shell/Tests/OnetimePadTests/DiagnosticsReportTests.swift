@@ -29,7 +29,7 @@ final class DiagnosticsReportTests: XCTestCase {
                 client: CompanionClient(adopting: handle)
             )
         )
-        return BackdropModel(defaults: defaults, pages: pages)
+        return BackdropModel(defaults: defaults, pages: pages, offersAmbientPanel: true)
     }
 
     func testAPinnedCardUnderAKeyCompanionReportsNormal() {

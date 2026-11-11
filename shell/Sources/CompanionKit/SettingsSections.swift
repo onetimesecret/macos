@@ -94,8 +94,8 @@ public struct GeneralSettingsView: View {
     /// form drawing the same shape for both callers.
     private let keepsAbove: Binding<Bool>?
 
-    /// ADR-0033's ambient panel preference. Default on, persisted
-    /// beside Pin. Nil hides the row, as it does for `keepsAbove`.
+    /// ADR-0033's ambient panel preference, persisted beside Pin.
+    /// Nil hides the row, as it does for `keepsAbove`.
     private let ambientPanelEnabled: Binding<Bool>?
     private let additionalSurfaceSettings: AnyView?
 
@@ -116,6 +116,9 @@ public struct GeneralSettingsView: View {
         self.ambientPanelEnabled = ambientPanelEnabled
         self.additionalSurfaceSettings = additionalSurfaceSettings
     }
+
+    /// Whether the form draws its Surface section; nil `resetSurface` omits it.
+    public var showsSurfaceSection: Bool { resetSurface != nil }
 
     @State private var confirmingLedgerClear = false
     @State private var launchAtLogin = false

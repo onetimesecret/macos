@@ -801,16 +801,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// AppKit's automatic validation must not overwrite our preference check.
+    /// A disabled panel gets no item, so no menu names what cannot open (ADR-0063).
     static func addPresentationItems(to menu: NSMenu, ambientPanelEnabled: Bool,
                                      target: NSObject) {
         menu.autoenablesItems = false
         let open = menu.addItem(withTitle: "Open in Window",
                                action: #selector(openEditorPresentation), keyEquivalent: "")
         open.target = target
+        guard ambientPanelEnabled else { return }
         let ambient = menu.addItem(withTitle: "Show Ambient Panel",
                                   action: #selector(showAmbientPresentation), keyEquivalent: "")
         ambient.target = target
-        ambient.isEnabled = ambientPanelEnabled
     }
 
     /// The Dock context menu uses the same explicit switches as the status item.

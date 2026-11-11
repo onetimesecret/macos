@@ -36,7 +36,7 @@ final class EditorOwnershipSequenceTests: XCTestCase {
     func testPresentationSwitchHidesTheEntireAlternateSurface() async throws {
         let defaults = makeDefaults(named: "exclusive-presentation")
         let pages = ephemeralPages(defaults: defaults, tag: "exclusive-presentation")
-        let model = BackdropModel(defaults: defaults, pages: pages)
+        let model = BackdropModel(defaults: defaults, pages: pages, offersAmbientPanel: true)
         let panel = BackdropWindowController(
             model: model, onCardClick: {}, isCompanionWindow: { _ in false }
         )
@@ -78,7 +78,7 @@ final class EditorOwnershipSequenceTests: XCTestCase {
     func testPanelIsHiddenOnlyAfterEditorIsOrderedFrontAndOwnsContent() throws {
         let defaults = makeDefaults(named: "ordered-presentation")
         let pages = ephemeralPages(defaults: defaults, tag: "ordered-presentation")
-        let model = BackdropModel(defaults: defaults, pages: pages)
+        let model = BackdropModel(defaults: defaults, pages: pages, offersAmbientPanel: true)
         let panel = BackdropWindowController(
             model: model, onCardClick: {}, isCompanionWindow: { _ in false }
         )
@@ -108,7 +108,7 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         for reason in [ActivationReason.hotkey, .statusItem, .cardClick] {
             let defaults = makeDefaults(named: "summon-switch")
             let pages = ephemeralPages(defaults: defaults, tag: "summon-switch")
-            let model = BackdropModel(defaults: defaults, pages: pages)
+            let model = BackdropModel(defaults: defaults, pages: pages, offersAmbientPanel: true)
             let panel = BackdropWindowController(
                 model: model, onCardClick: {}, isCompanionWindow: { _ in false }
             )
@@ -365,7 +365,8 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         let model = BackdropModel(
             defaults: defaults,
             pages: ephemeralPages(defaults: defaults, tag: name),
-            panelMayOwn: panelMayOwn
+            panelMayOwn: panelMayOwn,
+            offersAmbientPanel: true
         )
         let windows = TwoWindows(model: model, asRoll: asRoll, panelMayOwn: panelMayOwn)
         // Two pages, so a selection made in either window has somewhere

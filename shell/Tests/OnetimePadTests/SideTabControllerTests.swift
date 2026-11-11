@@ -58,7 +58,7 @@ final class SideTabControllerTests: XCTestCase {
         let handle = try XCTUnwrap(tag.withCString { companion_new_ephemeral($0) })
         let pages = PageModel(formFactor: .backdrop, defaults: defaults,
             seams: .init(stateDirectory: directory, client: CompanionClient(adopting: handle)))
-        return BackdropModel(defaults: defaults, pages: pages)
+        return BackdropModel(defaults: defaults, pages: pages, offersAmbientPanel: true)
     }
 
     private func enabledModel() throws -> BackdropModel {
