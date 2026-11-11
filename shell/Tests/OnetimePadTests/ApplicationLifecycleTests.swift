@@ -7,7 +7,7 @@ import XCTest
 
 @MainActor
 final class ApplicationLifecycleTests: XCTestCase {
-    private func withApplication(keymapOverride: String? = nil, applicationIsActive: @escaping () -> Bool = { NSApp.isActive }, _ test: (BackdropAppDelegate, BackdropModel) throws -> Void) throws {
+    private func withApplication(keymapOverride: String? = nil, offersAmbientPanel: Bool = false, applicationIsActive: @escaping () -> Bool = { NSApp.isActive }, _ test: (BackdropAppDelegate, BackdropModel) throws -> Void) throws {
         prepareApplicationMenuRoles()
         let oldMain = NSApp.mainMenu, oldWindows = NSApp.windowsMenu
         let oldServices = NSApp.servicesMenu, oldHelp = NSApp.helpMenu
@@ -36,7 +36,7 @@ final class ApplicationLifecycleTests: XCTestCase {
         }
         let pages = PageModel(formFactor: .backdrop, defaults: defaults,
             seams: .init(stateDirectory: directory, client: CompanionClient(adopting: handle), keymapOverride: overrideURL))
-        let model = BackdropModel(defaults: defaults, pages: pages)
+        let model = BackdropModel(defaults: defaults, pages: pages, offersAmbientPanel: offersAmbientPanel)
         let originalWindows = Set(NSApp.windows.map(ObjectIdentifier.init))
         let originalVisibleWindows = Set(NSApp.windows.filter(\.isVisible).map(ObjectIdentifier.init))
         defer {
@@ -512,7 +512,7 @@ final class ApplicationLifecycleTests: XCTestCase {
     }
 
     func testMenuInstallationCreatesNoWindowsAndPreservesNativeResponderTargets() throws {
-        try withApplication { app, model in
+        try withApplication(offersAmbientPanel: true) { app, model in
             let before = Set(NSApp.windows.map(ObjectIdentifier.init))
             let menus = MainMenuController(app: app)
             menus.install()
@@ -531,9 +531,29 @@ final class ApplicationLifecycleTests: XCTestCase {
             let window = try XCTUnwrap(main.items.first { $0.title == "Window" }?.submenu)
             XCTAssertTrue(NSApp.windowsMenu === window)
             let ambient = try XCTUnwrap(window.items.first { $0.title == "Show Ambient Panel" })
+            XCTAssertFalse(ambient.isHidden)
             model.setAmbientPanelEnabled(false)
-            window.update()
-            XCTAssertFalse(ambient.isEnabled)
+            menus.menuNeedsUpdate(window)
+            XCTAssertTrue(ambient.isHidden)
+        }
+    }
+
+    func testWithdrawnPanelLeavesNoAmbientItemOrSurfaceSettingsAndTheHotkeyOpensTheEditor() throws {
+        try withApplication(applicationIsActive: { true }) { app, model in
+            let menus = MainMenuController(app: app)
+            menus.install()
+            let window = try XCTUnwrap(NSApp.mainMenu?.items.first { $0.title == "Window" }?.submenu)
+            menus.menuNeedsUpdate(window)
+            XCTAssertTrue(try XCTUnwrap(window.items.first { $0.title == "Show Ambient Panel" }).isHidden)
+            XCTAssertFalse(BackdropSettingsWindowController.generalSettings(for: model).showsSurfaceSection)
+            let dock = try XCTUnwrap(app.applicationDockMenu(NSApp))
+            XCTAssertFalse(dock.items.contains { $0.title == "Show Ambient Panel" })
+            XCTAssertTrue(dock.items.contains { $0.title == "Open in Window" })
+
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+            app.applySummon(.hotkey)
+            XCTAssertTrue(model.editorWindowOpen)
+            XCTAssertEqual(model.stance, .resting)
         }
     }
 

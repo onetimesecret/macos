@@ -9,6 +9,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 - **Superseded in part by:**
   - [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md), specifically the return switch consequence and the reach of the companion window rule over the primary editor window. The three fact model, the altitude table and the preference stand for the ambient panel.
   - [ADR-0034](0034-full-screen-participation-follows-altitude.md), which replaces the full-screen participation half of one clause only.
+  - [ADR-0063](0063-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md), which withdraws the keep above preference's Settings row with the ambient panel.
 - **Depends on:** [ADR-0015](0015-resting-backdrop-is-mouse-transparent.md) for the resting surface's click behavior, and [ADR-0019](0019-the-pad-is-on-every-space.md) for constant Space membership.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
@@ -192,6 +193,11 @@ collection behaviors and the off-Space summon safety net.
   for [issue #293](https://github.com/onetimesecret/macos/issues/293). The
   ordinary windows stay at normal level and the surface lowers under them.
   The altitude table gains one input; everything else stands.
+- 2026-11-11: Superseded in part by
+  [ADR-0063](0063-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md),
+  which withdraws the ambient panel. Settings no longer offers the keep above
+  preference, since it only affects the panel. The altitude table and the
+  stored preference stand for the panel's return.
 
 ## Amendment 1: ordinary windows stay at normal level, the surface lowers under them
 

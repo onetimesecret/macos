@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The ambient panel is withdrawn for now** (app 0.48.0;
+  ADR-0063). OnetimePad opens in its editor window only, and ⌃⌥Space and
+  the menu bar item bring that window forward. Settings no longer shows the
+  Surface section (the ambient panel, side tab, keep above and reset
+  controls), and the menus no longer list Show Ambient Panel. A previously
+  saved panel choice is kept but not used. See
+  [ADR-0063](docs/adr/0063-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md).
 - **Pads are managed in the editor window's inspector, and the pad
   switches are gone** (app 0.47.0; ADR-0039 Amendment 2). The sidebar
   button beside the pad picker, or *Manage Pads…*, shows the selected

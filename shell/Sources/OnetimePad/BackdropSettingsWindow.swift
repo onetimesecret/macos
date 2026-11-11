@@ -154,6 +154,28 @@ final class BackdropSettingsWindowController: NSObject {
         window?.makeKeyAndOrderFront(nil)
     }
 
+    /// Every Surface row concerns the ambient card, so a withdrawn panel
+    /// drops the whole section (ADR-0063).
+    static func generalSettings(for model: BackdropModel) -> GeneralSettingsView {
+        guard model.offersAmbientPanel else {
+            return GeneralSettingsView(model: model.pages, loginPresence: BackdropAppDelegate.productName)
+        }
+        return GeneralSettingsView(
+            model: model.pages,
+            loginPresence: "the surface",
+            resetSurface: { [model] in model.resetGeometry() },
+            keepsAbove: Binding(
+                get: { [model] in model.keepsAboveWhenInactive },
+                set: { [model] in model.keepsAboveWhenInactive = $0 }
+            ),
+            ambientPanelEnabled: Binding(
+                get: { [model] in model.ambientPanelEnabled },
+                set: { [model] in model.setAmbientPanelEnabled($0) }
+            ),
+            additionalSurfaceSettings: AnyView(SideTabSettingsView(model: model))
+        )
+    }
+
     /// The tab view controller in its toolbar style, which is the whole
     /// of the standard Settings look: the tabs become toolbar items,
     /// the selected tab's title becomes the window's, and the window
@@ -172,23 +194,7 @@ final class BackdropSettingsWindowController: NSObject {
         let hosted: NSViewController
         switch tab {
         case .general:
-            hosted = host(
-                GeneralSettingsView(
-                    model: model.pages,
-                    loginPresence: "the surface",
-                    resetSurface: { [model] in model.resetGeometry() },
-                    keepsAbove: Binding(
-                        get: { [model] in model.keepsAboveWhenInactive },
-                        set: { [model] in model.keepsAboveWhenInactive = $0 }
-                    ),
-                    ambientPanelEnabled: Binding(
-                        get: { [model] in model.ambientPanelEnabled },
-                        set: { [model] in model.setAmbientPanelEnabled($0) }
-                    ),
-                    additionalSurfaceSettings: AnyView(SideTabSettingsView(model: model))
-                ),
-                for: tab
-            )
+            hosted = host(Self.generalSettings(for: model), for: tab)
         case .code:
             hosted = host(CodeSettingsView(model: model.pages), for: tab)
         case .connection:

@@ -42,7 +42,7 @@ struct DiagnosticsReport: Sendable {
             "Source: \(revision); lane: \(lane)",
             "macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion); \(architecture)",
             "Process uptime: \(max(0, Int(Date().timeIntervalSince(DiagnosticEvents.shared.startedAt)))) seconds",
-            "Ambient panel: \(model.ambientPanelEnabled ? "on" : "off"); stance: \(stance)",
+            "Ambient panel: \(!model.offersAmbientPanel ? "withdrawn" : model.ambientPanelEnabled ? "on" : "off"); stance: \(stance)",
             "Editor: open=\(model.editorWindowOpen), visible=\(model.editorWindowOnScreen)",
             "Panel owns keyboard: \(model.holdsKeys)",
             "Pinned: \(model.pinned); keep above when inactive: \(model.keepsAboveWhenInactive)",

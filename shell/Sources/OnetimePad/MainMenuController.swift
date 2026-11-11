@@ -10,6 +10,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     private weak var languageMenu: NSMenu?
     private weak var timelineItem: NSMenuItem?
     private weak var tabsItem: NSMenuItem?
+    private weak var windowMenu: NSMenu?
+    private weak var ambientItem: NSMenuItem?
 
     init(app: BackdropAppDelegate) {
         self.app = app
@@ -163,8 +165,13 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     private func makeWindowMenu(in main: NSMenu) -> NSMenu {
         let window = submenu(CompanionL10n.string("Window"), in: main)
+        window.delegate = self
+        windowMenu = window
         window.addItem(action(CompanionL10n.string("Open in Window")) { [app] in app.openEditorPresentation() })
-        window.addItem(action(CompanionL10n.string("Show Ambient Panel"), enabled: { [app] in app.ambientPanelEnabled }) { [app] in app.showAmbientPresentation() })
+        let ambient = action(CompanionL10n.string("Show Ambient Panel"), enabled: { [app] in app.ambientPanelEnabled }) { [app] in app.showAmbientPresentation() }
+        ambient.isHidden = !app.ambientPanelEnabled
+        ambientItem = ambient
+        window.addItem(ambient)
         window.addItem(.separator())
         window.addItem(responder(CompanionL10n.string("Close Window"), #selector(NSWindow.performClose(_:)), command: .windowClose))
         window.addItem(.separator())
@@ -204,6 +211,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
             tabsItem?.state = app.pages.showsTimeUnits ? .off : .on
         }
         if menu === languageMenu { updateLanguages(in: menu) }
+        // Hidden while the panel is off (ADR-0063).
+        if menu === windowMenu { ambientItem?.isHidden = !app.ambientPanelEnabled }
     }
 
     private var languageTarget: ManualLanguageChoiceTarget? {

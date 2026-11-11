@@ -250,7 +250,7 @@ final class BackdropAltitudeKeeperTests: XCTestCase {
                 client: CompanionClient(adopting: handle)
             )
         )
-        return BackdropModel(defaults: defaults, pages: pages)
+        return BackdropModel(defaults: defaults, pages: pages, offersAmbientPanel: true)
     }
 
     func testThePinIsReadFromTheEmittedValue() {

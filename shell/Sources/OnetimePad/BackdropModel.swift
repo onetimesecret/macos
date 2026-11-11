@@ -185,6 +185,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         defaults: UserDefaults = FormFactor.settingsDefaults,
         pages: PageModel? = nil,
         panelMayOwn: Bool = true,
+        offersAmbientPanel: Bool = false,
         titleBarDoubleClickPreference: @escaping () -> String? = {
             UserDefaults.standard.string(forKey: BackdropModel.titleBarDoubleClickKey)
         },
@@ -199,14 +200,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         pinned = defaults.bool(forKey: Self.pinnedKey)
         sideTabPreferences = SideTabPreferences.load(from: defaults)
         keepsAboveWhenInactive = defaults.bool(forKey: Self.keepsAboveKey)
-        // Default on when the key is absent (a fresh install): the ADR
-        // shipped with the panel on. `object(forKey:)` distinguishes
-        // absent from a stored false, which `bool(forKey:)` cannot.
-        if let stored = defaults.object(forKey: Self.ambientPanelEnabledKey) as? Bool {
-            ambientPanelEnabled = stored
-        } else {
-            ambientPanelEnabled = true
-        }
+        self.offersAmbientPanel = offersAmbientPanel
+        // ADR-0063: a withdrawn panel ignores, and keeps, any stored choice.
+        // Offered, ADR-0033's absent key still reads as on.
+        ambientPanelEnabled = offersAmbientPanel
+            && (defaults.object(forKey: Self.ambientPanelEnabledKey) as? Bool ?? true)
         // The pages seam is nil for every shipping construction, where
         // the model builds the form factor's own `PageModel`. A test
         // has to hand one in (built with `PageModel.Seams` that name a
@@ -741,11 +739,14 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         editorWindowOnScreen = onScreen
     }
 
-    /// ADR-0033's ambient panel preference. Default on: the panel is
-    /// shown, the hotkey and the status item summon it, and every
-    /// route the record names holds. With it off no panel is shown,
-    /// the hotkey and the status item select the editor window, and
-    /// the resting card cannot be clicked because it is not on screen.
+    /// False in shipped builds (ADR-0063); tests pass true to exercise the panel.
+    let offersAmbientPanel: Bool
+
+    /// ADR-0033's ambient panel preference, always off while the panel
+    /// is withdrawn (ADR-0063). On, the panel is shown and the hotkey
+    /// and the status item summon it. Off, no panel is shown, the hotkey
+    /// and the status item select the editor window, and the resting
+    /// card cannot be clicked because it is not on screen.
     /// Persisted beside the pin (`restingPinned`), never on
     /// `PageModel`, so the preference is local window state and does
     /// not enter the state file, the core or the sync protocol.
@@ -771,7 +772,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// Enabling grants ownership before observers reveal the resting
     /// panel, so the first visible frame has the correct presentation.
     func setAmbientPanelEnabled(_ enabled: Bool) {
-        guard enabled != ambientPanelEnabled else { return }
+        guard offersAmbientPanel, enabled != ambientPanelEnabled else { return }
         if !enabled, panelRaised {
             prepareRest(panelEnabled: false)
             ambientPanelEnabled = false

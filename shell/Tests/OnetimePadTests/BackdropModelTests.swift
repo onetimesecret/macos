@@ -106,23 +106,56 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertFalse(second.keepsAboveWhenInactive)
     }
 
-    // MARK: The ambient panel preference (ADR-0033, issue #200)
+    // MARK: The withdrawn ambient panel (ADR-0063)
 
-    func testAmbientPanelEnabledDefaultsOnAndPersists() {
-        // Default on is the ADR: a fresh install shows the panel, and
-        // the two-window routing keeps it that way until the person
-        // asks otherwise.
+    func testWithdrawnPanelIsOffWhateverWasStoredAndKeepsTheStoredChoice() {
+        for stored in [nil, true, false] as [Bool?] {
+            let defaults = makeDefaults(named: "ambient-panel-withdrawn")
+            if let stored { defaults.set(stored, forKey: "ambientPanelEnabled") }
+            let model = BackdropModel(
+                defaults: defaults,
+                pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-withdrawn-\(String(describing: stored))")
+            )
+
+            XCTAssertFalse(model.offersAmbientPanel)
+            XCTAssertFalse(model.ambientPanelEnabled, "stored \(String(describing: stored))")
+            XCTAssertEqual(model.pages.owner, .editorWindow)
+            model.setAmbientPanelEnabled(true)
+            XCTAssertFalse(model.ambientPanelEnabled)
+            XCTAssertEqual(defaults.object(forKey: "ambientPanelEnabled") as? Bool, stored)
+        }
+    }
+
+    func testWithdrawnPanelRefusesDirectRaiseAndSummon() {
+        let defaults = makeDefaults(named: "ambient-panel-withdrawn-routes")
+        let model = BackdropModel(
+            defaults: defaults,
+            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-withdrawn-routes")
+        )
+
+        model.raise(.summon)
+        model.summon()
+
+        XCTAssertEqual(model.stance, .resting)
+        XCTAssertEqual(model.pages.owner, .editorWindow)
+    }
+
+    // MARK: The ambient panel preference when offered (ADR-0033, issue #200)
+
+    func testOfferedPanelPreferenceDefaultsOnAndPersists() {
         let defaults = makeDefaults(named: "ambient-panel-enabled")
         let first = BackdropModel(
             defaults: defaults,
-            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-enabled-a")
+            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-enabled-a"),
+            offersAmbientPanel: true
         )
         XCTAssertTrue(first.ambientPanelEnabled)
         first.setAmbientPanelEnabled(false)
 
         let second = BackdropModel(
             defaults: defaults,
-            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-enabled-b")
+            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-enabled-b"),
+            offersAmbientPanel: true
         )
         XCTAssertFalse(second.ambientPanelEnabled)
     }
@@ -132,7 +165,8 @@ final class BackdropModelTests: XCTestCase {
         defaults.set(false, forKey: "ambientPanelEnabled")
         let model = BackdropModel(
             defaults: defaults,
-            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-disabled-launch")
+            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-disabled-launch"),
+            offersAmbientPanel: true
         )
 
         XCTAssertFalse(model.ambientPanelEnabled)
@@ -162,7 +196,8 @@ final class BackdropModelTests: XCTestCase {
         defaults.set(false, forKey: "ambientPanelEnabled")
         let model = BackdropModel(
             defaults: defaults,
-            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-enable")
+            pages: ephemeralPages(defaults: defaults, tag: "ambient-panel-enable"),
+            offersAmbientPanel: true
         )
 
         var ownerAtPreferenceEmission: PresentationOwner?
@@ -230,7 +265,8 @@ final class BackdropModelTests: XCTestCase {
         return BackdropModel(
             defaults: defaults,
             pages: ephemeralPages(defaults: defaults, tag: name),
-            panelMayOwn: panelMayOwn
+            panelMayOwn: panelMayOwn,
+            offersAmbientPanel: true
         )
     }
 
@@ -284,6 +320,7 @@ final class BackdropModelTests: XCTestCase {
         let model = BackdropModel(
             defaults: defaults,
             pages: ephemeralPages(defaults: defaults, tag: name),
+            offersAmbientPanel: true,
             titleBarDoubleClickPreference: preference,
             operatingSystemMajor: 15
         )

@@ -174,6 +174,14 @@ final class ActivationRouteTests: XCTestCase {
         )
     }
 
+    func testCardClickDoesNothingWithThePanelOff() {
+        // A stale click must not close the editor for a summon that cannot happen.
+        XCTAssertEqual(
+            ActivationRouter.decide(.cardClick, in: base(ambientPanelEnabled: false)),
+            .noop
+        )
+    }
+
     func testHotkeySelectsTheEditorWindowWithTheAmbientPanelOff() {
         // ADR-0033: with the panel off, the hotkey and the status
         // item pick the editor window instead.

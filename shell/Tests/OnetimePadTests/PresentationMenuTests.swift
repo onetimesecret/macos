@@ -115,15 +115,22 @@ final class PresentationMenuTests: XCTestCase {
         // A plain target has no matching selector. Automatic AppKit validation
         // would disable this item even when the model enables the panel.
         let target = NSObject()
-        for enabled in [true, false] {
-            let menu = NSMenu()
-            BackdropAppDelegate.addPresentationItems(
-                to: menu, ambientPanelEnabled: enabled, target: target)
-            menu.update()
-            XCTAssertFalse(menu.autoenablesItems)
-            XCTAssertTrue(menu.items[0].isEnabled)
-            XCTAssertEqual(menu.items[1].isEnabled, enabled)
-            XCTAssertTrue(menu.items[1].target === target)
-        }
+        let menu = NSMenu()
+        BackdropAppDelegate.addPresentationItems(
+            to: menu, ambientPanelEnabled: true, target: target)
+        menu.update()
+        XCTAssertFalse(menu.autoenablesItems)
+        XCTAssertEqual(menu.items.map(\.title), ["Open in Window", "Show Ambient Panel"])
+        XCTAssertTrue(menu.items[0].isEnabled)
+        XCTAssertTrue(menu.items[1].isEnabled)
+        XCTAssertTrue(menu.items[1].target === target)
+    }
+
+    @MainActor
+    func testDisabledPanelLeavesNoAmbientItemInStatusOrDockMenus() {
+        let menu = NSMenu()
+        BackdropAppDelegate.addPresentationItems(
+            to: menu, ambientPanelEnabled: false, target: NSObject())
+        XCTAssertEqual(menu.items.map(\.title), ["Open in Window"])
     }
 }

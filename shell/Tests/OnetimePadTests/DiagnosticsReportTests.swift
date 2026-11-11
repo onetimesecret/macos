@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class DiagnosticsReportTests: XCTestCase {
 
-    private func makeModel(tag: String) -> BackdropModel {
+    private func makeModel(tag: String, offersAmbientPanel: Bool = true) -> BackdropModel {
         let name = "onetimepad.test.diagnostics.\(tag).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         addTeardownBlock { defaults.removePersistentDomain(forName: name) }
@@ -29,7 +29,15 @@ final class DiagnosticsReportTests: XCTestCase {
                 client: CompanionClient(adopting: handle)
             )
         )
-        return BackdropModel(defaults: defaults, pages: pages)
+        return BackdropModel(defaults: defaults, pages: pages, offersAmbientPanel: offersAmbientPanel)
+    }
+
+    func testAWithdrawnPanelReportsWithdrawnNotOff() {
+        let report = DiagnosticsReport.capture(
+            model: makeModel(tag: "withdrawn", offersAmbientPanel: false),
+            companionKeyed: false, shortcutStatus: "registered"
+        )
+        XCTAssertTrue(report.summary.contains("Ambient panel: withdrawn; stance: resting"), report.summary)
     }
 
     func testAPinnedCardUnderAKeyCompanionReportsNormal() {
