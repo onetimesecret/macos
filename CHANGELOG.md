@@ -576,6 +576,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   control copies retained by clipboard managers. The confirmation reads
   the interval through `companion_clipboard_clear_seconds`.
 
+### Fixed
+
+- **A file tab is safe for `.env` and config files.** A file's text now
+  gets the refusals a page's text gets: no typing suggestions, inline
+  predictions, Writing Tools or data detectors, and text replacement
+  and spell checking as you type are off for pages and files. The Edit
+  menu no longer offers Check Spelling While Typing or the
+  Substitutions submenu. Saving over a read-only file is refused before
+  anything is written, with "NAME is read-only, so it was not saved.
+  Use Save As to write a copy."; before, the save replaced the file.
+  When several files are opened at once, the ones the pad refuses are
+  named in one notice. Law 0001's AppKit text routes table and the
+  file editing spec are amended to match.
+
 ### Added
 
 - **The core reads Markdown** (`companion-ffi` 0.44.0, `companion-markdown`

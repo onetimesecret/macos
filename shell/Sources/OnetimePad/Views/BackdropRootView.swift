@@ -482,7 +482,9 @@ struct BackdropRootView: View {
     /// core refuses with a notice. Answering false would give the item back
     /// to whatever is underneath the card.
     private func openDropped(_ urls: [URL]) -> Bool {
-        Self.forwardDroppedURLs(urls) { pages.openFile(at: $0) }
+        pages.collectingOpenRefusals {
+            Self.forwardDroppedURLs(urls) { pages.openFile(at: $0) }
+        }
     }
 
     /// The testable part of drop handling: no suffix or type classification,

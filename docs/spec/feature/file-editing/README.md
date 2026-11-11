@@ -113,7 +113,8 @@ Four ways in, all of them explicit.
   a single file. It sets no type filter, so any file can be chosen; its
   message asks for a UTF-8 text file. The panel is the shell's job.
 - **Drag onto the pad.** Dropping a file onto the pad opens it. A drop
-  of several files opens each in its own tab. A drop of a file type the
+  of several files opens each in its own tab, and the files the pad
+  refuses are named together in one notice. A drop of a file type the
   pad does not open is refused with a notice naming the type, and
   nothing is inserted into the page under the cursor. This matters:
   dropping a file must never silently turn into pasting its bytes into
@@ -169,6 +170,13 @@ under the same contract ADR-0024 sets for the page. List automation
 follows the same caret only law. Select all and copy returns exactly
 the bytes in the buffer.
 
+The system's text helpers are off for a file as they are for a page,
+since a file may be a `.env` or a config file: no typing suggestions,
+no inline predictions, no Writing Tools and no data detectors. Smart
+quotes, smart dashes, text replacement, spelling correction and spell
+checking as you type start off, and the Edit menu offers no toggle for
+them.
+
 Two deliberate differences from a page:
 
 - **No block metadata is surfaced for a file.** The created and
@@ -202,6 +210,10 @@ Saving is explicit. There is no autosave to the file.
   extended attributes and any ownership the writer cannot set do not
   survive. A file that is one of several hard links, or that carries
   tags or other extended attributes, will lose them on the first save.
+- **A read-only file is not replaced.** Cmd S on a file the current
+  user cannot write is refused before any temporary file is made, and
+  the file keeps its bytes and its mode. The refusal says "NAME is
+  read-only, so it was not saved. Use Save As to write a copy."
 - **Save As** raises a save panel, writes to the chosen location, and
   the tab follows the new file. A new bookmark is taken. The original
   file is left exactly as it was. Save As onto a path another open file
