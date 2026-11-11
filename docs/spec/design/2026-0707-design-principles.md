@@ -34,9 +34,9 @@ amendment A below — a bounded residue view, not recovery.)*
 
 > Expiry feedback, 2026-11-10:
 > [ADR-0064](../../adr/0064-a-page-never-expires-without-the-person-being-told.md)
-> (proposed) would replace the answer to "Should we warn before expiry?" with
-> one quiet notification when a page enters its last hour while the app is not
-> active. The answer stands as written until that record is accepted.
+> (accepted 2026-11-11) replaces the answer to "Should we warn before expiry?"
+> with one quiet notification when a page enters its last hour while the app
+> is not active.
 
 ## 2. Present, not centre stage
 
