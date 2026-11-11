@@ -801,7 +801,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// AppKit's automatic validation must not overwrite our preference check.
-    /// A disabled panel gets no item, so no menu names what cannot open (ADR-0063).
+    /// The ambient item is omitted while the panel is off (ADR-0063).
     static func addPresentationItems(to menu: NSMenu, ambientPanelEnabled: Bool,
                                      target: NSObject) {
         menu.autoenablesItems = false

@@ -211,7 +211,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
             tabsItem?.state = app.pages.showsTimeUnits ? .off : .on
         }
         if menu === languageMenu { updateLanguages(in: menu) }
-        // ADR-0063: no menu names a panel that cannot open.
+        // Hidden while the panel is off (ADR-0063).
         if menu === windowMenu { ambientItem?.isHidden = !app.ambientPanelEnabled }
     }
 

@@ -739,9 +739,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         editorWindowOnScreen = onScreen
     }
 
-    /// Whether the ambient panel exists in this run at all. False ships:
-    /// ADR-0063 withdraws the panel from Settings and menus. Tests pass
-    /// true to exercise the withdrawn panel under ADR-0033's preference.
+    /// False in shipped builds (ADR-0063); tests pass true to exercise the panel.
     let offersAmbientPanel: Bool
 
     /// ADR-0033's ambient panel preference, always off while the panel

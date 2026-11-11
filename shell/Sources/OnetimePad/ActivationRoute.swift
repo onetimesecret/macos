@@ -59,9 +59,7 @@ enum ActivationRouter {
             }
         case .hotkey, .statusItem:
             return context.ambientPanelEnabled ? .summonPanel : .openEditorWindow(.activation)
-        case .cardClick:
-            return .summonPanel
-        case .sideTabClick:
+        case .cardClick, .sideTabClick:
             return context.ambientPanelEnabled ? .summonPanel : .noop
         }
     }

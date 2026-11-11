@@ -7,7 +7,7 @@ import XCTest
 
 @MainActor
 final class ApplicationLifecycleTests: XCTestCase {
-    private func withApplication(keymapOverride: String? = nil, offersAmbientPanel: Bool = true, applicationIsActive: @escaping () -> Bool = { NSApp.isActive }, _ test: (BackdropAppDelegate, BackdropModel) throws -> Void) throws {
+    private func withApplication(keymapOverride: String? = nil, offersAmbientPanel: Bool = false, applicationIsActive: @escaping () -> Bool = { NSApp.isActive }, _ test: (BackdropAppDelegate, BackdropModel) throws -> Void) throws {
         prepareApplicationMenuRoles()
         let oldMain = NSApp.mainMenu, oldWindows = NSApp.windowsMenu
         let oldServices = NSApp.servicesMenu, oldHelp = NSApp.helpMenu
@@ -512,7 +512,7 @@ final class ApplicationLifecycleTests: XCTestCase {
     }
 
     func testMenuInstallationCreatesNoWindowsAndPreservesNativeResponderTargets() throws {
-        try withApplication { app, model in
+        try withApplication(offersAmbientPanel: true) { app, model in
             let before = Set(NSApp.windows.map(ObjectIdentifier.init))
             let menus = MainMenuController(app: app)
             menus.install()
@@ -539,13 +539,16 @@ final class ApplicationLifecycleTests: XCTestCase {
     }
 
     func testWithdrawnPanelLeavesNoAmbientItemOrSurfaceSettingsAndTheHotkeyOpensTheEditor() throws {
-        try withApplication(offersAmbientPanel: false, applicationIsActive: { true }) { app, model in
+        try withApplication(applicationIsActive: { true }) { app, model in
             let menus = MainMenuController(app: app)
             menus.install()
             let window = try XCTUnwrap(NSApp.mainMenu?.items.first { $0.title == "Window" }?.submenu)
             menus.menuNeedsUpdate(window)
             XCTAssertTrue(try XCTUnwrap(window.items.first { $0.title == "Show Ambient Panel" }).isHidden)
             XCTAssertFalse(BackdropSettingsWindowController.generalSettings(for: model).showsSurfaceSection)
+            let dock = try XCTUnwrap(app.applicationDockMenu(NSApp))
+            XCTAssertFalse(dock.items.contains { $0.title == "Show Ambient Panel" })
+            XCTAssertTrue(dock.items.contains { $0.title == "Open in Window" })
 
             app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
             app.applySummon(.hotkey)

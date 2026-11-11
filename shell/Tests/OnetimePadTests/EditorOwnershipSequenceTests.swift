@@ -134,6 +134,40 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         }
     }
 
+    func testAWithdrawnPanelNeverShowsAndEveryRouteReachesTheEditor() async throws {
+        let defaults = makeDefaults(named: "withdrawn-panel")
+        defaults.set(true, forKey: "ambientPanelEnabled")
+        let pages = ephemeralPages(defaults: defaults, tag: "withdrawn-panel")
+        let model = BackdropModel(defaults: defaults, pages: pages)
+        let panel = BackdropWindowController(
+            model: model, onCardClick: {}, isCompanionWindow: { _ in false }
+        )
+        let editor = PrimaryEditorWindowController(model: model)
+        pages.newPage()
+        panel.show()
+        XCTAssertFalse(panel.isVisible)
+        XCTAssertEqual(pages.owner, .editorWindow)
+        for reason in [ActivationReason.hotkey, .statusItem, .cardClick, .sideTabClick, .showAmbientPresentation] {
+            var opened = false
+            BackdropAppDelegate.dispatch(
+                ActivationRouter.decide(reason, in: ActivationContext(
+                    ambientPanelEnabled: model.ambientPanelEnabled, owner: pages.owner,
+                    claimedByAnotherWindow: false)),
+                openEditorWindow: { _ in opened = true; editor.show() },
+                raisePanel: { _ in XCTFail("\(reason) raised a withdrawn panel") },
+                summonPanel: { XCTFail("\(reason) summoned a withdrawn panel") },
+                closeEditorForPanel: { XCTFail("\(reason) closed the editor for a withdrawn panel") }
+            )
+            XCTAssertEqual(opened, reason == .hotkey || reason == .statusItem, "\(reason)")
+        }
+        XCTAssertTrue(editor.isVisible)
+        try XCTUnwrap(NSApp.windows.first { editor.owns($0) }).close()
+        for _ in 0..<3 { await Task.yield() }
+        XCTAssertFalse(editor.isVisible)
+        XCTAssertFalse(panel.isVisible, "closing the editor must not reveal the card")
+        XCTAssertEqual(pages.owner, .editorWindow)
+    }
+
     // MARK: The harness
 
     private func makeDefaults(named suite: String) -> UserDefaults {

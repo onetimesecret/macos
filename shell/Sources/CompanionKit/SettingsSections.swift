@@ -118,7 +118,7 @@ public struct GeneralSettingsView: View {
     }
 
     /// Whether the form draws its Surface section; nil `resetSurface` omits it.
-    public var showsSurfaceSection: Bool { resetSurface != nil }
+    var showsSurfaceSection: Bool { resetSurface != nil }
 
     @State private var confirmingLedgerClear = false
     @State private var launchAtLogin = false
@@ -201,7 +201,7 @@ public struct GeneralSettingsView: View {
                 Toggle("Wrap long lines", isOn: $model.wrapsLines)
             } header: {
                 SettingsCaption(
-                    "What the page does with a line wider than the card. Off lets lines run on and the page scrolls sideways. ⌥Z flips it while you write, and whichever way you left it is how the page opens."
+                    "What the page does with a line wider than the window. Off lets lines run on and the page scrolls sideways. ⌥Z flips it while you write, and whichever way you left it is how the page opens."
                 )
             }
 
