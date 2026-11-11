@@ -397,6 +397,31 @@ final class TabLifetimeTests: XCTestCase {
         )
     }
 
+    /// Restart reapplies the page's own rung: the clock is full again, and a hold stays.
+    func testRestartGivesAPageItsFullRungAgainAndKeepsAHold() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        model.coreClient.ageForTests(byMs: 6 * 24 * 60 * 60 * 1_000)
+        model.refresh()
+        let before = try XCTUnwrap(model.tabs.first)
+        XCTAssertEqual(before.rungCode, Rung.sevenDays.rawValue)
+        XCTAssertLessThanOrEqual(before.remainingMs, 2 * 24 * 60 * 60 * 1_000)
+        let marks = model.dirtyMarks
+
+        model.restartRung(before.id)
+
+        let after = try XCTUnwrap(model.tabs.first { $0.id == before.id })
+        XCTAssertEqual(after.rungCode, before.rungCode, "the rung moved")
+        XCTAssertGreaterThanOrEqual(after.remainingMs, 7 * 24 * 60 * 60 * 1_000 - 1_000)
+        XCTAssertGreaterThan(model.dirtyMarks, marks, "the restart armed no write")
+
+        XCTAssertTrue(model.coreClient.pausePress(tab: before.id))
+        model.restartRung(before.id)
+        let held = try XCTUnwrap(model.tabs.first { $0.id == before.id })
+        XCTAssertTrue(held.paused, "the restart released the hold")
+        XCTAssertGreaterThanOrEqual(held.remainingMs, 7 * 24 * 60 * 60 * 1_000 - 1_000)
+    }
+
     /// The event timer does not count sleep, so the system's wake settles as the
     /// timer would: a page that came due asleep goes at once, with its write armed (Law 0001, expiry row).
     func testAWakeSettlesAPageThatCameDueWhileTheMachineSlept() throws {
@@ -439,6 +464,14 @@ final class EmptySlotGestureTests: XCTestCase {
         XCTAssertEqual(SheetTab.rungMenuTitle(hasPage: true), "Shorten the Countdown")
         XCTAssertEqual(
             SheetTab.rungMenuTitle(hasPage: false), "Shorten the Next Page's Countdown")
+    }
+
+    func testTheRestartItemAndTheTooltipNameTheCountdown() {
+        XCTAssertEqual(SheetTab.restartMenuTitle, "Restart the Countdown")
+        XCTAssertEqual(
+            SheetTab.pageHelp(remainingLabel: "6d 2h", hold: "Double-click to hold"),
+            "6d 2h left. Double-click to hold")
+        XCTAssertEqual(SheetTab.pageHelp(remainingLabel: "", hold: "No page."), "No page.")
     }
 
     /// The ↗ page tab speaks the menu's verb, create, with the one-time

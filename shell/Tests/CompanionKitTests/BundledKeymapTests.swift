@@ -35,8 +35,9 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-alt-left": .pagePrevious,
         "cmd-alt-right": .pageNext,
         "cmd-w": .pageClose,
-        "ctrl-w": .pageClose,
+        "cmd-shift-t": .pageReopenLast,
         "cmd-shift-p": .appCommandPalette,
+        "cmd-shift-f": .pageSearch,
         // ⇧⌘W closes the window the keyboard is in (issue #201): the
         // editor window and Settings alike. Carried by the Window
         // menu's item app-wide, never by the surface installer.
@@ -122,13 +123,20 @@ final class BundledKeymapTests: XCTestCase {
             ])
     }
 
-    func testControlWUsesTheEditorRouteWhileCommandWAndEscapeRemainSurfaceShortcuts() throws {
+    func testControlWIsUnboundWhileCommandWAndEscapeRemainSurfaceShortcuts() throws {
         let resolved = try bundled()
         let installed = Set(resolved.surfaceShortcuts().map { $0.keystroke.canonical })
         XCTAssertFalse(installed.contains("ctrl-w"))
         XCTAssertTrue(installed.contains("cmd-w"))
         XCTAssertTrue(installed.contains("escape"))
-        XCTAssertEqual(resolved.command(for: try parse("ctrl-w"), in: .editor), .pageClose)
+        XCTAssertNil(resolved.command(for: try parse("ctrl-w"), in: .editor))
+    }
+
+    func testShiftCommandTReopensTheLastClosedPageOrTab() throws {
+        let resolved = try bundled()
+        XCTAssertEqual(resolved.command(for: try parse("cmd-shift-t"), in: .editor), .pageReopenLast)
+        XCTAssertEqual(resolved.menuKeystroke(for: .pageReopenLast)?.canonical, "cmd-shift-t")
+        XCTAssertEqual(resolved.command(for: try parse("cmd-t"), in: .editor), .pageNew)
     }
 
     /// New is the one command the default file puts two chords on, and
@@ -318,12 +326,11 @@ final class BundledKeymapTests: XCTestCase {
         }
     }
 
-    func testCloseMenuKeepsCommandWWhileControlWRemainsAnEditorAlias() throws {
+    func testCloseMenuKeepsCommandWAsItsOnlyDefaultChord() throws {
         let resolved = try bundled()
         XCTAssertEqual(resolved.menuKeystroke(for: .pageClose)?.canonical, "cmd-w")
-        XCTAssertTrue(resolved.bindings.contains {
-            $0.command == .pageClose && $0.keystroke.canonical == "ctrl-w"
-        })
+        XCTAssertEqual(
+            resolved.bindings.filter { $0.command == .pageClose }.map(\.keystroke.canonical), ["cmd-w"])
     }
 
 }

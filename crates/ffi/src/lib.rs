@@ -2328,6 +2328,31 @@ pub unsafe extern "C" fn companion_sheet_document_json(
     to_c_json(&content_json::DocumentRuns(sheet))
 }
 
+/// A live page's ink length in UTF-8 bytes, a chip counting zero, read without
+/// its text. `-1` for an unknown page.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_ink_bytes(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> i64 {
+    if is_file_id(sheet) {
+        return -1;
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return -1;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return -1;
+    };
+    let Some(sheet) = guard.store.sheet(SheetId::from_raw(sheet)) else {
+        return -1;
+    };
+    i64::try_from(sheet.ink_bytes()).unwrap_or(i64::MAX)
+}
+
 /// A page's provenance (ADR-0013): `{"created_ms": u64, "modified_s":
 /// i64|null}`, and no origin URL. Free with [`companion_string_free`]; null
 /// for an unknown page.
@@ -2820,6 +2845,28 @@ pub unsafe extern "C" fn companion_tab_cycle_rung(handle: *mut CompanionHandle, 
         return -1;
     };
     match guard.store.cycle_rung(TabId::from_raw(tab)) {
+        Some(rung) => ttl_to_code(rung),
+        None => -1,
+    }
+}
+
+/// Reapply a tab's own rung, on the terms of `companion_tab_cycle_rung`:
+/// the clock starts again at full length. Returns the rung code, or `-1`.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_tab_restart_rung(
+    handle: *mut CompanionHandle,
+    tab: u64,
+) -> c_int {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return -1;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return -1;
+    };
+    match guard.store.restart_rung(TabId::from_raw(tab)) {
         Some(rung) => ttl_to_code(rung),
         None => -1,
     }
@@ -7032,10 +7079,17 @@ mod tests {
             assert!(companion_tab_set_rung(handle, a, 0)); // 1h
             assert_eq!(companion_tab_cycle_rung(handle, a), 5); // wraps -> 7d
             assert!(!companion_tab_set_rung(handle, a, 99), "bad rung code");
+            assert_eq!(companion_tab_restart_rung(handle, a), 5, "the same rung");
+            assert_eq!(
+                companion_tab_restart_rung(std::ptr::null_mut(), a),
+                -1,
+                "no handle"
+            );
             assert!(companion_tab_move(handle, b, 0));
             assert!(companion_tab_close(handle, a));
             assert!(!companion_tab_close(handle, a), "already gone");
             assert_eq!(companion_tab_cycle_rung(handle, a), -1, "gone");
+            assert_eq!(companion_tab_restart_rung(handle, a), -1, "gone");
             companion_free(handle);
         }
     }
@@ -9609,6 +9663,38 @@ mod tests {
                 envelope.len(),
                 ptr::null(),
             ))
+        }
+    }
+
+    #[test]
+    fn a_pages_ink_bytes_count_its_ink_and_nothing_for_a_chip() {
+        let handle = handle();
+        unsafe {
+            let (_, page) = new_page(handle);
+            assert_eq!(companion_sheet_ink_bytes(handle, page), 0);
+            let ascii = cstring(r#"[{"ins": {"at": 0, "text": "hello"}}]"#);
+            assert!(companion_sheet_apply_ops(handle, page, ascii.as_ptr()));
+            assert_eq!(companion_sheet_ink_bytes(handle, page), 5);
+            let wide = cstring(r#"[{"ins": {"at": 5, "text": "é🦀"}}]"#);
+            assert!(companion_sheet_apply_ops(handle, page, wide.as_ptr()));
+            assert_eq!(companion_sheet_ink_bytes(handle, page), 11);
+            let cut = cstring(r#"[{"del": {"at": 0, "len": 5}}]"#);
+            assert!(companion_sheet_apply_ops(handle, page, cut.as_ptr()));
+            assert_eq!(companion_sheet_ink_bytes(handle, page), 6);
+
+            let (sealed, _) = page_with_a_chip(handle, "hunter2-secret");
+            assert_eq!(companion_sheet_ink_bytes(handle, sealed), 4);
+            let copied = json_of(companion_sheet_copy_fragment(handle, sealed, 0, 5));
+            let plain = copied["plain"].as_str().unwrap();
+            assert_eq!(plain, "ab[sealed content \u{b7} tiny]cd");
+
+            assert_eq!(companion_sheet_ink_bytes(handle, page + sealed + 1_000), -1);
+            assert_eq!(
+                companion_sheet_ink_bytes(handle, page | companion_core::FILE_ID_TAG),
+                -1
+            );
+            assert_eq!(companion_sheet_ink_bytes(ptr::null_mut(), page), -1);
+            companion_free(handle);
         }
     }
 

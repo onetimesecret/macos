@@ -470,6 +470,12 @@ impl OpenFile {
         text_of(&self.document)
     }
 
+    /// The buffer's length in UTF-8 bytes, read without copying the text.
+    #[must_use]
+    pub fn text_bytes(&self) -> usize {
+        self.document.utf8_len()
+    }
+
     /// The bytes a save would write, in the file's own line endings and BOM.
     #[must_use]
     pub fn bytes_to_write(&self) -> Vec<u8> {
@@ -1423,6 +1429,20 @@ fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefus
     if before != after {
         return Ok(None);
     }
+    let (text, has_bom) = text_of_file_bytes(&bytes)?;
+    let line_ending = LineEnding::detect(text);
+    let text = normalize_newlines(text);
+    Ok(Some(ReadFile {
+        text,
+        witness: after,
+        line_ending,
+        has_bom,
+    }))
+}
+
+/// The content checks an open applies to bytes it has read: the text
+/// without its BOM, and whether it had one.
+fn text_of_file_bytes(bytes: &[u8]) -> Result<(&str, bool), OpenRefusal> {
     // A reader may return one byte past the limit.
     if bytes.len() > FILE_SIZE_LIMIT {
         return Err(OpenRefusal::TooLarge {
@@ -1436,20 +1456,22 @@ fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefus
     let body = if has_bom {
         &bytes[UTF8_BOM.len()..]
     } else {
-        &bytes[..]
+        bytes
     };
     let text = std::str::from_utf8(body).map_err(|_| OpenRefusal::NotUtf8)?;
     if looks_binary(text) {
         return Err(OpenRefusal::Binary);
     }
-    let line_ending = LineEnding::detect(text);
-    let text = normalize_newlines(text);
-    Ok(Some(ReadFile {
-        text,
-        witness: after,
-        line_ending,
-        has_bom,
-    }))
+    Ok((text, has_bom))
+}
+
+/// Whether a file with these bytes would pass an open's content checks.
+///
+/// # Errors
+///
+/// The [`OpenRefusal`] an open of such a file would answer.
+pub fn check_file_bytes(bytes: &[u8]) -> Result<(), OpenRefusal> {
+    text_of_file_bytes(bytes).map(|_| ())
 }
 
 fn normalize_newlines(text: &str) -> Zeroizing<String> {
@@ -2241,6 +2263,44 @@ mod tests {
         let io = MemoryIo::with("/limit.txt", &vec![b'x'; FILE_SIZE_LIMIT]);
         let mut store = FileStore::new();
         assert!(store.open(&io, Path::new("/limit.txt")).is_ok());
+    }
+
+    #[test]
+    fn bytes_of_exactly_the_limit_pass_the_content_check() {
+        assert_eq!(check_file_bytes(&vec![b'x'; FILE_SIZE_LIMIT]), Ok(()));
+    }
+
+    #[test]
+    fn bytes_one_past_the_limit_are_refused_as_too_large() {
+        assert_eq!(
+            check_file_bytes(&vec![b'x'; FILE_SIZE_LIMIT + 1]),
+            Err(OpenRefusal::TooLarge {
+                limit: FILE_SIZE_LIMIT
+            })
+        );
+    }
+
+    #[test]
+    fn bytes_with_a_nul_are_refused_as_binary() {
+        assert_eq!(
+            check_file_bytes(b"pasted\0text\n"),
+            Err(OpenRefusal::Binary)
+        );
+    }
+
+    #[test]
+    fn ordinary_text_passes_the_content_check() {
+        assert_eq!(check_file_bytes(b"ordinary UTF-8 text\n"), Ok(()));
+        assert_eq!(check_file_bytes(b""), Ok(()));
+    }
+
+    #[test]
+    fn bytes_that_are_not_utf8_are_refused_by_the_content_check() {
+        assert_eq!(check_file_bytes(&[0xC3, 0x28]), Err(OpenRefusal::NotUtf8));
+        assert_eq!(
+            check_file_bytes(&[0xFF, 0xFE, b'a', 0]),
+            Err(OpenRefusal::NotUtf8)
+        );
     }
 
     #[test]

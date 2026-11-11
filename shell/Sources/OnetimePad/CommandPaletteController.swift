@@ -12,6 +12,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         let command: CommandID?
         let scope: CommandPaletteScope?
         let tab: UInt64?
+        var hit: PageSearchRow? = nil
     }
 
     private struct DatedSource: Equatable {
@@ -58,6 +59,12 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         return formatter
     }()
     private var reopening = false
+    private var searching = false
+    private var renderedSearching: Bool?
+    private var skippedLargeText = false
+    private var renderedSkippedLargeText = false
+    private var deepQuery: String?
+    private var inSubmode: Bool { reopening || searching }
     private(set) var overlay: PaletteOverlayView?
     let search = NSSearchField()
     let table = PaletteTableView()
@@ -136,10 +143,11 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         for observer in dateFormatObservers { NotificationCenter.default.removeObserver(observer) }
     }
 
-    func show(in window: NSWindow, pageContext: Bool, reopen: Bool = false) {
+    func show(in window: NSWindow, pageContext: Bool, reopen: Bool = false, search contentSearch: Bool = false) {
         if overlay != nil {
             if originalWindow === window {
                 if reopen { enterReopenMode() }
+                else if contentSearch { enterSearchMode() }
                 else { dismiss(restoringFocus: true) }
                 return
             }
@@ -203,8 +211,11 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         borrowedFocusResponder = originalResponder as? CommandPaletteResponder
         borrowedFocusResponder?.beginPaletteFocusBorrow()
         reopening = reopen
+        searching = contentSearch && !reopen
+        deepQuery = nil
         search.stringValue = ""
-        search.placeholderString = CompanionL10n.string(reopen ? "Search closed pages or tabs…" : "Search commands…")
+        search.placeholderString = CompanionL10n.string(reopen ? "Search closed pages or tabs…"
+            : searching ? "Search pages and files…" : "Search commands…")
         let overlay = PaletteOverlayView(frame: host.bounds)
         overlay.autoresizingMask = [.width, .height]
         overlay.onOutsideClick = { [weak self] in self?.dismiss(restoringFocus: true) }
@@ -270,6 +281,9 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         modelObservation = nil
         rows.removeAll()
         renderedReopening = nil
+        renderedSearching = nil
+        skippedLargeText = false
+        deepQuery = nil
         clearDatedCache()
         clearRealizedCells()
         table.reloadData()
@@ -338,7 +352,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
             cancelSearchOrDismiss()
         case #selector(NSResponder.insertNewline(_:)):
             runSelected(nil)
-        case #selector(NSResponder.deleteBackward(_:)) where reopening && search.stringValue.isEmpty:
+        case #selector(NSResponder.deleteBackward(_:)) where inSubmode && search.stringValue.isEmpty:
             showCommands(nil)
         case #selector(NSResponder.moveDown(_:)):
             moveSelection(1)
@@ -366,6 +380,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
     }
 
     @objc private func runSelected(_ sender: Any?) {
+        if sender == nil, searchLargeTexts() { return }
         let index = table.clickedRow >= 0 && sender != nil ? table.clickedRow : table.selectedRow
         guard rows.indices.contains(index) else { return }
         let row = rows[index]
@@ -373,11 +388,20 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
             enterReopenMode()
             return
         }
+        if row.command == .pageSearch {
+            enterSearchMode()
+            return
+        }
         let validContext = hasPageContext && contextIsCurrent
         dismiss(restoringFocus: true)
         if let tab = row.tab {
             if model.reopenClosedTab(tab) { returnToPages() }
             else { model.flash(CompanionL10n.string("palette.reopen_unavailable"), tone: .actionable) }
+            return
+        }
+        if let hit = row.hit {
+            if model.openSearchRow(hit) { returnToPages() }
+            else { model.flash(CompanionL10n.string("palette.search_unavailable"), tone: .actionable) }
             return
         }
         guard let command = row.command else { return }
@@ -407,14 +431,51 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
 
     private func enterReopenMode() {
         reopening = true
+        searching = false
         search.stringValue = ""
         search.placeholderString = CompanionL10n.string("Search closed pages or tabs…")
         reload()
         _ = originalWindow?.makeFirstResponder(search)
     }
 
+    private func enterSearchMode() {
+        reopening = false
+        searching = true
+        search.stringValue = ""
+        search.placeholderString = CompanionL10n.string("Search pages and files…")
+        reload()
+        _ = originalWindow?.makeFirstResponder(search)
+    }
+
+    /// Return's first press over a query that skipped a large text searches it too.
+    private func searchLargeTexts() -> Bool {
+        guard skippedLargeText else { return false }
+        deepQuery = search.stringValue
+        reload()
+        return true
+    }
+
+    private func contentRows() -> [Row] {
+        let query = search.stringValue
+        skippedLargeText = false
+        guard !query.split(whereSeparator: { $0.isWhitespace }).isEmpty else { return [] }
+        let found = model.pageSearchSources(
+            byteLimit: deepQuery == query ? nil : PageSearch.keystrokeByteLimit)
+        skippedLargeText = found.skipped
+        dateFormatter.locale = .current
+        dateFormatter.timeZone = .current
+        return PageSearch.rows(for: query, in: found.sources).map { hit in
+            let stamp = hit.stamp.map { dateFormatter.string(from: Date(timeIntervalSince1970: Double($0) / 1000)) }
+            let unstamped: String? = hit.id.isFileID ? nil : CompanionL10n.string("Saved tab")
+            let parts: [String?] = [hit.title, stamp ?? unstamped]
+            let detail = parts.compactMap { $0 }.joined(separator: " · ")
+            return Row(title: hit.excerpt, detail: detail, shortcut: nil, command: nil, scope: nil, tab: nil, hit: hit)
+        }
+    }
+
     @objc private func showCommands(_ sender: Any?) {
         reopening = false
+        searching = false
         search.stringValue = ""
         search.placeholderString = CompanionL10n.string("Search commands…")
         reload()
@@ -441,6 +502,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         let previousRows = rows
         let selected = rows.indices.contains(table.selectedRow) ? rows[table.selectedRow] : nil
         if reopening {
+            skippedLargeText = false
             let source = model.closedTabs.map { DatedSource(id: $0.id, title: $0.title, pageCreatedMs: $0.pageCreatedMs) }
             let locale = Locale.current.identifier
             let timeZone = TimeZone.current.identifier
@@ -461,15 +523,21 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
                 return search.stringValue.split(whereSeparator: { $0.isWhitespace })
                     .allSatisfy { text.localizedStandardContains(String($0)) }
             }
+        } else if searching {
+            clearDatedCache()
+            rows = contentRows()
         } else {
             clearDatedCache()
+            skippedLargeText = false
             rows = CommandPaletteCatalog.entries(
                 keymap: model.keymap, excluding: { model.padsTake($0) }
             ).compactMap { entry in
                 let title = entry.command == .pageClose ? CompanionL10n.string(closeChoice.title) : entry.title
                 guard entry.matches(search.stringValue, title: title), isAvailable(entry) else { return nil }
                 let detail: String
-                if entry.command == .fileSaveAs || entry.command == .stateSaveNow {
+                if entry.command == .fileSaveAs, model.canSavePageAs {
+                    detail = CompanionL10n.string("Current Page")
+                } else if entry.command == .fileSaveAs || entry.command == .stateSaveNow {
                     detail = CompanionL10n.string("Current File")
                 } else if model.selectedFile == nil, !model.showingLedger,
                           (entry.command == .appOpenTimeline && model.showsTimeUnits)
@@ -481,23 +549,30 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
                 return Row(title: title, detail: detail,
                     shortcut: entry.shortcut, command: entry.command, scope: entry.scope, tab: nil)
             }
+            if rows.isEmpty { rows = contentRows() }
         }
-        guard rows != previousRows || renderedReopening != reopening else { return }
+        guard rows != previousRows || renderedReopening != reopening || renderedSearching != searching
+            || renderedSkippedLargeText != skippedLargeText else { return }
         renderedReopening = reopening
-        backButton.isHidden = !reopening
+        renderedSearching = searching
+        renderedSkippedLargeText = skippedLargeText
+        backButton.isHidden = !inSubmode
         search.nextKeyView = table
-        table.nextKeyView = reopening ? backButton : search
+        table.nextKeyView = inSubmode ? backButton : search
         backButton.nextKeyView = search
         clearRealizedCells()
         table.reloadData()
         if !rows.isEmpty {
             let index = selected.flatMap { previous in
-                rows.firstIndex { $0.command == previous.command && $0.tab == previous.tab }
+                rows.firstIndex { $0.command == previous.command && $0.tab == previous.tab && $0.hit == previous.hit }
             } ?? 0
             table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         }
-        footer.stringValue = rows.isEmpty
-            ? CompanionL10n.string(reopening ? "No closed pages or tabs" : "No matching commands")
+        footer.stringValue = skippedLargeText
+            ? CompanionL10n.string("Return Search Large Files · Esc Cancel")
+            : rows.isEmpty
+            ? CompanionL10n.string(reopening ? "No closed pages or tabs"
+                : searching ? "No matching pages or files" : "No matching commands")
             : CompanionL10n.string("↑↓ Select · Return Run · Esc Cancel")
         layout()
     }
@@ -506,7 +581,11 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         if entry.command == .windowClose { return originalWindow?.styleMask.contains(.closable) == true }
         if entry.command == .pageReopenLast { return model.hasClosedTabs }
         if entry.command == .pageClose, !closeChoice.isEnabled { return false }
-        if entry.command == .fileSaveAs || entry.command == .stateSaveNow {
+        if entry.command == .fileSaveAs {
+            return hasPageContext && contextIsCurrent && CommandPalettePresentation.canSaveAs(
+                model.activeTarget, pageShowing: model.canSavePageAs)
+        }
+        if entry.command == .stateSaveNow {
             return hasPageContext && contextIsCurrent && CommandPalettePresentation.canSave(model.activeTarget)
         }
         if entry.scope == .application { return true }
@@ -535,7 +614,7 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         let height = min(max(0, room.height), CGFloat(min(max(rows.count, 1), 8)) * 42 + 86)
         card.frame = NSRect(x: room.midX - width / 2, y: max(room.minY, room.maxY - height - 16),
                             width: width, height: height)
-        let searchX: CGFloat = reopening ? 44 : 12
+        let searchX: CGFloat = inSubmode ? 44 : 12
         backButton.frame = NSRect(x: 12, y: max(0, height - 40), width: 28, height: 28)
         search.frame = NSRect(x: searchX, y: max(0, height - 40), width: max(0, width - searchX - 12), height: 28)
         scroll.frame = NSRect(x: 1, y: 28, width: max(0, width - 2), height: max(0, height - 76))
@@ -638,5 +717,10 @@ internal enum CommandPalettePresentation {
     static func canSave(_ target: SurfaceTarget) -> Bool {
         if case .file = target { return true }
         return false
+    }
+
+    /// Save As also writes a showing page to a file, which Save does not.
+    static func canSaveAs(_ target: SurfaceTarget, pageShowing: Bool) -> Bool {
+        canSave(target) || pageShowing
     }
 }

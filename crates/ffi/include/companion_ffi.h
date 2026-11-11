@@ -706,6 +706,14 @@ bool companion_sheet_take_out_object_characters(CompanionHandle *handle,
 char *companion_sheet_document_json(CompanionHandle *handle, uint64_t sheet);
 
 /*
+ * A live page's ink length in UTF-8 bytes, read without its text. A
+ * chip counts zero, where the public text of
+ * companion_sheet_copy_fragment() has a placeholder. -1 for an unknown
+ * page, a file id or a null handle.
+ */
+int64_t companion_sheet_ink_bytes(CompanionHandle *handle, uint64_t sheet);
+
+/*
  * A page's provenance, derived from its operation log (ADR-0013):
  *   {"created_ms": u64, "modified_s": i64|null}
  * created_ms is the page's creation stamp (epoch ms, the figure the
@@ -1079,6 +1087,11 @@ char *companion_take_restated_pages_json(CompanionHandle *handle);
  * shorter rung and keeps it for its next page: the rung is the slot's
  * property and never a countdown of the slot's own. */
 int companion_tab_cycle_rung(CompanionHandle *handle, uint64_t tab);
+
+/* Reapply a TAB's own rung: the clock is reset to the full rung as
+ * companion_tab_cycle_rung() resets it, and the rung is unchanged.
+ * Returns the rung's code, or -1 if the tab is gone or its page is due. */
+int companion_tab_restart_rung(CompanionHandle *handle, uint64_t tab);
 
 /* Set a TAB to an explicit rung (its page's clock reset to it). Returns
  * success; a tab holding no page stores the rung and succeeds, having
@@ -1703,7 +1716,9 @@ bool companion_sync_pairing_cancel(CompanionHandle *handle);
  *   "notFound" is a save refused because nothing is at the file's path
  *   and no keep mine stands. "write" is a save that was allowed and
  *   whose write the platform refused, which leaves the file on disk
- *   untouched. "pathInUse" is answered only by a save as.
+ *   untouched. An existing target the user cannot open for writing is
+ *   refused as "write" with the detail "read-only filesystem or storage medium", before any
+ *   temp file is made. "pathInUse" is answered only by a save as.
  *
  *   companion_file_undo() and companion_file_redo() return a
  *   StepOutcome: {"applied": bool, "caretUTF16": i64,
@@ -1745,6 +1760,20 @@ uint64_t companion_file_open(CompanionHandle *handle, const char *path);
 char *companion_file_open_error_json(CompanionHandle *handle);
 
 /*
+ * Whether a file with these bytes would open: the content checks
+ * companion_file_open() applies to bytes it has read, with no handle and
+ * no file involved. Returns {"opens": true}, or the
+ * companion_file_open_error_json() shape with "notUtf8", "binary" or
+ * "tooLarge". Null when bytes is NULL with a nonzero len, or len is past
+ * the platform's slice bound. Free with companion_string_free().
+ *
+ * (NULL, 0) is empty input. Non-null input must be readable for len bytes
+ * and remain unchanged until return. Embedded NUL bytes are input, not
+ * terminators.
+ */
+char *companion_file_content_check_json(const uint8_t *bytes, size_t len);
+
+/*
  * Close the file and drop its buffer. The draft goes with it: a draft
  * never outlives its tab, so reopening the file later never brings back
  * old edits. Any dirty-close decision is settled in the shell before
@@ -1758,6 +1787,13 @@ bool companion_file_close(CompanionHandle *handle, uint64_t file);
  * Free with companion_string_free().
  */
 char *companion_file_runs_json(CompanionHandle *handle, uint64_t file);
+
+/*
+ * The file's buffer length in UTF-8 bytes, the size of the ink
+ * companion_file_runs_json() returns, read without that text and
+ * without the disk. -1 for an unknown file or a null handle.
+ */
+int64_t companion_file_text_bytes(CompanionHandle *handle, uint64_t file);
 
 /*
  * Apply an ordered edit batch (JSON operations, UTF-16 offsets) to the

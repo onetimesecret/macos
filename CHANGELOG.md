@@ -9,11 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A page that turned out to matter has a way to stay.** With a page
+  showing, File > Save As (Shift-Command-S) writes the page's text to a
+  file you choose and opens that file as a tab; the page stays on its
+  clock, and a sealed object is written as its placeholder, never its
+  contents. The tab menu gains Restart the Countdown, which starts the
+  page's current rung again at full length. In Tabs layout the selected
+  page's tab shows its remaining time in words, and every page tab's
+  tooltip says it.
+
 - **A searchable command palette on Shift-Command-P** (app 0.46.0; #340).
   Application actions come first, then the current page, file and editor
   actions, each labelled with its shortcut from the resolved keymap. The
   palette includes Timeline and Tabs navigation and a dated picker for
   closed items. Escape returns focus to where it was.
+
+- **Find text across every page and open file on Shift-Command-F.** Search
+  Pages and Files opens the command palette in a search mode that lists
+  each matching line across the current pad's open and closed pages and
+  its open file tabs, newest page first. Choosing a line shows its page or
+  file, reopening a closed page first; in Tabs view and in a file the
+  caret moves to that line. The palette's command search shows the same
+  results when no command matches. The search reads a page as its public
+  text, with a placeholder for each sealed object, so sealed contents are
+  not matched ([Law 0001](docs/law/0001-sealed-object.md)).
 
 - **Reopen Last Closed Page or Tab and Reopen Dated Tabs** (#340). Closing
   a page or tab hides it and keeps it saved; reopening restores the same
@@ -40,6 +59,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [ADR-0064](docs/adr/0064-a-page-never-expires-without-the-person-being-told.md).
 
 ### Changed
+
+- **Every route to the app shows the pad, and the summon shortcut keeps
+  the window you arranged.** Command-Tab to OnetimePad with nothing of its
+  own showing opens the editor window, or takes it out of the Dock, without
+  moving the page or the roll. With the editor window open, the global
+  shortcut and a click on the menu bar icon bring that window forward
+  where they used to close it for the ambient panel, and a second press
+  hides the app and returns you to the app you came from. Show Ambient
+  Panel and Open in Window are the only commands that switch presentation.
+  A summon no longer moves the selection off a file tab that is showing.
+  Reopen Last Closed Page or Tab is on Shift-Command-T, and Control-W no
+  longer closes the page. See
+  [ADR-0063](docs/adr/0063-activation-shows-the-pad-and-summons-keep-the-editor-window.md).
+
+- **The pad can be the default application for Markdown, log and dotenv
+  files** (app 0.47.0; the file editing spec's Opening section). The
+  bundle now declares Markdown, logs, and files with the `env` and
+  `envrc` extensions as document types at the Default rank, beside
+  plain text at the Alternate rank as before. The app does not set
+  itself as the default; `scripts/default-app.swift` shows and sets the
+  choice for all four kinds, plain text among them.
 
 - **Sealed blocks select like text and keep their actions in a visible row**
   (app 0.46.0; #339). A click on a named sealed block selects it instead
@@ -576,6 +616,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holds that write; anything copied since is left alone. This does not
   control copies retained by clipboard managers. The confirmation reads
   the interval through `companion_clipboard_clear_seconds`.
+
+### Fixed
+
+- **A file tab is safe for `.env` and config files.** A file's text now
+  gets the refusals a page's text gets: no typing suggestions, inline
+  predictions, Writing Tools or data detectors, and text replacement
+  and spell checking as you type are off for pages and files. The Edit
+  menu no longer offers Check Spelling While Typing or the
+  Substitutions submenu. Saving over a read-only file is refused before
+  anything is written, with "NAME is read-only, so it was not saved.
+  Use Save As to write a copy."; before, the save replaced the file.
+  When several files are opened at once, the ones the pad refuses are
+  named in one notice. Law 0001's AppKit text routes table and the
+  file editing spec are amended to match.
 
 ### Added
 

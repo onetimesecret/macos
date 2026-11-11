@@ -1699,6 +1699,12 @@ public class CompanionClient: @unchecked Sendable {
         Rung(rawValue: companion_tab_cycle_rung(handle, tab))
     }
 
+    /// The tab's own rung reapplied: the clock starts again at full length.
+    @discardableResult
+    public func restartRung(tab: UInt64) -> Rung? {
+        Rung(rawValue: companion_tab_restart_rung(handle, tab))
+    }
+
     @discardableResult
     public func setRung(tab: UInt64, rung: Rung) -> Bool {
         companion_tab_set_rung(handle, tab, rung.rawValue)
@@ -2073,6 +2079,13 @@ public class CompanionClient: @unchecked Sendable {
         decodeOwnedJSON([RestoredRun].self, from: companion_sheet_document_json(handle, sheet)) ?? []
     }
 
+    /// A page's ink length in UTF-8 bytes, a chip counting zero, read without its text;
+    /// nil for an unknown page.
+    public func inkBytes(sheet: UInt64) -> Int? {
+        let bytes = companion_sheet_ink_bytes(handle, sheet)
+        return bytes < 0 ? nil : Int(bytes)
+    }
+
     /// Save the staged content (pages, sealed chips, clocks) to `path`,
     /// encrypted core-side (the key rests in the Keychain; only
     /// ciphertext touches disk). The ledger is not in this file: it has
@@ -2192,6 +2205,24 @@ public class CompanionClient: @unchecked Sendable {
         ownedString(from: companion_file_open_error_json(handle))
     }
 
+    /// Whether a file with these bytes would open, as the raw JSON the header
+    /// describes, without a client handle. Nil when the core gave no answer.
+    public static func fileContentCheckJSON(for data: Data) -> String? {
+        let answer: UnsafeMutablePointer<CChar>? =
+            if data.isEmpty {
+                companion_file_content_check_json(nil, 0)
+            } else {
+                data.withUnsafeBytes { bytes in
+                    companion_file_content_check_json(
+                        bytes.bindMemory(to: UInt8.self).baseAddress,
+                        bytes.count
+                    )
+                }
+            }
+
+        return ownedString(from: answer)
+    }
+
     /// Close the file and drop its buffer. The draft goes with it: a
     /// draft never outlives its tab. Any dirty-close decision is settled
     /// in the shell before this call.
@@ -2203,6 +2234,12 @@ public class CompanionClient: @unchecked Sendable {
     /// The file's document runs, the same shape a page's arrive in.
     public func fileRuns(_ file: UInt64) -> [RestoredRun] {
         decodeOwnedJSON([RestoredRun].self, from: companion_file_runs_json(handle, file)) ?? []
+    }
+
+    /// The file's buffer length in UTF-8 bytes, read without its text; nil for an unknown file.
+    public func fileTextBytes(_ file: UInt64) -> Int? {
+        let bytes = companion_file_text_bytes(handle, file)
+        return bytes < 0 ? nil : Int(bytes)
     }
 
     /// Apply an ordered edit batch to the file's body. False means the

@@ -43,7 +43,8 @@ public struct CommandPaletteEntry: Identifiable, Equatable, Sendable {
 
 public enum CommandPaletteCatalog {
     private static let order: [CommandID] = [
-        .appOpenTimeline, .appSwitchToTabs, .ledgerShow, .pageReopenDated, .pageReopenLast,
+        .appOpenTimeline, .appSwitchToTabs, .ledgerShow, .pageSearch,
+        .pageReopenDated, .pageReopenLast,
         .pageNew, .fileOpen, .appSettings, .appHelp, .windowClose,
         .stateSaveNow, .fileSaveAs, .pageClose, .pagePrevious, .pageNext, .editorToggleWrap,
         .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorUndo, .editorRedo,
@@ -71,6 +72,7 @@ extension CommandID {
         case .appOpenTimeline: ("Open Timeline", .application, "view dated pages history")
         case .appSwitchToTabs: ("Switch to Tabs View", .application, "layout navigation")
         case .ledgerShow: ("Show Ledger", .application, "audit trail records expired history")
+        case .pageSearch: ("Search Pages and Files…", .application, "find text content lines")
         case .pageReopenDated: ("Reopen Dated Tabs…", .application, "closed saved pages history restore re-open")
         case .pageReopenLast: ("Reopen Last Closed Page or Tab", .application, "restore saved re-open")
         case .pageNew: ("New Page", .application, "new tab")
@@ -79,7 +81,7 @@ extension CommandID {
         case .appHelp: ("Help", .application, "documentation")
         case .windowClose: ("Close Window", .application, "window dismiss")
         case .stateSaveNow: ("Save", .page, "disk state document")
-        case .fileSaveAs: ("Save As…", .page, "file document")
+        case .fileSaveAs: ("Save As…", .page, "file document page export")
         case .pageClose: ("Close Page or Tab", .page, "close page tab hide dismiss")
         case .pagePrevious: ("Previous Page or Tab", .page, "navigate")
         case .pageNext: ("Next Page or Tab", .page, "navigate")

@@ -210,7 +210,7 @@ final class ContinuousPadViewTests: XCTestCase {
             ContinuousPadView.updateSurface(surface.scroll, model: model, readOnly: false,
                 coordinator: surface.coordinator)
             let nodes = StreamNavigator.nodes(projection: model.timeUnits, tabs: model.navigationTabs,
-                selection: model.selection).filter(\.hasPage)
+                selection: model.selection, stampFormat: format).filter(\.hasPage)
             XCTAssertEqual(surface.canvas.checkpointLabels.count, nodes.count)
             for (label, node) in zip(surface.canvas.checkpointLabels, nodes) {
                 XCTAssertFalse(node.detailStamp.isEmpty, "the control: every fixture page has a birth stamp")
