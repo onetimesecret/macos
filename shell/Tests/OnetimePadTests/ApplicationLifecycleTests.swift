@@ -123,17 +123,56 @@ final class ApplicationLifecycleTests: XCTestCase {
         }
     }
 
-    func testBackgroundStartupAndOrdinaryActivationOpenNoSettingsOrEditor() throws {
+    func testBackgroundStartupOpensNothingAndActivationOpensTheEditorWithoutAnchoring() throws {
         try withApplication { app, model in
-            var initialOpens = 0
-            app.selectInitialEditor = { initialOpens += 1 }
+            let pages = model.pages
+            pages.loadStateIfNeeded()
+            pages.showsTimeUnits = true
+            pages.perform(.pageNew)
+            var initialOpens = 0, anchors = 0
+            pages.installTodayAnchor({ anchors += 1 }, from: pages.owner)
+            app.selectInitialEditor = { initialOpens += 1; pages.anchorOnToday() }
             app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+            XCTAssertFalse(model.editorWindowOpen)
+            let selection = pages.selection
             for _ in 0..<3 {
                 app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+                XCTAssertTrue(model.editorWindowOpen)
             }
             XCTAssertEqual(initialOpens, 0)
-            XCTAssertFalse(model.editorWindowOpen)
+            XCTAssertEqual(anchors, 0)
+            XCTAssertEqual(pages.selection, selection)
             XCTAssertNil(app.madeSettings)
+        }
+    }
+
+    func testActivationOverARaisedCardOpensNoEditor() throws {
+        try withApplication { app, model in
+            app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+            model.raise(.activation)
+            XCTAssertEqual(model.stance, .raised)
+            app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+            XCTAssertFalse(model.editorWindowOpen)
+            model.rest()
+        }
+    }
+
+    func testHotkeyAndStatusItemKeepAnEditorWindowOpenWithThePanelEnabled() throws {
+        for reason in [ActivationReason.hotkey, .statusItem] {
+            try withApplication(applicationIsActive: { false }) { app, model in
+                app.completeStartup(Notification(name: NSApplication.didFinishLaunchingNotification))
+                XCTAssertTrue(model.ambientPanelEnabled)
+                app.applySummon(.openEditorPresentation)
+                app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+                XCTAssertTrue(model.editorWindowOpen)
+
+                app.applySummon(reason)
+                app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+
+                XCTAssertTrue(model.editorWindowOpen, "\(reason)")
+                XCTAssertEqual(model.stance, .resting, "\(reason)")
+                XCTAssertEqual(model.pages.owner, .editorWindow, "\(reason)")
+            }
         }
     }
 
@@ -149,7 +188,8 @@ final class ApplicationLifecycleTests: XCTestCase {
             app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
             XCTAssertEqual(opens, 1)
             XCTAssertNil(app.madeSettings)
-            XCTAssertFalse(model.editorWindowOpen)
+            // The stub opened no window, so the activation opens the editor itself (ADR-0063).
+            XCTAssertTrue(model.editorWindowOpen)
         }
     }
 

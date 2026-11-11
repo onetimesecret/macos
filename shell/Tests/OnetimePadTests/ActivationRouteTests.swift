@@ -30,12 +30,24 @@ final class ActivationRouteTests: XCTestCase {
     private func base(
         ambientPanelEnabled: Bool = true,
         owner: PresentationOwner = .panel,
-        claimedByAnotherWindow: Bool = false
+        claimedByAnotherWindow: Bool = false,
+        editorWindowOpen: Bool = false,
+        editorWindowKey: Bool = false,
+        appActive: Bool = false,
+        visibleOrdinaryWindow: Bool = false,
+        cardRaised: Bool = false,
+        modalUp: Bool = false
     ) -> ActivationContext {
         ActivationContext(
             ambientPanelEnabled: ambientPanelEnabled,
             owner: owner,
-            claimedByAnotherWindow: claimedByAnotherWindow
+            claimedByAnotherWindow: claimedByAnotherWindow,
+            editorWindowOpen: editorWindowOpen,
+            editorWindowKey: editorWindowKey,
+            appActive: appActive,
+            visibleOrdinaryWindow: visibleOrdinaryWindow,
+            cardRaised: cardRaised,
+            modalUp: modalUp
         )
     }
 
@@ -54,13 +66,21 @@ final class ActivationRouteTests: XCTestCase {
         }
     }
 
-    func testOrdinaryActivationLeavesWindowOrderingToAppKit() {
+    func testActivationOverAVisibleWindowLeavesOrderingToAppKit() {
         for enabled in [false, true] {
             for owner in [PresentationOwner.panel, .editorWindow] {
                 XCTAssertEqual(ActivationRouter.routeForActivation(pendingSummon: nil,
-                    context: base(ambientPanelEnabled: enabled, owner: owner)), .noop)
+                    context: base(ambientPanelEnabled: enabled, owner: owner,
+                                  visibleOrdinaryWindow: true)), .noop)
             }
         }
+    }
+
+    func testActivationOverARaisedCardOrAModalOpensNoEditor() {
+        XCTAssertEqual(ActivationRouter.routeForActivation(
+            pendingSummon: nil, context: base(cardRaised: true)), .noop)
+        XCTAssertEqual(ActivationRouter.routeForActivation(
+            pendingSummon: nil, context: base(modalUp: true)), .noop)
     }
 
     func testReopenSelectsEditorWindowAsAnActivation() {
@@ -98,7 +118,8 @@ final class ActivationRouteTests: XCTestCase {
                 openEditorWindow: { _ in XCTFail("unexpected editor route") },
                 raisePanel: { _ in events.append("raise") },
                 summonPanel: { events.append("summon") },
-                closeEditorForPanel: { events.append("close") })
+                closeEditorForPanel: { events.append("close") },
+                hideApp: { XCTFail("unexpected hide") })
             switch route {
             case .showAmbientPanel: XCTAssertEqual(events, ["close", "raise"])
             case .summonPanel: XCTAssertEqual(events, ["close", "summon"])
@@ -150,6 +171,55 @@ final class ActivationRouteTests: XCTestCase {
     }
 
     // MARK: Summons — hotkey, status item, card click
+
+    func testHideRouteOnlyHidesTheApp() {
+        var hides = 0
+        BackdropAppDelegate.dispatch(.hideApp,
+            openEditorWindow: { _ in XCTFail("unexpected editor route") },
+            raisePanel: { _ in XCTFail("unexpected raise") },
+            summonPanel: { XCTFail("unexpected summon") },
+            closeEditorForPanel: { XCTFail("unexpected close") },
+            hideApp: { hides += 1 })
+        XCTAssertEqual(hides, 1)
+    }
+
+    func testHotkeyAndStatusItemSelectAnOpenEditorWindow() {
+        // ADR-0063: an open editor window, minimized included, is selected and never closed.
+        for reason in [ActivationReason.hotkey, .statusItem] {
+            for enabled in [false, true] {
+                for (key, active) in [(false, false), (false, true), (true, false)] {
+                    XCTAssertEqual(
+                        ActivationRouter.decide(reason, in: base(
+                            ambientPanelEnabled: enabled, owner: .editorWindow,
+                            editorWindowOpen: true, editorWindowKey: key, appActive: active)),
+                        .openEditorWindow(.activation)
+                    )
+                }
+            }
+        }
+    }
+
+    func testHotkeyAndStatusItemHideTheAppOverAKeyEditorWindow() {
+        for reason in [ActivationReason.hotkey, .statusItem] {
+            for enabled in [false, true] {
+                XCTAssertEqual(
+                    ActivationRouter.decide(reason, in: base(
+                        ambientPanelEnabled: enabled, owner: .editorWindow,
+                        editorWindowOpen: true, editorWindowKey: true, appActive: true)),
+                    .hideApp
+                )
+            }
+        }
+    }
+
+    func testAnActiveAppWithoutAnOpenEditorWindowNeverHides() {
+        for reason in [ActivationReason.hotkey, .statusItem] {
+            XCTAssertEqual(
+                ActivationRouter.decide(reason, in: base(editorWindowKey: true, appActive: true)),
+                .summonPanel
+            )
+        }
+    }
 
     func testHotkeySummonsThePanelWithTheAmbientPanelOn() {
         XCTAssertEqual(
@@ -210,7 +280,8 @@ final class ActivationRouteTests: XCTestCase {
     }
 
     func testPanelRoutesAndNoopNeverDeferForActivation() {
-        for route in [ActivationRoute.summonPanel, .showAmbientPanel, .raisePanel(.activation), .raisePanel(.summon), .noop] {
+        for route in [ActivationRoute.summonPanel, .showAmbientPanel, .raisePanel(.activation),
+                      .raisePanel(.summon), .hideApp, .noop] {
             for active in [false, true] {
                 XCTAssertFalse(ActivationRouter.defersForActivation(route: route, appActive: active))
             }
@@ -230,10 +301,21 @@ final class ActivationRouteTests: XCTestCase {
             context: base(claimedByAnotherWindow: true)), .noop)
     }
 
-    func testUnrequestedActivationNeverCreatesAnEditor() {
+    func testActivationWithNothingShowingOpensTheEditorWithoutAnchoring() {
         for enabled in [false, true] {
-            XCTAssertEqual(ActivationRouter.routeForActivation(
-                pendingSummon: nil, context: base(ambientPanelEnabled: enabled)), .noop)
+            for owner in [PresentationOwner.panel, .editorWindow] {
+                XCTAssertEqual(
+                    ActivationRouter.routeForActivation(
+                        pendingSummon: nil, context: base(ambientPanelEnabled: enabled, owner: owner)),
+                    .openEditorWindow(.activation)
+                )
+            }
         }
+        XCTAssertFalse(BackdropModel.anchorsOnToday(raise: .activation))
+    }
+
+    func testACompanionClaimOutranksTheEmptyActivation() {
+        XCTAssertEqual(ActivationRouter.routeForActivation(
+            pendingSummon: nil, context: base(claimedByAnotherWindow: true)), .noop)
     }
 }

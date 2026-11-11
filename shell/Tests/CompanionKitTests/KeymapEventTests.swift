@@ -209,8 +209,9 @@ final class KeymapEventTests: XCTestCase {
         XCTAssertEqual(model.tabs.count, count + 1)
     }
 
-    func testControlWPassesTheHostingKeyEquivalentStageBeforeTheIMERefusal() throws {
-        let (model, editor) = try makeStack()
+    func testAConfiguredControlWPassesTheHostingKeyEquivalentStageBeforeTheIMERefusal() throws {
+        let (model, editor) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-w":"page::Close"}}]"#)
         model.loadStateIfNeeded()
         let (window, host) = mountSurfaceMap(model)
         defer { window.close() }
@@ -256,8 +257,9 @@ final class KeymapEventTests: XCTestCase {
         XCTAssertEqual(model.navigationTabs.count, 1)
     }
 
-    func testControlCloseShortcutWorksWhenLedgerChromeHasFocus() throws {
-        let (model, _) = try makeStack()
+    func testAConfiguredControlCloseShortcutWorksWhenLedgerChromeHasFocus() throws {
+        let (model, _) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-w":"page::Close"}}]"#)
         model.loadStateIfNeeded()
         model.showLedger()
         XCTAssertTrue(model.showingLedger)
@@ -272,8 +274,9 @@ final class KeymapEventTests: XCTestCase {
         XCTAssertTrue(model.closedTabs.isEmpty)
     }
 
-    func testControlCloseShortcutWorksFromNontextFileChrome() throws {
-        let (model, _) = try makeStack()
+    func testAConfiguredControlCloseShortcutWorksFromNontextFileChrome() throws {
+        let (model, _) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-w":"page::Close"}}]"#)
         model.loadStateIfNeeded()
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("keymap-file-\(UUID().uuidString).txt")
         try "fixture".write(to: url, atomically: true, encoding: .utf8)
@@ -310,8 +313,9 @@ final class KeymapEventTests: XCTestCase {
         XCTAssertTrue(editor.hasMarkedText())
     }
 
-    func testControlWClosesThePageInsteadOfDeletingAWord() throws {
-        let (model, editor) = try makeStack()
+    func testAConfiguredControlWClosesThePageInsteadOfDeletingAWord() throws {
+        let (model, editor) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-w":"page::Close"}}]"#)
         model.loadStateIfNeeded()
         model.newPage()
         model.newPage()
@@ -335,8 +339,9 @@ final class KeymapEventTests: XCTestCase {
         XCTAssertEqual(model.tabs.count, count + 1)
     }
 
-    func testControlWDoesNotCloseOrUnmarkAnIMEComposition() throws {
-        let (model, editor) = try makeStack()
+    func testAConfiguredControlWDoesNotCloseOrUnmarkAnIMEComposition() throws {
+        let (model, editor) = try makeStack(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-w":"page::Close"}}]"#)
         model.loadStateIfNeeded()
         let tab = try XCTUnwrap(model.selection)
         editor.setMarkedText("ka", selectedRange: NSRange(location: 2, length: 0),

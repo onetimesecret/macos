@@ -57,7 +57,8 @@ final class EditorOwnershipSequenceTests: XCTestCase {
             openEditorWindow: { _ in XCTFail("must select the panel") },
             raisePanel: { model.raise($0) },
             summonPanel: { model.summon() },
-            closeEditorForPanel: { editor.closeForAmbientPanel() }
+            closeEditorForPanel: { editor.closeForAmbientPanel() },
+            hideApp: { XCTFail("must select the panel") }
         )
         for _ in 0..<5 { await Task.yield() }
         XCTAssertFalse(editor.isVisible)
@@ -104,8 +105,43 @@ final class EditorOwnershipSequenceTests: XCTestCase {
         model.setAmbientPanelEnabled(false)
     }
 
-    func testHotkeyAndStatusSwitchFromOpenEditorWithoutReopeningOnRest() async throws {
-        for reason in [ActivationReason.hotkey, .statusItem, .cardClick] {
+    func testHotkeyAndStatusItemKeepAnOpenEditorWindow() throws {
+        for reason in [ActivationReason.hotkey, .statusItem] {
+            let defaults = makeDefaults(named: "summon-keep")
+            let pages = ephemeralPages(defaults: defaults, tag: "summon-keep")
+            let model = BackdropModel(defaults: defaults, pages: pages)
+            let panel = BackdropWindowController(
+                model: model, onCardClick: {}, isCompanionWindow: { _ in false }
+            )
+            let editor = PrimaryEditorWindowController(model: model)
+            pages.newPage()
+            editor.show()
+            var selections = 0
+            BackdropAppDelegate.dispatch(
+                ActivationRouter.decide(reason, in: ActivationContext(
+                    ambientPanelEnabled: true, owner: pages.owner,
+                    claimedByAnotherWindow: false, editorWindowOpen: model.editorWindowOpen)),
+                openEditorWindow: { raise in
+                    XCTAssertEqual(raise, .activation)
+                    selections += 1
+                    editor.show()
+                },
+                raisePanel: { _ in XCTFail("must keep the editor") },
+                summonPanel: { XCTFail("must keep the editor") },
+                closeEditorForPanel: { XCTFail("must keep the editor") },
+                hideApp: { XCTFail("an inactive app has nothing to hide") }
+            )
+            XCTAssertEqual(selections, 1)
+            XCTAssertTrue(editor.isVisible)
+            XCTAssertFalse(panel.isVisible)
+            XCTAssertEqual(pages.owner, .editorWindow)
+            editor.closeForAmbientPanel()
+            model.setAmbientPanelEnabled(false)
+        }
+    }
+
+    func testCardClickSwitchesFromOpenEditorWithoutReopeningOnRest() async throws {
+        for reason in [ActivationReason.cardClick] {
             let defaults = makeDefaults(named: "summon-switch")
             let pages = ephemeralPages(defaults: defaults, tag: "summon-switch")
             let model = BackdropModel(defaults: defaults, pages: pages)
@@ -122,7 +158,8 @@ final class EditorOwnershipSequenceTests: XCTestCase {
                 openEditorWindow: { _ in XCTFail("must summon the panel") },
                 raisePanel: { model.raise($0) },
                 summonPanel: { model.summon() },
-                closeEditorForPanel: { editor.closeForAmbientPanel() }
+                closeEditorForPanel: { editor.closeForAmbientPanel() },
+                hideApp: { XCTFail("must summon the panel") }
             )
             XCTAssertFalse(editor.isVisible)
             XCTAssertTrue(panel.isVisible)
