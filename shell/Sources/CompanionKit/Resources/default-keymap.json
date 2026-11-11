@@ -81,8 +81,8 @@
       // the file on the surface, and Settings, About or Send Feedback
       // when one of those has the keyboard, as in Safari and Terminal.
       "cmd-w": "page::Close",
-      // Requested page-dismissal alias; the editor resolves it through the JSON surface-command route.
-      "ctrl-w": "page::Close",
+      // The reopen chord browsers put beside cmd-t; it restores the last closed page or tab.
+      "cmd-shift-t": "page::ReopenLast",
 
       // cmd-shift-w closes the window the keyboard is in, the editor
       // window and Settings alike (issue #201). The Window menu's item

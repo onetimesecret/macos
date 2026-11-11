@@ -4,11 +4,14 @@ import XCTest
 @testable import OnetimePad
 
 final class LaunchStanceTests: XCTestCase {
-    private func context(claimedByAnotherWindow: Bool = false) -> ActivationContext {
+    private func context(
+        claimedByAnotherWindow: Bool = false, visibleOrdinaryWindow: Bool = false
+    ) -> ActivationContext {
         ActivationContext(
             ambientPanelEnabled: true,
             owner: .panel,
-            claimedByAnotherWindow: claimedByAnotherWindow
+            claimedByAnotherWindow: claimedByAnotherWindow,
+            visibleOrdinaryWindow: visibleOrdinaryWindow
         )
     }
 
@@ -31,17 +34,29 @@ final class LaunchStanceTests: XCTestCase {
             openEditorWindow: { editorRaise = $0 },
             raisePanel: { _ in XCTFail("launch must not raise the panel") },
             summonPanel: { XCTFail("launch must not summon the panel") },
-            closeEditorForPanel: { XCTFail("launch must not close the editor") }
+            closeEditorForPanel: { XCTFail("launch must not close the editor") },
+            hideApp: { XCTFail("launch must not hide the app") }
         )
 
         XCTAssertEqual(editorRaise, .summon)
         XCTAssertTrue(BackdropModel.anchorsOnToday(raise: editorRaise!))
     }
 
-    // MARK: Ordinary activation leaves ordering to AppKit
+    // MARK: Ordinary activation leaves ordering to AppKit over a visible window
 
-    func testReturningToTheApplicationDoesNotSelectAnEditor() {
-        XCTAssertEqual(ActivationRouter.routeForActivation(pendingSummon: nil, context: context()), .noop)
+    func testReturningToAVisibleWindowDoesNotSelectAnEditor() {
+        XCTAssertEqual(
+            ActivationRouter.routeForActivation(
+                pendingSummon: nil, context: context(visibleOrdinaryWindow: true)),
+            .noop
+        )
+    }
+
+    func testReturningToNothingOpensTheEditorAsAnActivation() {
+        XCTAssertEqual(
+            ActivationRouter.routeForActivation(pendingSummon: nil, context: context()),
+            .openEditorWindow(.activation)
+        )
     }
 
     // MARK: About and Settings keep their claim

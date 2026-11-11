@@ -429,7 +429,8 @@ final class SealedFragmentEditorTests: XCTestCase {
     /// asked, and Writing Tools reads and rewrites a selection past every gate, so a
     /// page's, a sealed name's and a note's text offer neither; nor Search With Google,
     /// which hands the selection to the browser, nor the typing suggestions and inline
-    /// predictions made from the text around the caret as it moves. A file keeps them all.
+    /// predictions made from the text around the caret as it moves. A file keeps the menu's
+    /// items and refuses the suggestions, predictions, data detectors and Writing Tools.
     /// Search With and Writing Tools come from this machine's services, so each menu is also
     /// built on items of the test's own, which a file keeps and the others take out.
     func testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions() throws {
@@ -474,26 +475,30 @@ final class SealedFragmentEditorTests: XCTestCase {
             XCTAssertFalse(menu.items.contains(where: TextOffers.isWebSearch), "the \(surface) searches")
             XCTAssertFalse(menu.items.contains(where: TextOffers.isWritingTools), "the \(surface) writes")
         }
-        XCTAssertTrue(file.isAutomaticTextCompletionEnabled, "the control: a file suggests")
-        for (view, surface) in [(page.textView, "page"), (note, "note"), (name, "name")] as [(NSTextView, String)] {
+        let typed = [(file, "file"), (page.textView, "page"), (note, "note"), (name, "name")]
+            as [(NSTextView, String)]
+        for (view, surface) in typed {
             XCTAssertFalse(view.isAutomaticTextCompletionEnabled, "the \(surface) suggests")
             view.toggleAutomaticTextCompletion(nil)
             XCTAssertFalse(view.isAutomaticTextCompletionEnabled, "the \(surface)'s toggle")
         }
-        file.toggleAutomaticDataDetection(nil)
-        XCTAssertTrue(file.isAutomaticDataDetectionEnabled, "the control: a file detects")
-        for (view, surface) in [(page.textView, "page"), (note, "note"), (name, "name")] as [(NSTextView, String)] {
+        for (view, surface) in typed {
             XCTAssertFalse(view.isAutomaticDataDetectionEnabled, "the \(surface) detects")
             view.toggleAutomaticDataDetection(nil)
             XCTAssertFalse(view.isAutomaticDataDetectionEnabled, "the \(surface)'s toggle")
         }
+        // `makeInkTextView` made the page's view, the one view a file mounts on too.
+        XCTAssertFalse(page.textView.isAutomaticTextReplacementEnabled, "text replacement")
+        XCTAssertFalse(page.textView.isContinuousSpellCheckingEnabled, "continuous spell checking")
+        XCTAssertFalse(page.textView.isAutomaticQuoteSubstitutionEnabled, "smart quotes")
+        XCTAssertFalse(page.textView.isAutomaticDashSubstitutionEnabled, "smart dashes")
 
         guard #available(macOS 15.0, *) else { return }
-        XCTAssertEqual(file.writingToolsBehavior, .default)
+        XCTAssertEqual(file.writingToolsBehavior, .none, "the file")
         XCTAssertEqual(page.textView.writingToolsBehavior, .none, "the page")
         XCTAssertEqual(note.writingToolsBehavior, .none, "the note")
         XCTAssertEqual(name.writingToolsBehavior, .none, "the name")
-        XCTAssertEqual(file.inlinePredictionType, .default, "the control: a file predicts")
+        XCTAssertEqual(file.inlinePredictionType, .no, "the file predicts")
         XCTAssertEqual(page.textView.inlinePredictionType, .no, "the page predicts")
         XCTAssertEqual(note.inlinePredictionType, .no, "the note predicts")
         XCTAssertEqual(name.inlinePredictionType, .no, "the name predicts")

@@ -409,7 +409,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         ActivationContext(
             ambientPanelEnabled: model.ambientPanelEnabled,
             owner: model.pages.owner,
-            claimedByAnotherWindow: claimed
+            claimedByAnotherWindow: claimed,
+            editorWindowOpen: model.editorWindowOpen,
+            editorWindowKey: madeEditorWindow?.isKey == true,
+            appActive: applicationIsActive(),
+            visibleOrdinaryWindow: frontmostOrdinaryWindow(in: NSApplication.shared) != nil,
+            cardRaised: model.stance == .raised,
+            modalUp: ModalSession.isRunning || ModalSession.isBracketed
         )
     }
 
@@ -431,7 +437,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             },
             raisePanel: { [model] raise in model.raise(raise) },
             summonPanel: { [model] in model.summon() },
-            closeEditorForPanel: { [self] in madeEditorWindow?.closeForAmbientPanel() }
+            closeEditorForPanel: { [self] in madeEditorWindow?.closeForAmbientPanel() },
+            hideApp: { NSApp.hide(nil) }
         )
     }
 
@@ -465,7 +472,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         openEditorWindow: (BackdropRaise) -> Void,
         raisePanel: (BackdropRaise) -> Void,
         summonPanel: () -> Void,
-        closeEditorForPanel: () -> Void
+        closeEditorForPanel: () -> Void,
+        hideApp: () -> Void
     ) {
         switch route {
         case .openEditorWindow(let raise): openEditorWindow(raise)
@@ -476,6 +484,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         case .showAmbientPanel:
             closeEditorForPanel()
             raisePanel(.activation)
+        case .hideApp: hideApp()
         case .noop: break
         }
     }
@@ -502,7 +511,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         return reply
     }
 
-    /// AppKit restores focus on activation; only a pending explicit command selects an editor.
+    /// AppKit restores focus on activation; with nothing of ours showing, the editor opens (ADR-0063).
     func applicationDidBecomeActive(_ notification: Notification) {
         guard startupComplete else { return }
         // Returning to the app also checks changes made by external file editors.
@@ -555,8 +564,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Opens each file as a drop would, then selects the editor window without moving the roll.
     private func openDocuments(_ urls: [URL]) -> Bool {
-        guard BackdropRootView.forwardDroppedURLs(urls, openFile: { pages.openFile(at: $0) })
-        else { return false }
+        let forwarded = pages.collectingOpenRefusals {
+            BackdropRootView.forwardDroppedURLs(urls, openFile: { pages.openFile(at: $0) })
+        }
+        guard forwarded else { return false }
         selectEditor()
         return true
     }
@@ -626,8 +637,19 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         }
         pages.checkOpenFilesOnActivate()
         if ModalSession.isRunning || ModalSession.isBracketed { return false }
+        if let frontmost = frontmostOrdinaryWindow(in: sender) {
+            // AppKit can report no visible windows when only an NSPanel remains.
+            if !flag { frontmost.makeKeyAndOrderFront(nil) }
+            return flag
+        }
+        applySummon(.reopen)
+        return false
+    }
+
+    /// The frontmost visible ordinary window, read by reopen and by activation.
+    private func frontmostOrdinaryWindow(in application: NSApplication) -> NSWindow? {
         var frontmost: NSWindow?
-        sender.enumerateWindows(options: [.orderedFrontToBack]) { window, stop in
+        application.enumerateWindows(options: [.orderedFrontToBack]) { window, stop in
             if let target = Self.reopenWindow(window,
                 isAmbientWindow: { self.controller?.owns($0) == true },
                 isCompanion: { self.isCompanionWindow($0) }) {
@@ -635,13 +657,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 stop.pointee = true
             }
         }
-        if let frontmost {
-            // AppKit can report no visible windows when only an NSPanel remains.
-            if !flag { frontmost.makeKeyAndOrderFront(nil) }
-            return flag
-        }
-        applySummon(.reopen)
-        return false
+        return frontmost
     }
 
     static func reopenWindow(
@@ -661,8 +677,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             && (isCompanion || window.canBecomeMain || window.isSheet)
     }
 
-    /// Left click summons (raise, or re-key, or rest — the summon
-    /// decision); ⌥-click goes straight to Settings; right click gets
+    /// Left click acts on the current presentation (`ActivationRouter`,
+    /// ADR-0063); ⌥-click goes straight to Settings; right click gets
     /// presentation switches alongside About, Settings, and Quit.
     @objc private func statusItemClicked() {
         if NSApp.currentEvent?.type == .rightMouseUp {

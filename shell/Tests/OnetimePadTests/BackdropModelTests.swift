@@ -1000,7 +1000,9 @@ final class BackdropModelTests: XCTestCase {
                 context: ActivationContext(
                     ambientPanelEnabled: model.ambientPanelEnabled,
                     owner: model.pages.owner,
-                    claimedByAnotherWindow: false
+                    claimedByAnotherWindow: false,
+                    editorWindowOpen: model.editorWindowOpen,
+                    visibleOrdinaryWindow: true
                 )
             ),
             .noop

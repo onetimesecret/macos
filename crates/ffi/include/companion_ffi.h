@@ -1708,7 +1708,9 @@ bool companion_sync_pairing_cancel(CompanionHandle *handle);
  *   "notFound" is a save refused because nothing is at the file's path
  *   and no keep mine stands. "write" is a save that was allowed and
  *   whose write the platform refused, which leaves the file on disk
- *   untouched. "pathInUse" is answered only by a save as.
+ *   untouched. An existing target the user cannot open for writing is
+ *   refused as "write" with the detail "read-only filesystem or storage medium", before any
+ *   temp file is made. "pathInUse" is answered only by a save as.
  *
  *   companion_file_undo() and companion_file_redo() return a
  *   StepOutcome: {"applied": bool, "caretUTF16": i64,

@@ -88,7 +88,7 @@ final class MarkdownPreviewView: AskingTextView {
             .underlineStyle: NSUnderlineStyle.single.rawValue,
         ]
         isAutomaticLinkDetectionEnabled = false
-        TextOffers.offerUngatedReaders(false, on: self)
+        TextOffers.refuseUngatedReaders(on: self)
         links.preview = self
         delegate = links
         imageControlsReady = true

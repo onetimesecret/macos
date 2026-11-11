@@ -41,6 +41,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Every route to the app shows the pad, and the summon shortcut keeps
+  the window you arranged.** Command-Tab to OnetimePad with nothing of its
+  own showing opens the editor window, or takes it out of the Dock, without
+  moving the page or the roll. With the editor window open, the global
+  shortcut and a click on the menu bar icon bring that window forward
+  where they used to close it for the ambient panel, and a second press
+  hides the app and returns you to the app you came from. Show Ambient
+  Panel and Open in Window are the only commands that switch presentation.
+  A summon no longer moves the selection off a file tab that is showing.
+  Reopen Last Closed Page or Tab is on Shift-Command-T, and Control-W no
+  longer closes the page. See
+  [ADR-0063](docs/adr/0063-activation-shows-the-pad-and-summons-keep-the-editor-window.md).
+
+- **The pad can be the default application for Markdown, log and dotenv
+  files** (app 0.47.0; the file editing spec's Opening section). The
+  bundle now declares Markdown, logs, and files with the `env` and
+  `envrc` extensions as document types at the Default rank, beside
+  plain text at the Alternate rank as before. The app does not set
+  itself as the default; `scripts/default-app.swift` shows and sets the
+  choice for all four kinds, plain text among them.
+
 - **Sealed blocks select like text and keep their actions in a visible row**
   (app 0.46.0; #339). A click on a named sealed block selects it instead
   of copying; Copy, More and Note sit in a stable row with distinct
@@ -576,6 +597,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holds that write; anything copied since is left alone. This does not
   control copies retained by clipboard managers. The confirmation reads
   the interval through `companion_clipboard_clear_seconds`.
+
+### Fixed
+
+- **A file tab is safe for `.env` and config files.** A file's text now
+  gets the refusals a page's text gets: no typing suggestions, inline
+  predictions, Writing Tools or data detectors, and text replacement
+  and spell checking as you type are off for pages and files. The Edit
+  menu no longer offers Check Spelling While Typing or the
+  Substitutions submenu. Saving over a read-only file is refused before
+  anything is written, with "NAME is read-only, so it was not saved.
+  Use Save As to write a copy."; before, the save replaced the file.
+  When several files are opened at once, the ones the pad refuses are
+  named in one notice. Law 0001's AppKit text routes table and the
+  file editing spec are amended to match.
 
 ### Added
 

@@ -72,8 +72,9 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       separator; Edit's Writing Tools items, where the system adds them,
       are unavailable over all three, and no Writing Tools button or
       panel appears beside a selection there; the file's menu still
-      offers Share… and Writing Tools. **Fail:** any of these shows over
-      a page, a note or a name, or the file's menu has lost them.
+      offers Share… and shows no Writing Tools. **Fail:** any of these
+      shows over a page, a note or a name, Writing Tools shows over the
+      file, or the file's menu has lost Share….
 - [ ] **No Look Up, Translate or Speech over a page, a note or a name**
       (Law 0001, share and Writing Tools amendment). Control click a
       selection on a page, in a note and in a name field, then in a
@@ -100,10 +101,11 @@ SIGKILLs a live one), then `scripts/dev.sh`.
       reached it, since that route is not gated.
 - [ ] **No Spelling and Grammar or Search With Google over a page, a
       note or a name** (Law 0001, AppKit text routes amendment). On a
-      page, choose Edit > Spelling and Grammar > Check Spelling While
-      Typing, type `wrnog`, and Control click the underlined word; do the
-      same in an object's note and in its name field while it is open,
-      then in a regular text file. **Pass:** the page's, the note's and
+      page, type `wrnog` and Control click the word; do the same in an
+      object's note and in its name field while it is open, then in a
+      regular text file, where the text menu's Spelling and Grammar >
+      Check Spelling While Typing underlines it first. **Pass:** no word
+      is underlined on a page, in a note or in a name; the page's, the note's and
       the name's menus hold no Spelling and Grammar submenu, no guesses,
       no Provide Feedback, no Ignore Spelling, no Learn Spelling and no
       Search With Google;
@@ -112,22 +114,22 @@ SIGKILLs a live one), then `scripts/dev.sh`.
 - [ ] **Transformations and Substitutions keep every object** (Law
       0001, the rewrite row). On a page type `say -- hi`, seal `hi`,
       type ` -- end` after it, and select the whole line. Choose Edit >
-      Transformations > Make Upper Case, then ⌘Z; then Edit >
-      Substitutions > Show Substitutions and press Replace in Selection
+      Transformations > Make Upper Case, then ⌘Z; then Control click the
+      selection, choose Substitutions > Show Substitutions and press Replace in Selection
       with Smart Dashes ticked, then ⌘Z. **Pass:** the ink changes case
       and both dashes become `—`, the object standing in place each
       time with no removal line, and each ⌘Z takes back its change
       whole. **Fail:** the object goes, the line says sealed content
       removed, or one ⌘Z takes back only part of a change.
-- [ ] **No inline predictions or typing suggestions over a page**
+- [ ] **No inline predictions or typing suggestions over a page or a file**
       (Law 0001, AppKit text routes amendment). With System Settings >
       Keyboard > Text Input's inline predictive text on, type the start
       of a common phrase, such as `see you`, on a page, in a note and in
       a regular text file; on a Mac with a Touch Bar, watch it as you
       type. **Pass:** no gray prediction follows the caret and the Touch
-      Bar shows no typing suggestions over the page or the note; the
-      file shows them. **Fail:** a prediction or a suggestion shows over
-      the page or the note.
+      Bar shows no typing suggestions over the page, the note or the
+      file. **Fail:** a prediction or a suggestion shows over any of the
+      three.
 - [ ] **A link opens only through the page** (Law 0001, link and
       spelling panel amendment, Edit Link amendment). On a page type
       `[docs](https://example.com/?t=1)`. ⌘-click the link; then Control

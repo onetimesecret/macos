@@ -1796,6 +1796,9 @@ public final class PageModel: ObservableObject {
     /// bracket or file-panel gesture. Consumed when both are over.
     private var activationCheckOwed = false
 
+    /// The refusals of the batch open under way, said together at its end; nil outside one.
+    private var batchOpenRefusals: [String]?
+
     // removeObserver is thread-safe; every other access is main-actor
     // isolated, but Swift 6 deinit is nonisolated.
     private nonisolated(unsafe) var modalEndObserver: NSObjectProtocol?
@@ -4243,6 +4246,21 @@ public final class PageModel: ObservableObject {
         checkOpenFilesOnActivate()
     }
 
+    /// A sentence about one open: kept for the batch's one notice, or flashed outside a batch.
+    private func sayOfOpen(_ sentence: String) {
+        if batchOpenRefusals != nil { batchOpenRefusals?.append(sentence) } else { flash(sentence) }
+    }
+
+    /// Runs `opens`, then says every sentence `openFile(at:)` made inside it as one notice.
+    public func collectingOpenRefusals<T>(_ opens: () -> T) -> T {
+        batchOpenRefusals = []
+        let result = opens()
+        let refusals = batchOpenRefusals ?? []
+        batchOpenRefusals = nil
+        if !refusals.isEmpty { flash(refusals.joined(separator: " ")) }
+        return result
+    }
+
     /// Open the file at `url`, the path a panel or a drop produced.
     ///
     /// The core does the reading, so this refuses nothing itself: a
@@ -4303,9 +4321,9 @@ public final class PageModel: ObservableObject {
             return (id, renewBookmark(for: id, from: url))
         }
         guard let opened else {
-            flash(Self.openRefusalNotice(
-                name: url.lastPathComponent, json: client.openFileErrorJSON()
-            ))
+            let refusal = Self.openRefusalNotice(
+                name: url.lastPathComponent, json: client.openFileErrorJSON())
+            sayOfOpen(refusal)
             // A pending row at the path may have been dropped on the
             // way to this refusal, and the surface must not go on
             // showing it.
@@ -4319,9 +4337,9 @@ public final class PageModel: ObservableObject {
         // the reload flag it may carry is answered without a sentence.
         client.clearFileReloadNotice(id)
         if !opened.bookmarked, owesBookmark(path: url.path) {
-            flash(Self.bookmarkFailureNotice(name: url.lastPathComponent))
+            sayOfOpen(Self.bookmarkFailureNotice(name: url.lastPathComponent))
         } else if let sentence = Self.launchNotice(reloaded: [], notices: owed) {
-            flash(sentence)
+            sayOfOpen(sentence)
         }
         // A reopen of a file that is already open hands back the same
         // id core-side, so the editor may be mounted over this exact
@@ -5381,6 +5399,11 @@ public final class PageModel: ObservableObject {
         "\(name) could not be written."
     }
 
+    /// A save the platform denied, which the core answers before staging anything.
+    public nonisolated static func readOnlyNotice(name: String) -> String {
+        "\(name) is read-only, so it was not saved. Use Save As to write a copy."
+    }
+
     /// The sentence for a save the core refused, chosen from the reason
     /// the core gave and not from what the row looks like afterwards.
     ///
@@ -5410,6 +5433,8 @@ public final class PageModel: ObservableObject {
                 : unresolvedConflictNotice(for: file)
         case .pendingHydration:
             return heldFileNotice(name: file.name)
+        case .write(let detail) where detail == "read-only filesystem or storage medium":
+            return readOnlyNotice(name: file.name)
         case .write, .pathInUse, .unknownFile, nil:
             return writeRefusalNotice(name: file.name)
         }
@@ -6143,7 +6168,9 @@ public final class PageModel: ObservableObject {
     public func anchorOnToday() {
         guard showsTimeUnits else { return }
         let rollStood = selectedFile == nil && !showingLedger
-        if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first,
+        // A showing file tab keeps the selection (ADR-0063).
+        if selectedFile == nil,
+           let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first,
            tab != selection {
             select(tab)
         }

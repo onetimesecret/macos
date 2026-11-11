@@ -44,11 +44,10 @@ final class CommandPaletteTests: XCTestCase {
         XCTAssertTrue(entries.filter { $0.matches("unavailable-zebra") }.isEmpty)
     }
 
-    func testControlWAndCommandWResolveToPageCloseWhileShiftCommandWClosesTheWindow() throws {
+    func testCommandWResolvesToPageCloseWhileShiftCommandWClosesTheWindow() throws {
         let map = Keymap.resolve(defaultText: try XCTUnwrap(Keymap.bundledDefaultText()), overrideText: nil)
-        for chord in ["ctrl-w", "cmd-w"] {
-            XCTAssertEqual(map.command(for: try Keystroke.parse(chord).get(), in: .editor), .pageClose)
-        }
+        XCTAssertEqual(map.command(for: try Keystroke.parse("cmd-w").get(), in: .editor), .pageClose)
+        XCTAssertNil(map.command(for: try Keystroke.parse("ctrl-w").get(), in: .editor))
         XCTAssertEqual(map.command(for: try Keystroke.parse("cmd-shift-w").get(), in: .editor), .windowClose)
         XCTAssertEqual(map.menuKeystroke(for: .pageClose), try Keystroke.parse("cmd-w").get())
     }

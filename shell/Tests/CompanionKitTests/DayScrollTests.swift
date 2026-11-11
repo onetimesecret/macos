@@ -2487,6 +2487,27 @@ final class DayScrollTests: XCTestCase {
         }
     }
 
+    /// A summon over a showing file tab leaves the file and the page selection where they were.
+    func testASummonOverAShowingFileKeepsTheSelection() throws {
+        let model = try makeModel()
+        _ = try page(in: model, saying: "one")
+        _ = try page(in: model, saying: "two")
+        let today = try XCTUnwrap(model.timeUnits.units.first { $0.bucket == 0 }).tabIDs
+        let other = try XCTUnwrap(today.last)
+        XCTAssertNotEqual(other, today.first)
+        model.select(other)
+        model.openFile(at: try scratchFile())
+        let file = try XCTUnwrap(model.selectedFile)
+        let selection = model.selection
+        XCTAssertNotEqual(selection, today.first)
+
+        model.anchorOnToday()
+
+        XCTAssertEqual(model.selectedFile, file)
+        XCTAssertEqual(model.selection, selection)
+        XCTAssertNil(model.takeRollRequest())
+    }
+
     /// ⌘N over a file or the ledger, and the Today node over a file, open the
     /// returning roll on the selected page rather than the saved place.
     func testPagesMintedOrPickedOverAStandInOpenTheReturningRollOnThem() throws {

@@ -9,7 +9,7 @@ import os
 /// entrances are the routing table's (`ActivationRouter`): a launch the
 /// person performs, ⌘Tab, a Dock click and a reopen select it, a
 /// cancelled quit selects it while it owns, and the hotkey and the
-/// status item select it only with the ambient panel off. The table
+/// status item select it while it is open or the ambient panel is off. The table
 /// would send a modal return here too while this window owns, but the
 /// delegate asks it only over a raised panel
 /// (`BackdropAppDelegate.modalSessionEnded`), and a raised panel always
@@ -52,6 +52,9 @@ final class PrimaryEditorWindowController: NSObject, NSWindowDelegate {
 
     /// Actual visibility, used by presentation handoff checks.
     var isVisible: Bool { window?.isVisible == true }
+
+    /// Whether the window has the keyboard, read by the summon route.
+    var isKey: Bool { window?.isKeyWindow == true }
 
     /// Whether a window is this one, for ⌘W (#201).
     func owns(_ candidate: NSWindow) -> Bool {

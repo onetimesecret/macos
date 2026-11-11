@@ -994,8 +994,9 @@ final class CommandPaletteControllerTests: XCTestCase {
         }
     }
 
-    func testControlCloseAndCommandPaletteChordsStillDismissSearch() throws {
-        let model = try makeModel()
+    func testAConfiguredControlCloseAndCommandPaletteChordsStillDismissSearch() throws {
+        let model = try makeModel(overrideText:
+            #"[{"context":"Editor","bindings":{"ctrl-w":"page::Close"}}]"#)
         let (window, editor) = makeWindow()
         defer { window.close() }
         let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})

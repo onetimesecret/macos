@@ -955,6 +955,28 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(try read(url), "theirs\n", "the refused save wrote nothing")
     }
 
+    func testASaveOverAReadOnlyFileIsRefusedAndNamesSaveAs() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        let url = try write("KEY=1\n", named: "prod.env", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        try type("mine ", at: 0, into: id, on: model)
+        try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: url.path)
+
+        XCTAssertFalse(model.saveFile(id))
+
+        XCTAssertEqual(
+            model.notice, "prod.env is read-only, so it was not saved. Use Save As to write a copy.")
+        XCTAssertEqual(model.noticeTone, .actionable)
+        XCTAssertEqual(try read(url), "KEY=1\n", "the refused save wrote nothing")
+        let mode = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions]
+        XCTAssertEqual((mode as? NSNumber)?.intValue, 0o444)
+        XCTAssertTrue(model.openFiles.first?.isDirty == true, "the edit is still in the buffer")
+    }
+
     func testKeepMineClearsTheConflictAndTheNextSaveOverwrites() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
@@ -1126,6 +1148,25 @@ final class FileDocumentTests: XCTestCase {
 
         XCTAssertTrue(model.openFiles.isEmpty)
         XCTAssertEqual(model.notice, "nothing.txt could not be read, so it was not opened.")
+    }
+
+    func testABatchOfOpensSaysEveryRefusalInOneNotice() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        let good = try write("body\n", named: "notes.txt", in: fixture)
+        let absent = ["one.txt", "two.txt"].map { fixture.workspace.appendingPathComponent($0) }
+
+        model.collectingOpenRefusals {
+            for url in [absent[0], good, absent[1]] { model.openFile(at: url) }
+        }
+
+        XCTAssertEqual(model.openFiles.map(\.name), ["notes.txt"])
+        XCTAssertEqual(
+            model.notice,
+            "one.txt could not be read, so it was not opened. "
+                + "two.txt could not be read, so it was not opened.")
     }
 
     /// The refusal wording, without files on disk that are genuinely binary
