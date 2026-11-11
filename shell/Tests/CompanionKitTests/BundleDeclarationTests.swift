@@ -127,25 +127,58 @@ final class BundleDeclarationTests: XCTestCase {
         )
     }
 
-    /// Open With lists the pad for text files, never as their default app.
-    /// No NSDocumentClass, which issue #77 relies on to keep ⌘N for page::New.
-    func testTheBundleOpensTextAsAnAlternateEditorWithNoDocumentClass() throws {
-        let plist = Self.shellDirectory.appendingPathComponent("OnetimePad-Info.plist")
-        let data = try Data(contentsOf: plist)
-        let parsed = try PropertyListSerialization.propertyList(
-            from: data, options: [], format: nil)
-        let keys = try XCTUnwrap(parsed as? [String: Any])
+    /// Plain text is offered under Open With at Alternate rank; Markdown, logs and
+    /// dotenv files are Default rank. No NSDocumentClass, which issue #77 relies on.
+    func testTheBundleDeclaresItsDocumentTypesWithNoDocumentClass() throws {
+        let keys = try Self.identitySheet()
         let types = try XCTUnwrap(
             keys["CFBundleDocumentTypes"] as? [[String: Any]],
             "with no document type the Finder greys the pad out under Open With")
 
-        XCTAssertEqual(types.count, 1)
-        let text = try XCTUnwrap(types.first)
-        XCTAssertEqual(text["CFBundleTypeRole"] as? String, "Editor")
-        XCTAssertEqual(text["LSHandlerRank"] as? String, "Alternate")
-        XCTAssertEqual(text["LSItemContentTypes"] as? [String], ["public.plain-text"])
-        XCTAssertNil(
-            text["NSDocumentClass"],
-            "a document model would bring AppKit's own New, and ⌘N belongs to page::New")
+        let ranks = try Dictionary(types.map { type -> (String, String) in
+            XCTAssertEqual(type["CFBundleTypeRole"] as? String, "Editor")
+            XCTAssertNil(
+                type["NSDocumentClass"],
+                "a document model would bring AppKit's own New, and ⌘N belongs to page::New")
+            let contentTypes = try XCTUnwrap(type["LSItemContentTypes"] as? [String])
+            XCTAssertEqual(contentTypes.count, 1, "one content type per declaration, so each has its own rank")
+            return (contentTypes[0], try XCTUnwrap(type["LSHandlerRank"] as? String))
+        }, uniquingKeysWith: { first, _ in first })
+        XCTAssertEqual(ranks.count, types.count, "one content type is declared twice")
+        XCTAssertEqual(ranks, [
+            "public.plain-text": "Alternate",
+            "net.daringfireball.markdown": "Default",
+            "com.apple.log": "Default",
+            "com.onetimesecret.pad.dotenv": "Default",
+        ])
+    }
+
+    /// Every declared content type the system does not define is imported here, with its extensions.
+    func testTheBundleImportsTheTypesItsDocumentTypesName() throws {
+        let keys = try Self.identitySheet()
+        let imported = try XCTUnwrap(keys["UTImportedTypeDeclarations"] as? [[String: Any]])
+        XCTAssertNil(keys["UTExportedTypeDeclarations"], "three lanes exporting one type would contend for it")
+
+        let extensions = try Dictionary(imported.map { type -> (String, [String]) in
+            XCTAssertEqual(type["UTTypeConformsTo"] as? [String], ["public.plain-text"])
+            let tags = try XCTUnwrap(type["UTTypeTagSpecification"] as? [String: Any])
+            return (
+                try XCTUnwrap(type["UTTypeIdentifier"] as? String),
+                try XCTUnwrap(tags["public.filename-extension"] as? [String])
+            )
+        }, uniquingKeysWith: { first, _ in first })
+        XCTAssertEqual(extensions.count, imported.count, "one type is imported twice")
+        XCTAssertEqual(Set(extensions.keys), ["net.daringfireball.markdown", "com.onetimesecret.pad.dotenv"])
+        XCTAssertEqual(
+            Set(extensions["net.daringfireball.markdown"] ?? []), FileFormatHints.markdownExtensions,
+            "the Finder and the editor disagree about which files are Markdown")
+        XCTAssertEqual(extensions["com.onetimesecret.pad.dotenv"], ["env", "envrc"])
+    }
+
+    private static func identitySheet() throws -> [String: Any] {
+        let plist = shellDirectory.appendingPathComponent("OnetimePad-Info.plist")
+        let parsed = try PropertyListSerialization.propertyList(
+            from: Data(contentsOf: plist), options: [], format: nil)
+        return try XCTUnwrap(parsed as? [String: Any])
     }
 }

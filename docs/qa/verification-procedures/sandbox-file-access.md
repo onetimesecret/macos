@@ -293,17 +293,45 @@ go through a panel.
    the panel.
 
 **Pass:** OnetimePad is listed and enabled under Open With, and the
-file's default app is unchanged. After each open the file's tab is
+default app for `.txt` is unchanged. After each open the file's tab is
 selected in the editor window, and each save reaches the file as in
 case 1. The File menu has no New item, and cmd-n adds a new page. In
 step 5 no tab opens while the panel is up, and `b.txt`'s tab is
 selected once the panel is cancelled.
 
 **Fail:** the entry is greyed out; the pad becomes the default app for
-`.txt`; the pad comes forward with no tab for the file, or with today's
+`.txt` with nobody having chosen it; the pad comes forward with no tab for the file, or with today's
 page selected over it; the save refused; a New item in the File menu,
 or cmd-n doing anything but adding a page; or `b.txt` opening under the
 open panel.
+
+## Case 2b: the default application for each declared kind
+
+Not yet run. Record the output of each command with the result.
+
+1. In an empty directory, create `a.txt`, `a.md`, `a.log`, `prod.env`,
+   `.env`, `.envrc` and `.env.local`, each with one line of text.
+2. With the bundle under test installed and launched once, run
+   `swift scripts/default-app.swift --type-of a.txt a.md a.log prod.env .env .envrc .env.local`
+   and `swift scripts/default-app.swift`.
+3. Run `swift scripts/default-app.swift --set "<bundle under test>"`,
+   then repeat step 2.
+4. Run `open` on each of the seven files in turn. Edit and press cmd-s
+   in each tab the pad opens.
+
+**Pass:** before step 3, `a.txt` opens in the application it opened in
+before the bundle was installed. After step 3, `a.txt`, `a.md`, `a.log`
+and `prod.env` each open in the bundle under test, each in its own tab,
+and each save reaches the file.
+
+**Record, with no pass or fail yet:** the content type and the default
+application step 2 reports for `a.md`, `a.log` and `prod.env` before
+step 3, which is what the Default rank alone decides; and the content
+type reported for `.env`, `.envrc` and `.env.local`, with whether step
+4 opens them in the pad.
+
+**Fail:** a kind refused in step 3; a file that opens in the pad with no
+tab; a save refused.
 
 ## Case 3: Save As, to a new name and over an existing file
 

@@ -118,9 +118,18 @@ Four ways in, all of them explicit.
   nothing is inserted into the page under the cursor. This matters:
   dropping a file must never silently turn into pasting its bytes into
   a staged page.
-- **Open from the Finder.** The bundle declares plain text with the
-  Editor role and the Alternate rank, so Open With lists the pad, and
-  the pad is not preferred as the default app for those files. A file
+- **Open from the Finder.** The bundle declares four document types,
+  each with the Editor role. Plain text has the Alternate rank, so Open
+  With lists the pad for every text file and the pad is not preferred
+  for them by rank. Markdown (`net.daringfireball.markdown`), logs
+  (`com.apple.log`) and dotenv files (`com.onetimesecret.pad.dotenv`,
+  an imported type for the `env` and `envrc` extensions) have the
+  Default rank (app 0.47.0). The app never sets itself as the default
+  application: that is the person's choice, made in the Finder's Get
+  Info window or with `scripts/default-app.swift`. Not verified on
+  hardware: what macOS picks for each kind beside other installed
+  editors, and whether a file named exactly `.env` or `.envrc` takes
+  the dotenv type or stays plain data like the dotfiles below. A file
   opened this way, or dropped on the Dock icon, takes the drop's path
   and selects the editor window. At launch it waits until the open
   files are restored, while an open or save panel is up it waits until

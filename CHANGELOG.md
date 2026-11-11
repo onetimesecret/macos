@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The pad can be the default application for Markdown, log and dotenv
+  files** (app 0.47.0; the file editing spec's Opening section). The
+  bundle now declares Markdown, logs, and files with the `env` and
+  `envrc` extensions as document types at the Default rank, beside
+  plain text at the Alternate rank as before. The app does not set
+  itself as the default; `scripts/default-app.swift` shows and sets the
+  choice for all four kinds, plain text among them.
+
 - **Sealed blocks select like text and keep their actions in a visible row**
   (app 0.46.0; #339). A click on a named sealed block selects it instead
   of copying; Copy, More and Note sit in a stable row with distinct
