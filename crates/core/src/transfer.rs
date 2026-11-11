@@ -133,9 +133,7 @@ impl<C: Clock> SheetStore<C> {
     /// A range's public text as [`SheetStore::copy_fragment`] writes it, with no envelope
     /// composed (Law 0001, search row). `None` where the copy refuses the page or the range.
     pub fn public_text(&self, id: SheetId, at_u16: u32, len_u16: u32) -> Option<Zeroizing<String>> {
-        self.selected(id, at_u16, len_u16)
-            .ok()
-            .map(|(_, plain)| plain)
+        self.readable_sheet(id)?.public_text(at_u16, len_u16)
     }
 
     /// Compose an ordered selection across pages through the core (ADR-0045 point 1).
@@ -2030,6 +2028,16 @@ mod tests {
             store.public_text(small, 0, 2).unwrap().as_str(),
             store.copy_fragment(small, 0, 2).unwrap().plain.as_str()
         );
+        let (mixed, _, _) = mixed(&mut store);
+        let whole = body(&store, mixed).encode_utf16().count() as u32;
+        for (at, len) in [(0, whole), (1, 3), (2, 1), (0, 2), (whole - 1, 1)] {
+            assert_eq!(
+                store.public_text(mixed, at, len).unwrap().as_str(),
+                store.copy_fragment(mixed, at, len).unwrap().plain.as_str(),
+                "{at}+{len}"
+            );
+        }
+        assert!(store.public_text(mixed, 1, 0).is_none());
         assert!(store.public_text(small, 0, 3).is_none());
         clock.advance(8 * 24 * HOUR);
         assert!(store.public_text(small, 0, 2).is_none());

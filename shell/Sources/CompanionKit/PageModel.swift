@@ -7256,6 +7256,7 @@ public final class PageModel: ObservableObject {
     /// After the core rewrote pages by a transfer: restate each, then settle as
     /// the event timer does, since a paste may have swept due pages (Law 0001, expiry row).
     private func settleTransfer(_ sheets: UInt64...) {
+        let stood = tabs
         for sheet in sheets {
             countEdit(.sheet(sheet))
             restateStorage(sheet: sheet)
@@ -7263,6 +7264,7 @@ public final class PageModel: ObservableObject {
         }
         markDirty()
         refresh()
+        noteExpired(since: stood)
         #if DEBUG
         for sheet in sheets { assertProjectionParity(sheet: sheet) }
         #endif
