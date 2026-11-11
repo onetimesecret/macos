@@ -1318,6 +1318,7 @@ public final class PageModel: ObservableObject {
     enum RollRequest: Equatable {
         case today
         case page(UInt64)
+        case line(page: UInt64, offset: Int)
     }
 
     private var rollRequest: RollRequest?
@@ -6355,6 +6356,7 @@ public final class PageModel: ObservableObject {
             padReadingPlaces = padReadingPlaces.filter { $0.value.page != page }
         }
         if case .page(let requested) = rollRequest, requested == tab.pageID { rollRequest = nil }
+        if case .line(let requested, _) = rollRequest, requested == tab.pageID { rollRequest = nil }
         if expandedPageID == tab.pageID { expandedPageID = nil }
         refresh()
         if wasSelected, showsTimeUnits, selectedFile == nil, !showingLedger {
@@ -6400,7 +6402,7 @@ public final class PageModel: ObservableObject {
                 continue
             }
             let whole = NSRange(location: 0, length: bodyLength(of: page))
-            guard let text = client.copyFragment(sheet: page, range: whole)?.plainText else { continue }
+            guard let text = client.publicText(sheet: page, range: whole) else { continue }
             if let byteLimit, text.utf8.count > byteLimit {
                 skipped = true
                 continue
@@ -6449,21 +6451,26 @@ public final class PageModel: ObservableObject {
             case .chip: text += "\u{FFFC}"
             }
         }
-        seatCaret(atLine: row.line, of: text, for: page)
+        if let start = seatCaret(atLine: row.line, of: text, for: page), showsTimeUnits {
+            rollRequest = .line(page: page, offset: start)
+            objectWillChange.send()
+        }
         return true
     }
 
     /// Leaves the caret and the scroll at a line's start for the editor that mounts
-    /// `sheet` next, and moves the editor already standing on it.
-    private func seatCaret(atLine line: Int, of text: String, for sheet: UInt64) {
-        guard let start = PageSearch.utf16Offset(ofLine: line, in: text) else { return }
+    /// `sheet` next, moves the editor already standing on it, and returns the offset.
+    @discardableResult
+    private func seatCaret(atLine line: Int, of text: String, for sheet: UInt64) -> Int? {
+        guard let start = PageSearch.utf16Offset(ofLine: line, in: text) else { return nil }
         let caret = NSRange(location: start, length: 0)
         viewStates.saveCaret(caret, for: sheet)
         viewStates.saveScroll(ScrollAnchor(characterIndex: start), for: sheet)
         guard let editor = activeEditor as? InkTextView, editor.coordinator?.currentSheet == sheet,
-              start <= editor.textStorage?.length ?? 0 else { return }
+              start <= editor.textStorage?.length ?? 0 else { return start }
         editor.setSelectedRange(caret)
         editor.scrollRangeToVisible(caret)
+        return start
     }
 
     /// Whether closing `closingSheet` orphans the open conceal

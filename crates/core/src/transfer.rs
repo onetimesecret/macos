@@ -130,6 +130,14 @@ impl<C: Clock> SheetStore<C> {
         Ok(Copied { envelope, plain })
     }
 
+    /// A range's public text as [`SheetStore::copy_fragment`] writes it, with no envelope
+    /// composed (Law 0001, search row). `None` where the copy refuses the page or the range.
+    pub fn public_text(&self, id: SheetId, at_u16: u32, len_u16: u32) -> Option<Zeroizing<String>> {
+        self.selected(id, at_u16, len_u16)
+            .ok()
+            .map(|(_, plain)| plain)
+    }
+
     /// Compose an ordered selection across pages through the core (ADR-0045 point 1).
     pub fn copy_fragments(&self, ranges: &[FragmentSelection]) -> Result<Copied, CopyRefusal> {
         let (fragment, plain) = self.selected_fragments(ranges)?;
@@ -2002,6 +2010,29 @@ mod tests {
             .collect();
         assert!(store.sync_document(id, segments));
         id
+    }
+
+    #[test]
+    fn public_text_reads_a_page_whose_copy_is_past_the_reference_cap() {
+        let (mut store, clock) = store();
+        let count = REFERENCE_CAP + 1;
+        let id = objects(&mut store, count);
+        assert_eq!(
+            store.copy_fragment(id, 0, count as u32).err(),
+            Some(CopyRefusal::PastCap(EnvelopeCap::References))
+        );
+        let text = store.public_text(id, 0, count as u32).unwrap();
+        assert_eq!(text.matches("[sealed content").count(), count);
+        assert!(!text.contains(A));
+
+        let small = objects(&mut store, 2);
+        assert_eq!(
+            store.public_text(small, 0, 2).unwrap().as_str(),
+            store.copy_fragment(small, 0, 2).unwrap().plain.as_str()
+        );
+        assert!(store.public_text(small, 0, 3).is_none());
+        clock.advance(8 * 24 * HOUR);
+        assert!(store.public_text(small, 0, 2).is_none());
     }
 
     #[test]
