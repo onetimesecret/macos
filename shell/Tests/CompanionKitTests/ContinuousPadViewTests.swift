@@ -286,6 +286,29 @@ final class ContinuousPadViewTests: XCTestCase {
         })
     }
 
+    func testASearchRowOpensItsLineInTheContinuousEditor() throws {
+        let model = try model()
+        _ = try seed(String(repeating: "a line\n", count: 50), in: model)
+        let page = try seed("first\nsecond needle\nthird", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let editor = surface.canvas.editor
+        let other = try XCTUnwrap(surface.canvas.document.projection.segments.first { $0.page.id != page })
+        surface.canvas.open(page: other.page.id)
+
+        for (query, offset) in [("needle", 6), ("third", 20)] {
+            let sources = model.pageSearchSources(byteLimit: nil).sources
+            let row = try XCTUnwrap(PageSearch.rows(for: query, in: sources).first)
+            XCTAssertTrue(model.openSearchRow(row))
+            ContinuousPadView.updateSurface(surface.scroll, model: model, readOnly: false,
+                coordinator: surface.coordinator)
+            let segment = try XCTUnwrap(surface.canvas.document.projection.segments.first { $0.page.id == page })
+            XCTAssertEqual(editor.selectedRange(),
+                NSRange(location: segment.bodyRange.location + offset, length: 0), query)
+        }
+        XCTAssertNil(model.takeRollRequest())
+    }
+
     func testRailSelectionScrollsSameEditorAndReadOnlyChangesInPlace() throws {
         let model = try model()
         _ = try seed(String(repeating: "a line\n", count: 50), in: model)

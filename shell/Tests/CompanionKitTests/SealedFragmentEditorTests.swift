@@ -1272,6 +1272,7 @@ final class SealedFragmentEditorTests: XCTestCase {
         XCTAssertEqual(placed.expired, 2)
         XCTAssertFalse(
             page.model.tabs.contains { $0.pageID == page.sheet }, "the swept page stayed on screen")
+        XCTAssertEqual(page.model.expiredWhileAway.count, 1, "the swept page went unreported")
     }
 
     /// A fragment or the slot's cut over several stretches places nothing and says so, as

@@ -1937,6 +1937,6 @@ paths must stay dialog free.
 - 2026-11-10: Page search amendment. Proposed with the command palette's
   search across pages and files, and not yet reviewed by the maintainer.
   Added the search row to the contract: the search is an ambient
-  observation that reads a page through `companion_sheet_copy_fragment`,
-  the copy row's public text, so it adds a reader of that text and no
-  route to a payload. No other row changes.
+  observation that reads a page through `companion_sheet_public_text`,
+  the copy row's public text with no envelope composed, so it adds a
+  reader of that text and no route to a payload. No other row changes.

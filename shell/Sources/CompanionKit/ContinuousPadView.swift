@@ -63,6 +63,7 @@ public struct ContinuousPadView: NSViewRepresentable {
         switch model.takeRollRequest() {
         case .today: canvas.scrollToToday()
         case .page(let page): canvas.open(page: page)
+        case .line(let page, let offset): canvas.open(page: page, offset: offset)
         case nil: break
         }
         canvas.measure()
@@ -461,14 +462,15 @@ final class ContinuousPadCanvas: NSView {
         }
     }
 
-    func open(page: UInt64) {
+    func open(page: UInt64, offset: Int = 0) {
         guard let segment = document.projection.segments.first(where: { $0.page.id == page }) else { return }
-        editor.setSelectedRange(NSRange(location: segment.bodyRange.location, length: 0))
+        let start = segment.bodyRange.location + min(max(0, offset), segment.bodyRange.length)
+        editor.setSelectedRange(NSRange(location: start, length: 0))
         document.selectionChanged(editor.selectedRange())
         selectedPage = page
         measure()
         scroll(to: NSPoint(x: observedScroll?.contentView.bounds.minX ?? 0,
-            y: max(0, lineRect(at: segment.bodyRange.location).minY - 20)))
+            y: max(0, lineRect(at: start).minY - 20)))
     }
 
     func scrollToToday() {

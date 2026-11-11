@@ -28,11 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Pages and Files opens the command palette in a search mode that lists
   each matching line across the current pad's open and closed pages and
   its open file tabs, newest page first. Choosing a line shows its page or
-  file, reopening a closed page first; in Tabs view and in a file the
-  caret moves to that line. The palette's command search shows the same
+  file, reopening a closed page first, with the caret at that line in
+  Tabs view, in Timeline and in a file. The palette's command search shows the same
   results when no command matches. The search reads a page as its public
   text, with a placeholder for each sealed object, so sealed contents are
-  not matched ([Law 0001](docs/law/0001-sealed-object.md)).
+  not matched ([Law 0001](docs/law/0001-sealed-object.md)). A page with
+  more sealed objects than one copy may name is searched like any other.
 
 - **Reopen Last Closed Page or Tab and Reopen Dated Tabs** (#340). Closing
   a page or tab hides it and keeps it saved; reopening restores the same

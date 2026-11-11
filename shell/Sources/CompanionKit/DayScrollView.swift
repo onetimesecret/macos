@@ -179,7 +179,7 @@ public struct DayScrollView: NSViewRepresentable {
         // The latest gesture that found no roll to move outranks the pad's saved place.
         switch model.takeRollRequest() {
         case .today: stack.requestToday()
-        case .page(let page): stack.open(onPage: page)
+        case .page(let page), .line(let page, _): stack.open(onPage: page)
         case nil: break
         }
         stack.update(

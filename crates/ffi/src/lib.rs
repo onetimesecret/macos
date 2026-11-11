@@ -1777,6 +1777,37 @@ pub unsafe extern "C" fn companion_sheet_copy_fragment(
     )
 }
 
+/// A UTF-16 range's public text as `{"plain": string}`, the text
+/// [`companion_sheet_copy_fragment`] writes, with no envelope composed; null
+/// where that copy answers null. Free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_public_text(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    at_utf16: u32,
+    len_utf16: u32,
+) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    match guard
+        .store
+        .public_text(SheetId::from_raw(sheet), at_utf16, len_utf16)
+    {
+        Some(plain) => into_c_string(serde_json::json!({ "plain": plain.as_str() }).to_string()),
+        None => ptr::null_mut(),
+    }
+}
+
 /// [`companion_sheet_copy_fragment`], then delete the range as one undo step,
 /// its objects detaching as the active cut. It refuses as the copy does, or
 /// for a body that refuses the edit, and a refusal changes nothing.
@@ -9694,6 +9725,28 @@ mod tests {
                 -1
             );
             assert_eq!(companion_sheet_ink_bytes(ptr::null_mut(), page), -1);
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_pages_public_text_matches_its_copy_and_refuses_where_the_copy_does() {
+        let handle = handle();
+        unsafe {
+            let (sheet, _) = page_with_a_chip(handle, "hunter2-secret");
+            let copied = json_of(companion_sheet_copy_fragment(handle, sheet, 0, 5));
+            let read = json_of(companion_sheet_public_text(handle, sheet, 0, 5));
+            assert_eq!(read["plain"], copied["plain"]);
+            assert!(read.get("envelope").is_none());
+            assert!(!read.to_string().contains("hunter2"));
+
+            assert!(companion_sheet_public_text(handle, sheet, 0, 99).is_null());
+            assert!(companion_sheet_public_text(handle, sheet + 1_000, 0, 1).is_null());
+            assert!(
+                companion_sheet_public_text(handle, sheet | companion_core::FILE_ID_TAG, 0, 1)
+                    .is_null()
+            );
+            assert!(companion_sheet_public_text(ptr::null_mut(), sheet, 0, 1).is_null());
             companion_free(handle);
         }
     }

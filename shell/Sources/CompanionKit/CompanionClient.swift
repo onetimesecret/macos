@@ -1467,6 +1467,16 @@ public class CompanionClient: @unchecked Sendable {
         try? copyFragmentResult(sheet: sheet, range: range).get()
     }
 
+    /// A UTF-16 range's public text as the copy writes it, with no envelope composed;
+    /// nil where the copy refuses the page or the range (Law 0001, search row).
+    public func publicText(sheet: UInt64, range: NSRange) -> String? {
+        struct Read: Decodable { let plain: String }
+        guard let wire = selectionWire(range) else { return nil }
+        return decodeOwnedJSON(
+            Read.self, from: companion_sheet_public_text(handle, sheet, wire.0, wire.1)
+        )?.plain
+    }
+
     /// One run the shell shows of a page: rendered text, or an object by chip id.
     public enum ShownRun: Equatable, Sendable {
         case ink(String)

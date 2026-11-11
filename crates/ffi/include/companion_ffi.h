@@ -920,6 +920,14 @@ char *companion_sheet_copy_fragment(CompanionHandle *handle, uint64_t sheet,
                                     uint32_t at_utf16, uint32_t len_utf16);
 
 /*
+ * A UTF-16 range's public text as {"plain": string}: the text
+ * companion_sheet_copy_fragment() writes, with no envelope composed.
+ * Null where that copy answers null. Free with companion_string_free().
+ */
+char *companion_sheet_public_text(CompanionHandle *handle, uint64_t sheet,
+                                  uint32_t at_utf16, uint32_t len_utf16);
+
+/*
  * As companion_sheet_copy_fragment(), then delete the range as one undo
  * step. Its objects detach on the page's clock as the store's one
  * active cut, whose envelope names it; a later cut holding an object
