@@ -6,9 +6,7 @@ import SwiftUI
 /// permanent dashed ◌ ledger tab at the right end. Click selects;
 /// double-click holds the clock; drag reorders; ✕ on hover closes.
 ///
-/// The ↗ page button is built here and not shown (issue #78,
-/// `HiddenUI`), so what a user sees today is the slots, the + and the
-/// ledger tab.
+/// The ↗ page button is built here and not shown (issue #78, `HiddenUI`).
 ///
 /// A slot whose page expired keeps its place, its name and its rung,
 /// and draws the dashed empty treatment instead of a gauge (ADR-0017).
