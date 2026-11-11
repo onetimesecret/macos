@@ -231,9 +231,8 @@ teaches ⌘↩.
 
   > Expiry feedback, 2026-11-10:
   > [ADR-0064](../../adr/0064-a-page-never-expires-without-the-person-being-told.md)
-  > (proposed) would replace this bullet's first sentence with a standing
-  > line under the page and a last-hour notification. The bullet stands as
-  > written until that record is accepted.
+  > (accepted 2026-11-11) replaces this bullet's first sentence with a
+  > standing line under the page and a last-hour notification.
 
 ## Sheets, several: tabs at the bottom
 

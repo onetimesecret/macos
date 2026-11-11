@@ -4,8 +4,8 @@ documentation_status: needs-review
 
 # ADR-0064: A page never expires without the person being told
 
-- **Status:** proposed
-- **Date:** 2026-11-10
+- **Status:** accepted
+- **Date:** 2026-11-11
 - **Depends on:** [ADR-0017](0017-durable-tabs-expiring-pages.md), [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md)
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
@@ -96,3 +96,5 @@ no count chip.
   written. The interaction model and the design principles each have a notice
   pointing here. D-14 has none: its record is superseded and its successor
   reads it from a fixed commit.
+- 2026-11-10: Implemented in PR #354.
+- 2026-11-11: Accepted by the maintainer.

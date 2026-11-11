@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   d󠄁i󠄁a󠄁l󠄁e󠄁c󠄁t󠄁.󠄁 G󠄁F󠄁M󠄁 i󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁;󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 c󠄁h󠄁o󠄁i󠄁c󠄁e󠄁 r󠄁e󠄁f󠄁r󠄁e󠄁s󠄁h󠄁e󠄁s󠄁 o󠄁p󠄁e󠄁n󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁
   p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 i󠄁m󠄁m󠄁e󠄁d󠄁i󠄁a󠄁t󠄁e󠄁l󠄁y󠄁.󠄁 (󠄁#󠄁3󠄁3󠄁2󠄁)󠄁
 
-- **A page never expires without you being told** (ADR-0064, proposed). A line
+- **A page never expires without you being told** (ADR-0064). A line
   under the page names the pages that expired since you last typed or
   dismissed it, with Show Ledger and Dismiss beside it. The ledger is
   reachable again: its tab, Command-0, View > Show Ledger, the command
