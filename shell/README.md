@@ -72,10 +72,11 @@ the seam.
   `docs/development/keymap-format-and-dispatch.md` for the list that is actually
   installed. Markdown headings render styled with their markup kept
   visible; the bytes of the page never change.
-- The ledger still records every event and is still readable by an
-  override keymap, but its dashed ◌ tab, its ⌘0 and its Settings entry
-  are hidden (issue #78) while the audit story is settled. Nothing was
-  deleted, so nothing has to be rebuilt to bring it back.
+- The ledger records every event and is reached from its dashed ◌ tab,
+  ⌘0, View > Show Ledger or the command palette; Settings clears it. A
+  line under the page names the pages that expired since a person last
+  typed, and a page entering its last hour while the app is not active
+  posts one local notification (ADR-0064, proposed).
 - Every gesture route is boundary-lawful: sealed paste reads
   `NSPasteboard.general` core-side; **drop-to-seal reads the drag
   pasteboard core-side** (`companion_sheet_seal_from_drag`) — no

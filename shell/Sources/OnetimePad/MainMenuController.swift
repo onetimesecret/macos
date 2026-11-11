@@ -10,6 +10,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     private weak var languageMenu: NSMenu?
     private weak var timelineItem: NSMenuItem?
     private weak var tabsItem: NSMenuItem?
+    private weak var ledgerItem: NSMenuItem?
 
     init(app: BackdropAppDelegate) {
         self.app = app
@@ -155,6 +156,12 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         }
         tabsItem = tabs
         view.addItem(tabs)
+        let ledger = action(CompanionL10n.string("Show Ledger"), command: .ledgerShow) { [app] in
+            app.pages.perform(.ledgerShow)
+            app.returnToOwner()
+        }
+        ledgerItem = ledger
+        view.addItem(ledger)
         view.addItem(.separator())
         view.addItem(responder(CompanionL10n.string("Enter Full Screen"), #selector(NSWindow.toggleFullScreen(_:)), key: "f", modifiers: [.command, .control]))
     }
@@ -207,6 +214,11 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         if menu === viewMenu {
             timelineItem?.state = app.pages.showsTimeUnits ? .on : .off
             tabsItem?.state = app.pages.showsTimeUnits ? .off : .on
+            // With pads on, ⌘0 is Scratch's (ADR-0039), so the item stops naming it.
+            let chord = app.pages.keymap.menuKeystroke(for: .ledgerShow)
+            let shown = app.pages.padsTake(chord) ? nil : chord
+            ledgerItem?.keyEquivalent = shown?.menuKeyEquivalent ?? ""
+            ledgerItem?.keyEquivalentModifierMask = shown?.menuModifierMask ?? []
         }
         if menu === languageMenu { updateLanguages(in: menu) }
     }

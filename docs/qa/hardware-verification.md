@@ -16,15 +16,14 @@ sheets of ink and sealed chips, gesture-only sealing, the pausable
 countdown, bottom tabs, the ledger. Do it on the Mac you'll ship
 against.
 
-**Suspended while issue #78 stands.** Four affordances are built and
-deliberately not drawn: the ledger's entry points (its tab, ⌘0, and the
-Settings clear), the ↗ page button, the resize glyph in the bottom
-corner, and the ember dot in the header. Every check below that reaches
-the ledger through the UI, and the one that presses ⌘0, cannot be run as
-written; bind `ledger::Show` in your own keymap if you need to reach the
-ledger for a check, or skip it and say so in the session notes. What the
-resize glyph advertised is still true, so the resize checks stand as
-they are.
+**Issue #78, as of 2026-11-10.** Three affordances are built and
+deliberately not drawn: the ↗ page button, the resize glyph in the bottom
+corner, and the ember dot in the header. The ledger's entry points (its
+tab, ⌘0, and the Settings clear) are drawn again, so the checks below that
+reach the ledger can be run. ⌘0 runs `ledger::Show`, which opens the
+ledger and does not close it; the checks that press ⌘0 a second time to
+return predate that and are closed with Esc or the tab. What the resize
+glyph advertised is still true, so the resize checks stand as they are.
 
 Two prior results stand and are not re-run here:
 
@@ -157,6 +156,8 @@ trigger**. VoiceOver on (⌘F5); keyboard only.
 - [ ] **Expiry, watched:** let one short-rung page expire while the
       window is open. Silent removal to the ledger — is silence the
       right promise (docs/spec/06)?
+      (2026-11-10: a line under the page now names the page, with Show
+      Ledger and Dismiss; see ADR-0064, proposed.)
 
 ## §E — Frugality, re-measured
 

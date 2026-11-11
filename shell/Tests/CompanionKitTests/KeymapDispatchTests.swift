@@ -277,30 +277,32 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertEqual(TabStripView.newPageHelp(chord: nil), "New page")
     }
 
-    /// The ledger tab is the case that actually happened: the bundled
-    /// keymap withdrew ⌘0 (issue #78) and the tooltip went on offering
-    /// it. With nothing bound, it says only what the tab does.
-    func testTheLedgerTooltipDropsTheChordTheDefaultWithdrew() throws {
+    /// The ledger tab names the chord the bundled keymap binds.
+    func testTheLedgerTooltipNamesTheBundledChord() throws {
         let model = try makeModel()
-        XCTAssertNil(model.keymap.hintKeystroke(for: .ledgerShow))
-        XCTAssertFalse(
-            TabStripView.ledgerHelp(chord: model.keymap.hintKeystroke(for: .ledgerShow))
-                .contains("("))
+        XCTAssertTrue(TabStripView.ledgerHelp(chord: model.ledgerChord).hasSuffix("(⌘0)"))
     }
 
-    /// And an override that puts the ledger back on a chord gets a
-    /// tooltip that names it.
-    func testTheLedgerTooltipNamesAChordAnOverrideRestored() throws {
+    /// With the chord unbound by an override, the tooltip says only what the tab does.
+    func testTheLedgerTooltipDropsAChordAnOverrideUnbound() throws {
         let override = FileManager.default.temporaryDirectory
             .appendingPathComponent("keymap-\(UUID().uuidString).json")
-        try #"[{ "context": "Editor", "bindings": { "cmd-0": "ledger::Show" } }]"#
+        try #"[{ "context": "Editor", "bindings": { "cmd-0": null } }]"#
             .write(to: override, atomically: true, encoding: .utf8)
         addTeardownBlock { try? FileManager.default.removeItem(at: override) }
 
         let model = try makeModel(keymapOverride: override)
-        XCTAssertTrue(
-            TabStripView.ledgerHelp(chord: model.keymap.hintKeystroke(for: .ledgerShow))
-                .hasSuffix("(⌘0)"))
+        XCTAssertNil(model.ledgerChord)
+        XCTAssertFalse(TabStripView.ledgerHelp(chord: model.ledgerChord).contains("("))
+    }
+
+    /// With pads on, ⌘0 is Scratch's (ADR-0039), so the ledger stops naming it.
+    func testTheLedgerTooltipDropsAChordThePadLayerTakes() throws {
+        let model = try makeModel()
+        XCTAssertFalse(model.padsTake(model.keymap.menuKeystroke(for: .ledgerShow)))
+        model.pads.isEnabled = true
+        XCTAssertTrue(model.padsTake(model.keymap.menuKeystroke(for: .ledgerShow)))
+        XCTAssertNil(model.ledgerChord)
     }
 
     /// The hint is not the menu equivalent: a section that declined key

@@ -22,7 +22,8 @@ final class CommandPaletteTests: XCTestCase {
         XCTAssertEqual(entries.map(\.scope.rawValue), entries.map(\.scope.rawValue).sorted())
         XCTAssertEqual(Set(entries.map(\.command)).count, entries.count)
         XCTAssertEqual(entries.map(\.command), [
-            .appOpenTimeline, .appSwitchToTabs, .pageSearch, .pageReopenDated, .pageReopenLast,
+            .appOpenTimeline, .appSwitchToTabs, .ledgerShow, .pageSearch,
+            .pageReopenDated, .pageReopenLast,
             .pageNew, .fileOpen, .appSettings, .appHelp, .windowClose,
             .stateSaveNow, .fileSaveAs, .pageClose, .pagePrevious, .pageNext, .editorToggleWrap,
             .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorUndo, .editorRedo,
@@ -32,6 +33,23 @@ final class CommandPaletteTests: XCTestCase {
         for command in [CommandID.appOpenTimeline, .appSwitchToTabs, .pageReopenLast, .pageReopenDated, .pageSearch] {
             XCTAssertEqual(entries.first { $0.command == command }?.scope, .application)
         }
+    }
+
+    func testTheLedgerIsAnApplicationCommandWithItsBundledChord() throws {
+        let map = Keymap.resolve(defaultText: try XCTUnwrap(Keymap.bundledDefaultText()), overrideText: nil)
+        let ledger = try XCTUnwrap(CommandPaletteCatalog.entries(keymap: map).first { $0.command == .ledgerShow })
+        XCTAssertEqual(ledger.title, "Show Ledger")
+        XCTAssertEqual(ledger.scope, .application)
+        XCTAssertEqual(ledger.shortcut, "⌘0")
+        XCTAssertTrue(ledger.matches("audit trail"))
+    }
+
+    func testTheLedgerRowShowsNoChordWhenAnotherLayerTakesIt() throws {
+        let map = Keymap.resolve(defaultText: try XCTUnwrap(Keymap.bundledDefaultText()), overrideText: nil)
+        let zero = try Keystroke.parse("cmd-0").get()
+        let entries = CommandPaletteCatalog.entries(keymap: map, excluding: { $0 == zero })
+        XCTAssertNil(try XCTUnwrap(entries.first { $0.command == .ledgerShow }).shortcut)
+        XCTAssertEqual(entries.first { $0.command == .pageNew }?.shortcut, "⌘N")
     }
 
     func testSearchMatchesWordsAcrossTitleAndCommandWithoutChangingOrder() throws {
