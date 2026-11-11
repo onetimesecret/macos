@@ -6,7 +6,7 @@ documentation_status: needs-review
 
 - **S󠄁t󠄁a󠄁t󠄁u󠄁s󠄁:󠄁** a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁e󠄁d󠄁
 - **D󠄁a󠄁t󠄁e󠄁:󠄁** 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁3󠄁
-- **Superseded in part by:** [ADR-0063](0063-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md), only the side tab's General Settings controls
+- **Superseded in part by:** [ADR-0065](0065-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md), only the side tab's General Settings controls
 - **S󠄁u󠄁p󠄁e󠄁r󠄁s󠄁e󠄁d󠄁e󠄁s󠄁 i󠄁n󠄁 p󠄁a󠄁r󠄁t󠄁:󠄁** [A󠄁D󠄁R󠄁-󠄁0󠄁0󠄁1󠄁5󠄁](0015-resting-backdrop-is-mouse-transparent.md),󠄁 o󠄁n󠄁l󠄁y󠄁 i󠄁t󠄁s󠄁 e󠄁n󠄁u󠄁m󠄁e󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁f󠄁 s󠄁u󠄁m󠄁m󠄁o󠄁n󠄁 r󠄁o󠄁u󠄁t󠄁e󠄁s󠄁
 - **D󠄁e󠄁p󠄁e󠄁n󠄁d󠄁s󠄁 o󠄁n󠄁:󠄁** [A󠄁D󠄁R󠄁-󠄁0󠄁0󠄁3󠄁6󠄁](0036-editing-presentations-are-mutually-exclusive.md),󠄁 [A󠄁D󠄁R󠄁-󠄁0󠄁0󠄁5󠄁9󠄁](0059-appkit-owns-window-presentation.md)
 
@@ -85,7 +85,7 @@ n󠄁o󠄁t󠄁 b󠄁e󠄁e󠄁n󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁e󠄁d�
 - 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁3󠄁:󠄁 A󠄁c󠄁c󠄁e󠄁p󠄁t󠄁e󠄁d󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 m󠄁a󠄁i󠄁n󠄁t󠄁a󠄁i󠄁n󠄁e󠄁r󠄁'󠄁s󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 i󠄁m󠄁p󠄁l󠄁e󠄁m󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁;󠄁
   h󠄁o󠄁v󠄁e󠄁r󠄁 e󠄁x󠄁p󠄁a󠄁n󠄁s󠄁i󠄁o󠄁n󠄁 d󠄁e󠄁f󠄁e󠄁r󠄁r󠄁e󠄁d󠄁.󠄁
 - 2026-11-11: Superseded in part by
-  [ADR-0063](0063-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md),
+  [ADR-0065](0065-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md),
   which withdraws the ambient panel and drops the side tab's General Settings
   controls. The tab's placement and eligibility rules stand for the panel's
   return; with the panel off the tab never appears.

@@ -204,7 +204,7 @@ it forward, opening it if it is closed; ⌘Tab leaves window ordering to macOS
 (ADR-0059). Spec: docs/spec/feature/primary-editor/.
 
 The **ambient panel**, a card resting at desktop level that rose into a
-floating editor on ⌃⌥Space, is withdrawn for now (ADR-0063): it is off for
+floating editor on ⌃⌥Space, is withdrawn for now (ADR-0065): it is off for
 every install and Settings no longer offers it. Its code stays in the tree
 until it returns as its own feature; its design and the underlying macOS
 research are in docs/spec/feature/background-surface/. The app's window

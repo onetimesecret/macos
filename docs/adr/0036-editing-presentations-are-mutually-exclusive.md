@@ -8,7 +8,7 @@ documentation_status: needs-review
 - **Status:** accepted
 - **Date:** 2026-10-01
 - **Supersedes in part:** [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md), specifically simultaneous visibility, the non-owner glance, and switching consequences that keep both content windows open.
-- **Superseded in part by:** [ADR-0063](0063-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md), specifically the disabled ambient command and the default-on preference.
+- **Superseded in part by:** [ADR-0063](0063-activation-shows-the-pad-and-summons-keep-the-editor-window.md), only the hotkey and status-item summons closing an open primary editor window, their ambient route while that window is open, and their anchor on today in that case. One visible content presentation, the explicit switch commands and the card-click summon stand. Also [ADR-0065](0065-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md), specifically the disabled ambient command and the default-on preference.
 - **Depends on:** [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md) for the distinct window roles, ownership boundary and activation routes.
 
 ## Context
@@ -87,8 +87,9 @@ The manual checks live in
 
 - 2026-10-01: Recorded the maintainer's accepted presentation switch for PR #227;
   supersedes the named visibility and switching clauses of ADR-0033.
+- 2026-11-10: Superseded in part by [ADR-0063](0063-activation-shows-the-pad-and-summons-keep-the-editor-window.md). With the primary editor window open, the hotkey and the status item select it and no longer close it for the panel. Show Ambient Panel and a card click still close it. Mutual exclusion and the explicit switch commands stand.
 - 2026-11-11: Superseded in part by
-  [ADR-0063](0063-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md).
+  [ADR-0065](0065-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md).
   The ambient command is hidden, not disabled, while the panel is off, and the
   panel is withdrawn rather than a default-on preference. Mutual exclusion of
   the two presentations stands.

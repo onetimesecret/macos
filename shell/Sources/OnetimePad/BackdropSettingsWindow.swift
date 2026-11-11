@@ -155,7 +155,7 @@ final class BackdropSettingsWindowController: NSObject {
     }
 
     /// Every Surface row concerns the ambient card, so a withdrawn panel
-    /// drops the whole section (ADR-0063).
+    /// drops the whole section (ADR-0065).
     static func generalSettings(for model: BackdropModel) -> GeneralSettingsView {
         guard model.offersAmbientPanel else {
             return GeneralSettingsView(model: model.pages, loginPresence: BackdropAppDelegate.productName)

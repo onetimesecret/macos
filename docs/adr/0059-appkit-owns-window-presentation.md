@@ -7,6 +7,7 @@ documentation_status: needs-review
 - **Status:** accepted
 - **Date:** 2026-10-22
 - **Supersedes in part:** [ADR-0033](0033-separate-the-primary-editor-from-the-ambient-panel.md), only its unconditional editor selection on application activation, Cmd-Tab and reopen, and its activation-based launch classification. The separate window roles and presentation ownership remain.
+- **Superseded in part by:** [ADR-0063](0063-activation-shows-the-pad-and-summons-keep-the-editor-window.md), only the rule that ordinary activation creates no editor, the Cmd-Tab return to a minimized editor, and the consequence that a return may show no editor. AppKit ownership of presentation, the initial-open and reopen rules and the Settings rule stand.
 
 ## Context
 
@@ -38,3 +39,8 @@ There is no launch timer and no dependency on the macOS 15 SwiftUI launch-suppre
 ## Eject triggers
 
 Revisit this decision if a supported macOS release fails to deliver initial-open or reopen events as required, native focus restoration consistently selects the wrong ordinary window, or a future document-scene architecture can replace the AppKit window controllers as a complete presentation owner.
+
+## Decision history
+
+- 2026-10-22: Accepted.
+- 2026-11-10: Superseded in part by [ADR-0063](0063-activation-shows-the-pad-and-summons-keep-the-editor-window.md). An activation with no visible ordinary window, no raised card, no modal session and no companion request opens the editor window or takes it out of the Dock, without anchoring. The other decisions stand.

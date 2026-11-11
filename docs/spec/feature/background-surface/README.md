@@ -13,7 +13,7 @@
 
 # Feature: the background surface (working name: Backdrop)
 
-> Withdrawn, 2026-11-11: [ADR-0063](../../../adr/0063-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md)
+> Withdrawn, 2026-11-11: [ADR-0065](../../../adr/0065-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md)
 > withdraws the ambient panel this spec describes. Shipped builds do not show
 > it or offer it in Settings; the code stays in the tree until the panel
 > returns as its own feature. Read the status below as the record of the

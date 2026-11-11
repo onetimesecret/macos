@@ -25,10 +25,8 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-7": .pageSelect7,
         "cmd-8": .pageSelect8,
         "cmd-9": .pageSelect9,
-        // No cmd-0: the ledger's chord is withdrawn from the default
-        // file while its entry points are hidden (issue #78). The
-        // command id is still legal and still dispatches, which is what
-        // `testTheLedgerCommandStaysBindableByAnOverride` holds.
+        // The ledger, at the far end of the same run of keys.
+        "cmd-0": .ledgerShow,
         "cmd-n": .pageNew,
         // The one command with two default chords. A tab is what the
         // pad opens, and cmd-t is where every tabbed app puts a new
@@ -37,8 +35,9 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-alt-left": .pagePrevious,
         "cmd-alt-right": .pageNext,
         "cmd-w": .pageClose,
-        "ctrl-w": .pageClose,
+        "cmd-shift-t": .pageReopenLast,
         "cmd-shift-p": .appCommandPalette,
+        "cmd-shift-f": .pageSearch,
         // ⇧⌘W closes the window the keyboard is in (issue #201): the
         // editor window and Settings alike. Carried by the Window
         // menu's item app-wide, never by the surface installer.
@@ -124,13 +123,20 @@ final class BundledKeymapTests: XCTestCase {
             ])
     }
 
-    func testControlWUsesTheEditorRouteWhileCommandWAndEscapeRemainSurfaceShortcuts() throws {
+    func testControlWIsUnboundWhileCommandWAndEscapeRemainSurfaceShortcuts() throws {
         let resolved = try bundled()
         let installed = Set(resolved.surfaceShortcuts().map { $0.keystroke.canonical })
         XCTAssertFalse(installed.contains("ctrl-w"))
         XCTAssertTrue(installed.contains("cmd-w"))
         XCTAssertTrue(installed.contains("escape"))
-        XCTAssertEqual(resolved.command(for: try parse("ctrl-w"), in: .editor), .pageClose)
+        XCTAssertNil(resolved.command(for: try parse("ctrl-w"), in: .editor))
+    }
+
+    func testShiftCommandTReopensTheLastClosedPageOrTab() throws {
+        let resolved = try bundled()
+        XCTAssertEqual(resolved.command(for: try parse("cmd-shift-t"), in: .editor), .pageReopenLast)
+        XCTAssertEqual(resolved.menuKeystroke(for: .pageReopenLast)?.canonical, "cmd-shift-t")
+        XCTAssertEqual(resolved.command(for: try parse("cmd-t"), in: .editor), .pageNew)
     }
 
     /// New is the one command the default file puts two chords on, and
@@ -152,18 +158,22 @@ final class BundledKeymapTests: XCTestCase {
         XCTAssertEqual(resolved.menuKeystroke(for: .pageNew)?.canonical, "cmd-n")
     }
 
-    /// The ledger is hidden, not withdrawn from the vocabulary (issue
-    /// #78): the default file no longer spends a chord on it, and a
-    /// user who wants it back gets it back from their own keymap
-    /// without a new build. This is the assertion that hiding the entry
-    /// points did not quietly delete the command.
-    func testTheLedgerCommandStaysBindableByAnOverride() throws {
+    /// The ledger's chord is on the surface and offered to its View menu item.
+    func testTheLedgerIsOnCmdZeroForTheSurfaceAndTheMenu() throws {
+        let resolved = try bundled()
+        XCTAssertEqual(resolved.command(for: try parse("cmd-0"), in: .editor), .ledgerShow)
+        XCTAssertTrue(resolved.surfaceShortcuts().contains { $0.command == .ledgerShow })
+        XCTAssertEqual(resolved.menuKeystroke(for: .ledgerShow)?.canonical, "cmd-0")
+    }
+
+    /// And an override that sets the chord to null takes it away.
+    func testAnOverrideCanUnbindTheLedgerChord() throws {
         let text = try XCTUnwrap(Keymap.bundledDefaultText())
         let resolved = Keymap.resolve(
             defaultText: text,
-            overrideText: #"[{ "context": "Editor", "bindings": { "cmd-0": "ledger::Show" } }]"#)
-        XCTAssertEqual(resolved.diagnostics, [])
-        XCTAssertEqual(resolved.command(for: try parse("cmd-0"), in: .editor), .ledgerShow)
+            overrideText: #"[{ "context": "Editor", "bindings": { "cmd-0": null } }]"#)
+        XCTAssertNil(resolved.command(for: try parse("cmd-0"), in: .editor))
+        XCTAssertNil(resolved.hintKeystroke(for: .ledgerShow))
     }
 
     /// Settings is the one command a menu advertises, and it can only
@@ -316,12 +326,11 @@ final class BundledKeymapTests: XCTestCase {
         }
     }
 
-    func testCloseMenuKeepsCommandWWhileControlWRemainsAnEditorAlias() throws {
+    func testCloseMenuKeepsCommandWAsItsOnlyDefaultChord() throws {
         let resolved = try bundled()
         XCTAssertEqual(resolved.menuKeystroke(for: .pageClose)?.canonical, "cmd-w")
-        XCTAssertTrue(resolved.bindings.contains {
-            $0.command == .pageClose && $0.keystroke.canonical == "ctrl-w"
-        })
+        XCTAssertEqual(
+            resolved.bindings.filter { $0.command == .pageClose }.map(\.keystroke.canonical), ["cmd-w"])
     }
 
 }

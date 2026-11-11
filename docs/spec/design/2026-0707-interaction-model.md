@@ -229,6 +229,11 @@ teaches ⌘↩.
 - **Expiry is silent** — no notification, no badge. The dead page's ink
   rests in the ledger; its sealed bytes are zeroized at expiry.
 
+  > Expiry feedback, 2026-11-10:
+  > [ADR-0064](../../adr/0064-a-page-never-expires-without-the-person-being-told.md)
+  > (accepted 2026-11-11) replaces this bullet's first sentence with a
+  > standing line under the page and a last-hour notification.
+
 ## Sheets, several: tabs at the bottom
 
 Tabs won the switcher question, and they sit on the window's bottom

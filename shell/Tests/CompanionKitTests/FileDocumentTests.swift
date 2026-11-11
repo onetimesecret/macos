@@ -502,6 +502,223 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertTrue(model.openFiles.first?.isDirty == true, "the edits are still unsaved")
     }
 
+    // MARK: Save Page As
+
+    private func ink(of page: UInt64, on model: PageModel) -> String {
+        model.coreClient.documentRuns(sheet: page)
+            .compactMap { if case .ink(let text) = $0 { text } else { nil } }.joined()
+    }
+
+    private func filesInWorkspace(_ fixture: Fixture) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: fixture.workspace.path)
+    }
+
+    func testSavePageAsWritesThePageToAFileAndOpensItSelected() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        try type("keep this\n", at: 0, into: page, on: model)
+        XCTAssertTrue(model.canSavePageAs)
+
+        let destination = fixture.workspace.appendingPathComponent("kept.md")
+        panels.destinationURL = destination
+        model.saveActiveFileAs()
+
+        XCTAssertEqual(panels.destinations, 1)
+        XCTAssertEqual(try read(destination), "keep this\n")
+        let file = try XCTUnwrap(model.activeFile, "the file tab is not the one showing")
+        XCTAssertEqual(file.name, "kept.md")
+        XCTAssertFalse(file.isDirty)
+        XCTAssertEqual(model.storage(for: file.id).string, "keep this\n")
+        XCTAssertFalse(model.canSavePageAs, "a file is showing now")
+        XCTAssertEqual(ink(of: page, on: model), "keep this\n", "the page was not left as it was")
+        XCTAssertTrue(
+            model.coreClient.tabs().contains { $0.pageID == page }, "the page left the strip")
+    }
+
+    /// Law 0001's export row: the file takes the copy's public text.
+    func testSavePageAsWritesAPlaceholderForASealedObject() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let secret = "ghp_" + String(repeating: "n0ts3cr3t", count: 2)
+        XCTAssertNotNil(model.coreClient.sealText(sheet: page, secret, at: 0, length: 0))
+        XCTAssertTrue(model.coreClient.applyOps(
+            sheet: page,
+            json: #"[{"ins":{"at":0,"text":"ab"}},{"ins":{"at":3,"text":"cd"}}]"#))
+
+        let destination = fixture.workspace.appendingPathComponent("sealed.md")
+        panels.destinationURL = destination
+        model.saveActiveFileAs()
+
+        let written = try read(destination)
+        XCTAssertEqual(written, "ab[sealed content · tiny]cd")
+        XCTAssertFalse(written.contains("n0ts3cr3t"))
+        let file = try XCTUnwrap(model.activeFile)
+        XCTAssertEqual(model.storage(for: file.id).string, written)
+    }
+
+    func testACancelledSavePageAsPanelChangesNothing() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.newPage()
+        let tab = try XCTUnwrap(model.selection)
+        let page = try XCTUnwrap(model.selectedPageID)
+        try type("still a page\n", at: 0, into: page, on: model)
+        model.notice = nil
+
+        panels.destinationURL = nil
+        model.saveActiveFileAs()
+
+        XCTAssertEqual(panels.destinations, 1)
+        XCTAssertEqual(try filesInWorkspace(fixture), [])
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertNil(model.selectedFile)
+        XCTAssertEqual(model.selection, tab)
+        XCTAssertEqual(ink(of: page, on: model), "still a page\n")
+        XCTAssertNil(model.notice)
+    }
+
+    func testSavePageAsOntoAnAlreadyOpenFileIsRefusedByName() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.newPage()
+        let tab = try XCTUnwrap(model.selection)
+        let page = try XCTUnwrap(model.selectedPageID)
+        try type("mine\n", at: 0, into: page, on: model)
+        let taken = try write("taken\n", named: "taken.txt", in: fixture)
+        model.openFile(at: taken)
+        model.select(tab)
+        XCTAssertTrue(model.canSavePageAs)
+
+        panels.destinationURL = taken
+        model.notice = nil
+        model.saveActiveFileAs()
+
+        XCTAssertEqual(model.notice, PageModel.pathInUseNotice(name: "taken.txt"))
+        XCTAssertEqual(try read(taken), "taken\n", "something was written to it")
+        XCTAssertNil(model.selectedFile, "the page is no longer the one showing")
+    }
+
+    /// The core's `FILE_SIZE_LIMIT`, written out: the tests below fail if the two part.
+    private static let coreFileSizeLimit = 4 * 1024 * 1024
+
+    func testSavePageAsRefusesAPageOverTheFileSizeLimitAndWritesNothing() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.newPage()
+        let tab = try XCTUnwrap(model.selection)
+        let page = try XCTUnwrap(model.selectedPageID)
+        try type(String(repeating: "a", count: Self.coreFileSizeLimit + 1), at: 0, into: page, on: model)
+
+        let destination = try write("already here\n", named: "big.md", in: fixture)
+        panels.destinationURL = destination
+        model.notice = nil
+        model.saveActiveFileAs()
+
+        XCTAssertEqual(panels.destinations, 1)
+        XCTAssertEqual(
+            model.notice, "this page is larger than 4 MiB, so it was not saved to a file.")
+        XCTAssertEqual(try read(destination), "already here\n", "the file there was replaced")
+        XCTAssertEqual(try filesInWorkspace(fixture), ["big.md"])
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertNil(model.selectedFile)
+        XCTAssertEqual(model.selection, tab)
+    }
+
+    func testSavePageAsWritesAndOpensAPageOfExactlyTheFileSizeLimit() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        try type(String(repeating: "a", count: Self.coreFileSizeLimit), at: 0, into: page, on: model)
+
+        let destination = fixture.workspace.appendingPathComponent("full.md")
+        panels.destinationURL = destination
+        model.saveActiveFileAs()
+
+        XCTAssertEqual(try Data(contentsOf: destination).count, Self.coreFileSizeLimit)
+        XCTAssertEqual(model.activeFile?.name, "full.md")
+    }
+
+    func testSavePageAsRefusesAPageWithANulAndWritesNothing() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.newPage()
+        let tab = try XCTUnwrap(model.selection)
+        let page = try XCTUnwrap(model.selectedPageID)
+        try type("pasted\u{0}text\n", at: 0, into: page, on: model)
+        XCTAssertEqual(model.publicText(ofPage: page), "pasted\u{0}text\n")
+
+        let destination = try write("already here\n", named: "nul.md", in: fixture)
+        panels.destinationURL = destination
+        model.notice = nil
+        model.saveActiveFileAs()
+
+        XCTAssertEqual(panels.destinations, 1)
+        XCTAssertEqual(
+            model.notice, "this page contains binary data, so it was not saved to a file.")
+        XCTAssertEqual(try read(destination), "already here\n", "the file there was replaced")
+        XCTAssertEqual(try filesInWorkspace(fixture), ["nul.md"])
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertNil(model.selectedFile)
+        XCTAssertEqual(model.selection, tab)
+    }
+
+    func testTheCoreAnswersWhetherTextWouldOpenAsAFile() {
+        XCTAssertEqual(
+            CompanionClient.fileContentCheckJSON(for: Data("ordinary text\n".utf8)),
+            #"{"opens":true}"#)
+        XCTAssertEqual(CompanionClient.fileContentCheckJSON(for: Data()), #"{"opens":true}"#)
+        XCTAssertEqual(
+            CompanionClient.fileContentCheckJSON(for: Data("pasted\u{0}text".utf8)),
+            #"{"error":"binary"}"#)
+        XCTAssertEqual(
+            CompanionClient.fileContentCheckJSON(for: Data([0x66, 0xFF, 0xFE])),
+            #"{"error":"notUtf8"}"#)
+    }
+
+    func testThePageSaveRefusalSentencesAreDerivedFromTheCoresOwnJson() {
+        XCTAssertNil(PageModel.pageSaveRefusalNotice(json: #"{"opens":true}"#))
+        XCTAssertEqual(
+            PageModel.pageSaveRefusalNotice(json: #"{"error":"binary"}"#),
+            "this page contains binary data, so it was not saved to a file.")
+        XCTAssertEqual(
+            PageModel.pageSaveRefusalNotice(json: #"{"error":"notUtf8"}"#),
+            "this page uses an unsupported text encoding, so it was not saved to a file.")
+        XCTAssertEqual(
+            PageModel.pageSaveRefusalNotice(json: #"{"error":"tooLarge","limit":4194304}"#),
+            "this page is larger than 4 MiB, so it was not saved to a file.")
+        XCTAssertEqual(
+            PageModel.pageSaveRefusalNotice(json: #"{"opens":false}"#),
+            "this page could not be checked, so it was not saved to a file.")
+        XCTAssertEqual(
+            PageModel.pageSaveRefusalNotice(json: nil),
+            "this page could not be checked, so it was not saved to a file.")
+    }
+
+    func testThePanelSuggestsThePagesTitleAsMarkdown() {
+        XCTAssertEqual(PageModel.pageFileName(title: "deploy friday"), "deploy friday.md")
+        XCTAssertEqual(PageModel.pageFileName(title: "a/b: c"), "a-b- c.md")
+        XCTAssertEqual(PageModel.pageFileName(title: "  "), "Page.md")
+    }
+
     // MARK: Inline dirty close
 
     func testClosingADirtyFileWithSaveWritesItAndThenCloses() throws {
@@ -738,6 +955,28 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(try read(url), "theirs\n", "the refused save wrote nothing")
     }
 
+    func testASaveOverAReadOnlyFileIsRefusedAndNamesSaveAs() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        let url = try write("KEY=1\n", named: "prod.env", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        try type("mine ", at: 0, into: id, on: model)
+        try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: url.path)
+
+        XCTAssertFalse(model.saveFile(id))
+
+        XCTAssertEqual(
+            model.notice, "prod.env is read-only, so it was not saved. Use Save As to write a copy.")
+        XCTAssertEqual(model.noticeTone, .actionable)
+        XCTAssertEqual(try read(url), "KEY=1\n", "the refused save wrote nothing")
+        let mode = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions]
+        XCTAssertEqual((mode as? NSNumber)?.intValue, 0o444)
+        XCTAssertTrue(model.openFiles.first?.isDirty == true, "the edit is still in the buffer")
+    }
+
     func testKeepMineClearsTheConflictAndTheNextSaveOverwrites() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
@@ -909,6 +1148,25 @@ final class FileDocumentTests: XCTestCase {
 
         XCTAssertTrue(model.openFiles.isEmpty)
         XCTAssertEqual(model.notice, "nothing.txt could not be read, so it was not opened.")
+    }
+
+    func testABatchOfOpensSaysEveryRefusalInOneNotice() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        let good = try write("body\n", named: "notes.txt", in: fixture)
+        let absent = ["one.txt", "two.txt"].map { fixture.workspace.appendingPathComponent($0) }
+
+        model.collectingOpenRefusals {
+            for url in [absent[0], good, absent[1]] { model.openFile(at: url) }
+        }
+
+        XCTAssertEqual(model.openFiles.map(\.name), ["notes.txt"])
+        XCTAssertEqual(
+            model.notice,
+            "one.txt could not be read, so it was not opened. "
+                + "two.txt could not be read, so it was not opened.")
     }
 
     /// The refusal wording, without files on disk that are genuinely binary

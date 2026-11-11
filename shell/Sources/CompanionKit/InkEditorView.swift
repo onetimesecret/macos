@@ -276,13 +276,14 @@ public struct InkEditorView: NSViewRepresentable {
         // The list automation's grouping calls survive as no-ops and
         // are documented where they stand.
         textView.allowsUndo = false
-        // Writing Tools and typing suggestions read past every gate (Law 0001); a file's
-        // mount gives them back.
-        TextOffers.offerUngatedReaders(false, on: textView)
+        // Writing Tools and typing suggestions read past every gate (Law 0001).
+        TextOffers.refuseUngatedReaders(on: textView)
         Self.enableFinding(on: textView)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isContinuousSpellCheckingEnabled = false
         // Link reading is the restyle pass's alone (ADR-0023): the
         // system detector writes `.link` attributes as the user types,
         // which is a rewrite of the page's styling outside restyle()
@@ -562,9 +563,7 @@ public struct InkEditorView: NSViewRepresentable {
         var continuousDocument: ContinuousPadDocument?
         var currentSheet: UInt64? {
             didSet {
-                if let currentSheet, let textView {
-                    TextOffers.offerUngatedReaders(currentSheet.isFileID, on: textView)
-                }
+                if currentSheet != nil, let textView { TextOffers.refuseUngatedReaders(on: textView) }
                 // A teardown parks on no page and keeps the Undo; a mount of another page retires it.
                 if let currentSheet, currentSheet != oldValue {
                     model.surfaceMounted(page: currentSheet)

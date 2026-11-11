@@ -273,6 +273,38 @@ impl Sheet {
         Some((Fragment { cut: None, nodes }, plain))
     }
 
+    /// A UTF-16 range's public text alone, the text [`Sheet::select`] writes, reading
+    /// no object past its size class; `None` where the selection is.
+    pub(crate) fn public_text(&self, at_u16: u32, len_u16: u32) -> Option<Zeroizing<String>> {
+        let start = at_u16 as usize;
+        let end = start.checked_add(len_u16 as usize)?;
+        if start == end {
+            return None;
+        }
+        let mut out = Zeroizing::new(String::new());
+        let mut pos = 0usize;
+        for segment in &self.segments {
+            match segment {
+                Segment::Ink(text) => {
+                    let units = text.encode_utf16().count();
+                    if pos + units > start && pos < end {
+                        let from = start.saturating_sub(pos);
+                        let to = (end - pos).min(units);
+                        out.push_str(utf16_slice(text, from, to)?);
+                    }
+                    pos += units;
+                }
+                Segment::Chip(id) => {
+                    if (start..end).contains(&pos) {
+                        out.push_str(&placeholder(size_word(self.chip(*id)?)));
+                    }
+                    pos += 1;
+                }
+            }
+        }
+        (end <= pos).then_some(out)
+    }
+
     /// Runs the shell shows of this page, a preview's rendered text between
     /// its objects and each object by chip id, as a fragment and its public
     /// text; `None` for no ink and no object, or an object off this page.

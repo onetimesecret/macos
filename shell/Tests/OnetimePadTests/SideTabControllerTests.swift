@@ -283,7 +283,8 @@ final class SideTabControllerTests: XCTestCase {
                 claimedByAnotherWindow: false))
             BackdropAppDelegate.dispatch(route, openEditorWindow: { _ in XCTFail("unexpected editor") },
                 raisePanel: { _ in XCTFail("unexpected recovery raise") },
-                summonPanel: { model.summon() }, closeEditorForPanel: {})
+                summonPanel: { model.summon() }, closeEditorForPanel: {},
+                hideApp: { XCTFail("unexpected hide") })
         })
         tab.button.performClick(nil)
         XCTAssertEqual(opens, 1)

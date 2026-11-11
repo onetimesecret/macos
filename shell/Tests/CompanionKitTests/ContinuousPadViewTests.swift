@@ -210,7 +210,7 @@ final class ContinuousPadViewTests: XCTestCase {
             ContinuousPadView.updateSurface(surface.scroll, model: model, readOnly: false,
                 coordinator: surface.coordinator)
             let nodes = StreamNavigator.nodes(projection: model.timeUnits, tabs: model.navigationTabs,
-                selection: model.selection).filter(\.hasPage)
+                selection: model.selection, stampFormat: format).filter(\.hasPage)
             XCTAssertEqual(surface.canvas.checkpointLabels.count, nodes.count)
             for (label, node) in zip(surface.canvas.checkpointLabels, nodes) {
                 XCTAssertFalse(node.detailStamp.isEmpty, "the control: every fixture page has a birth stamp")
@@ -284,6 +284,29 @@ final class ContinuousPadViewTests: XCTestCase {
         XCTAssertTrue(surface.canvas.checkpointLabels.allSatisfy {
             !$0.stringValue.contains("first line") && !$0.stringValue.contains("second line")
         })
+    }
+
+    func testASearchRowOpensItsLineInTheContinuousEditor() throws {
+        let model = try model()
+        _ = try seed(String(repeating: "a line\n", count: 50), in: model)
+        let page = try seed("first\nsecond needle\nthird", in: model)
+        let surface = try mount(model)
+        defer { unmount(surface) }
+        let editor = surface.canvas.editor
+        let other = try XCTUnwrap(surface.canvas.document.projection.segments.first { $0.page.id != page })
+        surface.canvas.open(page: other.page.id)
+
+        for (query, offset) in [("needle", 6), ("third", 20)] {
+            let sources = model.pageSearchSources(byteLimit: nil).sources
+            let row = try XCTUnwrap(PageSearch.rows(for: query, in: sources).first)
+            XCTAssertTrue(model.openSearchRow(row))
+            ContinuousPadView.updateSurface(surface.scroll, model: model, readOnly: false,
+                coordinator: surface.coordinator)
+            let segment = try XCTUnwrap(surface.canvas.document.projection.segments.first { $0.page.id == page })
+            XCTAssertEqual(editor.selectedRange(),
+                NSRange(location: segment.bodyRange.location + offset, length: 0), query)
+        }
+        XCTAssertNil(model.takeRollRequest())
     }
 
     func testRailSelectionScrollsSameEditorAndReadOnlyChangesInPlace() throws {

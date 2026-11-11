@@ -38,12 +38,15 @@ final class KeymapDispatchTests: XCTestCase {
         let model = try makeModel()
         var datedPickerRequests = 0
         model.onReopenDatedTabs = { datedPickerRequests += 1 }
+        var searchRequests = 0
+        model.onSearchPages = { searchRequests += 1 }
         for command in CommandID.allCases where command.dispatch == .surface {
             XCTAssertTrue(
                 model.perform(command),
                 "\(command.rawValue) is dispatched by the surface but the model refused it")
         }
         XCTAssertEqual(datedPickerRequests, 1)
+        XCTAssertEqual(searchRequests, 1)
     }
 
     /// These commands are refused by the model on purpose: the selection,
@@ -274,30 +277,36 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertEqual(TabStripView.newPageHelp(chord: nil), "New page")
     }
 
-    /// The ledger tab is the case that actually happened: the bundled
-    /// keymap withdrew ⌘0 (issue #78) and the tooltip went on offering
-    /// it. With nothing bound, it says only what the tab does.
-    func testTheLedgerTooltipDropsTheChordTheDefaultWithdrew() throws {
-        let model = try makeModel()
-        XCTAssertNil(model.keymap.hintKeystroke(for: .ledgerShow))
-        XCTAssertFalse(
-            TabStripView.ledgerHelp(chord: model.keymap.hintKeystroke(for: .ledgerShow))
-                .contains("("))
-    }
-
-    /// And an override that puts the ledger back on a chord gets a
-    /// tooltip that names it.
-    func testTheLedgerTooltipNamesAChordAnOverrideRestored() throws {
+    /// The ledger tab names a chord the pad layer leaves alone.
+    func testTheLedgerTooltipNamesAChordThePadLayerLeaves() throws {
         let override = FileManager.default.temporaryDirectory
             .appendingPathComponent("keymap-\(UUID().uuidString).json")
-        try #"[{ "context": "Editor", "bindings": { "cmd-0": "ledger::Show" } }]"#
+        try #"[{ "context": "Editor", "bindings": { "ctrl-alt-l": "ledger::Show" } }]"#
             .write(to: override, atomically: true, encoding: .utf8)
         addTeardownBlock { try? FileManager.default.removeItem(at: override) }
 
         let model = try makeModel(keymapOverride: override)
-        XCTAssertTrue(
-            TabStripView.ledgerHelp(chord: model.keymap.hintKeystroke(for: .ledgerShow))
-                .hasSuffix("(⌘0)"))
+        XCTAssertTrue(TabStripView.ledgerHelp(chord: model.ledgerChord).hasSuffix("(⌃⌥L)"))
+    }
+
+    /// With the chord unbound by an override, the tooltip says only what the tab does.
+    func testTheLedgerTooltipDropsAChordAnOverrideUnbound() throws {
+        let override = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keymap-\(UUID().uuidString).json")
+        try #"[{ "context": "Editor", "bindings": { "cmd-0": null } }]"#
+            .write(to: override, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: override) }
+
+        let model = try makeModel(keymapOverride: override)
+        XCTAssertNil(model.ledgerChord)
+        XCTAssertFalse(TabStripView.ledgerHelp(chord: model.ledgerChord).contains("("))
+    }
+
+    /// ⌘0 is Scratch's (ADR-0039), so the ledger does not name the bundled chord.
+    func testTheLedgerTooltipDropsAChordThePadLayerTakes() throws {
+        let model = try makeModel()
+        XCTAssertTrue(model.padsTake(model.keymap.menuKeystroke(for: .ledgerShow)))
+        XCTAssertNil(model.ledgerChord)
     }
 
     /// The hint is not the menu equivalent: a section that declined key

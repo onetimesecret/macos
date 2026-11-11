@@ -38,7 +38,7 @@ pub use document::{EditIntent, EditSelection, TextSelection};
 pub use files::{
     DRAFT_SNAPSHOT_LIMIT, DroppedReason, ExternalState, FILE_ID_TAG, FILE_SIZE_LIMIT, FileConflict,
     FileId, FileIo, FileNotice, FileStore, FileWitness, HydrationFate, HydrationOutcome,
-    LineEnding, OpenFile, OpenRefusal, PathRebind, RelocateRefusal, SaveError,
+    LineEnding, OpenFile, OpenRefusal, PathRebind, RelocateRefusal, SaveError, check_file_bytes,
 };
 pub use fragment::{Copied, CopyRefusal, EnvelopeCap};
 pub use harden::harden_process;

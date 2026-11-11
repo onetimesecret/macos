@@ -113,14 +113,24 @@ Four ways in, all of them explicit.
   a single file. It sets no type filter, so any file can be chosen; its
   message asks for a UTF-8 text file. The panel is the shell's job.
 - **Drag onto the pad.** Dropping a file onto the pad opens it. A drop
-  of several files opens each in its own tab. A drop of a file type the
+  of several files opens each in its own tab, and the files the pad
+  refuses are named together in one notice. A drop of a file type the
   pad does not open is refused with a notice naming the type, and
   nothing is inserted into the page under the cursor. This matters:
   dropping a file must never silently turn into pasting its bytes into
   a staged page.
-- **Open from the Finder.** The bundle declares plain text with the
-  Editor role and the Alternate rank, so Open With lists the pad, and
-  the pad is not preferred as the default app for those files. A file
+- **Open from the Finder.** The bundle declares four document types,
+  each with the Editor role. Plain text has the Alternate rank, so Open
+  With lists the pad for every text file and the pad is not preferred
+  for them by rank. Markdown (`net.daringfireball.markdown`), logs
+  (`com.apple.log`) and dotenv files (`com.onetimesecret.pad.dotenv`,
+  an imported type for the `env` and `envrc` extensions) have the
+  Default rank (app 0.47.0). The app never sets itself as the default
+  application: that is the person's choice, made in the Finder's Get
+  Info window or with `scripts/default-app.swift`. Not verified on
+  hardware: what macOS picks for each kind beside other installed
+  editors, and whether a file named exactly `.env` or `.envrc` takes
+  the dotenv type or stays plain data like the dotfiles below. A file
   opened this way, or dropped on the Dock icon, takes the drop's path
   and selects the editor window. At launch it waits until the open
   files are restored, while an open or save panel is up it waits until
@@ -160,6 +170,13 @@ under the same contract ADR-0024 sets for the page. List automation
 follows the same caret only law. Select all and copy returns exactly
 the bytes in the buffer.
 
+The system's text helpers are off for a file as they are for a page,
+since a file may be a `.env` or a config file: no typing suggestions,
+no inline predictions, no Writing Tools and no data detectors. Smart
+quotes, smart dashes, text replacement, spelling correction and spell
+checking as you type start off, and the Edit menu offers no toggle for
+them.
+
 Two deliberate differences from a page:
 
 - **No block metadata is surfaced for a file.** The created and
@@ -193,11 +210,25 @@ Saving is explicit. There is no autosave to the file.
   extended attributes and any ownership the writer cannot set do not
   survive. A file that is one of several hard links, or that carries
   tags or other extended attributes, will lose them on the first save.
+- **A read-only file is not replaced.** Cmd S on a file the current
+  user cannot write is refused before any temporary file is made, and
+  the file keeps its bytes and its mode. The refusal says "NAME is
+  read-only, so it was not saved. Use Save As to write a copy."
 - **Save As** raises a save panel, writes to the chosen location, and
   the tab follows the new file. A new bookmark is taken. The original
   file is left exactly as it was. Save As onto a path another open file
   already holds is refused before anything is written, because two tabs
   over one file would race each other's saves.
+- **Save Page As.** With a page showing, the same Save As item and
+  chord raise the save panel, suggesting the page's title with `.md`.
+  The page's text is written to the chosen file as UTF-8 and that file
+  opens as a file tab, selected. The page is left as it was, still on
+  its clock. A sealed object is written as the placeholder a copy of
+  the page puts on the pasteboard, `[sealed content · SIZE]`, and its
+  contents are not decrypted for the file. The write is atomic and is
+  the shell's own, since the core saves only files it has open. A path
+  another open file tab already has is refused before anything is
+  written, and a cancelled panel changes nothing.
 - **A save never makes a file where there is none.** Cmd S on a file
   whose path holds nothing is refused and nothing is written, because
   the pad does not recreate a file at a path a person deleted. With no
@@ -575,12 +606,14 @@ Two ids are new:
 
 - **`file::Open`**, bound to Cmd O, raises the open panel.
 - **`file::SaveAs`**, bound to Cmd Shift S, raises the save panel for
-  the active file.
+  the active file, or for the page that is showing (Save Page As under
+  Saving).
 
 The app gains its first **File** menu, listing Open, Save, Save As and
 Close File, and reading each chord from the keymap rather than spelling
-it in the menu code. Save, Save As and Close File are inert when the
-active tab is a page rather than a file.
+it in the menu code. Save and Close File are inert when the active tab
+is a page rather than a file. Save As is enabled on a file and on a
+showing page, and inert on an empty slot and over the ledger.
 
 Note, 2026-10-21 (issue #201): the close item follows the key window.
 While the owner's window is key it reads Close File on a file and Close

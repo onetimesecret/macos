@@ -6,9 +6,7 @@ import SwiftUI
 /// permanent dashed ◌ ledger tab at the right end. Click selects;
 /// double-click holds the clock; drag reorders; ✕ on hover closes.
 ///
-/// The ledger tab and the ↗ page button are built here and not shown
-/// (issue #78, `HiddenUI`), so what a user sees today is the slots and
-/// the +.
+/// The ↗ page button is built here and not shown (issue #78, `HiddenUI`).
 ///
 /// A slot whose page expired keeps its place, its name and its rung,
 /// and draws the dashed empty treatment instead of a gauge (ADR-0017).
@@ -103,11 +101,7 @@ public struct TabStripView: View {
             if HiddenUI.showsConcealButton {
                 concealPageTab
             }
-            // Built and not drawn (issue #78): the ledger keeps
-            // recording, and the strip stops offering the way in.
-            if HiddenUI.showsLedgerEntryPoints {
-                ledgerTab
-            }
+            ledgerTab
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
@@ -161,11 +155,8 @@ public struct TabStripView: View {
         Keystroke.chorded(CompanionL10n.string("pad.page.new"), chord: chord)
     }
 
-    /// The ledger tab's tooltip, on the same terms. It named ⌘0 until
-    /// the bundled keymap withdrew that binding (issue #78), which left
-    /// a button advertising a chord that no longer did anything. Now the
-    /// chord appears only when something bound it, which for the tab's
-    /// own build is a keymap the user wrote.
+    /// The ledger tab's tooltip, on the same terms: the chord appears
+    /// only when the keymap binds one that reaches the ledger.
     static func ledgerHelp(chord: Keystroke?) -> String {
         Keystroke.chorded("The ledger: what the app did with each page and chip", chord: chord)
     }
@@ -199,8 +190,7 @@ public struct TabStripView: View {
     nonisolated static let concealPageLabel = "Create one-time link from page"
 
     /// The dashed residue tab: the audit trail, one line per event. A
-    /// toggle, so a second click returns to the page. Built and not
-    /// drawn today (issue #78).
+    /// toggle, so a second click returns to the page.
     private var ledgerTab: some View {
         Button(action: model.toggleLedger) {
             HStack(spacing: 4) {
@@ -221,7 +211,7 @@ public struct TabStripView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(Color.secondaryInk)
-        .help(Self.ledgerHelp(chord: model.keymap.hintKeystroke(for: .ledgerShow)))
+        .help(Self.ledgerHelp(chord: model.ledgerChord))
         .accessibilityLabel(Text("Ledger, \(model.ledgerEntries.count) records"))
     }
 }
@@ -291,6 +281,14 @@ struct SheetTab: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
+                // The selected page's time left in words; the gauge below draws it for the rest.
+                if selected, sheet.hasPage, !renaming {
+                    Text(sheet.remainingLabel)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(Color.secondaryInk)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
                 reorderHandle
                 // The ✕ keeps its seat whether or not it is visible, since
                 // revealing it must never nudge the title (the browsers'
@@ -355,7 +353,8 @@ struct SheetTab: View {
         // opened its menu.
         .gesture(TapGesture(count: 2).onEnded { if !renaming { model.pause(sheet.id) } })
         .simultaneousGesture(TapGesture().onEnded { if !renaming { model.select(sheet.id) } })
-        .help(holdDescription)
+        .help(Self.pageHelp(
+            remainingLabel: sheet.hasPage ? sheet.remainingLabel : "", hold: holdDescription))
         // The tab speaks as one element until it holds the field, which
         // has to be reachable on its own for the draft to be read back.
         // Mid-rename the label stays on the container: the field speaks
@@ -380,6 +379,9 @@ struct SheetTab: View {
             // an item that says it will hold a clock there would be
             // offering a gesture the core refuses, having no clock.
             Button(holdMenuTitle) { model.pause(sheet.id) }
+                .disabled(!sheet.hasPage)
+            // Disabled on an empty slot, as the hold is: there is no countdown to restart.
+            Button(Self.restartMenuTitle) { model.restartRung(sheet.id) }
                 .disabled(!sheet.hasPage)
             Button(Self.rungMenuTitle(hasPage: sheet.hasPage)) { model.cycleRung(sheet.id) }
             // Present only while the sync switch is on: with it off the
@@ -431,6 +433,14 @@ struct SheetTab: View {
     static func holdMenuTitle(paused: Bool, toppedUp: Bool) -> String {
         if toppedUp { return "Release the Hold" }
         return paused ? "Top the Hold Up to 24h" : "Hold the Clock for 1h"
+    }
+
+    /// The restart item's label: the page's own rung again, from the top.
+    static let restartMenuTitle = "Restart the Countdown"
+
+    /// A tab's tooltip: the page's time left in words, then the hold hint.
+    nonisolated static func pageHelp(remainingLabel: String, hold: String) -> String {
+        remainingLabel.isEmpty ? hold : "\(remainingLabel) left. \(hold)"
     }
 
     /// The rung item's label. On an empty slot the gesture sets the
