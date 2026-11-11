@@ -564,8 +564,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Opens each file as a drop would, then selects the editor window without moving the roll.
     private func openDocuments(_ urls: [URL]) -> Bool {
-        guard BackdropRootView.forwardDroppedURLs(urls, openFile: { pages.openFile(at: $0) })
-        else { return false }
+        let forwarded = pages.collectingOpenRefusals {
+            BackdropRootView.forwardDroppedURLs(urls, openFile: { pages.openFile(at: $0) })
+        }
+        guard forwarded else { return false }
         selectEditor()
         return true
     }
