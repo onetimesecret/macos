@@ -2079,6 +2079,13 @@ public class CompanionClient: @unchecked Sendable {
         decodeOwnedJSON([RestoredRun].self, from: companion_sheet_document_json(handle, sheet)) ?? []
     }
 
+    /// A page's ink length in UTF-8 bytes, a chip counting zero, read without its text;
+    /// nil for an unknown page.
+    public func inkBytes(sheet: UInt64) -> Int? {
+        let bytes = companion_sheet_ink_bytes(handle, sheet)
+        return bytes < 0 ? nil : Int(bytes)
+    }
+
     /// Save the staged content (pages, sealed chips, clocks) to `path`,
     /// encrypted core-side (the key rests in the Keychain; only
     /// ciphertext touches disk). The ledger is not in this file: it has
@@ -2227,6 +2234,12 @@ public class CompanionClient: @unchecked Sendable {
     /// The file's document runs, the same shape a page's arrive in.
     public func fileRuns(_ file: UInt64) -> [RestoredRun] {
         decodeOwnedJSON([RestoredRun].self, from: companion_file_runs_json(handle, file)) ?? []
+    }
+
+    /// The file's buffer length in UTF-8 bytes, read without its text; nil for an unknown file.
+    public func fileTextBytes(_ file: UInt64) -> Int? {
+        let bytes = companion_file_text_bytes(handle, file)
+        return bytes < 0 ? nil : Int(bytes)
     }
 
     /// Apply an ordered edit batch to the file's body. False means the

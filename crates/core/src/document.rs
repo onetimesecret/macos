@@ -919,6 +919,11 @@ impl SheetDocument {
         self.body.len_utf16()
     }
 
+    /// The body's length in UTF-8 bytes, as Loro counts it.
+    pub(crate) fn utf8_len(&self) -> usize {
+        self.body.len_utf8()
+    }
+
     /// No operations recorded yet: the only state that may adopt a key frame,
     /// since merging over standing ops would duplicate the body.
     pub(crate) fn is_pristine(&self) -> bool {

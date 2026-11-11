@@ -491,6 +491,7 @@ public final class PageModel: ObservableObject {
     private static let closedPageUUIDsKey = "closedPageUUIDs"
 
     public var onReopenDatedTabs: (() -> Void)?
+    public var onSearchPages: (() -> Void)?
 
     /// Every open file, in open order. A parallel array beside `tabs`
     /// rather than entries within it: files are never on the strip,
@@ -6325,6 +6326,85 @@ public final class PageModel: ObservableObject {
     public func reopenLastClosedTab() -> Bool {
         guard let tab = closedTabs.first else { return false }
         return reopenClosedTab(tab.id)
+    }
+
+    /// What the palette's search reads in the active pad: page copies' public text (Law 0001,
+    /// search row) and open files' buffers, less any over `byteLimit` UTF-8 bytes (nil: none).
+    public func pageSearchSources(byteLimit: Int?) -> PageSearchSources {
+        var sources: [PageSearchSource] = []
+        var skipped = false
+        for tab in navigationTabs + closedTabs {
+            guard let page = tab.pageID else { continue }
+            // The core's count of the ink alone comes first; the copied text is measured below.
+            if let byteLimit, let bytes = client.inkBytes(sheet: page), bytes > byteLimit {
+                skipped = true
+                continue
+            }
+            let whole = NSRange(location: 0, length: bodyLength(of: page))
+            guard let text = client.copyFragment(sheet: page, range: whole)?.plainText else { continue }
+            if let byteLimit, text.utf8.count > byteLimit {
+                skipped = true
+                continue
+            }
+            sources.append(PageSearchSource(id: tab.id, title: tab.title, stamp: tab.pageCreatedMs, text: text))
+        }
+        for file in navigationFiles {
+            if let byteLimit, let bytes = client.fileTextBytes(file.id), bytes > byteLimit {
+                skipped = true
+                continue
+            }
+            let text = fileTextSnapshot(for: file.id)
+            if let byteLimit, text.utf8.count > byteLimit {
+                skipped = true
+                continue
+            }
+            sources.append(PageSearchSource(id: file.id, title: file.name,
+                stamp: file.lastEditedAt > 0 ? file.lastEditedAt * 1000 : nil,
+                text: text))
+        }
+        return PageSearchSources(sources: sources, skipped: skipped)
+    }
+
+    /// Shows a search row's page or file, reopening a closed page first, with the
+    /// caret at the start of the row's line.
+    @discardableResult
+    public func openSearchRow(_ row: PageSearchRow) -> Bool {
+        if row.id.isFileID {
+            guard navigationFiles.contains(where: { $0.id == row.id }) else { return false }
+            selectFile(row.id)
+            seatCaret(atLine: row.line, of: fileTextSnapshot(for: row.id), for: row.id)
+            return true
+        }
+        let closed = closedTabs.contains { $0.id == row.id }
+        guard let page = (navigationTabs + closedTabs).first(where: { $0.id == row.id })?.pageID else {
+            return false
+        }
+        if closed {
+            guard reopenClosedTab(row.id) else { return false }
+        } else {
+            select(row.id)
+        }
+        let text = client.documentRuns(sheet: page).reduce(into: "") { text, run in
+            switch run {
+            case .ink(let ink): text += ink
+            case .chip: text += "\u{FFFC}"
+            }
+        }
+        seatCaret(atLine: row.line, of: text, for: page)
+        return true
+    }
+
+    /// Leaves the caret and the scroll at a line's start for the editor that mounts
+    /// `sheet` next, and moves the editor already standing on it.
+    private func seatCaret(atLine line: Int, of text: String, for sheet: UInt64) {
+        guard let start = PageSearch.utf16Offset(ofLine: line, in: text) else { return }
+        let caret = NSRange(location: start, length: 0)
+        viewStates.saveCaret(caret, for: sheet)
+        viewStates.saveScroll(ScrollAnchor(characterIndex: start), for: sheet)
+        guard let editor = activeEditor as? InkTextView, editor.coordinator?.currentSheet == sheet,
+              start <= editor.textStorage?.length ?? 0 else { return }
+        editor.setSelectedRange(caret)
+        editor.scrollRangeToVisible(caret)
     }
 
     /// Whether closing `closingSheet` orphans the open conceal

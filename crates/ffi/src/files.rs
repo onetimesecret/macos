@@ -470,6 +470,25 @@ pub unsafe extern "C" fn companion_file_runs_json(
     crate::content_json::to_c_json(&crate::content_json::InkRuns(&text))
 }
 
+/// The file's buffer length in UTF-8 bytes, read without its text or the
+/// disk. `-1` for an unknown file.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_text_bytes(handle: *mut CompanionHandle, file: u64) -> i64 {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return -1;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return -1;
+    };
+    let Some(file) = guard.files.file(FileId(file)) else {
+        return -1;
+    };
+    i64::try_from(file.text_bytes()).unwrap_or(i64::MAX)
+}
+
 /// Apply an ordered edit batch to the file's body. False means the
 /// batch was rejected whole and nothing moved.
 ///
@@ -1578,6 +1597,43 @@ mod tests {
                 );
                 assert!(companion_file_close(handle, id));
             }
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn a_files_text_bytes_follow_its_buffer_and_not_the_disk() {
+        let (handle, dir) = scratch("text-bytes");
+        for (name, text) in [
+            ("empty.txt", ""),
+            ("ascii.txt", "hello"),
+            ("wide.txt", "é🦀"),
+        ] {
+            let file = dir.join(name);
+            std::fs::write(&file, text.as_bytes()).unwrap();
+            unsafe {
+                let id = open(handle, &file);
+                assert_eq!(companion_file_text_bytes(handle, id), text.len() as i64);
+                assert!(companion_file_close(handle, id));
+                assert_eq!(companion_file_text_bytes(handle, id), -1);
+            }
+        }
+        let file = dir.join("edited.txt");
+        std::fs::write(&file, b"hello").unwrap();
+        unsafe {
+            let id = open(handle, &file);
+            let ops = cstring(r#"[{"ins":{"at":5,"text":" wörld"}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            assert_eq!(std::fs::read(&file).unwrap(), b"hello");
+            assert_eq!(companion_file_text_bytes(handle, id), 12);
+            let runs: serde_json::Value =
+                serde_json::from_str(&take_json(companion_file_runs_json(handle, id))).unwrap();
+            assert_eq!(runs[0]["ink"].as_str().unwrap().len(), 12);
+            let ops = cstring(r#"[{"del":{"at":0,"len":6}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            assert_eq!(companion_file_text_bytes(handle, id), 6);
+            assert_eq!(companion_file_text_bytes(ptr::null_mut(), id), -1);
+            assert_eq!(companion_file_text_bytes(handle, 7), -1);
         }
         cleanup(handle, &dir);
     }

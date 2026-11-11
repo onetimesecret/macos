@@ -96,6 +96,21 @@ final class FindMenuTests: XCTestCase {
         }
     }
 
+    func testSearchPagesAndFilesSitsInFileWithItsKeymapChord() throws {
+        try withApplication { app in
+            let menus = MainMenuController(app: app)
+            menus.install()
+            let file = try XCTUnwrap(NSApp.mainMenu?.items.first { $0.title == "File" }?.submenu)
+            let item = try XCTUnwrap(file.items.first { $0.title == "Search Pages and Files…" })
+            let chord = try XCTUnwrap(app.pages.keymap.menuKeystroke(for: .pageSearch))
+            XCTAssertTrue(item is MenuActionItem)
+            XCTAssertFalse(item.keyEquivalent.isEmpty)
+            XCTAssertEqual(item.keyEquivalent, chord.menuKeyEquivalent)
+            XCTAssertEqual(item.keyEquivalentModifierMask, chord.menuModifierMask)
+            withExtendedLifetime((app, menus)) {}
+        }
+    }
+
     func testCharacterPaletteUsesThePublicNativeAction() throws {
         try withApplication { app in
             let menus = MainMenuController(app: app)

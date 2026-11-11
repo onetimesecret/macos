@@ -22,14 +22,14 @@ final class CommandPaletteTests: XCTestCase {
         XCTAssertEqual(entries.map(\.scope.rawValue), entries.map(\.scope.rawValue).sorted())
         XCTAssertEqual(Set(entries.map(\.command)).count, entries.count)
         XCTAssertEqual(entries.map(\.command), [
-            .appOpenTimeline, .appSwitchToTabs, .pageReopenDated, .pageReopenLast,
+            .appOpenTimeline, .appSwitchToTabs, .pageSearch, .pageReopenDated, .pageReopenLast,
             .pageNew, .fileOpen, .appSettings, .appHelp, .windowClose,
             .stateSaveNow, .fileSaveAs, .pageClose, .pagePrevious, .pageNext, .editorToggleWrap,
             .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorUndo, .editorRedo,
             .editorDetectCodeLanguage, .noteToggleExpanded
         ])
         XCTAssertEqual(Set(entries.map(\.command)), Set(CommandID.allCases.filter { $0.paletteDefinition != nil }))
-        for command in [CommandID.appOpenTimeline, .appSwitchToTabs, .pageReopenLast, .pageReopenDated] {
+        for command in [CommandID.appOpenTimeline, .appSwitchToTabs, .pageReopenLast, .pageReopenDated, .pageSearch] {
             XCTAssertEqual(entries.first { $0.command == command }?.scope, .application)
         }
     }
@@ -39,6 +39,8 @@ final class CommandPaletteTests: XCTestCase {
         let entries = CommandPaletteCatalog.entries(keymap: map)
         XCTAssertEqual(entries.filter { $0.matches("reopen dated") }.map(\.command), [.pageReopenDated])
         XCTAssertEqual(entries.filter { $0.matches("re-open dated") }.map(\.command), [.pageReopenDated])
+        XCTAssertEqual(entries.filter { $0.matches("search pages files") }.map(\.command), [.pageSearch])
+        XCTAssertEqual(entries.filter { $0.matches("find text") }.map(\.command), [.pageSearch])
         XCTAssertEqual(entries.filter { $0.matches("clipboard seal") }.map(\.command), [.clipboardSeal, .clipboardSealSelection])
         XCTAssertTrue(entries.allSatisfy { $0.matches("  ") })
         XCTAssertTrue(entries.filter { $0.matches("unavailable-zebra") }.isEmpty)
@@ -86,6 +88,27 @@ final class CommandPaletteTests: XCTestCase {
         XCTAssertEqual(requests, 1)
         model.onReopenDatedTabs = nil
         XCTAssertFalse(model.perform(.pageReopenDated))
+        XCTAssertEqual(requests, 1)
+    }
+
+    func testTheSearchShortcutComesFromJSONAndItsDispatchReportsWhetherItsCallbackExists() throws {
+        let map = Keymap.resolve(defaultText: try XCTUnwrap(Keymap.bundledDefaultText()), overrideText: nil)
+        XCTAssertEqual(map.command(for: try Keystroke.parse("cmd-shift-f").get(), in: .editor), .pageSearch)
+        XCTAssertEqual(map.menuKeystroke(for: .pageSearch)?.displaySymbol, "⇧⌘F")
+        XCTAssertEqual(CommandID.pageSearch.dispatch, .surface)
+        let tag = "palette-search-dispatch-\(UUID().uuidString)"
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(tag)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: tag))
+        defer {
+            UserDefaults.standard.removePersistentDomain(forName: tag)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let model = PageModel(formFactor: .panel, defaults: defaults,
+            seams: .init(stateDirectory: directory, client: .ephemeral(tag: tag)))
+        XCTAssertFalse(model.perform(.pageSearch))
+        var requests = 0
+        model.onSearchPages = { requests += 1 }
+        XCTAssertTrue(model.perform(.pageSearch))
         XCTAssertEqual(requests, 1)
     }
 

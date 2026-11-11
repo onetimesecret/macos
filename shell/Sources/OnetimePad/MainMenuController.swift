@@ -82,6 +82,10 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         file.addItem(action(CompanionL10n.string("Reopen Dated Tabs…"), command: .pageReopenDated) { [app] in
             app.showCommandPalette(reopen: true)
         })
+        file.addItem(.separator())
+        file.addItem(action(CompanionL10n.string("Search Pages and Files…"), command: .pageSearch) { [app] in
+            app.showCommandPalette(search: true)
+        })
     }
 
     private func makeEditMenu(in main: NSMenu) {
@@ -258,7 +262,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
     private func action(_ title: String, command: CommandID? = nil,
                         enabled: @escaping () -> Bool = { true }, _ run: @escaping () -> Void) -> NSMenuItem {
         let item = MenuActionItem(title: title, enabled: enabled) { [app] in
-            if command != .pageClose && command != .appCommandPalette && command != .pageReopenDated {
+            if command != .pageClose && command != .appCommandPalette && command != .pageReopenDated
+                && command != .pageSearch {
                 app.dismissCommandPaletteForAction()
             }
             run()

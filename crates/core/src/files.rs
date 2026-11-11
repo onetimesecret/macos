@@ -470,6 +470,12 @@ impl OpenFile {
         text_of(&self.document)
     }
 
+    /// The buffer's length in UTF-8 bytes, read without copying the text.
+    #[must_use]
+    pub fn text_bytes(&self) -> usize {
+        self.document.utf8_len()
+    }
+
     /// The bytes a save would write, in the file's own line endings and BOM.
     #[must_use]
     pub fn bytes_to_write(&self) -> Vec<u8> {

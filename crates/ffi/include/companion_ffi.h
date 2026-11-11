@@ -706,6 +706,14 @@ bool companion_sheet_take_out_object_characters(CompanionHandle *handle,
 char *companion_sheet_document_json(CompanionHandle *handle, uint64_t sheet);
 
 /*
+ * A live page's ink length in UTF-8 bytes, read without its text. A
+ * chip counts zero, where the public text of
+ * companion_sheet_copy_fragment() has a placeholder. -1 for an unknown
+ * page, a file id or a null handle.
+ */
+int64_t companion_sheet_ink_bytes(CompanionHandle *handle, uint64_t sheet);
+
+/*
  * A page's provenance, derived from its operation log (ADR-0013):
  *   {"created_ms": u64, "modified_s": i64|null}
  * created_ms is the page's creation stamp (epoch ms, the figure the
@@ -1779,6 +1787,13 @@ bool companion_file_close(CompanionHandle *handle, uint64_t file);
  * Free with companion_string_free().
  */
 char *companion_file_runs_json(CompanionHandle *handle, uint64_t file);
+
+/*
+ * The file's buffer length in UTF-8 bytes, the size of the ink
+ * companion_file_runs_json() returns, read without that text and
+ * without the disk. -1 for an unknown file or a null handle.
+ */
+int64_t companion_file_text_bytes(CompanionHandle *handle, uint64_t file);
 
 /*
  * Apply an ordered edit batch (JSON operations, UTF-16 offsets) to the

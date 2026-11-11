@@ -39,6 +39,7 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-w": .pageClose,
         "cmd-shift-t": .pageReopenLast,
         "cmd-shift-p": .appCommandPalette,
+        "cmd-shift-f": .pageSearch,
         // ⇧⌘W closes the window the keyboard is in (issue #201): the
         // editor window and Settings alike. Carried by the Window
         // menu's item app-wide, never by the surface installer.
