@@ -61,7 +61,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         file.addItem(action(CompanionL10n.string("Open…"), command: .fileOpen) { [app] in app.pages.perform(.fileOpen) })
         file.addItem(.separator())
         file.addItem(action(CompanionL10n.string("Save"), command: .stateSaveNow, enabled: onFile) { [app] in app.pages.perform(.stateSaveNow) })
-        file.addItem(action(CompanionL10n.string("Save As…"), command: .fileSaveAs, enabled: onFile) { [app] in app.pages.perform(.fileSaveAs) })
+        file.addItem(action(CompanionL10n.string("Save As…"), command: .fileSaveAs, enabled: onFileOrPage) { [app] in app.pages.perform(.fileSaveAs) })
         file.addItem(.separator())
         let close = action(CompanionL10n.string("Close"), command: .pageClose, enabled: { [weak self] in
             guard let self else { return false }
@@ -182,6 +182,13 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     private var onFile: () -> Bool {
         { [app] in CommandPalettePresentation.canSave(app.pages.activeTarget) }
+    }
+
+    private var onFileOrPage: () -> Bool {
+        { [app] in
+            CommandPalettePresentation.canSaveAs(
+                app.pages.activeTarget, pageShowing: app.pages.canSavePageAs)
+        }
     }
 
     private var closeChoice: CloseMenuItem {

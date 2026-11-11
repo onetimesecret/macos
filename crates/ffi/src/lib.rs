@@ -2825,6 +2825,28 @@ pub unsafe extern "C" fn companion_tab_cycle_rung(handle: *mut CompanionHandle, 
     }
 }
 
+/// Reapply a tab's own rung, on the terms of `companion_tab_cycle_rung`:
+/// the clock starts again at full length. Returns the rung code, or `-1`.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_tab_restart_rung(
+    handle: *mut CompanionHandle,
+    tab: u64,
+) -> c_int {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return -1;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return -1;
+    };
+    match guard.store.restart_rung(TabId::from_raw(tab)) {
+        Some(rung) => ttl_to_code(rung),
+        None => -1,
+    }
+}
+
 /// Set a tab's rung (`CompanionRung` codes) and reset its page's clock.
 /// Returns whether the tab existed and the code was valid.
 ///
@@ -7032,10 +7054,17 @@ mod tests {
             assert!(companion_tab_set_rung(handle, a, 0)); // 1h
             assert_eq!(companion_tab_cycle_rung(handle, a), 5); // wraps -> 7d
             assert!(!companion_tab_set_rung(handle, a, 99), "bad rung code");
+            assert_eq!(companion_tab_restart_rung(handle, a), 5, "the same rung");
+            assert_eq!(
+                companion_tab_restart_rung(std::ptr::null_mut(), a),
+                -1,
+                "no handle"
+            );
             assert!(companion_tab_move(handle, b, 0));
             assert!(companion_tab_close(handle, a));
             assert!(!companion_tab_close(handle, a), "already gone");
             assert_eq!(companion_tab_cycle_rung(handle, a), -1, "gone");
+            assert_eq!(companion_tab_restart_rung(handle, a), -1, "gone");
             companion_free(handle);
         }
     }

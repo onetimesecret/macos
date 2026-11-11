@@ -74,7 +74,7 @@ extension CommandID {
         case .appHelp: ("Help", .application, "documentation")
         case .windowClose: ("Close Window", .application, "window dismiss")
         case .stateSaveNow: ("Save", .page, "disk state document")
-        case .fileSaveAs: ("Save As…", .page, "file document")
+        case .fileSaveAs: ("Save As…", .page, "file document page export")
         case .pageClose: ("Close Page or Tab", .page, "close page tab hide dismiss")
         case .pagePrevious: ("Previous Page or Tab", .page, "navigate")
         case .pageNext: ("Next Page or Tab", .page, "navigate")

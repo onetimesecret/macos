@@ -4769,6 +4769,7 @@ final class DayScrollTests: XCTestCase {
         var titles = [
             "Rename Tab",
             SheetTab.holdMenuTitle(paused: tab.paused, toppedUp: tab.holdToppedUp),
+            SheetTab.restartMenuTitle,
             SheetTab.rungMenuTitle(hasPage: tab.hasPage),
         ]
         if model.sync.enabled, let pageID = tab.pageID {
@@ -4821,8 +4822,8 @@ final class DayScrollTests: XCTestCase {
             )
         }
         XCTAssertEqual(
-            try XCTUnwrap(header.menu(for: click)).items.count, 5,
-            "with sync on the gutter carries the four gated verbs and the enrol item"
+            try XCTUnwrap(header.menu(for: click)).items.count, 6,
+            "with sync on the gutter carries the five gated verbs and the enrol item"
         )
     }
 }

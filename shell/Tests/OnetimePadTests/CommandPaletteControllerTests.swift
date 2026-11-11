@@ -502,6 +502,31 @@ final class CommandPaletteControllerTests: XCTestCase {
         XCTAssertEqual(fileRow.titleLabel.stringValue, "Close File")
     }
 
+    func testSaveAsIsOfferedOnAFileOrAShowingPageAndSaveOnlyOnAFile() throws {
+        XCTAssertTrue(CommandPalettePresentation.canSaveAs(.file(7), pageShowing: false))
+        XCTAssertTrue(CommandPalettePresentation.canSaveAs(.tab(3), pageShowing: true))
+        XCTAssertFalse(CommandPalettePresentation.canSaveAs(.tab(3), pageShowing: false))
+        XCTAssertFalse(CommandPalettePresentation.canSaveAs(.today, pageShowing: false))
+        XCTAssertFalse(CommandPalettePresentation.canSave(.tab(3)))
+
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        model.newPage()
+        XCTAssertTrue(model.canSavePageAs)
+        let (window, _) = makeWindow()
+        defer { window.close() }
+        let palette = CommandPaletteController(model: model, performWindowCommand: { _ in }, returnToPages: {})
+        palette.show(in: window, pageContext: true)
+        palette.search.stringValue = "file::SaveAs"
+        palette.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: palette.search))
+        XCTAssertEqual(palette.table.numberOfRows, 1)
+        let row = try XCTUnwrap(palette.table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? PaletteCommandCell)
+        XCTAssertEqual(row.detailLabel.stringValue, CompanionL10n.string("Current Page"))
+        palette.dismiss(restoringFocus: true)
+        model.showLedger()
+        XCTAssertFalse(model.canSavePageAs)
+    }
+
     func testEnteringReopenModeReturnsFocusToItsSearchField() throws {
         let model = try makeModel()
         let (window, _) = makeWindow()

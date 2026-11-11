@@ -704,6 +704,12 @@ page rather than on the rail keeps them unambiguous when a day holds more
 than one page, and keeps the rail honest about being a projection you
 cannot rename or reorder.
 
+The menu's two clock items, on the strip and on the gutter alike, are
+**Restart the Countdown**, which reapplies the page's current rung so
+its clock starts again at full length (`restartRung`), and under it
+**Shorten the Countdown**, which steps one rung shorter. Restart is
+disabled on a slot with no page.
+
 Several pages born on one day are grouped under one day header in strip
 order, separated by a hairline rather than a tear, and not policed.
 Enforcing one page per day would mean refusing a shipped gesture or

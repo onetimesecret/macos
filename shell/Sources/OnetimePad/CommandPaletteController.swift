@@ -467,7 +467,9 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
                 let title = entry.command == .pageClose ? CompanionL10n.string(closeChoice.title) : entry.title
                 guard entry.matches(search.stringValue, title: title), isAvailable(entry) else { return nil }
                 let detail: String
-                if entry.command == .fileSaveAs || entry.command == .stateSaveNow {
+                if entry.command == .fileSaveAs, model.canSavePageAs {
+                    detail = CompanionL10n.string("Current Page")
+                } else if entry.command == .fileSaveAs || entry.command == .stateSaveNow {
                     detail = CompanionL10n.string("Current File")
                 } else if model.selectedFile == nil, !model.showingLedger,
                           (entry.command == .appOpenTimeline && model.showsTimeUnits)
@@ -504,7 +506,11 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         if entry.command == .windowClose { return originalWindow?.styleMask.contains(.closable) == true }
         if entry.command == .pageReopenLast { return model.hasClosedTabs }
         if entry.command == .pageClose, !closeChoice.isEnabled { return false }
-        if entry.command == .fileSaveAs || entry.command == .stateSaveNow {
+        if entry.command == .fileSaveAs {
+            return hasPageContext && contextIsCurrent && CommandPalettePresentation.canSaveAs(
+                model.activeTarget, pageShowing: model.canSavePageAs)
+        }
+        if entry.command == .stateSaveNow {
             return hasPageContext && contextIsCurrent && CommandPalettePresentation.canSave(model.activeTarget)
         }
         if entry.scope == .application { return true }
@@ -636,5 +642,10 @@ internal enum CommandPalettePresentation {
     static func canSave(_ target: SurfaceTarget) -> Bool {
         if case .file = target { return true }
         return false
+    }
+
+    /// Save As also writes a showing page to a file, which Save does not.
+    static func canSaveAs(_ target: SurfaceTarget, pageShowing: Bool) -> Bool {
+        canSave(target) || pageShowing
     }
 }

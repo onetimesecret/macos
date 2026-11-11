@@ -1080,6 +1080,11 @@ char *companion_take_restated_pages_json(CompanionHandle *handle);
  * property and never a countdown of the slot's own. */
 int companion_tab_cycle_rung(CompanionHandle *handle, uint64_t tab);
 
+/* Reapply a TAB's own rung: the clock is reset to the full rung as
+ * companion_tab_cycle_rung() resets it, and the rung is unchanged.
+ * Returns the rung's code, or -1 if the tab is gone or its page is due. */
+int companion_tab_restart_rung(CompanionHandle *handle, uint64_t tab);
+
 /* Set a TAB to an explicit rung (its page's clock reset to it). Returns
  * success; a tab holding no page stores the rung and succeeds, having
  * no clock to reset. */
@@ -1745,6 +1750,20 @@ uint64_t companion_file_open(CompanionHandle *handle, const char *path);
  * refused. Free with companion_string_free().
  */
 char *companion_file_open_error_json(CompanionHandle *handle);
+
+/*
+ * Whether a file with these bytes would open: the content checks
+ * companion_file_open() applies to bytes it has read, with no handle and
+ * no file involved. Returns {"opens": true}, or the
+ * companion_file_open_error_json() shape with "notUtf8", "binary" or
+ * "tooLarge". Null when bytes is NULL with a nonzero len, or len is past
+ * the platform's slice bound. Free with companion_string_free().
+ *
+ * (NULL, 0) is empty input. Non-null input must be readable for len bytes
+ * and remain unchanged until return. Embedded NUL bytes are input, not
+ * terminators.
+ */
+char *companion_file_content_check_json(const uint8_t *bytes, size_t len);
 
 /*
  * Close the file and drop its buffer. The draft goes with it: a draft
