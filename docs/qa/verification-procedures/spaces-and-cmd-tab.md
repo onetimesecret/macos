@@ -1,5 +1,12 @@
 # Spaces, ⌘Tab and the pad
 
+> Withdrawn panel, 2026-11-11: [ADR-0063](../../adr/0063-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md)
+> withdraws the ambient panel. A shipped build has no panel, no Surface
+> section in Settings, and no Show Ambient Panel menu item, and a login launch
+> shows no window. Checks that need the panel apply only to a build that
+> constructs `BackdropModel` with `offersAmbientPanel: true`; the panel-off
+> checks describe every shipped build.
+
 **Applies to:** OnetimePad. Two window roles, since ADR-0033: the
 ambient panel (both stances, pinned and not) and the primary editor
 window (an ordinary activating `NSWindow`). Each check below names the
@@ -37,7 +44,7 @@ These are manual checks for an explicitly selected development fixture, separate
 - [ ] **Reopen a minimized editor:** minimize the editor and leave no other ordinary window visible. Click the Dock icon. The existing editor deminiaturizes; no duplicate editor or Settings appears.
 - [ ] **Explicit Settings:** exercise the application menu, configured shortcut, status-item menu and a pane-specific Settings button. The same Settings window opens, including the requested pane. Close and repeat. With the Settings keymap binding removed, the menu item remains clickable and advertises no shortcut.
 - [ ] **Finder launch:** quit, then open a text file using the development bundle. The file is selected once; no Settings window or today-anchor change follows. Repeat with the app already running.
-- [ ] **Menus:** verify Undo/Redo in the editor and a Settings field, native Cut/Copy/Paste/Find, file command enablement, disabled ambient-panel command when the preference is off, Window menu registration, Help, Services, and an unbound app-specific shortcut.
+- [ ] **Menus:** verify Undo/Redo in the editor and a Settings field, native Cut/Copy/Paste/Find, file command enablement, no ambient-panel command when the panel is off (ADR-0063), Window menu registration, Help, Services, and an unbound app-specific shortcut.
 - [ ] **Explicit presentations and modals:** switch with Open in Window, Show Ambient Panel, the hotkey and status item; open and cancel file panels and quit confirmation. Each explicit route returns to its intended owner without opening Settings.
 
 ## Scope after ADR-0033
@@ -1010,7 +1017,7 @@ which supersedes ADR-0033's simultaneous glance behavior.
 - Choose Open in Window from the panel header or either icon's context menu.
   The entire panel disappears and the regular window takes focus. Repeat after
   minimizing the window, with the panel pinned, and on another Space.
-- Disable the ambient feature: Show Ambient Panel is disabled in the menus.
+- Disable the ambient feature: Show Ambient Panel is absent from the menus (ADR-0063).
   Hotkey and menu-bar summons continue to select the regular window. Opening
   Settings, About, and modal dialogs must not reveal a second content surface.
 - With the regular window open, switch to another app and press the hotkey or

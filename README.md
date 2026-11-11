@@ -198,9 +198,10 @@ then SIGKILL; only the graceful first step saves state.
 
 ## The app: OnetimePad
 
-OnetimePad opens in **the editor window**, an ordinary macOS window: ⌘Tab,
-the Dock icon, opening the app, ⌃⌥Space and a left-click on the menu-bar
-icon all bring you to it. Spec: docs/spec/feature/primary-editor/.
+OnetimePad opens in **the editor window**, an ordinary macOS window. Opening
+the app, the Dock icon, ⌃⌥Space and a left-click on the menu-bar icon bring
+it forward, opening it if it is closed; ⌘Tab leaves window ordering to macOS
+(ADR-0059). Spec: docs/spec/feature/primary-editor/.
 
 The **ambient panel**, a card resting at desktop level that rose into a
 floating editor on ⌃⌥Space, is withdrawn for now (ADR-0063): it is off for
