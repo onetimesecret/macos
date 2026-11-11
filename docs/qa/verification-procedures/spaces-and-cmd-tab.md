@@ -19,9 +19,11 @@ B4 routes of issue #210. The panel-off checks for #215 were added
 after that run and remain unverified. Rows with an empty result have
 not been run.
 
-## Current launch and activation checks (ADR-0059)
+## Current launch and activation checks (ADR-0059, ADR-0063)
 
 ADR-0059 replaces older rows below that expect every Cmd-Tab or Dock click to select the editor, rest a raised panel, or use a two-second launch classification. Those route expectations are historical; their recorded results do not verify the replacement. Other geometry, stacking and full-screen checks remain applicable.
+
+ADR-0063 replaces the rows that expect an activation with nothing showing to open no editor, and the rows that expect the hotkey or the status item to raise the panel while the editor window is open. None of the ADR-0063 rows has been run.
 
 These are manual checks for an explicitly selected development fixture, separate from any app already in use. Automated probes require injected temporary state and in-memory credentials; a separate bundle identity by itself does not meet that requirement. Record the macOS version, build revision, route and result. Repeat on macOS 13 and on a current macOS release; a deployment-target build alone does not execute the older platform.
 
@@ -31,14 +33,20 @@ These are manual checks for an explicitly selected development fixture, separate
 - [ ] **Login-item launch:** on a disposable development fixture, log in with the item configured to start in the background. Settings and the editor remain absent; the ambient panel follows its preference. Record whether launch notification metadata identifies a nondefault launch.
 - [ ] **Session restoration:** repeat with macOS reopening applications after login. Existing ordinary-window restoration and selected page must be recorded separately from a new untitled editor request; verify no unsolicited Settings window.
 - [ ] **Return to Settings:** open Settings, switch to another app, then Cmd-Tab back. Settings retains the keyboard; an editor is neither created nor reordered ahead of it. Repeat with About and Send Feedback.
-- [ ] **Return to the editor:** move the roll into history, switch away and back. The caret, page and scroll position remain. Repeat with the editor minimized; Cmd-Tab does not deminiaturize it.
-- [ ] **No ordinary window:** close the editor and companions, switch away, then Cmd-Tab back. No editor or Settings opens. Click the Dock icon: the editor opens once without moving the selected page or roll to today.
+- [ ] **Return to the editor:** move the roll into history, switch away and back. The caret, page and scroll position remain. Repeat with the editor minimized and no other ordinary window visible: Cmd-Tab takes it out of the Dock with the same caret, page and scroll position (ADR-0063). Repeat with the editor minimized and Settings visible: Settings keeps the keyboard and the editor stays in the Dock.
+- [ ] **No ordinary window:** close the editor and companions, switch away, then Cmd-Tab back. The editor opens once, keyed, without moving the selected page or roll to today, and Settings stays absent (ADR-0063). Run once with the ambient panel enabled, where the resting card disappears as the editor opens, and once disabled.
+- [ ] **Return to a raised card:** with the editor closed, raise the card with the hotkey, Cmd-Tab to another app and back. The card stays raised and no editor opens (ADR-0063).
+- [ ] **Return after hiding:** with the editor open, press Cmd-H, then Cmd-Tab back. The existing editor returns with its caret and scroll position; no second window appears. Repeat with only Settings open before Cmd-H and record whether an editor opens beside it; ADR-0063 lists that timing as unverified.
+- [ ] **Hotkey over an open editor:** with the ambient panel enabled and the editor open behind another app, press the hotkey. OnetimePad activates and the same editor window comes forward keyed, at its frame, with the page and roll position unchanged; the panel stays absent. Press the hotkey again: OnetimePad hides and the keyboard returns to the app it came from. Press it a third time: the editor returns. Repeat with the editor minimized, and repeat all of it with a left click on the status item (ADR-0063).
+- [ ] **Hotkey with a companion frontmost:** with the editor open and Settings key, press the hotkey. The editor comes forward keyed and Settings stays open. Press again: the app hides, Settings included. Activate again and confirm both windows return.
+- [ ] **Hotkey with the editor closed:** with the ambient panel enabled, the hotkey and the status item raise, re-key and rest the card as before. With it disabled they open the editor, and a second press hides the app.
+- [ ] **A summon over a file tab:** in Timeline layout select an older day's page, open a file so its tab is showing, close the editor window and press the hotkey to raise the card. The file tab is still selected. Rest the card, close the file tab and press the hotkey again: the roll is on today (ADR-0063).
 - [ ] **Reopen with Settings visible:** leave Settings visible and close the editor. Click the Dock icon and repeat with `open` on the running bundle. Settings remains the ordinary destination and no editor opens.
 - [ ] **Reopen a minimized editor:** minimize the editor and leave no other ordinary window visible. Click the Dock icon. The existing editor deminiaturizes; no duplicate editor or Settings appears.
 - [ ] **Explicit Settings:** exercise the application menu, configured shortcut, status-item menu and a pane-specific Settings button. The same Settings window opens, including the requested pane. Close and repeat. With the Settings keymap binding removed, the menu item remains clickable and advertises no shortcut.
 - [ ] **Finder launch:** quit, then open a text file using the development bundle. The file is selected once; no Settings window or today-anchor change follows. Repeat with the app already running.
 - [ ] **Menus:** verify Undo/Redo in the editor and a Settings field, native Cut/Copy/Paste/Find, file command enablement, disabled ambient-panel command when the preference is off, Window menu registration, Help, Services, and an unbound app-specific shortcut.
-- [ ] **Explicit presentations and modals:** switch with Open in Window, Show Ambient Panel, the hotkey and status item; open and cancel file panels and quit confirmation. Each explicit route returns to its intended owner without opening Settings.
+- [ ] **Explicit presentations and modals:** switch with Open in Window and Show Ambient Panel, which are the only commands that switch presentation (ADR-0063); open and cancel file panels and quit confirmation. Each explicit route returns to its intended owner without opening Settings. Cmd-Tab away and back while a file panel is up: no editor opens under the panel.
 
 ## Scope after ADR-0033
 
@@ -58,8 +66,10 @@ window server sees is now two windows with different roles:
 
 A person's launch, a Dock click, a reopen and ⌘Tab select the editor
 window (opening it when closed); with the ambient panel preference on,
-which is the default, the hotkey, the status item and the resting card
-click stay with the panel. With the preference off, ADR-0033 sends the
+which is the default, the resting card click stays with the panel, and
+so do the hotkey and the status item while the editor window is closed.
+With the editor window open they select it, and hide the app when it is
+already key (ADR-0063). With the preference off, ADR-0033 sends the
 hotkey and the status item to the editor window as well; except for the
 panel-off checks below, every check here assumes it is on. A ⌘Tab that
 finds the editor window closed opens it on the desktop the person is on,
@@ -255,16 +265,24 @@ editor window is on, as it does for any document application").
       reopen with the panel enabled raises the panel instead of
       opening the editor window.
 - [ ] **The panel's own summons stay with the panel.** *Panel.* With
-      the editor window open on Desktop 1 and the panel resting on
-      Desktop 3, from Desktop 3 press ⌃⌥Space (the hotkey) or click
-      the status item. **Pass:** the panel raises on Desktop 3 without
-      activating the app; the desktop does not switch and the editor
-      window keeps its Space. Then turn the pin on (raise the card, use
+      the editor window closed and the panel resting, from Desktop 3
+      press ⌃⌥Space (the hotkey) or click the status item. **Pass:**
+      the panel raises on Desktop 3 without activating the app and the
+      desktop does not switch. Then turn the pin on (raise the card, use
       the header toggle, rest it with Esc) and click the resting card:
       it must do the same. The card click is a pinned rest's route
       only, since an unpinned rest lets every click through to the
       desktop (ADR-0015). **Fail:** any of those three summons
       activates the app or switches desktops.
+- [ ] **Summons select an open editor on another desktop (ADR-0063).**
+      *Editor.* With the editor window open on Desktop 1, from another
+      app on Desktop 3 press ⌃⌥Space, then repeat with a left click on
+      the status item. **Pass:** OnetimePad becomes active, the existing
+      editor comes forward keyed and the panel stays absent; the editor
+      window is neither closed nor recreated. Record whether the screen
+      switches to Desktop 1; ADR-0063 does not specify Space switching
+      for this gesture. **Fail:** the panel raises, or the editor
+      window closes.
 - [ ] **Panel off: hotkey and status item focus the editor (#215).**
       *Both.* Turn the ambient panel off, close the editor window, and
       activate another app with a text field on the same desktop.
@@ -273,6 +291,8 @@ editor window is on, as it does for any document application").
       second click; the panel stays absent. Repeat with the editor
       already open behind the other app and again with it miniaturized,
       then repeat all three cases using a left click on the status item.
+      With the editor key, press ⌃⌥Space once more. **Pass:** the app
+      hides and typing returns to the other app (ADR-0063).
       **Fail:** the window stays miniaturized, typing stays with the
       other app, a second click is needed, or the panel appears.
       Paste the relevant stream lines: `editor window=open` is emitted
@@ -373,11 +393,9 @@ editor window is on, as it does for any document application").
 ### Editor window full screen (ADR-0033)
 
 The editor window enters and leaves full screen by AppKit's rules,
-through the green button in its title bar. A hotkey summon over an
-editor window in full screen must land the panel on that Space: the
-panel is on every Space, and a summoned panel floats, which is when it
-carries `.fullScreenAuxiliary` (ADR-0034: "Full screen participation
-follows altitude, not stance.").
+through the green button in its title bar. A hotkey press over an
+editor window in full screen no longer raises the panel there; it hides
+and shows the app (ADR-0063).
 
 - [ ] **Enter and leave full screen.** *Editor.* Open the editor
       window, click the green button. **Pass:** it enters full screen
@@ -390,15 +408,14 @@ follows altitude, not stance.").
       was on. **Fail:** the enter or leave animation is broken, the
       title bar does not autohide, or the exit lands on a different
       desktop.
-- [ ] **Hotkey summon over an editor window in full screen.**
-      *Panel.* Put the editor window in full screen. From inside its
-      Space press ⌃⌥Space. **Pass:** the panel raises on the editor's
-      full screen Space (all Spaces membership plus
-      `.fullScreenAuxiliary` when floating gets it there), the summon
-      is a raise not an activation, and typing goes to the panel. Rest
-      the panel by clicking outside it in the editor's content.
-      **Pass:** the panel rests; the editor keeps the keyboard. The
-      full screen Space does not switch during either step.
+- [ ] **Hotkey over an editor window in full screen (ADR-0063).**
+      *Editor.* Put the editor window in full screen. From inside its
+      Space, with the editor key, press ⌃⌥Space. **Pass:** the app
+      hides and the panel does not raise. Press ⌃⌥Space again.
+      **Pass:** the editor returns in full screen, keyed. Record which
+      Space the screen shows after each press. **Fail:** the panel
+      raises over the editor, or the editor leaves full screen or
+      closes.
 - [ ] **⌘Tab back to an editor window in full screen.** *Editor.*
       With the editor window full screen, ⌘Tab to another app on a
       desktop and ⌘Tab back. **Pass:** the screen switches to the
@@ -1014,9 +1031,11 @@ which supersedes ADR-0033's simultaneous glance behavior.
   Hotkey and menu-bar summons continue to select the regular window. Opening
   Settings, About, and modal dialogs must not reveal a second content surface.
 - With the regular window open, switch to another app and press the hotkey or
-  left-click the status item. Each summons the panel and closes the regular
-  window; resting the panel does not reopen it. Summons anchor on today, while
-  Show Ambient Panel preserves the current roll position.
+  left-click the status item. Each brings the regular window forward, keyed,
+  without closing it or showing the panel, and a second press hides the app
+  ([ADR-0063](../../adr/0063-activation-shows-the-pad-and-summons-keep-the-editor-window.md)).
+  With the regular window closed, a summon raises the panel and anchors on
+  today, while Show Ambient Panel preserves the current roll position.
 - Choose Open in Window with Settings or About frontmost. The editor takes
   focus. In the status context menu, enable the version preference and confirm
   the version line remains disabled. The resting card shows no window-switch

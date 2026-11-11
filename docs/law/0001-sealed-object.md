@@ -399,8 +399,12 @@ selection from the menu's building on; one that rewrites a selection
 keeps every object. Asking first is `AskingTextView.mayReadOut` in
 `TextOffers.swift`: a page and a note stand aside while another surface
 holds the keys (Law 0007's keys row) and settle past the page's deadline
-(the expiry row); a name asks its object's page. A file's text keeps every
-route. The rows come from `NSResponder.h`, `NSText.h`, `NSTextView.h`,
+(the expiry row); a name asks its object's page. A file's text keeps the
+routes a click gates (Share…, Look Up, Translate, Speech, Spelling and
+Grammar, Search With, a link's items) and refuses the ones no click
+gates, as a page does: Writing Tools, typing suggestions, inline
+predictions and data detectors (2026-11-10 file text helpers amendment).
+The rows come from `NSResponder.h`, `NSText.h`, `NSTextView.h`,
 `NSTextCheckingController.h` and `NSApplication.h`'s
 `NSServicesMenuRequestor` in the macOS 27.0 SDK, and from the text menus
 AppKit built over a page, a note, a name field and a file on macOS 27.2;
@@ -430,8 +434,8 @@ end the table).
 | Look Up “…” and Translate “…” (`_rvMenuItemAction`), the Speech submenu | the text menu, titled with or reading the selection | removed | fragment `testAPageANameAndANoteOfferNoLookUpTranslateSpeechOrSpelling` |
 | Spelling and Grammar, and the guesses, Provide Feedback, Ignore Spelling and Learn Spelling over a misspelled word (`_changeSpellingFromMenu:`, `_invokeProofreadingFeedbackThumbsUp:` and its thumbs down, `_ignoreSpellingFromMenu:`, `_learnSpellingFromMenu:`, as AppKit's menu over a misspelled word named them) | the text menu | removed | fragment `testAPageANameAndANoteOfferNoLookUpTranslateSpeechOrSpelling`, `testTheSpellingItemsOverAMisspelledWordLeaveWithTheSubmenu` |
 | Search With Google (`_searchWithGoogleFromMenu:`) | the text menu | removed | fragment `testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions` |
-| Writing Tools (`showWritingTools:`), typing suggestions (`toggleAutomaticTextCompletion:`, the Touch Bar's candidates), inline predictions (`inlinePredictionType`) | the text menu, Edit, the Touch Bar, typing and every caret move | off, the suggestions' toggle refused, and any Writing Tools item AppKit adds removed from the text menu | fragment `testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions`, `testWritingToolsUnderAParentItemGoesWithItsParent`; predictions as typed and a Touch Bar, a hand check |
-| data detectors (`isAutomaticDataDetectionEnabled`, `toggleAutomaticDataDetection:`) | Substitutions' Data Detectors, in the text menu and Edit | off on a page, a note and a name, and the toggle refused there, since a date or place they find goes to another app by a later click no gate sees; a file keeps the toggle, and a file shown where a page stood starts with it off, as a new view does | fragment `testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions` |
+| Writing Tools (`showWritingTools:`), typing suggestions (`toggleAutomaticTextCompletion:`, the Touch Bar's candidates), inline predictions (`inlinePredictionType`) | the text menu, Edit, the Touch Bar, typing and every caret move | off on a page, a note, a name and a file, and the suggestions' toggle refused on each; any Writing Tools item AppKit adds is removed from a page's, a note's and a name's text menu | fragment `testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions`, `testWritingToolsUnderAParentItemGoesWithItsParent`; predictions as typed and a Touch Bar, a hand check |
+| data detectors (`isAutomaticDataDetectionEnabled`, `toggleAutomaticDataDetection:`) | Substitutions' Data Detectors, in the text menu | off on a page, a note, a name and a file, and the toggle refused on each, since a date or place they find goes to another app by a later click no gate sees | fragment `testAPageANameAndANoteOfferNoShareSearchWritingToolsOrSuggestions` |
 | a link's click (`textView(_:clickedOnLink:at:)`) | a click or ⌘-click on a link | a plain click edits; a ⌘-click opens through `Coordinator.openLink`, which on a page and in a note asks first; a file's opens | fragment `testALinkOnAStandingPageOpensWhenAimedAndItsMenuOffersNoOpenWith`, `testALinkPastItsPagesDeadlineGivesNothingOutAndTheSettleTakesIt`, `testAPagesLinkStandsAsideWhileAFieldOrTheNoteHoldsTheKeys`; a real ⌘-click, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | Open Link (`_openLinkFromMenu:`) and Copy Link (`copyLink:`) | the text menu over a link | Open Link goes to `Coordinator.openLink`, as a ⌘-click does; on a page and in a note Copy Link asks first, as any copy does, and writes the URL on the ambient board; a file keeps AppKit's Copy Link | the same three tests |
 | Open With (`__NSTextViewContextSubmenuIdentifierOpenWith`, whose items hand the URL to an application with no delegate asked) | the text menu over a link | removed on a page, a note and a name; a file keeps it | fragment `testALinkOnAStandingPageOpensWhenAimedAndItsMenuOffersNoOpenWith` |
@@ -444,7 +448,7 @@ end the table).
 | `NSTextFinder`'s find bar, past Use Selection for Find | Edit > Find, ⌘F, ⌘G | stays in process, sorted by reading and not by probe: the find pasteboard every process reads gets the find bar's query, which the person typed, and Use Selection for Find, the action that fills the query from the text, asks first (its row above) | none |
 | Convert to Full Width and the other conversions AppKit adds to Transformations for some input sources | a page's text menu | removed from a page's menu; a note keeps them, holding no object | fragment `testAPagesTransformationsAreTheThreeItsRewriteCarries` |
 | `uppercaseWord:`, `lowercaseWord:`, `capitalizeWord:` | Transformations, in the text menu and Edit | rewrites the ink and keeps every object, as one step | the rewrite row |
-| `replaceQuotesInSelection:`, `replaceDashesInSelection:`, `replaceTextInSelection:`, `addLinksInSelection:` and the panel's two actions | Substitutions, in the text menu, Edit and its panel | asks first through `checkTextInRange:types:options:`; keeps every object, as one step | the rewrite row |
+| `replaceQuotesInSelection:`, `replaceDashesInSelection:`, `replaceTextInSelection:`, `addLinksInSelection:` and the panel's two actions | Substitutions, in the text menu and its panel | asks first through `checkTextInRange:types:options:`; keeps every object, as one step | the rewrite row |
 | `changeSpelling:` | the spelling panel's Change | refused with its line over a selection holding an object | the rewrite row |
 | `transpose:`; typing, paste, the deletions and `yank:` over a selection | ⌃T and the keys | the backspace, backspace selected and U+FFFC rows | those rows |
 | Font (`addFontTrait:`, `underline:`, `outline:`, `orderFrontFontPanel:`, `orderFrontStylesPanel:`, `orderFrontColorPanel:`), `highlight:`, Writing Direction (`makeBaseWritingDirection…:`, `makeTextWritingDirection…:`), Layout Orientation (`changeLayoutOrientation:`), `pasteFont:`, `pasteRuler:`, `toggleSmartInsertDelete:`, the Substitutions toggles but Data Detectors, `orderFrontSubstitutionsPanel:`, `stopSpeaking:`, and NSResponder's movement and selection actions | menus and keys | stays in process: they change attributes, layout or the caret, and a toggle's or the panel's checks ask at `checkTextInRange:types:options:` | none; the restyle pass owns a page's attributes |
@@ -1919,6 +1923,17 @@ paths must stay dialog free.
   completion with token-based link recovery. Earlier amendments above are
   historical descriptions of the interfaces they introduced. The 28-item plan
   records implementation and verification; it does not establish this law.
+
+- 2026-11-10: File text helpers amendment. The AppKit text routes
+  section said a file's text kept every route, and the Writing Tools and
+  data detectors rows gave a file its suggestions, predictions, Writing
+  Tools and detector toggle. A file may be a `.env` or a config file, so
+  those four are now off on a file and their toggles refused, as on a
+  page; the routes a click gates stay on a file. Edit no longer lists
+  Substitutions or Check Spelling While Typing, so the rows that named
+  Edit for Substitutions name the text menu. This entry awaits the
+  maintainer's ratification.
+
 - 2026-11-10: Page search amendment. Proposed with the command palette's
   search across pages and files, and not yet reviewed by the maintainer.
   Added the search row to the contract: the search is an ambient

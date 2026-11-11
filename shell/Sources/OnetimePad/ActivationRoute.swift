@@ -20,6 +20,7 @@ enum ActivationRoute: Equatable, Sendable {
     case raisePanel(BackdropRaise)
     case summonPanel
     case showAmbientPanel
+    case hideApp
     case noop
 }
 
@@ -27,6 +28,14 @@ struct ActivationContext: Equatable, Sendable {
     var ambientPanelEnabled: Bool
     var owner: PresentationOwner
     var claimedByAnotherWindow: Bool
+    /// The editor window exists, on screen or in the Dock.
+    var editorWindowOpen = false
+    var editorWindowKey = false
+    var appActive = false
+    /// A visible ordinary window of ours, companions included (ADR-0063).
+    var visibleOrdinaryWindow = false
+    var cardRaised = false
+    var modalUp = false
 }
 
 enum ActivationRouter {
@@ -39,7 +48,9 @@ enum ActivationRouter {
         pendingSummon: ActivationRoute?, context: ActivationContext
     ) -> ActivationRoute {
         if context.claimedByAnotherWindow { return .noop }
-        return pendingSummon ?? .noop
+        if let pendingSummon { return pendingSummon }
+        if context.modalUp || context.visibleOrdinaryWindow || context.cardRaised { return .noop }
+        return .openEditorWindow(.activation)
     }
 
     static func decide(_ reason: ActivationReason, in context: ActivationContext) -> ActivationRoute {
@@ -58,6 +69,10 @@ enum ActivationRouter {
             case .panel: return .raisePanel(.activation)
             }
         case .hotkey, .statusItem:
+            if context.editorWindowOpen {
+                return context.editorWindowKey && context.appActive
+                    ? .hideApp : .openEditorWindow(.activation)
+            }
             return context.ambientPanelEnabled ? .summonPanel : .openEditorWindow(.activation)
         case .cardClick:
             return .summonPanel

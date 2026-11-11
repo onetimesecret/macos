@@ -61,7 +61,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         file.addItem(action(CompanionL10n.string("Open…"), command: .fileOpen) { [app] in app.pages.perform(.fileOpen) })
         file.addItem(.separator())
         file.addItem(action(CompanionL10n.string("Save"), command: .stateSaveNow, enabled: onFile) { [app] in app.pages.perform(.stateSaveNow) })
-        file.addItem(action(CompanionL10n.string("Save As…"), command: .fileSaveAs, enabled: onFile) { [app] in app.pages.perform(.fileSaveAs) })
+        file.addItem(action(CompanionL10n.string("Save As…"), command: .fileSaveAs, enabled: onFileOrPage) { [app] in app.pages.perform(.fileSaveAs) })
         file.addItem(.separator())
         let close = action(CompanionL10n.string("Close"), command: .pageClose, enabled: { [weak self] in
             guard let self else { return false }
@@ -124,12 +124,6 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         let spelling = submenu(CompanionL10n.string("Spelling and Grammar"), in: edit)
         spelling.addItem(responder(CompanionL10n.string("Show Spelling and Grammar"), #selector(NSTextView.showGuessPanel(_:)), key: ":"))
         spelling.addItem(responder(CompanionL10n.string("Check Document Now"), #selector(NSTextView.checkSpelling(_:)), key: ";"))
-        spelling.addItem(responder(CompanionL10n.string("Check Spelling While Typing"), #selector(NSTextView.toggleContinuousSpellChecking(_:))))
-        let substitutions = submenu(CompanionL10n.string("Substitutions"), in: edit)
-        substitutions.addItem(responder(CompanionL10n.string("Show Substitutions"), #selector(NSTextView.orderFrontSubstitutionsPanel(_:))))
-        substitutions.addItem(responder(CompanionL10n.string("Smart Quotes"), #selector(NSTextView.toggleAutomaticQuoteSubstitution(_:))))
-        substitutions.addItem(responder(CompanionL10n.string("Smart Dashes"), #selector(NSTextView.toggleAutomaticDashSubstitution(_:))))
-        substitutions.addItem(responder(CompanionL10n.string("Text Replacement"), #selector(NSTextView.toggleAutomaticTextReplacement(_:))))
         let transformations = submenu(CompanionL10n.string("Transformations"), in: edit)
         transformations.addItem(responder(CompanionL10n.string("Make Upper Case"), #selector(NSTextView.uppercaseWord(_:))))
         transformations.addItem(responder(CompanionL10n.string("Make Lower Case"), #selector(NSTextView.lowercaseWord(_:))))
@@ -192,6 +186,13 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     private var onFile: () -> Bool {
         { [app] in CommandPalettePresentation.canSave(app.pages.activeTarget) }
+    }
+
+    private var onFileOrPage: () -> Bool {
+        { [app] in
+            CommandPalettePresentation.canSaveAs(
+                app.pages.activeTarget, pageShowing: app.pages.canSavePageAs)
+        }
     }
 
     private var closeChoice: CloseMenuItem {

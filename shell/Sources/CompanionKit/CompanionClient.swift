@@ -1699,6 +1699,12 @@ public class CompanionClient: @unchecked Sendable {
         Rung(rawValue: companion_tab_cycle_rung(handle, tab))
     }
 
+    /// The tab's own rung reapplied: the clock starts again at full length.
+    @discardableResult
+    public func restartRung(tab: UInt64) -> Rung? {
+        Rung(rawValue: companion_tab_restart_rung(handle, tab))
+    }
+
     @discardableResult
     public func setRung(tab: UInt64, rung: Rung) -> Bool {
         companion_tab_set_rung(handle, tab, rung.rawValue)
@@ -2197,6 +2203,24 @@ public class CompanionClient: @unchecked Sendable {
     /// header describes. Nil when nothing has refused.
     public func openFileErrorJSON() -> String? {
         ownedString(from: companion_file_open_error_json(handle))
+    }
+
+    /// Whether a file with these bytes would open, as the raw JSON the header
+    /// describes, without a client handle. Nil when the core gave no answer.
+    public static func fileContentCheckJSON(for data: Data) -> String? {
+        let answer: UnsafeMutablePointer<CChar>? =
+            if data.isEmpty {
+                companion_file_content_check_json(nil, 0)
+            } else {
+                data.withUnsafeBytes { bytes in
+                    companion_file_content_check_json(
+                        bytes.bindMemory(to: UInt8.self).baseAddress,
+                        bytes.count
+                    )
+                }
+            }
+
+        return ownedString(from: answer)
     }
 
     /// Close the file and drop its buffer. The draft goes with it: a
