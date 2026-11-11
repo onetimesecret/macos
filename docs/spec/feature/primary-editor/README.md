@@ -175,6 +175,13 @@ ADR-0006.
 
 ## Preference: the ambient panel
 
+[ADR-0063](../../../adr/0063-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md)
+withdraws the panel: it is off for every install, and Settings and the
+menus no longer offer it. The primary editor window is the app's only
+window, and the hotkey and the status item select it. The rest of this
+section describes the preference as ADR-0033 decided it, for when the
+panel returns.
+
 The ambient panel is a **persistent preference, default on**. It is
 not a transient mode. Turning it off leaves the primary editor window
 as the app's only window; the hotkey and the status item select the
