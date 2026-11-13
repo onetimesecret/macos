@@ -125,7 +125,7 @@ Four ways in, all of them explicit.
   for them by rank. Markdown (`net.daringfireball.markdown`), logs
   (`com.apple.log`) and dotenv files (`com.onetimesecret.pad.dotenv`,
   an imported type for the `env` and `envrc` extensions) have the
-  Default rank (app 0.47.0). The app never sets itself as the default
+  Default rank (app 0.49.0). The app never sets itself as the default
   application: that is the person's choice, made in the Finder's Get
   Info window or with `scripts/default-app.swift`. Not verified on
   hardware: what macOS picks for each kind beside other installed
