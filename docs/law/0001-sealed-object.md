@@ -460,6 +460,7 @@ end the table).
 | the preview's link: `textView(_:clickedOnLink:at:)`, Open Link, Copy Link | a ⌘-click, the text menu over a link | a ⌘-click and Open Link go to `Coordinator.openLink`, which asks the preview first; a plain click opens nothing; Copy Link asks first, as any copy does, and writes the URL on the ambient board; Open With and Edit Link… leave the menu, as the rows above say | `testAPreviewsLinkOpensOnlyByCommandClickThroughTheGate`, `testEveryWayOutOfAPreviewPastItsPagesDeadlineRefusesAndTheSettleTakesIt`; a real ⌘-click on a preview's link, owed: hand check, [sealed fragment](../qa/verification-procedures/sealed-fragment.md) |
 | the preview's drag: `dragSelection(with:offset:slideBack:)`, `dragImageForSelection(with:origin:)`, `textView(_:draggedCell:in:event:at:)` | a press and a move on the preview's selection or on an object | no drag starts from a preview, with an object in the selection or not, since the drag's image would draw each object's face where no gate sees (the plain drag row) | `testAPreviewStartsNoDragFromASelectionHoldingAnObject` |
 | a preview of a page the roll has not selected | the mouse, the keys | not selectable and never the first responder, as a quiet page is ([ADR-0030](../adr/0030-visible-pages-share-preview-rendering.md)); a click promotes its page, and the saved caret stands since a rendered index is no source index | `testAPreviewOfAnUnselectedPageIsNotSelectableAndAClickPromotesIt`, `testNonselectedPreviewActivationSelectsPageWithoutUsingRenderedSelectionAsSourceCaret` |
+| the preview's image control: Load image and Retry image (`PreviewImageControls.activate`) | the control, by pointer, keyboard or VoiceOver | asks the preview's page first through `MarkdownPreviewView.authorizeImageLoad` (the preview still owns its presentation, and `mayReadOut`, which settles past the page's deadline) when the reader activates, when the response arrives and before the image is shown; a refused address, one containing an object or its stand-in among them, leaves the control unavailable; the request sends the address the control shows and nothing else of the page; a loaded image is no object, enters no copy and starts no drag, and objects in alt text keep their rendered and copied order (proposed [ADR-0066](../adr/0066-a-preview-fetches-an-image-only-when-its-reader-asks.md); awaiting ratification) | `PreviewImageControlsTests.swift` `testExpiredPageRefusesANewLoadAndAnInflightResult`, `testNonownerCannotActivateAnOldPreviewOrInstallAnInflightResult`, `testDeselectionDiscardsImagesAndPromotionAloneDoesNotReload`, `testLoadedImagesAndControlsDoNotEnterShownSelectionOrEnableDragging`, `testAnObjectInImageAltRetainsItsReferenceWhenTheImageLoads`; `testMarkdownImageDestinationObjectIsRefusedAndRecoveredAfterAlt`; spoken VoiceOver, owed: hand check |
 
 ## What the rule forbids
 
@@ -1940,3 +1941,16 @@ paths must stay dialog free.
   observation that reads a page through `companion_sheet_public_text`,
   the copy row's public text with no envelope composed, so it adds a
   reader of that text and no route to a payload. No other row changes.
+
+- 2026-11-14: Preview image amendment. Image loading shipped in PR 336
+  (issue 332) with no row in this table, although the request sends an
+  address taken from the page's text. The AppKit text routes table gains
+  the preview's image control row, written from the code on main: the
+  control asks the preview's page first at activation, on the response and
+  before showing the image, refuses an address that contains an object or
+  its stand-in, and adds nothing to a copy or a drag. Proposed
+  [ADR-0066](../adr/0066-a-preview-fetches-an-image-only-when-its-reader-asks.md)
+  is the decision the row applies, and its open questions name the one
+  difference from the 2026-10-16 draft: the gate does not stand aside while a
+  name field or the note owns the keys. The row and this entry await the
+  maintainer's ratification.

@@ -31,7 +31,8 @@ heading before the example.
 The file is `tools/markdown-preview-lab/parser/results/gfm-official-examples.json`, unchanged,
 from commit 41266668 on the `feat/markdown-dialects` branch, where the markdown preview lab's
 `GFMExamples` extractor wrote it and the shell's `MarkdownCorpusTests` (commit 5b0eed41)
-compared it with that test's own extraction of the same page.
+compared it with that test's own extraction of the same page. Both commits stay reachable
+from the tag `archive/markdown-dialects`.
 SHA-256: `a651225602a1c9789c9dde3eda3a24fcc1151a14f364d77de8fd410f62616310`.
 
 ## Changing either file
