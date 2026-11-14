@@ -313,6 +313,12 @@ by construction covered by no leaf, so R1's rule for one inside a covering leaf
 does not arise, and the repair for a paragraph cmark-gfm left without a
 position went with the C parser.
 
+The PR B record above and the limits below describe main as PR B left it, and
+two of their statements are out of date for main: R2's dialect setting and
+R4/R5 image loading shipped in PRs 335 and 336, and an image with no fallback
+text now has a placeholder with a descriptor (the Images row). Where they
+differ, this table describes main.
+
 ### Known integration limits for review
 
 N󠄁a󠄁t󠄁i󠄁v󠄁e󠄁 t󠄁a󠄁b󠄁l󠄁e󠄁 c󠄁o󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁 h󠄁a󠄁s󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁s󠄁 o󠄁f󠄁 e󠄁i󠄁g󠄁h󠄁t󠄁 c󠄁o󠄁l󠄁u󠄁m󠄁n󠄁s󠄁 a󠄁n󠄁d󠄁 1󠄁,󠄁0󠄁2󠄁4󠄁 c󠄁u󠄁m󠄁u󠄁l󠄁a󠄁t󠄁i󠄁v󠄁e󠄁
