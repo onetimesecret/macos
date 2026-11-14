@@ -1,3 +1,7 @@
+---
+# docs/tenets.md
+---
+
 # Tenets
 
 ## Why tenets?
@@ -13,7 +17,7 @@ whether the proposal is wrong or the ADR is due for revisiting. This
 is a work-in-progress mental model, not spec; entries harden here
 first and graduate into spec or ADR language when they earn it.
 
-## 1. Losing work is unforgivable, even here
+## 1. Losing work is unforgivable, even in subzero protototypes
 
 No one ever wants to lose work, to a pathological degree. The wider
 market says so loudly: unlimited history is what products charge for.

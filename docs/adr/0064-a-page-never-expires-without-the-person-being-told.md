@@ -18,7 +18,7 @@ when a person acted on a page that was already gone. The ledger recorded each
 expiry, and its entry points (the tab, `cmd-0` and the Settings clear) were
 compiled off under issue #78.
 
-[Tenet 1](../tenets.md#1-losing-work-is-unforgivable-even-here) reads:
+[Tenet 1](../tenets.md#1-losing-work-is-unforgivable-even-in-subzero-protototypes) reads:
 "Forgetting is only trustworthy when it is visibly on schedule and never by
 accident." A person who was away when a page went had no way to see that the
 schedule, and nothing else, took it.
@@ -26,16 +26,16 @@ schedule, and nothing else, took it.
 Three earlier records say the opposite of what this one proposes, and they
 are quoted here so the conflict is on the page:
 
-- The [interaction model](../spec/design/2026-0707-interaction-model.md) has a
+- The [interaction model](../spec/design/timeline-tabs/2026-0707-interaction-model.md) has a
   bullet that opens "Expiry is silent".
-- The [design principles](../spec/design/2026-0707-design-principles.md),
+- The [design principles](../spec/design/timeline-tabs/2026-0707-design-principles.md),
   section 1, settle the question of a warning before expiry with "No
   notification by default; the draining cue *is* the warning, and the user
   chose the TTL."
-- D-14 of the [UI/UX decisions](../spec/design/2026-0915-ui-ux-decisions.md),
+- D-14 of the [UI/UX decisions](../spec/design/timeline-tabs/2026-0915-ui-ux-decisions.md),
   marked fixed, opens "No modals, no interrupting dialogs, no notifications,
   badges, bounce or count chips." That record is superseded, and the
-  [sealed-content revision](../spec/design/2026-1031-sealed-content-ux-revision.md)
+  [sealed-content revision](../spec/design/timeline-tabs/2026-1031-sealed-content-ux-revision.md)
   that replaced it incorporates D-14 unchanged.
 
 The draining cue is on the tab, and the tab is not in front of a person whose

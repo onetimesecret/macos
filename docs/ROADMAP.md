@@ -2,9 +2,24 @@
 
 GitHub milestones and issues are the source of truth for delivery status. This document is a short index to current work and durable plans.
 
-## Current work
+## Current design-change track
 
-As of 2026-10-21, with app 0.40.0 on `main`.
+As of 2026-11-14: [operational notebook](spec/design/operational-notebook/README.md),
+a full product design change, tracked in
+[epic #358](https://github.com/onetimesecret/macos/issues/358).
+The [preparation plan](plans/operational-notebook.md) separates prototype
+validation, contract decisions, implementation, and verification. Application
+`0.50.0` marks design preparation, not a completed redesign or release.
+
+Baseline: `baseline/pre-operational-notebook-2026-11-14` at
+`832fc8505bbf80d51c9794deaf7972c13e81195b`. See the
+[dated snapshot](soto/2026-11-14-state-of-the-onion.md).
+
+## Earlier work snapshot
+
+The following status was recorded on 2026-10-21, with app 0.40.0 on `main`.
+Issue states below have not been revalidated by the design-change preparation;
+the new track does not close or supersede those issues.
 
 ### [Names in place](https://github.com/onetimesecret/macos/milestone/5)
 

@@ -61,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Application version advances to **0.50.0** for the
+  [operational-notebook design change](docs/spec/design/operational-notebook/README.md).
+  This preparation adds the design and staged plan, not new notebook runtime behavior.
+
 - **Every route to the app shows the pad, and the summon shortcut keeps
   the window you arranged.** Command-Tab to OnetimePad with nothing of its
   own showing opens the editor window, or takes it out of the Dock, without
