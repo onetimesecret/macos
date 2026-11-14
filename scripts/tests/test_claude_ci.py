@@ -169,7 +169,7 @@ class ModelBoundaryTests(unittest.TestCase):
             root = Path(directory); (root / ".git").mkdir()
             config = root / ".git/config"
             config.write_text('[core]\nrepositoryformatversion = 0\n[remote "origin"]\nurl = https://token:secret@gitlab.example/project.git\n[http]\nextraheader = Authorization: secret\n')
-            fixture_path = "/builds/onetimesecret/macos/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+            fixture_path = "/builds/onetimesecret/applications/macos/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
             env = dict(ENV, CI_PROJECT_DIR=directory, PATH=fixture_path, ANTHROPIC_API_KEY="anthropic-fixture", GITLAB_ACCESS_TOKEN="gitlab-secret", CI_JOB_TOKEN="job-secret", CI_REPOSITORY_URL="https://token:secret@gitlab.example/project.git", GIT_CONFIG_PARAMETERS="unsafe")
             child = ci.model_environment(env, root / "config")
             self.assertEqual(child["ANTHROPIC_API_KEY"], "anthropic-fixture")

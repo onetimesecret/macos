@@ -26,7 +26,7 @@ jobs:
       - name: Read the GitLab main commit
         id: main
         run: |
-          sha="$(git ls-remote https://gitlab.com/onetimesecret/macos.git refs/heads/main | cut -f1)"
+          sha="$(git ls-remote https://gitlab.com/onetimesecret/applications/macos.git refs/heads/main | cut -f1)"
           test "${#sha}" -eq 40
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
@@ -42,7 +42,7 @@ jobs:
       - name: Checkout the GitLab main commit
         run: |
           git init .
-          git remote add origin https://gitlab.com/onetimesecret/macos.git
+          git remote add origin https://gitlab.com/onetimesecret/applications/macos.git
           git fetch --depth=1 origin "$TEST_SHA"
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "$TEST_SHA"
@@ -68,7 +68,7 @@ jobs:
       - name: Checkout the GitLab main commit
         run: |
           git init .
-          git remote add origin https://gitlab.com/onetimesecret/macos.git
+          git remote add origin https://gitlab.com/onetimesecret/applications/macos.git
           git fetch --depth=1 origin "$TEST_SHA"
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "$TEST_SHA"

@@ -126,7 +126,7 @@ a󠄁c󠄁t󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 I󠄁t󠄁 u󠄁s󠄁e󠄁s󠄁 t󠄁h�
 t󠄁h󠄁a󠄁n󠄁 t󠄁h󠄁e󠄁 G󠄁i󠄁t󠄁H󠄁u󠄁b󠄁 r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 p󠄁l󠄁u󠄁g󠄁i󠄁n󠄁.󠄁
 
 C󠄁o󠄁n󠄁f󠄁i󠄁g󠄁u󠄁r󠄁e󠄁 t󠄁h󠄁e󠄁s󠄁e󠄁 p󠄁r󠄁o󠄁j󠄁e󠄁c󠄁t󠄁 C󠄁I󠄁/󠄁C󠄁D󠄁 v󠄁a󠄁r󠄁i󠄁a󠄁b󠄁l󠄁e󠄁s󠄁 i󠄁n󠄁
-[m󠄁a󠄁c󠄁o󠄁s󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 →󠄁 C󠄁I󠄁/󠄁C󠄁D󠄁](https://gitlab.com/onetimesecret/macos/-/settings/ci_cd):󠄁
+[m󠄁a󠄁c󠄁o󠄁s󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 →󠄁 C󠄁I󠄁/󠄁C󠄁D󠄁](https://gitlab.com/onetimesecret/applications/macos/-/settings/ci_cd):󠄁
 
 | V󠄁a󠄁r󠄁i󠄁a󠄁b󠄁l󠄁e󠄁 | C󠄁o󠄁n󠄁f󠄁i󠄁g󠄁u󠄁r󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 |
 | --- | --- |
