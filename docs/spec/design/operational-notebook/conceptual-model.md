@@ -33,21 +33,38 @@ The same accepted source states:
 | Page | Working context containing prose, procedures, and local credential occurrences. |
 | Occurrence | Page-local placement referencing a credential identity, with local annotation and an explicit role where needed. |
 | Credential identity | Stable conceptual identity for the credential across occurrences and changes of value; not the plaintext or a provider path. |
-| Source | Where a value is managed or located, and how access is described. Source changes are distinct from identity changes. |
-| Version | A particular value or version reference, with provenance and available evidence; distinct from the identity and retrieval outcome. |
-| Retrieval state | Outcome of an access attempt, such as unavailable or retrieved, with observation time; not proof of validity or freshness. |
+| Source note | Optional description of where a manually supplied value originated; not a connection or retrieval configuration. |
+| Version | A particular locally managed value, with optional provenance and available evidence; distinct from the credential identity. |
+| Retrieval state (future) | Outcome of an automated external access attempt; deferred with connectors, not a state required for manual input. |
 | Procedure | Reusable description of work and required credential roles, not executable automation. |
 | Environment | Explicit context such as a synthetic staging or production target. |
 | Role binding | Association of a procedure role and environment with a credential identity; version-selection policy remains open. |
 | Consumer record | Documented use by a service or workflow, with independently recorded version adoption evidence. |
 
-### Proposed source modes
+### Initial scope: manual values and optional provenance (ON-R01)
 
-- **Local managed:** the notebook manages a local value; lifecycle policy for shared identities remains decision-gated.
-- **Connected external:** a source connection can retrieve from an external authority. Successful retrieval is not evidence that every consumer uses that value.
-- **Manual locator:** a descriptive location directs a person to an external source without automated retrieval. A locator is not a value or a successful access result.
+All values in the initial design are manually typed or pasted by the person and managed locally. An optional source note can describe an origin such as a password-manager item, vendor console, or terminal application. Typing versus pasting does not establish whether the value was newly created or copied from an up-to-date source; no acquisition taxonomy is required to enter a value.
 
-**Proposal:** an imported value is a copy. Its freshness is unknown unless evidence supports a narrower statement, with provenance and observation time. Neither import time nor a successful retrieval alone establishes continued freshness. Evidence expiry and source-specific verification remain open decisions.
+**Imported copy** means a locally stored version obtained from another source. Import describes provenance, not a fourth source mode or a live connection. The resulting value is locally managed; an external origin description does not change that relationship. Import or paste time alone supplies no evidence of continued freshness at the origin.
+
+A manual locator can be ordinary page text or a link directing the person elsewhere. It does not require a separate credential source object. Provenance associated with a version describes that value's origin; it need not apply to later replacements of the same credential.
+
+### Proposed paste-time source suggestions
+
+Offer best-effort suggestions from metadata accompanying an explicit paste, initially targeting password managers, browsers, and terminal applications. This is input assistance, not a connector, background clipboard monitor, or application-activity tracker.
+
+- The person can accept, edit, or ignore a suggestion, or enter a source note manually. Missing metadata does not prevent paste or require a source note.
+- An application identifier, a webpage origin, and a sensitive-content marker mean different things. A generic sensitive-content marker supplies no application name.
+- Present inferred or application-reported source information as a suggestion, not verified provenance. Do not infer the issuer, environment, account, or freshness from the copying application.
+- For browser URLs, propose a hostname-only suggestion by default rather than automatically retaining the full URL. Paths and queries may contain sensitive information.
+- A terminal application hint does not establish a command, remote host, shell session, or upstream secret store. Do not inspect terminal history or sessions to fill gaps.
+- Metadata parsing limits, source-note storage/export, and attribution of user confirmation need review before implementation. No supported-app coverage is promised by this design.
+
+See [Clipboard provenance: facts and assumptions](clipboard-provenance.md) for evidence, limitations, and synthetic validation cases.
+
+### Future external connections
+
+If automated retrieval is introduced later, distinguish the credential's source relationship (locally managed, connected external, or a formal manual locator if justified) from a particular version's acquisition provenance. Retrieving through a connection would not itself convert a credential to local management; importing an independent copy would. Retrieval, caching, retained snapshots, offline behavior, and freshness evidence remain ON-D03/04 questions, not prerequisites for manual input.
 
 ## Proposed model diagram
 
@@ -63,11 +80,11 @@ flowchart TD
     Role --> Binding[Role binding]
     Environment --> Binding
     Binding --> Identity
-    Identity --> Source[Source description]
-    Identity --> Version[Value or version reference]
-    Version --> Evidence[Provenance and freshness evidence]
-    Source --> Retrieval[Retrieval observation]
-    Retrieval --> Evidence
+    Identity --> Version[Locally managed version]
+    Version --> Source[Optional source note]
+    Paste[Paste-time metadata hint] --> Suggestion[Accept, edit or ignore suggestion]
+    Suggestion --> Source
+    Version --> Evidence[Separately recorded freshness evidence]
     Consumer[Documented consumer] --> Identity
     Consumer --> Adoption[Recorded version adoption]
     Adoption --> Version
@@ -108,7 +125,8 @@ This proposed diagram is a set of relationships, not a linear global state machi
 ## Decision gates and proposed acceptance targets
 
 - **Acceptance target:** two pages can show separate annotations while visibly referencing one proposed identity; native clone behavior remains distinguishable.
-- **Acceptance target:** environment, binding, source mode, selected version, and retrieval evidence are inspectable without treating them as interchangeable states.
+- **Acceptance target:** environment, binding, selected version, optional source note, and separately recorded evidence are distinguishable; source configuration is not required for manual input.
+- **Acceptance target:** paste-time source suggestions are optional and best-effort, including absent or ambiguous metadata; they do not change local management or imply freshness.
 - **Acceptance target:** a partial rotation can show different consumer outcomes and unknown provider revocation simultaneously.
 - **Decision gate — lifecycle:** removing an occurrence, expiring a page, destroying a version, and deleting an identity need distinct policy decisions before shared-identity behavior is accepted. Existing law is not overridden by this proposal.
 - **Decision gate — transfer:** copy, cross-notebook transfer, and export need explicit clone/reference/snapshot semantics and recipient behavior; no new portability or plaintext handling guarantee is established here.

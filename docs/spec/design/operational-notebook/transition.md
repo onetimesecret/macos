@@ -94,7 +94,7 @@ must cite the affected existing contracts and name any amendment precisely.
 | --- | --- | --- |
 | ON-D01 | Credential identity, ownership, occurrence semantics, and explicit reuse versus clone | Before functional shared-reference slice |
 | ON-D02 | Page expiry, occurrence removal, version destruction, identity deletion, and undo | Before shared values persist or expire |
-| ON-D03 | Local/imported/locator/connected provenance, retrieval, caching, offline access, and failure behavior | Before real external retrieval; mock sources first |
+| ON-D03 | Optional source-note metadata and paste-time suggestions; separately, future connection relationships, retrieval, caching, offline access, and failure behavior | Review metadata handling before paste-source implementation; external retrieval remains deferred |
 | ON-D04 | Default version resolution, candidate designation, retention, and rotation completion evidence | Before version updates affect shared references |
 | ON-D05 | Context binding, missing binding, visible environment, and context-switch behavior | Before reusable procedure slice |
 | ON-D06 | Same-notebook copy, cross-notebook transfer, export metadata, and recipient resolution | Before those paths handle shared references |
@@ -104,6 +104,14 @@ must cite the affected existing contracts and name any amendment precisely.
 No shared-value retention, migration, recovery, or compatibility policy is
 established by this proposal. Each requires acceptance criteria and evidence
 before implementation is described as conforming.
+
+## Review resolution: ON-R01
+
+**Documentation resolution:** initial values are manually typed or pasted and locally managed. An imported copy describes the provenance of a stored version, not a fourth source mode or a live connection. Optional external origin notes do not change local management. Acquisition categories and connector configuration are not required for input.
+
+The maintainer requested best-effort paste-time source suggestions, initially for password managers, browsers, and terminal applications. The [conceptual model](conceptual-model.md#proposed-paste-time-source-suggestions) describes the proposed interaction; the [research note](clipboard-provenance.md) separates external evidence, assumptions, and validation still needed. This resolution records design direction, not implemented or verified app coverage.
+
+Future automated connections retain their own ON-D03 questions. Source-note persistence and transfer remain subject to ON-D06/07 where applicable; this clarification does not settle metadata exposure, retention, migration, or shared-value lifetime policy.
 
 ## Existing data and implementation preparation
 

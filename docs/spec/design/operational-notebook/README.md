@@ -87,8 +87,11 @@ instructions disappear.
 - Individual operators performing occasional, consequential tasks: diagnosis,
   deployment recovery, integration setup, and credential rotation.
 - Instructions with local credential occurrences and explicit reuse.
-- Source provenance distinguishing local values, imported copies, connected
-  sources, and manual locators; connectors can be simulated initially.
+- Manually typed or pasted, locally managed values with optional source notes.
+  Imported copies describe provenance, not live connections (ON-R01).
+- Best-effort source suggestions from metadata at paste time, initially for
+  password managers, browsers, and terminal applications; no source setup is
+  required. See the [research note](clipboard-provenance.md).
 - Explicit environment context and missing-binding states.
 - A view of documented references, not automatic infrastructure discovery.
 - Recorded rotation attempts with current/candidate distinctions and separate
@@ -100,7 +103,8 @@ are not prerequisites for the first prototype.
 ### Outside the initial scope
 
 Command execution, arbitrary scripting, automatic provider-side rotation,
-browser autofill, password-manager replacement, infrastructure discovery,
+browser autofill, password-manager replacement, automated external retrieval,
+background clipboard/application monitoring, infrastructure discovery,
 shared-workspace access control, and general workflow orchestration. Temporary
 reveal is not proposed; the existing rule is quoted in the
 [transition record](transition.md#existing-contracts-and-design-questions).
@@ -117,17 +121,17 @@ flowchart TD
     Context[Explicit environment context] --> Page
     Page --> Occurrence[Local credential occurrence]
     Occurrence --> Identity[Reusable credential identity]
-    Identity --> Source[Source and provenance]
-    Source --> Local[Locally managed value]
-    Source --> External[External source or manual locator]
-    Identity --> Version[Version selection when supported]
+    Identity --> Version[Locally managed version]
+    Version --> Source[Optional source note]
+    Hint[Paste-time source suggestion] --> Source
+    Page --> Locator[External locator as text or link]
     Rotation[Rotation attempt] --> Identity
     Rotation --> Evidence[Recorded consumer and provider evidence]
 ```
 
 This is a conceptual map, not a storage schema or a completed architecture.
 See the [conceptual model](conceptual-model.md) for identity, source, version,
-retrieval state, and the separate rotation diagram.
+optional provenance, future retrieval questions, and the separate rotation diagram.
 
 ## Validation question
 
@@ -148,7 +152,9 @@ been performed by preparing these documents.
    required before implementation.
 4. [Implementation preparation plan](../../../plans/operational-notebook.md):
    staged validation and decision gates, with execution tracking.
-5. [Dated baseline snapshot](../../../soto/2026-11-14-state-of-the-onion.md):
+5. [Clipboard provenance research](clipboard-provenance.md): facts, assumptions,
+   and validation needed for best-effort paste-time source suggestions.
+6. [Dated baseline snapshot](../../../soto/2026-11-14-state-of-the-onion.md):
    what the demarcation records and what was not validated.
 
 Keep proposal, acceptance, implementation, and verification separate. Approval
