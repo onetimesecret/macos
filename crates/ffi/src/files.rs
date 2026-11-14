@@ -192,6 +192,7 @@ fn write_atomic_preserving_mode(
 
     // The rename drops the old file's mode and group unless they are carried.
     let existing = std::fs::metadata(path).ok();
+    refuse_read_only_target(path, existing.as_ref())?;
 
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -247,9 +248,31 @@ fn write_atomic_preserving_mode(
     Err(last)
 }
 
+/// `ReadOnlyFilesystem` when `path` is a regular file this user cannot open for
+/// writing, since the rename would otherwise replace it. Other errors pass.
+fn refuse_read_only_target(path: &Path, existing: Option<&std::fs::Metadata>) -> io::Result<()> {
+    if !existing.is_some_and(|meta| meta.file_type().is_file()) {
+        return Ok(());
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(persist::O_NONBLOCK);
+    }
+    match options.open(path) {
+        // Its own kind: PermissionDenied would mark the file's access refused.
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+            Err(io::ErrorKind::ReadOnlyFilesystem.into())
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Give the temp file the target's mode (set past the umask; a failure fails
 /// the save) and, best effort, its group; a new file takes the group its
-/// target directory would give. Write access was already checked at open.
+/// target directory would give.
 #[cfg(unix)]
 fn carry_identity(
     file: &std::fs::File,
@@ -361,7 +384,15 @@ pub unsafe extern "C" fn companion_file_open_error_json(
     let Some(refusal) = guard.last_open_refusal else {
         return ptr::null_mut();
     };
-    let value = match refusal {
+    match serde_json::to_string(&open_refusal_json(refusal)) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// An open refusal in the shape [`companion_file_open_error_json`] answers.
+fn open_refusal_json(refusal: OpenRefusal) -> serde_json::Value {
+    match refusal {
         OpenRefusal::NotUtf8 => serde_json::json!({ "error": "notUtf8" }),
         OpenRefusal::Binary => serde_json::json!({ "error": "binary" }),
         OpenRefusal::TooLarge { limit } => {
@@ -371,6 +402,30 @@ pub unsafe extern "C" fn companion_file_open_error_json(
         OpenRefusal::Io(kind) => {
             serde_json::json!({ "error": "io", "detail": format!("{kind}") })
         }
+    }
+}
+
+/// Whether a file with these bytes would open: `{"opens":true}`, or the open error
+/// shape. Null for a bad argument; free with `companion_string_free`.
+///
+/// # Safety
+/// A non-null `bytes` must be readable for `len` bytes until return.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_content_check_json(
+    bytes: *const u8,
+    len: usize,
+) -> *mut c_char {
+    let input = if len == 0 {
+        &[]
+    } else {
+        if bytes.is_null() || isize::try_from(len).is_err() {
+            return ptr::null_mut();
+        }
+        unsafe { std::slice::from_raw_parts(bytes, len) }
+    };
+    let value = match companion_core::check_file_bytes(input) {
+        Ok(()) => serde_json::json!({ "opens": true }),
+        Err(refusal) => open_refusal_json(refusal),
     };
     match serde_json::to_string(&value) {
         Ok(json) => into_c_string(json),
@@ -413,6 +468,25 @@ pub unsafe extern "C" fn companion_file_runs_json(
         return ptr::null_mut();
     };
     crate::content_json::to_c_json(&crate::content_json::InkRuns(&text))
+}
+
+/// The file's buffer length in UTF-8 bytes, read without its text or the
+/// disk. `-1` for an unknown file.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_text_bytes(handle: *mut CompanionHandle, file: u64) -> i64 {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return -1;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return -1;
+    };
+    let Some(file) = guard.files.file(FileId(file)) else {
+        return -1;
+    };
+    i64::try_from(file.text_bytes()).unwrap_or(i64::MAX)
 }
 
 /// Apply an ordered edit batch to the file's body. False means the
@@ -1528,6 +1602,43 @@ mod tests {
     }
 
     #[test]
+    fn a_files_text_bytes_follow_its_buffer_and_not_the_disk() {
+        let (handle, dir) = scratch("text-bytes");
+        for (name, text) in [
+            ("empty.txt", ""),
+            ("ascii.txt", "hello"),
+            ("wide.txt", "é🦀"),
+        ] {
+            let file = dir.join(name);
+            std::fs::write(&file, text.as_bytes()).unwrap();
+            unsafe {
+                let id = open(handle, &file);
+                assert_eq!(companion_file_text_bytes(handle, id), text.len() as i64);
+                assert!(companion_file_close(handle, id));
+                assert_eq!(companion_file_text_bytes(handle, id), -1);
+            }
+        }
+        let file = dir.join("edited.txt");
+        std::fs::write(&file, b"hello").unwrap();
+        unsafe {
+            let id = open(handle, &file);
+            let ops = cstring(r#"[{"ins":{"at":5,"text":" wörld"}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            assert_eq!(std::fs::read(&file).unwrap(), b"hello");
+            assert_eq!(companion_file_text_bytes(handle, id), 12);
+            let runs: serde_json::Value =
+                serde_json::from_str(&take_json(companion_file_runs_json(handle, id))).unwrap();
+            assert_eq!(runs[0]["ink"].as_str().unwrap().len(), 12);
+            let ops = cstring(r#"[{"del":{"at":0,"len":6}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            assert_eq!(companion_file_text_bytes(handle, id), 6);
+            assert_eq!(companion_file_text_bytes(ptr::null_mut(), id), -1);
+            assert_eq!(companion_file_text_bytes(handle, 7), -1);
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[test]
     fn a_file_opens_edits_and_saves_through_the_seam() {
         let (handle, dir) = scratch("roundtrip");
         let file = dir.join("note.txt");
@@ -1791,6 +1902,61 @@ mod tests {
             assert_eq!(mode, 0o640, "the save must not restyle the file's mode");
         }
         assert_eq!(std::fs::read(&file).unwrap(), b"body!");
+        cleanup(handle, &dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_save_over_a_read_only_file_is_refused_and_leaves_its_bytes_and_mode() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let (handle, dir) = scratch("read-only");
+        let file = dir.join("r.env");
+        std::fs::write(&file, b"KEY=1").unwrap();
+        unsafe {
+            let id = open(handle, &file);
+            let ops = cstring(r#"[{"ins":{"at":5,"text":"2"}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o444)).unwrap();
+            if std::fs::OpenOptions::new().write(true).open(&file).is_ok() {
+                // Root writes through any mode.
+                cleanup(handle, &dir);
+                return;
+            }
+            assert!(!companion_file_save(handle, id, ptr::null()));
+            assert_eq!(
+                save_error(handle),
+                Some(
+                    serde_json::json!({ "error": "write", "detail": "read-only filesystem or storage medium" })
+                )
+            );
+        }
+        assert_eq!(std::fs::read(&file).unwrap(), b"KEY=1");
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o444);
+        assert_eq!(names_in(&dir), ["r.env"], "no temp file was staged");
+        cleanup(handle, &dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_save_over_a_writable_file_still_writes() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let (handle, dir) = scratch("writable");
+        let file = dir.join("w.env");
+        std::fs::write(&file, b"KEY=1").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        unsafe {
+            let id = open(handle, &file);
+            let ops = cstring(r#"[{"ins":{"at":5,"text":"2"}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            assert!(companion_file_save(handle, id, ptr::null()));
+            assert_eq!(save_error(handle), None);
+        }
+        assert_eq!(std::fs::read(&file).unwrap(), b"KEY=12");
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644);
         cleanup(handle, &dir);
     }
 
@@ -2079,6 +2245,53 @@ mod tests {
             std::fs::write(&good, b"fine").unwrap();
             assert_ne!(open(handle, &good), 0);
             assert!(companion_file_open_error_json(handle).is_null());
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn a_content_check_answers_what_an_open_of_those_bytes_would() {
+        let (handle, dir) = scratch("content-check");
+        let check = |bytes: &[u8]| unsafe {
+            take_json(companion_file_content_check_json(
+                bytes.as_ptr(),
+                bytes.len(),
+            ))
+        };
+        let opened = |bytes: &[u8]| unsafe {
+            let path = dir.join("probe.txt");
+            std::fs::write(&path, bytes).unwrap();
+            let id = open(handle, &path);
+            if id == 0 {
+                take_json(companion_file_open_error_json(handle))
+            } else {
+                assert!(companion_file_close(handle, id));
+                r#"{"opens":true}"#.to_string()
+            }
+        };
+        let cases: [&[u8]; 6] = [
+            b"ordinary text\n",
+            b"pasted\0text",
+            &[0x66, 0xFF, 0xFE],
+            &[0xEF, 0xBB, 0xBF, b'a'],
+            &vec![b'x'; LIMIT],
+            &vec![b'x'; LIMIT + 1],
+        ];
+        for bytes in cases {
+            assert_eq!(check(bytes), opened(bytes));
+        }
+        assert_eq!(check(b"ordinary text\n"), r#"{"opens":true}"#);
+        assert_eq!(check(b"pasted\0text"), r#"{"error":"binary"}"#);
+        assert_eq!(check(&vec![b'x'; LIMIT]), r#"{"opens":true}"#);
+        let big: serde_json::Value = serde_json::from_str(&check(&vec![b'x'; LIMIT + 1])).unwrap();
+        assert_eq!(big["error"], serde_json::json!("tooLarge"));
+        assert_eq!(big["limit"], serde_json::json!(LIMIT as u64));
+        unsafe {
+            assert_eq!(
+                take_json(companion_file_content_check_json(ptr::null(), 0)),
+                r#"{"opens":true}"#
+            );
+            assert!(companion_file_content_check_json(ptr::null(), 1).is_null());
         }
         cleanup(handle, &dir);
     }

@@ -23,7 +23,7 @@ This record supersedes the 2026-09-15 stream navigator record in full.
 It incorporates D-34 through D-41 from that record without change,
 amends D-42 only where its confirmation names the clear interval, and
 replaces D-43 in full. This whole-record supersession follows the dated
-record convention in [the behaviour law conventions](../../law/README.md).
+record convention in [the behaviour law conventions](../../../law/README.md).
 
 *Amended 2026-09-16:* D-34's stamp, D-36's marks, D-37's gutter gauge
 and D-38's tooltip and gutter paragraph, as incorporated here, are
@@ -32,7 +32,7 @@ amended by [2026-0916-rail-redundancy.md](2026-0916-rail-redundancy.md)
 
 *Amended 2026-10-13:* D-40's plain click and D-41's menu, as
 incorporated here, are narrowed and extended for a sealed object's name
-and note by [Law 0001](../../law/0001-sealed-object.md)'s 2026-10-13
+and note by [Law 0001](../../../law/0001-sealed-object.md)'s 2026-10-13
 name and note amendment.
 
 ## D-42 · Confirmation after decrypted copy

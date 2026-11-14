@@ -44,13 +44,13 @@ documentation tree. Start at
 
 | Doc | Contents |
 | --- | --- |
-| [2026-0707-problem-space](docs/spec/design/2026-0707-problem-space.md) | The problem restated, the cache analogy taken seriously, anti-goals |
-| [2026-0707-overlooked-opportunities](docs/spec/design/2026-0707-overlooked-opportunities.md) | The landscape of neighbouring apps and the gaps they leave |
-| [2026-0707-design-principles](docs/spec/design/2026-0707-design-principles.md) | Six principles and the arguments they settle |
-| [2026-0707-interaction-model](docs/spec/design/2026-0707-interaction-model.md) | SleeperCell anatomy, TTL ladder, panel behaviour |
-| [2026-0707-technical-direction](docs/spec/design/2026-0707-technical-direction.md) | Shell survey, security posture, a11y, frugality budget |
-| [2026-0707-open-questions](docs/spec/design/2026-0707-open-questions.md) | Everything unresolved, honestly |
-| [2026-0707-repo-skeleton](docs/spec/design/2026-0707-repo-skeleton.md) | The prescription this repository was initialized from |
+| [2026-0707-problem-space](docs/spec/design/timeline-tabs/2026-0707-problem-space.md) | The problem restated, the cache analogy taken seriously, anti-goals |
+| [2026-0707-overlooked-opportunities](docs/spec/design/timeline-tabs/2026-0707-overlooked-opportunities.md) | The landscape of neighbouring apps and the gaps they leave |
+| [2026-0707-design-principles](docs/spec/design/timeline-tabs/2026-0707-design-principles.md) | Six principles and the arguments they settle |
+| [2026-0707-interaction-model](docs/spec/design/timeline-tabs/2026-0707-interaction-model.md) | SleeperCell anatomy, TTL ladder, panel behaviour |
+| [2026-0707-technical-direction](docs/spec/design/timeline-tabs/2026-0707-technical-direction.md) | Shell survey, security posture, a11y, frugality budget |
+| [2026-0707-open-questions](docs/spec/design/timeline-tabs/2026-0707-open-questions.md) | Everything unresolved, honestly |
+| [2026-0707-repo-skeleton](docs/spec/design/timeline-tabs/2026-0707-repo-skeleton.md) | The prescription this repository was initialized from |
 | [feature/byoe](docs/spec/feature/byoe/README.md) | Bring Your Own Encryption on the conceal path (draft feature spec) |
 | [feature/background-surface](docs/spec/feature/background-surface/README.md) | The background-surface form factor, and the macOS research behind it (exploration) |
 
@@ -205,7 +205,7 @@ it forward, opening it if it is closed; ⌘Tab leaves window ordering to macOS
 (ADR-0059). Spec: docs/spec/feature/primary-editor/.
 
 The **ambient panel**, a card resting at desktop level that rose into a
-floating editor on ⌃⌥Space, is withdrawn for now (ADR-0063): it is off for
+floating editor on ⌃⌥Space, is withdrawn for now (ADR-0065): it is off for
 every install and Settings no longer offers it. Its code stays in the tree
 until it returns as its own feature; its design and the underlying macOS
 research are in docs/spec/feature/background-surface/. The app's window

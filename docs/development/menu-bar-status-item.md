@@ -13,7 +13,7 @@ item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
 It's the app's persistent handle at the right side of the menu bar, and it has three click behaviors (statusItemClicked, BackdropApp.swift):
 
-- Left click → model.summon(): raises the card, or re-keys it if raised but keyboard-less, or rests it if raised and holding keys.
+- Left click → applySummon(.statusItem), routed by ActivationRouter.decide: with the editor window open (minimized included) it selects that window, or hides the app if the window is already key in an active app; with the editor window closed it calls model.summon() when the ambient panel is enabled (raises the card, or re-keys it if raised but keyboard-less, or rests it if raised and holding keys) and opens the editor window when the panel is disabled. It never closes an open editor window.
 - ⌥-click → opens Settings directly.
 - Right click → a small menu with the build version (disabled, informational), About, Settings…, Quit.
 

@@ -9,7 +9,7 @@ documentation_status: reviewed # draft | needs-review | reviewed | stale
 
 This record was never accepted, and its non undoable removal clause is
 superseded by the accepted design record
-[2026-0915-ui-ux-decisions](../spec/design/2026-0915-ui-ux-decisions.md)
+[2026-0915-ui-ux-decisions](../spec/design/timeline-tabs/2026-0915-ui-ux-decisions.md)
 (D-30); see [Decision history](#decision-history). The argument below
 stands as written.
 
@@ -95,7 +95,7 @@ stands unweakened.
 
 - 2026-07-15: Proposed. Never accepted.
 - 2026-09-15: Superseded in part by the accepted design record
-  [2026-0915-ui-ux-decisions](../spec/design/2026-0915-ui-ux-decisions.md),
+  [2026-0915-ui-ux-decisions](../spec/design/timeline-tabs/2026-0915-ui-ux-decisions.md),
   D-30 and the sealed-object contract, which is a spec record rather
   than an ADR, so `Status` stays `proposed` and no relationship field
   names it. Replaced: the clause that removal of a sealed object is not

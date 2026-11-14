@@ -5,8 +5,9 @@ import Foundation
 /// Dogfood triage named four affordances that were not earning their
 /// place on the card: the ledger's entry points, the resize glyph in the
 /// bottom corner, the ↗ page button in the tab strip, and the coloured
-/// dot beside the app's name. None of them was deleted. Some will come
-/// back in a different shape and some will be taken out for good, and
+/// dot beside the app's name. None of them was deleted. The ledger's
+/// entry points are drawn again and have no flag here. The other three
+/// will come back in a different shape or be taken out for good, and
 /// until that is decided the honest thing is to keep the code and stop
 /// drawing it.
 ///
@@ -21,23 +22,7 @@ import Foundation
 /// not to a preference and not to a launch variable: nothing a running
 /// app does should be able to put one of these back on screen, because
 /// the point of the exercise is to see the surface without them.
-///
-/// One deliberate exception, at the site rather than here. A ledger
-/// that will not open puts a standing line on the surface telling the
-/// user to clear it in Settings, and that clear is the only way out;
-/// so `GeneralSettingsView` shows its section while
-/// `PageModel.ledgerRestoreRefused` stands, and it goes again the
-/// moment the clear lands. Hiding an affordance is a judgement about
-/// clutter, and it is not worth making it by ending a recovery route
-/// the app itself just recommended.
 public enum HiddenUI {
-    /// The dashed ledger tab at the right end of the strip, the ⌘0
-    /// binding in the bundled keymap, and the clear button in Settings.
-    /// `LedgerView` and every model verb behind it are untouched; what
-    /// goes is the way in. The command id stays legal, so an override
-    /// keymap can still bind it (issue #78).
-    public static let showsLedgerEntryPoints = false
-
     /// The ↗ page button, which conceals the visible page into a
     /// one-time link. The conceal flow itself, its confirmation and its
     /// ledger records all stand (issue #78).
@@ -52,15 +37,4 @@ public enum HiddenUI {
     /// The 6pt ember dot at the head of the header, beside the app's
     /// name. The name stays, and so does the header's drag (issue #78).
     public static let showsHeaderDot = false
-
-    /// Whether Settings draws its Clear-the-ledger section: when the
-    /// entry points are shown at all, and while a refused ledger is
-    /// standing on the surface pointing at this control as the way out.
-    ///
-    /// A decision rather than an expression inside a view body, so the
-    /// exception above is somewhere a test can reach
-    /// (`RestoreFailureTests`).
-    public static func showsLedgerClear(ledgerRestoreRefused: Bool) -> Bool {
-        showsLedgerEntryPoints || ledgerRestoreRefused
-    }
 }

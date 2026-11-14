@@ -2113,6 +2113,13 @@ impl<C: Clock> SheetStore<C> {
         self.apply_rung(id, rung)
     }
 
+    /// Reapply a tab's own rung, on the same terms as
+    /// [`SheetStore::cycle_rung`]: the clock starts again at full length.
+    pub fn restart_rung(&mut self, id: TabId) -> Option<Ttl> {
+        let rung = self.tab(id)?.rung;
+        self.apply_rung(id, rung)
+    }
+
     /// Set a tab to a specific rung, on the same terms as
     /// [`SheetStore::cycle_rung`].
     pub fn set_rung(&mut self, id: TabId, rung: Ttl) -> Option<Ttl> {
@@ -2823,6 +2830,70 @@ mod tests {
             store.sheet(id).unwrap().remaining(now),
             HOUR + Duration::from_secs(40 * 60)
         );
+    }
+
+    #[test]
+    fn restart_gives_a_page_with_a_day_left_its_full_rung_again() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let tab = slot(&store, id);
+        store.set_rung(tab, Ttl::MAX).unwrap(); // 7d
+        clock.advance(6 * 24 * HOUR);
+        let now = store.now();
+        assert_eq!(store.sheet(id).unwrap().remaining(now), 24 * HOUR);
+
+        assert_eq!(store.restart_rung(tab), Some(Ttl::MAX));
+        assert_eq!(store.tab(tab).unwrap().rung(), Ttl::MAX);
+        assert_eq!(store.sheet(id).unwrap().remaining(now), 7 * 24 * HOUR);
+        assert_eq!(store.next_event().unwrap() - now, 7 * 24 * HOUR);
+    }
+
+    #[test]
+    fn restart_goes_through_the_snap_as_a_rung_change_does() {
+        let (mut store, clock) = snapping_store();
+        let id = store.new_tab().1; // 7d, midnight schedule
+        let born = store.sheet(id).unwrap().remaining(store.now());
+        clock.advance(24 * HOUR);
+        assert_eq!(store.restart_rung(slot(&store, id)), Some(Ttl::MAX));
+        let now = store.now();
+        assert_eq!(store.sheet(id).unwrap().remaining(now), born);
+    }
+
+    #[test]
+    fn restart_on_a_held_page_sets_the_frozen_life_and_keeps_the_hold() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().1;
+        let tab = slot(&store, id);
+        store.set_rung(tab, Ttl::MAX).unwrap(); // 7d
+        clock.advance(6 * 24 * HOUR);
+        assert!(store.pause_press(tab));
+        assert_eq!(store.restart_rung(tab), Some(Ttl::MAX));
+        let now = store.now();
+        let sheet = store.sheet(id).unwrap();
+        assert!(sheet.is_held(now));
+        assert_eq!(sheet.remaining(now), 7 * 24 * HOUR);
+
+        clock.advance(HOUR / 2);
+        assert!(store.pause_press(tab)); // top up
+        assert!(store.pause_press(tab)); // release
+        let now = store.now();
+        assert_eq!(store.sheet(id).unwrap().remaining(now), 7 * 24 * HOUR);
+    }
+
+    #[test]
+    fn restart_refuses_a_due_page_and_leaves_an_empty_tab_as_it_was() {
+        let (mut store, clock) = store();
+        let page = store.new_tab().1;
+        let tab = slot(&store, page);
+        store.set_rung(tab, Ttl::MIN).unwrap(); // 1h
+        clock.advance(HOUR);
+        assert_eq!(store.restart_rung(tab), None, "due");
+        assert_eq!(store.expire_due(), vec![page]);
+
+        assert_eq!(store.restart_rung(tab), Some(Ttl::MIN));
+        assert_eq!(store.tab(tab).unwrap().rung(), Ttl::MIN);
+        assert_eq!(store.next_event(), None);
+        assert_eq!(store.restart_rung(TabId::from_raw(999)), None);
     }
 
     #[test]

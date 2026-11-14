@@ -106,7 +106,7 @@ final class BackdropModelTests: XCTestCase {
         XCTAssertFalse(second.keepsAboveWhenInactive)
     }
 
-    // MARK: The withdrawn ambient panel (ADR-0063)
+    // MARK: The withdrawn ambient panel (ADR-0065)
 
     func testWithdrawnPanelIsOffWhateverWasStoredAndKeepsTheStoredChoice() {
         for stored in [nil, true, false] as [Bool?] {
@@ -1037,7 +1037,9 @@ final class BackdropModelTests: XCTestCase {
                 context: ActivationContext(
                     ambientPanelEnabled: model.ambientPanelEnabled,
                     owner: model.pages.owner,
-                    claimedByAnotherWindow: false
+                    claimedByAnotherWindow: false,
+                    editorWindowOpen: model.editorWindowOpen,
+                    visibleOrdinaryWindow: true
                 )
             ),
             .noop

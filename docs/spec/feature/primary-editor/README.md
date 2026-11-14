@@ -175,7 +175,7 @@ ADR-0006.
 
 ## Preference: the ambient panel
 
-[ADR-0063](../../../adr/0063-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md)
+[ADR-0065](../../../adr/0065-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md)
 withdraws the panel: it is off for every install, and Settings and the
 menus no longer offer it. The primary editor window is the app's only
 window, and the hotkey and the status item select it. The rest of this
@@ -244,7 +244,7 @@ reading and not something the ADR says.
 - **Initial foreground open:** AppKit's untitled-open event selects the editor as a summon, anchoring on today. It waits for model startup when necessary.
 - **Ordinary activation and Cmd-Tab:** leave focus and window ordering to AppKit, without selecting a presentation or moving the roll.
 - **Dock reopen:** delegates to AppKit when an ordinary window is visible. Otherwise it opens or deminiaturizes the editor without anchoring on today. The ambient panel is excluded from the visible-window check.
-- **Background launch:** starts the configured ambient presentation without opening an editor. With the panel withdrawn (ADR-0063), a login launch shows no window: the app sits in the Dock and the menu bar until the person opens it.
+- **Background launch:** starts the configured ambient presentation without opening an editor. With the panel withdrawn (ADR-0065), a login launch shows no window: the app sits in the Dock and the menu bar until the person opens it.
 - **Settings:** explicit commands open one AppKit Settings window. There is no SwiftUI Settings scene or window-attachment redirect.
 - **A modal return and a cancelled quit** go back to the owner. A
   cancelled quit asks the routing table every time. A modal return is

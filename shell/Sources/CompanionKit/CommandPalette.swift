@@ -43,20 +43,25 @@ public struct CommandPaletteEntry: Identifiable, Equatable, Sendable {
 
 public enum CommandPaletteCatalog {
     private static let order: [CommandID] = [
-        .appOpenTimeline, .appSwitchToTabs, .pageReopenDated, .pageReopenLast,
+        .appOpenTimeline, .appSwitchToTabs, .ledgerShow, .pageSearch,
+        .pageReopenDated, .pageReopenLast,
         .pageNew, .fileOpen, .appSettings, .appHelp, .windowClose,
         .stateSaveNow, .fileSaveAs, .pageClose, .pagePrevious, .pageNext, .editorToggleWrap,
         .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorUndo, .editorRedo,
         .editorDetectCodeLanguage, .noteToggleExpanded
     ]
 
-    public static func entries(keymap: ResolvedKeymap) -> [CommandPaletteEntry] {
+    /// `taken` names the chords another layer takes first, which no row shows.
+    public static func entries(
+        keymap: ResolvedKeymap, excluding taken: (Keystroke) -> Bool = { _ in false }
+    ) -> [CommandPaletteEntry] {
         order.compactMap { command in
             guard let definition = command.paletteDefinition else { return nil }
             return CommandPaletteEntry(command: command, title: CompanionL10n.string(definition.title),
                 scope: definition.scope, keywords: definition.keywords,
                 shortcut: (command.dispatch == .window
-                    ? keymap.menuKeystroke(for: command) : keymap.hintKeystroke(for: command))?.displaySymbol)
+                    ? keymap.menuKeystroke(for: command)
+                    : keymap.hintKeystroke(for: command, excluding: taken))?.displaySymbol)
         }
     }
 }
@@ -66,6 +71,8 @@ extension CommandID {
         switch self {
         case .appOpenTimeline: ("Open Timeline", .application, "view dated pages history")
         case .appSwitchToTabs: ("Switch to Tabs View", .application, "layout navigation")
+        case .ledgerShow: ("Show Ledger", .application, "audit trail records expired history")
+        case .pageSearch: ("Search Pages and Files…", .application, "find text content lines")
         case .pageReopenDated: ("Reopen Dated Tabs…", .application, "closed saved pages history restore re-open")
         case .pageReopenLast: ("Reopen Last Closed Page or Tab", .application, "restore saved re-open")
         case .pageNew: ("New Page", .application, "new tab")
@@ -74,7 +81,7 @@ extension CommandID {
         case .appHelp: ("Help", .application, "documentation")
         case .windowClose: ("Close Window", .application, "window dismiss")
         case .stateSaveNow: ("Save", .page, "disk state document")
-        case .fileSaveAs: ("Save As…", .page, "file document")
+        case .fileSaveAs: ("Save As…", .page, "file document page export")
         case .pageClose: ("Close Page or Tab", .page, "close page tab hide dismiss")
         case .pagePrevious: ("Previous Page or Tab", .page, "navigate")
         case .pageNext: ("Next Page or Tab", .page, "navigate")
@@ -88,7 +95,7 @@ extension CommandID {
         case .noteToggleExpanded: ("Toggle Note Expansion", .selection, "sealed note")
         case .pageSelect1, .pageSelect2, .pageSelect3, .pageSelect4, .pageSelect5,
              .pageSelect6, .pageSelect7, .pageSelect8, .pageSelect9,
-             .ledgerShow, .surfaceHandBackKeys, .appCommandPalette:
+             .surfaceHandBackKeys, .appCommandPalette:
             nil
         }
     }

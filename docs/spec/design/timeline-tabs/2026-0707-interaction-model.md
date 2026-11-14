@@ -1,5 +1,5 @@
 
-> Shortcut scope, 2026-10-03: [ADR-0039](../../adr/0039-pad-selection-and-associations.md) supersedes the
+> Shortcut scope, 2026-10-03: [ADR-0039](../../../adr/0039-pad-selection-and-associations.md) supersedes the
 > numbered page/slot/day shortcut assignments below when multiple pads are
 > enabled. Scratch uses ⌘0; the first nine other pads use ⌘1–⌘9. The
 > existing single-pad map remains when pads are disabled. Page neighbour
@@ -228,6 +228,11 @@ teaches ⌘↩.
   which is the right price for the reversibility.
 - **Expiry is silent** — no notification, no badge. The dead page's ink
   rests in the ledger; its sealed bytes are zeroized at expiry.
+
+  > Expiry feedback, 2026-11-10:
+  > [ADR-0064](../../../adr/0064-a-page-never-expires-without-the-person-being-told.md)
+  > (accepted 2026-11-11) replaces this bullet's first sentence with a
+  > standing line under the page and a last-hour notification.
 
 ## Sheets, several: tabs at the bottom
 

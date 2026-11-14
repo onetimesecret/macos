@@ -490,6 +490,7 @@ public final class PageModel: ObservableObject {
     private static let closedPageUUIDsKey = "closedPageUUIDs"
 
     public var onReopenDatedTabs: (() -> Void)?
+    public var onSearchPages: (() -> Void)?
 
     /// Every open file, in open order. A parallel array beside `tabs`
     /// rather than entries within it: files are never on the strip,
@@ -634,6 +635,23 @@ public final class PageModel: ObservableObject {
     /// The audit trail, newest first: refreshed on every `refresh()` and
     /// whenever the ledger is shown. Metadata only, never content.
     @Published public private(set) var ledgerEntries: [LedgerEntry] = []
+
+    /// The pages that expired since a person last typed or dismissed the line, by title only.
+    @Published public private(set) var expiredWhileAway: [ExpiredPage] = []
+
+    /// The standing line for `expiredWhileAway`, or nil when no page went.
+    public var expiredWhileAwaySentence: String? {
+        ExpiryNotice.sentence(for: expiredWhileAway)
+    }
+
+    /// The line's Dismiss, and what typing in a page does to it.
+    public func dismissExpiredWhileAway() {
+        if !expiredWhileAway.isEmpty { expiredWhileAway = [] }
+    }
+
+    /// Each page inside its last hour, with the deadline it was noticed at (`LastHourWarning`).
+    private var lastHourWarned: [String: UInt64] = [:]
+    private static let lastHourWarnedKey = "lastHourWarned"
 
     /// A refusal or status line the surface shows briefly ("nothing to
     /// seal"). When the app declines something it says so.
@@ -1308,6 +1326,7 @@ public final class PageModel: ObservableObject {
     enum RollRequest: Equatable {
         case today
         case page(UInt64)
+        case line(page: UInt64, offset: Int)
     }
 
     private var rollRequest: RollRequest?
@@ -1472,6 +1491,13 @@ public final class PageModel: ObservableObject {
     /// Where Quit Anyway asks for termination: `NSApp`, or a test's recorder.
     private let requestTermination: @MainActor () -> Void
 
+    /// Where a last-hour warning goes: the notification center, a test's recorder, or
+    /// nowhere under the runner.
+    private let pageWarnings: (any PageWarningPosting)?
+
+    /// Whether the app is frontmost: `NSApp`'s answer, or a test's.
+    private let applicationIsActive: @MainActor () -> Bool
+
     /// Opens a link outside the app through the seam above, for the editor's
     /// links and the Help menu alike (issue #294).
     public func openExternal(_ url: URL) {
@@ -1537,6 +1563,11 @@ public final class PageModel: ObservableObject {
         /// Where Quit Anyway asks for termination: a recorder of the test's own, so
         /// a suite never terminates its runner; nil is `NSApp`'s.
         let requestTermination: (@MainActor () -> Void)?
+        /// Where a last-hour warning goes: a recorder of the test's own. Nil under the
+        /// runner posts nothing, and nil in the app is the system's notification center.
+        let pageWarnings: (any PageWarningPosting)?
+        /// Whether the app is frontmost, for a suite with no application; nil is `NSApp`'s.
+        let applicationIsActive: (@MainActor () -> Bool)?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1556,7 +1587,9 @@ public final class PageModel: ObservableObject {
             wakeNotifications: NotificationCenter? = nil,
             openURL: (@MainActor (URL) -> Void)? = nil,
             previewImageLoad: (@MainActor (URL) async throws -> NSImage)? = nil,
-            requestTermination: (@MainActor () -> Void)? = nil
+            requestTermination: (@MainActor () -> Void)? = nil,
+            pageWarnings: (any PageWarningPosting)? = nil,
+            applicationIsActive: (@MainActor () -> Bool)? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1574,6 +1607,8 @@ public final class PageModel: ObservableObject {
             self.openURL = openURL
             self.previewImageLoad = previewImageLoad
             self.requestTermination = requestTermination
+            self.pageWarnings = pageWarnings
+            self.applicationIsActive = applicationIsActive
         }
     }
 
@@ -1668,6 +1703,14 @@ public final class PageModel: ObservableObject {
         openURL = seams.openURL ?? { NSWorkspace.shared.open($0) }
         previewImageLoad = seams.previewImageLoad ?? { try await PreviewImageLoader().load($0) }
         requestTermination = seams.requestTermination ?? { NSApp?.terminate(nil) }
+        if let seam = seams.pageWarnings {
+            pageWarnings = seam
+        } else if FormFactor.runningUnderTests {
+            pageWarnings = nil
+        } else {
+            pageWarnings = SystemPageWarnings()
+        }
+        applicationIsActive = seams.applicationIsActive ?? { NSApp?.isActive ?? false }
         wakeCenter = seams.wakeNotifications ?? NSWorkspace.shared.notificationCenter
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         ownershipLogger = Logger(subsystem: formFactor.loggerSubsystem, category: "ownership")
@@ -1733,6 +1776,9 @@ public final class PageModel: ObservableObject {
             fine: defaults.string(forKey: Self.stampFineKey)
                 ?? StreamNavigator.StampFormat.standard.fine
         )
+        // Unset → no page has warned. Stored as Int, which a property list keeps.
+        lastHourWarned = (defaults.dictionary(forKey: Self.lastHourWarnedKey) as? [String: Int] ?? [:])
+            .compactMapValues { UInt64(exactly: $0) }
         // Unset → the rail's starting width.
         timelineWidth = TimeRailView.clampedWidth(
             CGFloat(defaults.object(forKey: Self.timelineWidthKey) as? Double ?? Double(TimeRailView.width)))
@@ -1802,6 +1848,9 @@ public final class PageModel: ObservableObject {
     /// Whether an activation asked for the file check during a modal
     /// bracket or file-panel gesture. Consumed when both are over.
     private var activationCheckOwed = false
+
+    /// The refusals of the batch open under way, said together at its end; nil outside one.
+    private var batchOpenRefusals: [String]?
 
     // removeObserver is thread-safe; every other access is main-actor
     // isolated, but Swift 6 deinit is nonisolated.
@@ -1904,6 +1953,8 @@ public final class PageModel: ObservableObject {
         stateLoaded = true
         let path = stateFileURL.path
         let restored = client.persistRestore(from: path)
+        // Read before the ledger file merges in: these are the expiries of the time away.
+        expiredWhileAway = ExpiryNotice.pages(expiredIn: client.ledger())
         saveLicence = Self.grantsSaveLicence(
             fileExists: FileManager.default.fileExists(atPath: path), restored: restored
         )
@@ -3322,6 +3373,7 @@ public final class PageModel: ObservableObject {
             restateStorage(sheet: page)
             invalidateQuietRendering(for: page)
         }
+        dismissExpiredWhileAway()
         markDirty()
         refresh()
     }
@@ -3610,6 +3662,7 @@ public final class PageModel: ObservableObject {
             }
         }
         ledgerEntries = client.ledger()
+        warnOfLastHours()
         armEventTimer()
         // No hand-back when the last page dies while the surface is
         // key: keyed emptiness is a legal state (ADR-0005). The window
@@ -4233,6 +4286,21 @@ public final class PageModel: ObservableObject {
         checkOpenFilesOnActivate()
     }
 
+    /// A sentence about one open: kept for the batch's one notice, or flashed outside a batch.
+    private func sayOfOpen(_ sentence: String) {
+        if batchOpenRefusals != nil { batchOpenRefusals?.append(sentence) } else { flash(sentence) }
+    }
+
+    /// Runs `opens`, then says every sentence `openFile(at:)` made inside it as one notice.
+    public func collectingOpenRefusals<T>(_ opens: () -> T) -> T {
+        batchOpenRefusals = []
+        let result = opens()
+        let refusals = batchOpenRefusals ?? []
+        batchOpenRefusals = nil
+        if !refusals.isEmpty { flash(refusals.joined(separator: " ")) }
+        return result
+    }
+
     /// Open the file at `url`, the path a panel or a drop produced.
     ///
     /// The core does the reading, so this refuses nothing itself: a
@@ -4293,9 +4361,9 @@ public final class PageModel: ObservableObject {
             return (id, renewBookmark(for: id, from: url))
         }
         guard let opened else {
-            flash(Self.openRefusalNotice(
-                name: url.lastPathComponent, json: client.openFileErrorJSON()
-            ))
+            let refusal = Self.openRefusalNotice(
+                name: url.lastPathComponent, json: client.openFileErrorJSON())
+            sayOfOpen(refusal)
             // A pending row at the path may have been dropped on the
             // way to this refusal, and the surface must not go on
             // showing it.
@@ -4309,9 +4377,9 @@ public final class PageModel: ObservableObject {
         // the reload flag it may carry is answered without a sentence.
         client.clearFileReloadNotice(id)
         if !opened.bookmarked, owesBookmark(path: url.path) {
-            flash(Self.bookmarkFailureNotice(name: url.lastPathComponent))
+            sayOfOpen(Self.bookmarkFailureNotice(name: url.lastPathComponent))
         } else if let sentence = Self.launchNotice(reloaded: [], notices: owed) {
-            flash(sentence)
+            sayOfOpen(sentence)
         }
         // A reopen of a file that is already open hands back the same
         // id core-side, so the editor may be mounted over this exact
@@ -4507,9 +4575,105 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// Write the selected file somewhere else and adopt that path.
+    /// Write the selected file somewhere else and adopt that path; with
+    /// a page showing, write its public text to a file and open that file.
     public func saveActiveFileAs() {
-        duringFilePanel { saveActiveFileAsThroughPanel() }
+        duringFilePanel {
+            if selectedFile == nil { savePageAsThroughPanel() } else { saveActiveFileAsThroughPanel() }
+        }
+    }
+
+    /// Whether Save As has a page to write: one is showing, and no file or ledger is.
+    public var canSavePageAs: Bool {
+        selectedFile == nil && !showingLedger && selectedPageID != nil
+    }
+
+    /// The name the save panel suggests for a page: its title, as Markdown.
+    public nonisolated static func pageFileName(title: String) -> String {
+        let name = title.replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (name.isEmpty ? "Page" : name) + ".md"
+    }
+
+    /// The line when the core gave no text for a page's save, for a reason with no line of its own.
+    public static let pageNotSavedLine = "this page could not be read, so nothing was saved."
+
+    /// The line for the core's answer to whether a page's text would open as a file;
+    /// nil when it would (`CompanionClient.fileContentCheckJSON(for:)`).
+    public nonisolated static func pageSaveRefusalNotice(json: String?) -> String? {
+        struct Answer: Decodable {
+            let opens: Bool?
+            let error: String?
+            let limit: UInt64?
+        }
+        guard let json,
+              let data = json.data(using: .utf8),
+              let answer = try? JSONDecoder().decode(Answer.self, from: data)
+        else {
+            return "this page could not be checked, so it was not saved to a file."
+        }
+        if answer.opens == true, answer.error == nil { return nil }
+        switch answer.error ?? "" {
+        case "binary":
+            return "this page contains binary data, so it was not saved to a file."
+        case "notUtf8":
+            return "this page uses an unsupported text encoding, so it was not saved to a file."
+        case "tooLarge":
+            let limit = answer.limit.map(Self.sizePhrase(bytes:)) ?? "the size limit"
+            return "this page is larger than \(limit), so it was not saved to a file."
+        default:
+            return "this page could not be checked, so it was not saved to a file."
+        }
+    }
+
+    /// A page's whole text as a copy of all of it composes it (Law 0001, export row);
+    /// nil, with a line shown, when the core refuses.
+    func publicText(ofPage sheet: UInt64) -> String? {
+        let length = client.documentRuns(sheet: sheet).reduce(0) {
+            if case .ink(let text) = $1 { $0 + text.utf16.count } else { $0 + 1 }
+        }
+        guard length > 0 else { return "" }
+        let composition = composeSelection([NSRange(location: 0, length: length)], sheet: sheet)
+        guard case .composed(let fragment) = composition else {
+            flash(Self.refusalLine(for: composition, .save) ?? Self.pageNotSavedLine)
+            return nil
+        }
+        return fragment.plainText
+    }
+
+    private func savePageAsThroughPanel() {
+        guard canSavePageAs, let tab = selectedTab, let page = tab.pageID else { return }
+        if openRefusedForCloseDecision {
+            flash("Finish the file close decision before opening another file.")
+            return
+        }
+        guard let url = fileCoordinator.chooseDestination(
+            suggestedName: Self.pageFileName(title: tab.title)) else { return }
+        // Read now the panel is down: the page may have changed or ended while it was up.
+        guard client.tabs().contains(where: { $0.pageID == page }) else {
+            flash(Self.pageExpiredLine)
+            return
+        }
+        guard let text = publicText(ofPage: page) else { return }
+        let bytes = Data(text.utf8)
+        if let refusal = Self.pageSaveRefusalNotice(
+            json: CompanionClient.fileContentCheckJSON(for: bytes)) {
+            flash(refusal)
+            return
+        }
+        if let holder = client.fileRoster().first(where: { Self.samePath($0.path, url.path) }) {
+            flash(Self.pathInUseNotice(name: holder.name))
+            return
+        }
+        let wrote = fileCoordinator.withAccess(to: url) {
+            (try? bytes.write(to: url, options: .atomic)) != nil
+        }
+        guard wrote else {
+            flash(Self.writeRefusalNotice(name: url.lastPathComponent), tone: .actionable)
+            return
+        }
+        openFile(at: url)
     }
 
     private func saveActiveFileAsThroughPanel() {
@@ -5275,6 +5439,11 @@ public final class PageModel: ObservableObject {
         "\(name) could not be written."
     }
 
+    /// A save the platform denied, which the core answers before staging anything.
+    public nonisolated static func readOnlyNotice(name: String) -> String {
+        "\(name) is read-only, so it was not saved. Use Save As to write a copy."
+    }
+
     /// The sentence for a save the core refused, chosen from the reason
     /// the core gave and not from what the row looks like afterwards.
     ///
@@ -5304,6 +5473,8 @@ public final class PageModel: ObservableObject {
                 : unresolvedConflictNotice(for: file)
         case .pendingHydration:
             return heldFileNotice(name: file.name)
+        case .write(let detail) where detail == "read-only filesystem or storage medium":
+            return readOnlyNotice(name: file.name)
         case .write, .pathInUse, .unknownFile, nil:
             return writeRefusalNotice(name: file.name)
         }
@@ -5544,9 +5715,19 @@ public final class PageModel: ObservableObject {
         return min(max(current + delta, 0), count - 1)
     }
 
-    /// `ledger::Show`: open the ledger. Which chord reaches it, if
-    /// any, is the keymap's business; the bundled default names none
-    /// while the ledger's entry points are hidden (issue #78).
+    /// Whether `stroke` is a ⌘0 to ⌘9 the pad layer turns into a pad switch (ADR-0039).
+    public func padsTake(_ stroke: Keystroke?) -> Bool {
+        guard let stroke else { return false }
+        return TimeRailView.switchesPads(stroke, keymap: keymap)
+    }
+
+    /// The chord a tooltip may name for the ledger, passing over one the pad layer takes.
+    public var ledgerChord: Keystroke? {
+        keymap.hintKeystroke(for: .ledgerShow, excluding: { padsTake($0) })
+    }
+
+    /// `ledger::Show`: open the ledger. Which chord reaches it is the
+    /// keymap's business; the bundled default names ⌘0.
     public func showLedger() {
         clearPendingFileClose()
         ledgerEntries = client.ledger()
@@ -5599,6 +5780,7 @@ public final class PageModel: ObservableObject {
         // it described: the licence is back, so the trail records again
         // from here.
         ledgerRestoreRefused = false
+        dismissExpiredWhileAway()
         markDirty()
         refresh()
     }
@@ -6037,7 +6219,9 @@ public final class PageModel: ObservableObject {
     public func anchorOnToday() {
         guard showsTimeUnits else { return }
         let rollStood = selectedFile == nil && !showingLedger
-        if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first,
+        // A showing file tab keeps the selection (ADR-0063).
+        if selectedFile == nil,
+           let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first,
            tab != selection {
             select(tab)
         }
@@ -6162,6 +6346,7 @@ public final class PageModel: ObservableObject {
             padReadingPlaces = padReadingPlaces.filter { $0.value.page != page }
         }
         if case .page(let requested) = rollRequest, requested == tab.pageID { rollRequest = nil }
+        if case .line(let requested, _) = rollRequest, requested == tab.pageID { rollRequest = nil }
         if expandedPageID == tab.pageID { expandedPageID = nil }
         refresh()
         if wasSelected, showsTimeUnits, selectedFile == nil, !showingLedger {
@@ -6192,6 +6377,90 @@ public final class PageModel: ObservableObject {
     public func reopenLastClosedTab() -> Bool {
         guard let tab = closedTabs.first else { return false }
         return reopenClosedTab(tab.id)
+    }
+
+    /// What the palette's search reads in the active pad: page copies' public text (Law 0001,
+    /// search row) and open files' buffers, less any over `byteLimit` UTF-8 bytes (nil: none).
+    public func pageSearchSources(byteLimit: Int?) -> PageSearchSources {
+        var sources: [PageSearchSource] = []
+        var skipped = false
+        for tab in navigationTabs + closedTabs {
+            guard let page = tab.pageID else { continue }
+            // The core's count of the ink alone comes first; the copied text is measured below.
+            if let byteLimit, let bytes = client.inkBytes(sheet: page), bytes > byteLimit {
+                skipped = true
+                continue
+            }
+            let whole = NSRange(location: 0, length: bodyLength(of: page))
+            guard let text = client.publicText(sheet: page, range: whole) else { continue }
+            if let byteLimit, text.utf8.count > byteLimit {
+                skipped = true
+                continue
+            }
+            sources.append(PageSearchSource(id: tab.id, title: tab.title, stamp: tab.pageCreatedMs, text: text))
+        }
+        for file in navigationFiles {
+            if let byteLimit, let bytes = client.fileTextBytes(file.id), bytes > byteLimit {
+                skipped = true
+                continue
+            }
+            let text = fileTextSnapshot(for: file.id)
+            if let byteLimit, text.utf8.count > byteLimit {
+                skipped = true
+                continue
+            }
+            sources.append(PageSearchSource(id: file.id, title: file.name,
+                stamp: file.lastEditedAt > 0 ? file.lastEditedAt * 1000 : nil,
+                text: text))
+        }
+        return PageSearchSources(sources: sources, skipped: skipped)
+    }
+
+    /// Shows a search row's page or file, reopening a closed page first, with the
+    /// caret at the start of the row's line.
+    @discardableResult
+    public func openSearchRow(_ row: PageSearchRow) -> Bool {
+        if row.id.isFileID {
+            guard navigationFiles.contains(where: { $0.id == row.id }) else { return false }
+            selectFile(row.id)
+            seatCaret(atLine: row.line, of: fileTextSnapshot(for: row.id), for: row.id)
+            return true
+        }
+        let closed = closedTabs.contains { $0.id == row.id }
+        guard let page = (navigationTabs + closedTabs).first(where: { $0.id == row.id })?.pageID else {
+            return false
+        }
+        if closed {
+            guard reopenClosedTab(row.id) else { return false }
+        } else {
+            select(row.id)
+        }
+        let text = client.documentRuns(sheet: page).reduce(into: "") { text, run in
+            switch run {
+            case .ink(let ink): text += ink
+            case .chip: text += "\u{FFFC}"
+            }
+        }
+        if let start = seatCaret(atLine: row.line, of: text, for: page), showsTimeUnits {
+            rollRequest = .line(page: page, offset: start)
+            objectWillChange.send()
+        }
+        return true
+    }
+
+    /// Leaves the caret and the scroll at a line's start for the editor that mounts
+    /// `sheet` next, moves the editor already standing on it, and returns the offset.
+    @discardableResult
+    private func seatCaret(atLine line: Int, of text: String, for sheet: UInt64) -> Int? {
+        guard let start = PageSearch.utf16Offset(ofLine: line, in: text) else { return nil }
+        let caret = NSRange(location: start, length: 0)
+        viewStates.saveCaret(caret, for: sheet)
+        viewStates.saveScroll(ScrollAnchor(characterIndex: start), for: sheet)
+        guard let editor = activeEditor as? InkTextView, editor.coordinator?.currentSheet == sheet,
+              start <= editor.textStorage?.length ?? 0 else { return start }
+        editor.setSelectedRange(caret)
+        editor.scrollRangeToVisible(caret)
+        return start
     }
 
     /// Whether closing `closingSheet` orphans the open conceal
@@ -6269,6 +6538,13 @@ public final class PageModel: ObservableObject {
     /// (docs/spec/04).
     public func cycleRung(_ id: UInt64) {
         _ = client.cycleRung(tab: id)
+        markDirty()
+        refresh()
+    }
+
+    /// The tab menu's restart: the page's own rung again, clock reset.
+    public func restartRung(_ id: UInt64) {
+        _ = client.restartRung(tab: id)
         markDirty()
         refresh()
     }
@@ -6693,10 +6969,11 @@ public final class PageModel: ObservableObject {
 
     /// What a person asked of a page's selection, for the line its refusal shows.
     public enum SelectionAct: Sendable {
-        case copy, cut, drag
+        case copy, cut, drag, save
 
         var outcome: String {
             switch self {
+            case .save: "nothing was saved"
             case .copy: "nothing was copied"
             case .cut: "nothing was cut"
             case .drag: "the drag did not start"
@@ -6717,6 +6994,7 @@ public final class PageModel: ObservableObject {
             case .copy: return severalStretchesLine
             case .cut: return severalStretchesCutLine
             case .drag: return severalStretchesDragLine
+            case .save: return nil
             }
         case .pageExpired:
             return pageExpiredLine
@@ -6968,6 +7246,7 @@ public final class PageModel: ObservableObject {
     /// After the core rewrote pages by a transfer: restate each, then settle as
     /// the event timer does, since a paste may have swept due pages (Law 0001, expiry row).
     private func settleTransfer(_ sheets: UInt64...) {
+        let stood = tabs
         for sheet in sheets {
             countEdit(.sheet(sheet))
             restateStorage(sheet: sheet)
@@ -6975,6 +7254,7 @@ public final class PageModel: ObservableObject {
         }
         markDirty()
         refresh()
+        noteExpired(since: stood)
         #if DEBUG
         for sheet in sheets { assertProjectionParity(sheet: sheet) }
         #endif
@@ -7180,6 +7460,7 @@ public final class PageModel: ObservableObject {
             // mode, and the page it names is not always a page the roll
             // is on, or a page any roll is mounted over.
             invalidateQuietRendering(for: sheet)
+            if intent != .automation { dismissExpiredWhileAway() }
             markDirty()
             refresh()
         } else {
@@ -8261,14 +8542,20 @@ public final class PageModel: ObservableObject {
     private func armEventTimer() {
         eventTimer?.invalidate()
         eventTimer = nil
-        let ms = client.nextEventMs()
-        guard ms >= 0 else { return }
+        let nowMs = Self.wallNowMs()
+        guard let fire = Self.eventTimerFire(
+            coreMs: client.nextEventMs(),
+            lastHourMs: LastHourWarning.msUntilNextEntry(
+                clocks: lastHourClocks(nowMs: nowMs), nowMs: nowMs)
+        ) else { return }
+        let settles = fire.settles
         let timer = Timer(
-            timeInterval: max(0.05, Double(ms) / 1000.0),
+            timeInterval: max(0.05, Double(fire.ms) / 1000.0),
             repeats: false
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.settleCoreEvent()
+                // A last-hour entry moved nothing in the store, so it refreshes and re-arms.
+                if settles { self?.settleCoreEvent() } else { self?.refresh() }
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -8296,10 +8583,68 @@ public final class PageModel: ObservableObject {
     /// never saw, over a file that would stay stale until they typed.
     @discardableResult
     func settleCoreEvent() -> UInt64 {
+        let stood = tabs
         let expired = client.expireDue()
         markDirty()
         refresh() // re-arms for the next event
+        noteExpired(since: stood)
         return expired
+    }
+
+    /// The pages with content that `stood` at the last refresh and are gone after a settle.
+    private func noteExpired(since stood: [TabSummary]) {
+        let live = Set(tabs.compactMap(\.pageUUID))
+        let atMs = Self.wallNowMs()
+        let gone = stood.compactMap { tab -> ExpiredPage? in
+            guard tab.pageHasContent, let page = tab.pageUUID, !live.contains(page) else { return nil }
+            return ExpiredPage(title: tab.title, atMs: atMs, createdAtMs: tab.pageCreatedMs ?? atMs)
+        }
+        if !gone.isEmpty { expiredWhileAway += gone }
+    }
+
+    /// When the one timer fires, and whether it settles the core: the sooner of the core's
+    /// next event and the next page's entry into its last hour. Nil arms nothing.
+    nonisolated static func eventTimerFire(
+        coreMs: Int64, lastHourMs: UInt64?
+    ) -> (ms: UInt64, settles: Bool)? {
+        guard coreMs >= 0 else { return lastHourMs.map { (ms: $0, settles: false) } }
+        let core = UInt64(coreMs)
+        if let lastHourMs, lastHourMs < core { return (ms: lastHourMs, settles: false) }
+        return (ms: core, settles: true)
+    }
+
+    private nonisolated static func wallNowMs() -> UInt64 {
+        UInt64(max(0, Date().timeIntervalSince1970 * 1000))
+    }
+
+    /// The running pages with content, each with its wall-clock deadline as of `nowMs`.
+    private func lastHourClocks(nowMs: UInt64) -> [LastHourWarning.Clock] {
+        tabs.compactMap { tab -> LastHourWarning.Clock? in
+            guard tab.hasPage, tab.pageHasContent, !tab.paused, let page = tab.pageUUID
+            else { return nil }
+            return LastHourWarning.Clock(
+                page: page, title: tab.title, deadlineMs: nowMs + tab.remainingMs)
+        }
+    }
+
+    /// Post a warning for each page that entered its last hour while the app was not active.
+    private func warnOfLastHours() {
+        // Before the restore there are no pages, and a reading then would drop every stored entry.
+        guard stateLoaded else { return }
+        let nowMs = Self.wallNowMs()
+        let decision = LastHourWarning.decide(
+            clocks: lastHourClocks(nowMs: nowMs), nowMs: nowMs, warned: lastHourWarned,
+            appActive: applicationIsActive())
+        if decision.warned != lastHourWarned {
+            lastHourWarned = decision.warned
+            defaults.set(
+                lastHourWarned.mapValues { Int(clamping: $0) }, forKey: Self.lastHourWarnedKey)
+        }
+        for clock in decision.post {
+            pageWarnings?.post(
+                title: "OnetimePad", body: LastHourWarning.body,
+                identifier: "last-hour-\(clock.page)-\(clock.deadlineMs)")
+        }
     }
 
     /// Run a core transfer, which may sweep before it refuses (Law 0001, expiry row); a refusal

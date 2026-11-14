@@ -367,7 +367,7 @@ The accepted UI record counts three actions and two sentence inputs
 (D-17 in `docs/spec/design/2026-0915-ui-ux-decisions.md`). The
 amendment that would cover Locate, the unavailable banner and the held
 header is a draft awaiting ratification,
-[2026-0930-file-conflict-locate.md](../spec/design/2026-0930-file-conflict-locate.md).
+[2026-0930-file-conflict-locate.md](../spec/design/timeline-tabs/2026-0930-file-conflict-locate.md).
 
 A take theirs the core refuses restates the roster before it returns,
 because the refused read may have just set `accessRefused` or
@@ -489,7 +489,8 @@ sentence from the reason:
 | `notFound`, row in the missing conflict | `unresolvedConflictNotice(for:)`, which offers keep mine |
 | `notFound`, row in no conflict | `saveNotFoundNotice(name:)`: "NAME is no longer at its path, so it was not saved. Choose Locate to find it, or Save As to write it somewhere." |
 | `pendingHydration` | `heldFileNotice(name:)` |
-| `write`, any other reason, or none | `writeRefusalNotice(name:)`: "NAME could not be written." |
+| `write` with the detail `read-only filesystem or storage medium` | `readOnlyNotice(name:)`: "NAME is read-only, so it was not saved. Use Save As to write a copy." |
+| `write` otherwise, any other reason, or none | `writeRefusalNotice(name:)`: "NAME could not be written." |
 
 The row is read only to word the conflict, never to decide which
 refusal it was. A row that is `notFound`, in no conflict and licensed by
@@ -609,6 +610,10 @@ without noticing.
   missing, not writable or on another volume fails the save, the temp
   file is removed, and the shell flashes "X could not be written." with
   no retry.
+- A target that is a regular file the user cannot open for writing
+  fails the save with `ReadOnlyFilesystem` before any temp file is made
+  (`refuse_read_only_target`), since the rename needs only a writable
+  directory and would replace it.
 - The temp file is given the mode of the file already there through
   its open descriptor (`carry_identity`), so the umask does not strip a
   bit, and a mode that will not set fails the save. The group is put

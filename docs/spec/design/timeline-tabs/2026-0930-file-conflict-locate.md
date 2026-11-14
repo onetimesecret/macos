@@ -61,7 +61,7 @@ asked on 2026-09-30 for a way to point the app at such a file. That
 brief is not an accepted record, and this one is where the request
 would become a decision.
 
-The mechanism is [ADR-0035](../../adr/0035-sandboxed-file-access-holds-a-scope-around-core-io.md),
+The mechanism is [ADR-0035](../../../adr/0035-sandboxed-file-access-holds-a-scope-around-core-io.md),
 which is itself proposed. This record covers only what a person sees.
 
 Two facts about an open file come from the core in its roster row and
@@ -206,4 +206,4 @@ No banner, header word or sentence in this record has been looked at on
 screen, under a sandbox or outside one. The words are asserted by the
 tests named above, which run without a window. The hardware procedure
 is
-[sandbox-file-access.md](../../qa/verification-procedures/sandbox-file-access.md).
+[sandbox-file-access.md](../../../qa/verification-procedures/sandbox-file-access.md).

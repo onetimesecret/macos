@@ -12,7 +12,7 @@ Read [ADR conventions](README.md) before filing or changing an ADR.
 ## Context
 
 D-26 in the accepted
-[UI/UX decision record](../spec/design/2026-0915-ui-ux-decisions.md)
+[UI/UX decision record](../spec/design/timeline-tabs/2026-0915-ui-ux-decisions.md)
 split page navigation into two settings, Organize pages by (Slots ·
 Days) and Show pages (Along the bottom · Down the side), and section 4
 says "All four combinations are supported states." D-26 names the

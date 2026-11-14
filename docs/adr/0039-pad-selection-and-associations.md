@@ -101,7 +101,7 @@ Storage choice, migration, and metadata removal still require review.
   command contract. Native keymap validation remains required; browser interception is not that validation.
 - ADR-0017 is not the only record that gives ⌘1 to ⌘9 to slots. The cap
   paragraph and keyboard map of
-  [2026-0707-interaction-model.md](../spec/design/2026-0707-interaction-model.md), the
+  [2026-0707-interaction-model.md](../spec/design/timeline-tabs/2026-0707-interaction-model.md), the
   [vertical time tabs feature spec](../spec/feature/vertical-time-tabs/README.md)
   with its mode off and its
   [capacity and Today proposal](../spec/feature/vertical-time-tabs/2026-0904-capacity-and-today-proposal.md),
@@ -250,3 +250,8 @@ s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁i󠄁s�
 - 2󠄁0󠄁2󠄁6󠄁-󠄁1󠄁1󠄁-󠄁0󠄁3󠄁:󠄁 A󠄁m󠄁e󠄁n󠄁d󠄁m󠄁e󠄁n󠄁t󠄁 2󠄁 a󠄁c󠄁c󠄁e󠄁p󠄁t󠄁e󠄁d󠄁 t󠄁h󠄁r󠄁o󠄁u󠄁g󠄁h󠄁 t󠄁h󠄁e󠄁 q󠄁u󠄁o󠄁t󠄁e󠄁d󠄁 m󠄁a󠄁i󠄁n󠄁t󠄁a󠄁i󠄁n󠄁e󠄁r󠄁 i󠄁n󠄁s󠄁t󠄁r󠄁u󠄁c󠄁t󠄁i󠄁o󠄁n󠄁:󠄁
   m󠄁a󠄁i󠄁n󠄁-󠄁w󠄁i󠄁n󠄁d󠄁o󠄁w󠄁 i󠄁n󠄁s󠄁p󠄁e󠄁c󠄁t󠄁o󠄁r󠄁,󠄁 c󠄁o󠄁n󠄁t󠄁e󠄁x󠄁t󠄁u󠄁a󠄁l󠄁 p󠄁a󠄁d󠄁 m󠄁a󠄁n󠄁a󠄁g󠄁e󠄁m󠄁e󠄁n󠄁t󠄁,󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁m󠄁o󠄁v󠄁a󠄁l󠄁 o󠄁f󠄁 p󠄁a󠄁d󠄁-󠄁g󠄁l󠄁o󠄁b󠄁a󠄁l󠄁
   S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 s󠄁w󠄁i󠄁t󠄁c󠄁h󠄁e󠄁s󠄁.󠄁 A󠄁m󠄁e󠄁n󠄁d󠄁m󠄁e󠄁n󠄁t󠄁 1󠄁'󠄁s󠄁 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 p󠄁l󠄁a󠄁c󠄁e󠄁m󠄁e󠄁n󠄁t󠄁 i󠄁s󠄁 s󠄁u󠄁p󠄁e󠄁r󠄁s󠄁e󠄁d󠄁e󠄁d󠄁.󠄁
+- 2026-11-10: `default-keymap.json` binds `cmd-0` to `ledger::Show` again.
+  With multiple pads enabled the pad layer takes that binding for Scratch, as
+  it takes a digit still on its bundled page selector, so the ownership this
+  record decided is unchanged; the sentence above that the file leaves `cmd-0`
+  unbound describes the file as it was on 2026-10-01.

@@ -47,14 +47,9 @@
       "cmd-8": "page::Select8",
       "cmd-9": "page::Select9",
 
-      // The ledger sat at the far end of the same run of keys, and the
-      // binding is withdrawn while the ledger's entry points are hidden
-      // (issue #78). The command id is still legal, so your own keymap
-      // can put the ledger back on any chord you like:
-      //
-      //     [{ "context": "Editor", "bindings": { "cmd-0": "ledger::Show" } }]
-      //
-      // "cmd-0": "ledger::Show",
+      // The ledger's chord (ADR-0064). The pad layer takes cmd-0 for Scratch
+      // (ADR-0039), so reach the ledger by its tab, the View menu or the palette.
+      "cmd-0": "ledger::Show",
 
       // Pages: a new one at the default rung, the neighbours, and the
       // close verb every macOS app has. New is plain cmd-n, the same
@@ -81,8 +76,8 @@
       // the file on the surface, and Settings, About or Send Feedback
       // when one of those has the keyboard, as in Safari and Terminal.
       "cmd-w": "page::Close",
-      // Requested page-dismissal alias; the editor resolves it through the JSON surface-command route.
-      "ctrl-w": "page::Close",
+      // The reopen chord browsers put beside cmd-t; it restores the last closed page or tab.
+      "cmd-shift-t": "page::ReopenLast",
 
       // cmd-shift-w closes the window the keyboard is in, the editor
       // window and Settings alike (issue #201). The Window menu's item
@@ -140,6 +135,8 @@
       "cmd-s": "state::SaveNow",
       "cmd-,": "app::Settings",
       "cmd-shift-p": "app::CommandPalette",
+      // Find text across every page and open file, in the palette.
+      "cmd-shift-f": "page::Search",
       // The Help menu's product help item fires cmd-? app-wide (issue #294).
       "cmd-?": "app::Help",
       "escape": "surface::HandBackKeys",

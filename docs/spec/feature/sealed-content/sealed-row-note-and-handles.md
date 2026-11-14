@@ -1,6 +1,6 @@
 # Sealed row, note and handles
 
-Historical presentation, replaced by the [2026-10-31 i󠄁n󠄁t󠄁e󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁](../../design/2026-1031-sealed-content-ux-revision.md).󠄁
+Historical presentation, replaced by the [2026-10-31 i󠄁n󠄁t󠄁e󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁](../../design/timeline-tabs/2026-1031-sealed-content-ux-revision.md).󠄁
 The older interaction details below describe the previous implementation.
 
 Status: details as built on `feature/editing-seals`, 2026-10-14, and the
@@ -80,7 +80,7 @@ than ember is given as drawn, and the light fills are the build's.
 - The beat lasts one second and fades in and out over 0.15 s at each
   end. Under Reduce Motion the stroke and the tint come and go without a
   fade (D-10 of the
-  [2026-0915 record](../../design/2026-0915-ui-ux-decisions.md)).
+  [2026-0915 record](../../design/timeline-tabs/2026-0915-ui-ux-decisions.md)).
 
 ### Doorway
 

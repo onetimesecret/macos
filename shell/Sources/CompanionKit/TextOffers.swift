@@ -114,14 +114,14 @@ enum TextOffers {
         NSSpellChecker.sharedSpellCheckerExists && NSSpellChecker.shared.spellingPanel.isVisible
     }
 
-    /// The readers no click gates, which a file keeps and a page, note or name refuses: Writing
-    /// Tools, suggestions, predictions and data detectors, whose finds a later click hands out.
-    static func offerUngatedReaders(_ offers: Bool, on textView: NSTextView) {
-        if !offers { textView.isAutomaticDataDetectionEnabled = false }
-        textView.isAutomaticTextCompletionEnabled = offers
-        if #available(macOS 14.0, *) { textView.inlinePredictionType = offers ? .default : .no }
+    /// Turns off the readers no click gates, on a page, note, name or file: Writing Tools,
+    /// suggestions, predictions and data detectors, whose finds a later click hands out.
+    static func refuseUngatedReaders(on textView: NSTextView) {
+        textView.isAutomaticDataDetectionEnabled = false
+        textView.isAutomaticTextCompletionEnabled = false
+        if #available(macOS 14.0, *) { textView.inlinePredictionType = .no }
         guard #available(macOS 15.0, *) else { return }
-        textView.writingToolsBehavior = offers ? .default : .none
+        textView.writingToolsBehavior = .none
     }
 }
 
@@ -286,17 +286,11 @@ class AskingTextView: NSTextView {
         super.orderFrontLinkPanel(sender)
     }
 
-    /// The typing suggestions `TextOffers.offerUngatedReaders` turned off stay off.
-    override func toggleAutomaticTextCompletion(_ sender: Any?) {
-        guard keepsSelectionReaders else { return }
-        super.toggleAutomaticTextCompletion(sender)
-    }
+    /// The typing suggestions `TextOffers.refuseUngatedReaders` turned off stay off.
+    override func toggleAutomaticTextCompletion(_ sender: Any?) {}
 
-    /// The data detectors `TextOffers.offerUngatedReaders` turned off stay off.
-    override func toggleAutomaticDataDetection(_ sender: Any?) {
-        guard keepsSelectionReaders else { return }
-        super.toggleAutomaticDataDetection(sender)
-    }
+    /// The data detectors `TextOffers.refuseUngatedReaders` turned off stay off.
+    override func toggleAutomaticDataDetection(_ sender: Any?) {}
 
     /// Show Spelling and Grammar and Edit Link… are unavailable where their panels never show.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {

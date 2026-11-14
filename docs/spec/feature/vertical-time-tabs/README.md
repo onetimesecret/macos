@@ -19,11 +19,11 @@ is off by default. Horizontal tabs keep their behaviour and their
 pixels. The sealed format, the tab model, the TTL ladder and the cap are
 untouched.
 Governs against:
-[`../../design/2026-0707-design-principles.md`](../../design/2026-0707-design-principles.md)
+[`../../design/2026-0707-design-principles.md`](../../design/timeline-tabs/2026-0707-design-principles.md)
 (§1 comfortable being temporary, §4 frugal),
-[`../../design/2026-0707-interaction-model.md`](../../design/2026-0707-interaction-model.md)
+[`../../design/2026-0707-interaction-model.md`](../../design/timeline-tabs/2026-0707-interaction-model.md)
 ("Sheets, several: tabs at the bottom", and the keyboard map),
-[`../../design/2026-0707-technical-direction.md`](../../design/2026-0707-technical-direction.md)
+[`../../design/2026-0707-technical-direction.md`](../../design/timeline-tabs/2026-0707-technical-direction.md)
 (the accessibility commitments and the frugality budget),
 [ADR-0006](../../../adr/0006-persistent-editor-storage-swap.md) (one
 persistent editor),
@@ -703,6 +703,12 @@ context menu with rename, hold, rung and close, reusing the shipped
 page rather than on the rail keeps them unambiguous when a day holds more
 than one page, and keeps the rail honest about being a projection you
 cannot rename or reorder.
+
+The menu's two clock items, on the strip and on the gutter alike, are
+**Restart the Countdown**, which reapplies the page's current rung so
+its clock starts again at full length (`restartRung`), and under it
+**Shorten the Countdown**, which steps one rung shorter. Restart is
+disabled on a slot with no page.
 
 Several pages born on one day are grouped under one day header in strip
 order, separated by a hairline rather than a tear, and not policed.

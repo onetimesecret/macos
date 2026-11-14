@@ -2,7 +2,7 @@
 documentation_status: needs-review
 ---
 
-# ADR-0063: The ambient panel is withdrawn until it returns as its own feature
+# ADR-0065: The ambient panel is withdrawn until it returns as its own feature
 
 - **Status:** accepted
 - **Date:** 2026-11-11

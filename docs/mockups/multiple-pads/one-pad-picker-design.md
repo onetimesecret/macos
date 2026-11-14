@@ -123,7 +123,7 @@ same slot ownership; ADR-0039's consequences list them, and none has been
 edited.
 
 **Day-order policy needs a successor design decision.** The accepted
-[2026-09-15 UI/UX decision record](../../spec/design/2026-0915-ui-ux-decisions.md#4--how-pages-are-organized-and-where-they-live)
+[2026-09-15 UI/UX decision record](../../spec/design/timeline-tabs/2026-0915-ui-ux-decisions.md#4--how-pages-are-organized-and-where-they-live)
 states: “days group live pages by the day they were written, newest first, and
 move no content.” Selectable ascending order is the new mockup proposal. The
 underlying day grouping and content ownership remain distinct from display

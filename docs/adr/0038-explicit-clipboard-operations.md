@@ -79,7 +79,7 @@ observation in [InkEditorView.swift](../../shell/Sources/CompanionKit/InkEditorV
 not the release-validation evidence owed here. The keymap's `cmd-shift-v` invokes
 sealed paste, so it cannot be promised as a universal formatting-removal shortcut.
 
-Accepted [D-43](../spec/design/2026-0916-clipboard-clear-interval.md)
+Accepted [D-43](../spec/design/timeline-tabs/2026-0916-clipboard-clear-interval.md)
 states the existing limit exactly:
 
 > It does not bound retention by clipboard managers, Universal Clipboard,

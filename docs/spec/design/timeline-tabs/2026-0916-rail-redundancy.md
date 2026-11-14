@@ -20,7 +20,7 @@ sources:
   - crates/ffi/src/lib.rs
 ---
 
-> Scoped successor, 2026-10-03: [ADR-0060](../../adr/0060-shared-pad-timeline-navigation.md)
+> Scoped successor, 2026-10-03: [ADR-0060](../../../adr/0060-shared-pad-timeline-navigation.md)
 > replaces dense checkpoint label presentation; the active mark distinction remains. Its shared navigator, selectable day/checkpoint
 > ordering, density handling, and session reading-position rules are approved
 > design requirements, not an implementation verification report.
@@ -68,7 +68,7 @@ Three pages minted in one minute read as three copies of one page.
   pins the two keys and that neither marks content dirty.
   *Amended 2026-10-01:* the Days choice in Settings is now Timeline,
   under Page layout
-  ([ADR-0037](../../adr/0037-one-page-layout-setting.md)).
+  ([ADR-0037](../../../adr/0037-one-page-layout-setting.md)).
 - **D-45 (fixed)** One dot. The active node is a filled ember dot, the
   one dot on the rail; every other page is a quaternary tick across
   the track, wider for a day's first page, so the track reads as a
@@ -100,7 +100,7 @@ Three pages minted in one minute read as three copies of one page.
   `testTheGutterDrawsOnlyATypedName`;
   `DayScrollTests.testAGutterDrawsATypedNameAndNoGauge`; the FFI's key
   list test names `title_source`.
-  *Amended 2026-10-13:* [Law 0007](../../law/0007-edit-in-place.md)
+  *Amended 2026-10-13:* [Law 0007](../../../law/0007-edit-in-place.md)
   (issue 248) gives the time its own seat: a typed name stands between
   the day and the time, `today · Deploy notes · 13:00`, and a rename
   opens on what the seat showed, the name or else the time. The pure

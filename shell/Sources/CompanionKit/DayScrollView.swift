@@ -179,7 +179,7 @@ public struct DayScrollView: NSViewRepresentable {
         // The latest gesture that found no roll to move outranks the pad's saved place.
         switch model.takeRollRequest() {
         case .today: stack.requestToday()
-        case .page(let page): stack.open(onPage: page)
+        case .page(let page), .line(let page, _): stack.open(onPage: page)
         case nil: break
         }
         stack.update(
@@ -2215,6 +2215,9 @@ final class DayHeaderView: NSView {
         // core refuses, there being no clock.
         hold.isEnabled = hasPage
         menu.addItem(hold)
+        let restart = item(title: SheetTab.restartMenuTitle, action: #selector(restartClock))
+        restart.isEnabled = hasPage
+        menu.addItem(restart)
         menu.addItem(item(
             title: SheetTab.rungMenuTitle(hasPage: hasPage), action: #selector(shortenRung)
         ))
@@ -2349,6 +2352,11 @@ final class DayHeaderView: NSView {
     @objc private func holdClock() {
         guard let tab else { return }
         model.pause(tab)
+    }
+
+    @objc private func restartClock() {
+        guard let tab else { return }
+        model.restartRung(tab)
     }
 
     @objc private func shortenRung() {

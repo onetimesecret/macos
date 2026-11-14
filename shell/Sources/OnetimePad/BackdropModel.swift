@@ -201,7 +201,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         sideTabPreferences = SideTabPreferences.load(from: defaults)
         keepsAboveWhenInactive = defaults.bool(forKey: Self.keepsAboveKey)
         self.offersAmbientPanel = offersAmbientPanel
-        // ADR-0063: a withdrawn panel ignores, and keeps, any stored choice.
+        // ADR-0065: a withdrawn panel ignores, and keeps, any stored choice.
         // Offered, ADR-0033's absent key still reads as on.
         ambientPanelEnabled = offersAmbientPanel
             && (defaults.object(forKey: Self.ambientPanelEnabledKey) as? Bool ?? true)
@@ -739,11 +739,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         editorWindowOnScreen = onScreen
     }
 
-    /// False in shipped builds (ADR-0063); tests pass true to exercise the panel.
+    /// False in shipped builds (ADR-0065); tests pass true to exercise the panel.
     let offersAmbientPanel: Bool
 
     /// ADR-0033's ambient panel preference, always off while the panel
-    /// is withdrawn (ADR-0063). On, the panel is shown and the hotkey
+    /// is withdrawn (ADR-0065). On, the panel is shown and the hotkey
     /// and the status item summon it. Off, no panel is shown, the hotkey
     /// and the status item select the editor window, and the resting
     /// card cannot be clicked because it is not on screen.

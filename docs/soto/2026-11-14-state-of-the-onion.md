@@ -43,7 +43,7 @@ required to change their application.
 
 The baseline's latest source history includes the ambient-panel withdrawal;
 the editor-window decision is recorded in
-[ADR-0063](../adr/0063-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md).
+[ADR-0065](../adr/0065-the-ambient-panel-is-withdrawn-until-it-returns-as-its-own-feature.md).
 This entry does not certify every implementation path against that decision.
 
 ## Preparation and remaining work

@@ -33,6 +33,9 @@ extension PageModel {
         case .pageReopenDated:
             guard let onReopenDatedTabs else { return false }
             onReopenDatedTabs()
+        case .pageSearch:
+            guard let onSearchPages else { return false }
+            onSearchPages()
         case .appCommandPalette:
             return false
         case .pageNew:

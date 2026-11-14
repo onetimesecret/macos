@@ -853,6 +853,18 @@ impl Sheet {
         self.created_wall_ms
     }
 
+    /// The ink's length in UTF-8 bytes, a chip counting zero: one step per segment.
+    #[must_use]
+    pub fn ink_bytes(&self) -> usize {
+        self.segments
+            .iter()
+            .map(|segment| match segment {
+                Segment::Ink(text) => text.len(),
+                Segment::Chip(_) => 0,
+            })
+            .sum()
+    }
+
     /// A non-whitespace line or a standing chip: what the page shows. The
     /// ledger also records a page holding only detached chips.
     #[must_use]
