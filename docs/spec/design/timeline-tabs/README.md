@@ -1,7 +1,8 @@
-# docs/spec/design/README.md
+---
+# docs/spec/design/timeline-tabs/README.md
 ---
 
-# macOS Companion — Design Spec
+# macOS Companion — Design Spec for Timeline and Tabs UX
 
 An open-source, Rust-based macOS desktop companion to Onetime Secret.
 Working title: **CompanionApp** (see naming note below).
