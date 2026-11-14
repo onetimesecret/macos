@@ -19,11 +19,11 @@ is off by default. Horizontal tabs keep their behaviour and their
 pixels. The sealed format, the tab model, the TTL ladder and the cap are
 untouched.
 Governs against:
-[`../../design/2026-0707-design-principles.md`](../../design/2026-0707-design-principles.md)
+[`../../design/2026-0707-design-principles.md`](../../design/timeline-tabs/2026-0707-design-principles.md)
 (§1 comfortable being temporary, §4 frugal),
-[`../../design/2026-0707-interaction-model.md`](../../design/2026-0707-interaction-model.md)
+[`../../design/2026-0707-interaction-model.md`](../../design/timeline-tabs/2026-0707-interaction-model.md)
 ("Sheets, several: tabs at the bottom", and the keyboard map),
-[`../../design/2026-0707-technical-direction.md`](../../design/2026-0707-technical-direction.md)
+[`../../design/2026-0707-technical-direction.md`](../../design/timeline-tabs/2026-0707-technical-direction.md)
 (the accessibility commitments and the frugality budget),
 [ADR-0006](../../../adr/0006-persistent-editor-storage-swap.md) (one
 persistent editor),

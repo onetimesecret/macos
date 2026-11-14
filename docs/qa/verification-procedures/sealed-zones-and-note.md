@@ -14,7 +14,7 @@ note rows cite this procedure for what the runner cannot drive.
 `SealedBlockTests`, `SealedCapsuleTests`, `SealedMoveHandleTests` and
 `SealedNoteTests` cover geometry, synthetic pointer actions and note routes.
 Hardware checks cover the appearance, VoiceOver navigation and real pointer
-behavior in a key window. The [2026-10-31 revision](../../spec/design/2026-1031-sealed-content-ux-revision.md)
+behavior in a key window. The [2026-10-31 revision](../../spec/design/timeline-tabs/2026-1031-sealed-content-ux-revision.md)
 replaces the former text zones. These checks remain unperformed.
 
 Use synthetic data in a dedicated fixture with a temporary state directory

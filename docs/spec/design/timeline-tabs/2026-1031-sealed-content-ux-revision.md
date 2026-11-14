@@ -23,7 +23,7 @@ The maintainer authorized the 28-item presentation revision on 2026-10-31:
 > Please go ahead, methodically addressing each of the 28 items.
 
 This record states the interface decisions within that request. The
-[28-item checklist](../../plans/sealed-content-ux-2026-10-31.md) is a review
+[28-item checklist](../../../plans/sealed-content-ux-2026-10-31.md) is a review
 and verification aid, not a source of authority for these decisions or their
 security properties.
 
@@ -39,17 +39,17 @@ It incorporates their unchanged decisions from the immutable versions at
   replacement of D-42/D-43](https://github.com/onetimesecret/macos/blob/367a65c6f4d051ffdc87ac8ebb43f154e9b97783/docs/spec/design/2026-0916-clipboard-clear-interval.md).
 
 Only the passages enumerated below change. The accepted scoped successors
-already identified by those records, including [ADR-0060](../../adr/0060-shared-pad-timeline-navigation.md)
+already identified by those records, including [ADR-0060](../../../adr/0060-shared-pad-timeline-navigation.md)
 for Timeline navigation, retain their scope. The old stream record's
 one-time-link success sentence is historical; the D-09/D-42 revision below
 replaces that sentence as incorporated by the former clear-interval record.
 
 The full `superseded` status follows the dated-record rule in the
-[behaviour law conventions](../../law/README.md): a dated record
+[behaviour law conventions](../../../law/README.md): a dated record
 “is superseded whole when any of them changes.” Unchanged behavior is
 incorporated above rather than removed. This differs from an ADR's partial
 replacement, which retains the ADR's accepted status under the
-[ADR conventions](../../adr/README.md#metadata-and-relationships).
+[ADR conventions](../../../adr/README.md#metadata-and-relationships).
 
 The predecessors' structured `superseded-by` entries retain their earlier
 relationships as well as the new successor: the UI/UX record's scoped
@@ -197,7 +197,7 @@ its own security, privacy, persistence or data-loss properties.
 
 ## Acceptance
 
-[Laws 0001](../../law/0001-sealed-object.md) and
-[0007](../../law/0007-edit-in-place.md) contain the operative interaction rows
-and their named regression tests. The [28-item checklist](../../plans/sealed-content-ux-2026-10-31.md)
+[Laws 0001](../../../law/0001-sealed-object.md) and
+[0007](../../../law/0007-edit-in-place.md) contain the operative interaction rows
+and their named regression tests. The [28-item checklist](../../../plans/sealed-content-ux-2026-10-31.md)
 records the executed checks and remaining manual VoiceOver and display checks.

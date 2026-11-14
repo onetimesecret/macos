@@ -5,7 +5,7 @@ Status: implemented; automated verification and rendered-fixture review complete
 The user asked for a methodical response to the 28-item visual and source audit.
 This file records implementation choices and verification; it is not an
 independent security specification or evidence that these changes work.
-T󠄁h󠄁e󠄁 [d󠄁a󠄁t󠄁e󠄁d󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁](../spec/design/2026-1031-sealed-content-ux-revision.md)
+T󠄁h󠄁e󠄁 [d󠄁a󠄁t󠄁e󠄁d󠄁 i󠄁n󠄁t󠄁e󠄁r󠄁f󠄁a󠄁c󠄁e󠄁 r󠄁e󠄁c󠄁o󠄁r󠄁d󠄁](../spec/design/timeline-tabs/2026-1031-sealed-content-ux-revision.md)
 a󠄁n󠄁d󠄁 t󠄁h󠄁e󠄁 a󠄁m󠄁e󠄁n󠄁d󠄁e󠄁d󠄁 l󠄁a󠄁w󠄁 r󠄁o󠄁w󠄁s󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 t󠄁h󠄁e󠄁 p󠄁r󠄁e󠄁s󠄁e󠄁n󠄁t󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 d󠄁e󠄁c󠄁i󠄁s󠄁i󠄁o󠄁n󠄁s󠄁.󠄁 T󠄁h󠄁i󠄁s󠄁 c󠄁h󠄁e󠄁c󠄁k󠄁l󠄁i󠄁s󠄁t󠄁
 d󠄁o󠄁e󠄁s󠄁 n󠄁o󠄁t󠄁 r󠄁e󠄁p󠄁l󠄁a󠄁c󠄁e󠄁 t󠄁h󠄁e󠄁m󠄁.󠄁
 
@@ -129,7 +129,7 @@ security properties or replace the operative records.
 | --- | --- | --- | --- |
 | DOC-01 | Law 0001 described text copy zones and old menu/handle behavior. | Addressed in its operative contract and presentation rows, with a dated 2026-10-31 amendment. | Current named test references checked against the source tree; local links checked. |
 | DOC-02 | Law 0007 contradicted sealed-field blur, refusal and teardown behavior. | Addressed in its operation classes and sealed-field rows; stale held-refusal source references removed. Older amendments remain history. | Current named test references checked against the source tree; local links checked. |
-| DOC-03 | A dated record was edited in place instead of superseded whole. | Addressed by the [dated successor](../spec/design/2026-1031-sealed-content-ux-revision.md), with immutable incorporation and scoped revisions. Earlier dated bodies remain unchanged. | Prior bodies compared with commit `367a65c6f4d051ffdc87ac8ebb43f154e9b97783`; status/successor fields checked. |
+| DOC-03 | A dated record was edited in place instead of superseded whole. | Addressed by the [dated successor](../spec/design/timeline-tabs/2026-1031-sealed-content-ux-revision.md), with immutable incorporation and scoped revisions. Earlier dated bodies remain unchanged. | Prior bodies compared with commit `367a65c6f4d051ffdc87ac8ebb43f154e9b97783`; status/successor fields checked. |
 | DOC-04 | The implementation plan was presented as authority and historical sharing copy remained ambiguous. | Addressed by direct successor links, operative law amendments and superseded status on the former records. Linked manual checks now exercise explicit controls. | Local link and scope review; manual checks remain unperformed. |
 | COPY-01 | Revised native labels and instructional guidance conflicted with D-15/ADR-0055. | Addressed by the successor's scoped copy-register decision and ADR-0055 amendment. | Labels compared with the revised source; ADR structural lint checked. |
 | DOC-05 | Successor metadata replaced the earlier scoped and intermediate relationships. | Addressed by structured superseded-by entries preserving ADR-0060 and the stream-to-clear-interval chain alongside the new successor; the successor explains whole-record status and immutable incorporation. ADR-0055 retains its accepted body with a dated history pointer. | YAML metadata, referenced paths, unchanged historical bodies and documentation conventions checked. |

@@ -38,7 +38,7 @@ sources:
 
 Read [behaviour law conventions](README.md) before filing or changing a law.
 
-The [2026-10-31 interface record](../spec/design/2026-1031-sealed-content-ux-revision.md) states the
+The [2026-10-31 interface record](../spec/design/timeline-tabs/2026-1031-sealed-content-ux-revision.md) states the
 presentation revision. The operative rows below incorporate that revision;
 the dated amendment records its scope. The implementation checklist is a
 verification aid, not authority for this law.
@@ -428,7 +428,7 @@ Owed: a first run of the rename in place procedure.
   changes.
 
 - 2026-10-31: Sealed-field ending amendment, authorized by the maintainer's
-  instruction quoted in the [interface revision](../spec/design/2026-1031-sealed-content-ux-revision.md).
+  instruction quoted in the [interface revision](../spec/design/timeline-tabs/2026-1031-sealed-content-ux-revision.md).
   Set/Edit Variable Name… replaces the sealed name's text-click opening. Its
   valid focus loss saves, as do pad switches and editor handoffs before teardown;
   Escape and Cancel retain cancellation semantics. Invalid blur remains open

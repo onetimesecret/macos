@@ -16,12 +16,12 @@ The requested verification covers both sort directions, long pages, many
 checkpoints, minimum window height, pad switching, and File/Ledger views.
 
 The accepted background-surface
-[UI/UX decisions](../spec/design/2026-0915-ui-ux-decisions.md) state:
+[UI/UX decisions](../spec/design/timeline-tabs/2026-0915-ui-ux-decisions.md) state:
 “Slots are pages you name and close yourself; days group live pages by the day
 they were written, newest first, and move no content.” This successor replaces
 only the fixed newest-first ordering requirement for Timeline. It leaves page
 lifetimes and grouping by local creation day outside the decision's scope.
-The accepted [rail redundancy decision](../spec/design/2026-0916-rail-redundancy.md)
+The accepted [rail redundancy decision](../spec/design/timeline-tabs/2026-0916-rail-redundancy.md)
 states: “One dot. The active node is a filled ember dot, the one dot on the
 rail; every other page is a quaternary tick across the track, wider for a day's
 first page”. Density handling preserves that selected-node distinction while

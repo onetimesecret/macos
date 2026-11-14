@@ -367,7 +367,7 @@ The accepted UI record counts three actions and two sentence inputs
 (D-17 in `docs/spec/design/2026-0915-ui-ux-decisions.md`). The
 amendment that would cover Locate, the unavailable banner and the held
 header is a draft awaiting ratification,
-[2026-0930-file-conflict-locate.md](../spec/design/2026-0930-file-conflict-locate.md).
+[2026-0930-file-conflict-locate.md](../spec/design/timeline-tabs/2026-0930-file-conflict-locate.md).
 
 A take theirs the core refuses restates the roster before it returns,
 because the refused read may have just set `accessRefused` or

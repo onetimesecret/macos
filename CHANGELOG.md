@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - L󠄁o󠄁a󠄁d󠄁 i󠄁n󠄁d󠄁i󠄁v󠄁i󠄁d󠄁u󠄁a󠄁l󠄁 H󠄁T󠄁T󠄁P󠄁S󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁s󠄁 i󠄁n󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 w󠄁i󠄁t󠄁h󠄁 e󠄁x󠄁p󠄁l󠄁i󠄁c󠄁i󠄁t󠄁 L󠄁o󠄁a󠄁d󠄁,󠄁
   C󠄁a󠄁n󠄁c󠄁e󠄁l󠄁,󠄁 R󠄁e󠄁t󠄁r󠄁y󠄁 a󠄁n󠄁d󠄁 U󠄁n󠄁l󠄁o󠄁a󠄁d󠄁 c󠄁o󠄁n󠄁t󠄁r󠄁o󠄁l󠄁s󠄁.󠄁 I󠄁m󠄁a󠄁g󠄁e󠄁 a󠄁l󠄁t󠄁 t󠄁e󠄁x󠄁t󠄁 r󠄁e󠄁m󠄁a󠄁i󠄁n󠄁s󠄁 a󠄁v󠄁a󠄁i󠄁l󠄁a󠄁b󠄁l󠄁e󠄁 b󠄁e󠄁f󠄁o󠄁r󠄁e󠄁
-  l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 w󠄁h󠄁e󠄁n󠄁 c󠄁o󠄁p󠄁y󠄁i󠄁n󠄁g󠄁.󠄁 S󠄁e󠄁e󠄁 t󠄁h󠄁e󠄁 [p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁](docs/spec/design/2026-1028-preview-image-loading.md).󠄁 (󠄁#󠄁3󠄁3󠄁2󠄁)󠄁
+  l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 w󠄁h󠄁e󠄁n󠄁 c󠄁o󠄁p󠄁y󠄁i󠄁n󠄁g󠄁.󠄁 S󠄁e󠄁e󠄁 t󠄁h󠄁e󠄁 [p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁d󠄁 r󠄁e󠄁q󠄁u󠄁e󠄁s󠄁t󠄁 p󠄁o󠄁l󠄁i󠄁c󠄁y󠄁](docs/spec/design/timeline-tabs/2026-1028-preview-image-loading.md).󠄁 (󠄁#󠄁3󠄁3󠄁2󠄁)󠄁
 
 - C󠄁h󠄁o󠄁o󠄁s󠄁e󠄁 G󠄁i󠄁t󠄁H󠄁u󠄁b󠄁 F󠄁l󠄁a󠄁v󠄁o󠄁r󠄁e󠄁d󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 o󠄁r󠄁 C󠄁o󠄁m󠄁m󠄁o󠄁n󠄁M󠄁a󠄁r󠄁k󠄁 i󠄁n󠄁 S󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁s󠄁 →󠄁 C󠄁o󠄁d󠄁e󠄁 →󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁
   d󠄁i󠄁a󠄁l󠄁e󠄁c󠄁t󠄁.󠄁 G󠄁F󠄁M󠄁 i󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁e󠄁f󠄁a󠄁u󠄁l󠄁t󠄁;󠄁 c󠄁h󠄁a󠄁n󠄁g󠄁i󠄁n󠄁g󠄁 t󠄁h󠄁e󠄁 c󠄁h󠄁o󠄁i󠄁c󠄁e󠄁 r󠄁e󠄁f󠄁r󠄁e󠄁s󠄁h󠄁e󠄁s󠄁 o󠄁p󠄁e󠄁n󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁e󠄁d󠄁
@@ -67,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not. Sharing forms name the source, and Copy Link Again recovers the
   latest completed one-time link for up to 60 seconds after it is
   created. See the
-  [sealed-content interface revision](docs/spec/design/2026-1031-sealed-content-ux-revision.md).
+  [sealed-content interface revision](docs/spec/design/timeline-tabs/2026-1031-sealed-content-ux-revision.md).
 
 - L󠄁a󠄁r󠄁g󠄁e󠄁 M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁s󠄁 s󠄁h󠄁o󠄁w󠄁 a󠄁 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 s󠄁t󠄁a󠄁t󠄁e󠄁 w󠄁h󠄁i󠄁l󠄁e󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁i󠄁n󠄁g󠄁 w󠄁i󠄁t󠄁h󠄁o󠄁u󠄁t󠄁 b󠄁l󠄁o󠄁c󠄁k󠄁i󠄁n󠄁g󠄁
   t󠄁h󠄁e󠄁 i󠄁n󠄁i󠄁t󠄁i󠄁a󠄁l󠄁 p󠄁a󠄁g󠄁e󠄁 r󠄁e󠄁f󠄁r󠄁e󠄁s󠄁h󠄁.󠄁 (󠄁#󠄁3󠄁3󠄁2󠄁)󠄁

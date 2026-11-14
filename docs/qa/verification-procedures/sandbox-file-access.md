@@ -170,7 +170,7 @@ while required hardware configurations have no result; document any scope
 reduction explicitly rather than silently marking validation complete.
 
 Hardware results cannot ratify the design amendment. The accepted D-17 in
-[the UI/UX decision record](../../spec/design/2026-0915-ui-ux-decisions.md)
+[the UI/UX decision record](../../spec/design/timeline-tabs/2026-0915-ui-ux-decisions.md)
 states: "the sentence is a pure function of conflict and filename".
 Record the maintainer's decision on the draft Locate amendment separately;
 do not use these proposed criteria or passing test results to establish

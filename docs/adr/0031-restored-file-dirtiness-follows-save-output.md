@@ -11,7 +11,7 @@ documentation_status: needs-review # draft | reviewed | stale
 Read [ADR conventions](README.md) before filing or changing an ADR.
 
 The related product sources are the accepted
-[UI/UX decision record](../spec/design/2026-0915-ui-ux-decisions.md#6--files-and-the-unsaved-state)
+[UI/UX decision record](../spec/design/timeline-tabs/2026-0915-ui-ux-decisions.md#6--files-and-the-unsaved-state)
 and the proposed
 [file backed documents specification](../spec/feature/file-editing/README.md#saving).
 

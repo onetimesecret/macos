@@ -1,5 +1,5 @@
 
-> Shortcut scope, 2026-10-03: [ADR-0039](../../adr/0039-pad-selection-and-associations.md) supersedes the
+> Shortcut scope, 2026-10-03: [ADR-0039](../../../adr/0039-pad-selection-and-associations.md) supersedes the
 > numbered page/slot/day shortcut assignments below when multiple pads are
 > enabled. Scratch uses ⌘0; the first nine other pads use ⌘1–⌘9. The
 > existing single-pad map remains when pads are disabled. Page neighbour

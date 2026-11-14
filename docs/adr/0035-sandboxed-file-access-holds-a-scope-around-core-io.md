@@ -345,7 +345,7 @@ This record is proposed, and these are not settled by it:
 
 - **The accepted design record counts three conflict actions.** D-17
   in
-  [the UI/UX decision record](../spec/design/2026-0915-ui-ux-decisions.md)
+  [the UI/UX decision record](../spec/design/timeline-tabs/2026-0915-ui-ux-decisions.md)
   reads "Three actions in reading order, named by what they keep, with
   Save As (the one that destroys nothing) last and under the return
   key", and its acceptance reads "the sentence is a pure function of
@@ -353,7 +353,7 @@ This record is proposed, and these are not settled by it:
   first with Save As still last, and the banner's sentence also depends
   on the `accessRefused` mark. The amendment is written as a draft
   record,
-  [2026-0930-file-conflict-locate.md](../spec/design/2026-0930-file-conflict-locate.md),
+  [2026-0930-file-conflict-locate.md](../spec/design/timeline-tabs/2026-0930-file-conflict-locate.md),
   which the maintainer has not ratified. Until it is accepted, D-17
   stands and the surface this record describes differs from it.
 - **The untested parts of decided clauses.** Resolution with

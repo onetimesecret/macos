@@ -20,13 +20,13 @@ non-reading, capture, and runtime-hardening assertions are not a statement
 of validated current product guarantees.
 
 - **Persistence and disappearance.** Accepted
-  [ADR-0016, Decision](../../adr/0016-content-persists-across-restart.md#decision)
+  [ADR-0016, Decision](../../../adr/0016-content-persists-across-restart.md#decision)
   states:
 
   > Unexpired staged content survives ordinary process termination, crash, force
   > termination, logout, restart, shutdown, and compatible app updates.
 
-  Its [Consequences](../../adr/0016-content-persists-across-restart.md#consequences)
+  Its [Consequences](../../../adr/0016-content-persists-across-restart.md#consequences)
   also state:
 
   > A copied ciphertext plus both copied halves can remain decryptable after the
@@ -36,7 +36,7 @@ of validated current product guarantees.
   Earlier memory-only, quit-amnesia, and universal-disappearance language
   must not be read as the accepted persistence model or an erasure guarantee.
 - **Excerpts and non-reading.** Accepted
-  [Law 0001](../../law/0001-sealed-object.md#why-this-rule) states:
+  [Law 0001](../../../law/0001-sealed-object.md#why-this-rule) states:
 
   > the shell never receives the sealed
   > payload from the core. It may hold visible ink before sealing, and the
@@ -51,7 +51,7 @@ of validated current product guarantees.
   access. Absolute guarantees of that kind are unsupported by this collection.
 - **Relay retention and destinations.** The foundational no-retention wording
   must not be read as proof of server-side deletion. Accepted
-  [ADR-0021, Eject triggers](../../adr/0021-multi-device-sync-over-a-blind-relay.md#eject-triggers)
+  [ADR-0021, Eject triggers](../../../adr/0021-multi-device-sync-over-a-blind-relay.md#eject-triggers)
   explicitly lists:
 
   > The design starts relying on server-side deletion rather than key rotation for
@@ -136,17 +136,17 @@ and amendments.
 ## Feature specifications
 
 Specifications for individual features live under
-[`docs/spec/feature/`](../feature/):
+[`docs/spec/feature/`](../../feature/):
 
 | Feature | Contents | Status |
 | --- | --- | --- |
-| [feature/byoe](../feature/byoe/README.md) | Bring Your Own Encryption on the conceal path: envelope construction, key custody, wire changes | Draft |
-| [feature/background-surface](../feature/background-surface/README.md) | A second form factor: an ambient desktop-level surface, raised to edit — with the research on what macOS permits | Exploration (ADR-0010) |
+| [feature/byoe](../../feature/byoe/README.md) | Bring Your Own Encryption on the conceal path: envelope construction, key custody, wire changes | Draft |
+| [feature/background-surface](../../feature/background-surface/README.md) | A second form factor: an ambient desktop-level surface, raised to edit — with the research on what macOS permits | Exploration (ADR-0010) |
 
 ## Design rounds and prototype
 
 The interaction model's revisions live as rendered documents in
-[`docs/archive/airlock-prototype/`](../../archive/airlock-prototype/):
+[`docs/archive/airlock-prototype/`](../../../archive/airlock-prototype/):
 
 - `Airlock Spec.dc.html` — **rev C**, the milestone-1 interaction
   model; [Interaction model](2026-0707-interaction-model.md) is its markdown consolidation (including the rev B
@@ -167,7 +167,7 @@ product in one image — because that name collides with at least one
 existing security vendor (Airlock Digital) and would not survive to
 release without a trademark check. The old name remains only in the
 design-history documents under
-[`docs/archive/airlock-prototype/`](../../archive/airlock-prototype/).
+[`docs/archive/airlock-prototype/`](../../../archive/airlock-prototype/).
 Alternatives considered: Layover, Vestibule, Foyer, Waypoint, Holdover.
 The name matters less than the metaphor; every candidate is a word for
 *a place you pass through*. (Rev B retired the earlier "SleeperCell"

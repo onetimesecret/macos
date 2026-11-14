@@ -168,7 +168,7 @@ Respect [`accessibilityDisplayShouldReduceMotion`][reducemotion]: replace slidin
 
 ### Existing decisions
 
-Accepted [ADR-0033](../../adr/0033-separate-the-primary-editor-from-the-ambient-panel.md) states:
+Accepted [ADR-0033](../../../adr/0033-separate-the-primary-editor-from-the-ambient-panel.md) states:
 
 > Keep the ambient behavior in a separate nonactivating `NSPanel`, the existing background surface, over the same in-process document model.
 
@@ -176,7 +176,7 @@ Its closing scope statement says:
 
 > It does not choose the conventional window's visual chrome or the ambient panel's final interaction affordances.
 
-Accepted [ADR-0036](../../adr/0036-editing-presentations-are-mutually-exclusive.md), which supersedes the older simultaneous-glance arrangement, states:
+Accepted [ADR-0036](../../../adr/0036-editing-presentations-are-mutually-exclusive.md), which supersedes the older simultaneous-glance arrangement, states:
 
 > Show at most one content presentation at a time: the primary editor window or the ambient panel, including the panel's resting desktop and pinned forms.
 
@@ -190,10 +190,10 @@ It also states:
 
 | Source | Relevant behavior | Consequence |
 | --- | --- | --- |
-| [BackdropWindowController.swift](../../../shell/Sources/OnetimePad/BackdropWindowController.swift) | `BackdropPanel` already uses `.nonactivatingPanel`; `canBecomeKey` follows `isInteractive`; raised handling calls `makeKeyAndOrderFront` | Reuse the windowing experience, but do not call raised handling for hover |
-| [BackdropModel.swift](../../../shell/Sources/OnetimePad/BackdropModel.swift) | `raise(_:)` changes ownership/stance, refreshes the pasteboard offer, and may anchor on today | Reveal must bypass this until explicit commitment |
-| [ActivationRoute.swift](../../../shell/Sources/OnetimePad/ActivationRoute.swift) | Explicit presentation selection and summon are distinguished | Commit through the existing route; choose deliberately whether the new click means summon or position-preserving selection |
-| [BackdropHotKey.swift](../../../shell/Sources/OnetimePad/BackdropHotKey.swift) | `RegisterEventHotKey` with a `kEventHotKeyPressed` handler | A held glance needs release handling; it is not available just by changing the action closure |
+| [BackdropWindowController.swift](../../../../shell/Sources/OnetimePad/BackdropWindowController.swift) | `BackdropPanel` already uses `.nonactivatingPanel`; `canBecomeKey` follows `isInteractive`; raised handling calls `makeKeyAndOrderFront` | Reuse the windowing experience, but do not call raised handling for hover |
+| [BackdropModel.swift](../../../../shell/Sources/OnetimePad/BackdropModel.swift) | `raise(_:)` changes ownership/stance, refreshes the pasteboard offer, and may anchor on today | Reveal must bypass this until explicit commitment |
+| [ActivationRoute.swift](../../../../shell/Sources/OnetimePad/ActivationRoute.swift) | Explicit presentation selection and summon are distinguished | Commit through the existing route; choose deliberately whether the new click means summon or position-preserving selection |
+| [BackdropHotKey.swift](../../../../shell/Sources/OnetimePad/BackdropHotKey.swift) | `RegisterEventHotKey` with a `kEventHotKeyPressed` handler | A held glance needs release handling; it is not available just by changing the action closure |
 
 Proposed implementation boundaries, not existing types:
 
