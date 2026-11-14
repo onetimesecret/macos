@@ -24,13 +24,13 @@ The same source states:
 
 ## ON-S01 — Troubleshoot from a working page
 
-**Synthetic setup:** `Demo delivery investigation` contains diagnostic notes and a credential occurrence for `Demo delivery access`. A manual locator points to `vault.example.invalid/demo/delivery`.
+**Synthetic setup:** `Demo delivery investigation` contains diagnostic notes and a credential occurrence for `Demo delivery access`. An ordinary page link points to `vault.example.invalid/demo/delivery`.
 
 **Proposed interaction:** the person starts with the incident page, adds the locator beside the relevant step, and identifies the credential role without first configuring a registry. An imported fixture value is recorded later as a copy with provenance.
 
 **Acceptance targets:**
 - The page presents the procedure, occurrence, and locator together without forcing its organization to mirror source folders.
-- Manual location, imported version, and retrieval evidence are distinguishable; import alone leaves freshness unknown.
+- The page link and optional source note are distinguishable from the locally managed value; pasting a copy does not create a live connection or establish freshness.
 - The person can record an externally observed diagnostic result without the notebook executing the step or presenting a reveal control.
 
 **Decision gate:** the representation and lifetime of freshness evidence need approval; this scenario supplies no provider-verification guarantee.
@@ -78,7 +78,9 @@ The same source states:
 
 **Decision gate:** current-version promotion, retry, abandonment, concurrent attempts, and completion criteria need approval. No provider rotation or revocation is performed by this scenario.
 
-## ON-S05 — External source unavailable
+## ON-S05 — External source unavailable (future connector exploration)
+
+**Scope:** deferred from initial manual-value acceptance. This is an optional synthetic exploration of future retrieval behavior, not a requirement to implement source modes or connections for typed/pasted values.
 
 **Synthetic setup:** a connected external source has a simulated unavailable retrieval outcome. A separate imported fixture copy has provenance but no evidence of present freshness.
 
@@ -128,3 +130,20 @@ Lines 119–120 state:
 **Decision-gated acceptance targets:** after policy approval, synthetic copy/export fixtures expose whether the result is a clone, a reference, or a snapshot, which version it represents, and how unresolved references appear to a recipient. Native clone behavior is not silently changed to aliasing. Any proposed plaintext path remains a named consequence under the quoted law, not an ambient export assumption.
 
 **Unresolved:** same-notebook versus cross-notebook identity, recipient resolution, metadata inclusion, expired references, and export version selection need explicit decisions. No new export or compatibility guarantee is established by this scenario.
+
+## ON-S08 — Paste with an optional source suggestion
+
+**Synthetic setup:** fabricated values arrive with fixtures representing an application identifier, a browser source URL, a generic concealed marker, absent metadata, and conflicting or malformed metadata. Password managers, browsers, and terminal applications are target categories, not verified supported products.
+
+**Proposed interaction:** the person explicitly pastes a value, then accepts, edits, or ignores any source suggestion. A separate fixture uses typed input and a manually entered source note.
+
+**Acceptance targets:**
+- All supplied values remain locally managed; a source note does not establish a connection or freshness.
+- Missing or unusable metadata does not block entry or require source configuration.
+- A generic sensitivity marker does not produce an application name; conflicting hints do not produce an unjustified attribution.
+- Browser suggestions use a hostname by default, not URL credentials, paths, or queries. A copied link's destination is not mistaken for its source page.
+- Terminal hints do not identify commands, remote hosts, or upstream stores without separate user input.
+- The interaction does not require background clipboard or application monitoring, browser-tab inspection, or terminal-history access.
+- Any accepted note describes this supplied version, not automatically every subsequent value of the identity.
+
+**Decision gate:** metadata parsing limits, confirmation representation, and source-note persistence/export need review before implementation. See the [research note](clipboard-provenance.md) for facts, assumptions, and unexecuted app-specific validation cases.

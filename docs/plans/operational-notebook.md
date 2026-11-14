@@ -42,17 +42,22 @@ proposed model element as approved. Preparation does not complete later stages.
 
 ### P1 — Test context and provenance before building storage
 
-Use ON-S01, ON-S02, and ON-S05 from the
+Use ON-S01, ON-S02, and ON-S08 from the
 [scenario catalogue](../spec/design/operational-notebook/scenarios.md).
 Create a static or simulated interaction prototype under `docs/mockups/` only
 when implementing this stage. No native app launch is needed to evaluate layout.
 
 Compare the same synthetic task in two representations: separate credential
 items plus instructions, and the proposed working page. Observe whether the
-person identifies the environment, credential purpose, authoritative source,
-imported-copy status, and unavailable source without prompting. Record retrieval
-steps, wrong-target choices, and explanations in their own words. Do not invent
-numerical improvement targets before observing a baseline.
+person identifies the environment, credential purpose, locally managed value,
+and optional source note without prompting. Include accepted, edited, ignored,
+and unavailable paste-source suggestions for password managers, browsers, and
+terminal applications using synthetic metadata, not assumed app coverage.
+Record retrieval steps, wrong-target choices, and explanations in their own
+words. Do not invent numerical improvement targets before observing a baseline.
+ON-S05 is optional future-connector exploration, not an initial acceptance gate.
+See the [clipboard research note](../spec/design/operational-notebook/clipboard-provenance.md)
+for evidence gaps and app-specific validation still needed.
 
 Exit: recorded observations and an explicit decision to proceed, revise, or stop.
 A prototype passes this gate only when the maintainer accepts the observed
