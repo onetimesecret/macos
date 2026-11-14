@@ -120,12 +120,17 @@ corrects an earlier one rather than editing it in place. See
 
 ## spec/
 
-The design work. [`spec/design/`](spec/design/README.md) holds the dated
-milestone-1 documents and later design decision records. `spec/feature/` holds one
-directory per feature, each with a README and whatever side documents
-the design needed. `spec/icon/` covers icon and identity work. A feature
-directory is the home for a design in progress; conclusions firm enough
-to constrain later work move into an ADR.
+The design work. [`spec/design/`](spec/design/README.md) separates the
+[operational-notebook design change](spec/design/operational-notebook/README.md)
+from the preceding [timeline-tabs corpus](spec/design/timeline-tabs/README.md).
+The new direction is a full product design, not an optional feature. Its
+[preparation plan](plans/operational-notebook.md) links execution tracking and
+keeps proposed behavior separate from acceptance and verification.
+
+`spec/feature/` contains one directory per feature, each with a README and
+supporting documents. `spec/icon/` covers icon and identity work. Conclusions
+firm enough to constrain later work move into an ADR or an explicitly amended
+law; a new design directory does not supersede accepted decisions by itself.
 
 ## Conventions
 

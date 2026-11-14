@@ -1,23 +1,24 @@
 # macOS companion for Onetime Secret
 
-**Design-first, pre-alpha, no releases.** What exists today is a
-specification, the Rust core it prescribes, and a headless demo. There is
-no app to download yet, and no screenshots of vaporware.
+OnetimePad is entering a **full product design change**: a notebook for work
+that requires secrets. The working thesis is to bring instructions and the
+credentials needed to follow them into one context, without requiring duplicate
+secret storage or a single credential provider.
 
-A menu-bar-resident staging area for content in transition. Drag or paste
-text and images into a small edge-docked panel; each item becomes a
-**SleeperCell** with a visible, limited time-to-live. Cells exist to be
-copied back out and then forgotten — like a CPU's L1/L2 cache, the value
-is in being small, close, and evicted by policy, never in being a system
-of record. Secondarily, any cell can be concealed into a
-[Onetime Secret](https://onetimesecret.com) link (v3 API) when the
-content needs to travel to another person or machine.
+Start with the [operational-notebook design](docs/spec/design/operational-notebook/README.md)
+for the thesis, diagrams, scenarios, and unresolved decisions, and the
+[preparation plan](docs/plans/operational-notebook.md) for staged execution.
+Application version **0.50.0** marks this preparation; reusable credential
+identities, environment bindings, and rotation records are proposals, not
+capabilities delivered by the version bump.
 
-The core loop (paste, hold briefly, copy out, forget) requires no account
-and no network. Concealing is the app's explicit outbound action, and any
-replication between a person's own devices is opt-in per page and visible
-while it is running. Nothing leaves the machine for a destination the
-user did not choose.
+The existing Rust core and Swift/AppKit application remain the implementation
+baseline. The annotated tag `baseline/pre-operational-notebook-2026-11-14`
+identifies `832fc8505bbf80d51c9794deaf7972c13e81195b`, before the version change.
+See the [transition record](docs/spec/design/operational-notebook/transition.md)
+for existing-contract excerpts and the decisions required before implementation.
+The older setup and architecture material below concerns that baseline, not a
+completed operational-notebook implementation.
 
 ## Try the core today
 

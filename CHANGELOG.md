@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Application version advances to **0.50.0** for the
+  [operational-notebook design change](docs/spec/design/operational-notebook/README.md).
+  This preparation adds the design and staged plan, not new notebook runtime behavior.
+
 - **The ambient panel is withdrawn for now** (app 0.48.0;
   ADR-0063). OnetimePad opens in its editor window only, and ⌃⌥Space and
   the menu bar item bring that window forward. Settings no longer shows the

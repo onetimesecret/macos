@@ -1,27 +1,67 @@
-# Purpose, Aspirations, and Software Peers
+# Purpose, aspirations, and software peers
 
-Having read the spec that governs this repo, here's the shape of it.
+## Design direction
+
+OnetimePad is entering a full product design change toward a notebook for work
+that requires secrets. The maintainer authorized the preparation track on
+2026-11-14; the exact direction and its scope are recorded in the
+[operational-notebook design](spec/design/operational-notebook/README.md).
+
+The working product thesis is:
+
+**OnetimePad brings instructions and the credentials needed to follow them into
+one working context, without requiring duplicate secret storage or a single
+credential provider.**
+
+This thesis guides design validation. It does not describe an already shipped
+shared-reference system, and approval of the track does not accept every
+lifecycle, storage, or authorization proposal.
 
 ## Purpose
 
-It's a macOS menu-bar companion for Onetime Secret whose one job is *staging*: a small, edge-docked window that holds content while it's in transition between an origin and a destination, then forgets it. Everything you paste there has a right to be forgotten, honored on schedule rather than on request. The governing metaphor (docs/spec/01) is an L1/L2 cache for the clipboard: small enough to read at a glance, close enough to reach in one keystroke (⌥Space), and evicted by policy rather than by user labour. Every item arrives with a time-to-live on a fixed ladder (1h, 3h, 8h, 24h, 3d, 7d, no "forever" rung), and the time remaining is the most prominent thing on screen, not buried metadata. You place things deliberately (it never captures the clipboard automatically), you copy them back out, and they expire on their own.
+The proposed organizing unit is the work a person needs to perform: an
+investigation, recovery, integration setup, or rotation. Documentation explains
+why a credential is needed at that point. Reusable references connect the work
+to independently identified credentials without requiring source storage to
+mirror the document structure.
 
-The distinguishing mechanic is the security boundary. Sensitive content gets sealed into opaque "chips" that never enter the app's UI process at all. A Rust core does the sealing, holds the bytes in zeroizing memory, and exposes only ids, titles, mechanical excerpts, and booleans across a C ABI to the Swift/AppKit shell. The shell literally cannot render a secret because it never has one. The explicit outbound action is "conceal," turning a chip or a whole page into a Onetime Secret one-time link via the v3 API, with the link written to the clipboard core-side and the local copy offered up to burn. The core loop needs no account and no network; concealing is the only time the network appears in it. Replication of a page between a person's own enrolled devices is the one other destination, opt-in per page and visible while it runs, and it inherits that page's expiry rather than suspending it.
+The intended experience starts with writing a page. Explicit reuse, environment
+bindings, and rotation records are introduced when the work needs them, rather
+than requiring an initial registry configuration exercise.
 
-## Aspirations
+## Aspirations to validate
 
-The thesis (docs/spec/02) is that there's an empty quadrant on two axes, retention and sensitivity-fitness. Clipboard managers and shelf apps sit in long-lived and hostile-to-secrets. Password managers sit in forever and built-for-secrets. Secure senders are a single point at "moment, built-for-secrets" with no dwell time. Nobody holds the intersection: a visible, time-boxed, secret-safe staging area with a one-click exit to secure transfer. The app wants to own that quadrant.
+- Reduce repeated retrieval across separate credential items.
+- Make the selected environment, source, and freshness evidence understandable.
+- Reuse instructions across environments without hiding resolved identities.
+- Describe partial rotation honestly: notebook designation, consumer updates,
+  and provider revocation are separate observations.
+- Remain useful with manual external locators before integrations exist.
 
-Its larger ambition is to make "the right place to put a secret for an hour" a defensible technical claim rather than a slogan. That's why the window excludes itself from screen capture, why expiry is scheduled rather than polled (the frugality budget is a hard review bar: roughly 22MB idle, near-zero idle CPU, single-digit-MB download), why there's no telemetry and no server in the core loop, and why the whole thing is open source so every "it forgets" claim is auditable. Two more bets worth naming: accessibility as a category-defining move (menu-bar utilities are, as a class, keyboard-hostile and VoiceOver-opaque, and this one aims to be keyboard-complete with time-remaining exposed as an accessibility value), and a deliberate refusal to be sticky (no badges, no counters, no streaks, "comfortable being forgotten between uses," with an empty window treated as the system working, not failing). Strategically it does not aspire to be a business. Its stated job is to make Onetime Secret more present and more useful, and the authors frame the absence of a monetizable retention layer as the moat rather than a gap.
+These are hypotheses, not measured outcomes. The
+[scenario catalogue](spec/design/operational-notebook/scenarios.md) and
+[prototype plan](plans/operational-notebook.md) define how to investigate them.
 
-## Software peers
+## Adjacent products
 
-Four families border the space, and the spec is right that none actually occupies it:
+Password managers, secrets managers, runbooks, and notebooks are comparison
+categories, not deficient substitutes. The proposed emphasis is human working
+context across sources. Browser autofill, automated infrastructure management,
+and provider-side rotation remain outside the initial scope.
 
-Clipboard managers (Paste, Maccy, Raycast's clipboard history, CopyClip) are the closest in surface area and the furthest in philosophy. Their product *is* automatic capture and searchable history, which is exactly the liability this app refuses. Shelf apps (Yoink, Dropover, Unclutter) are the closest in ergonomics and interaction feel: a drop target that appears, holds things mid-drag, and gets out of the way. They validated "present, not centre stage" but have no time model and no security posture. Password managers (1Password, Bitwarden, Apple Keychain/Passwords) are the durable tier this thing explicitly is not; staging a short-lived hold in a vault is the category error that sends people to Notes instead. Secure senders (Onetime Secret's own web flow, magic-wormhole/croc, AirDrop) are the conceal destination, strong at the send but with zero dwell time before it.
+No market research in this design establishes category novelty or superiority.
+The product test is whether someone can resume an infrequent sensitive task
+without reconstructing its credential context from memory.
 
-My own read, going a bit beyond the doc: the truest *ergonomic* peer is the shelf-app family, but the real competitive threat is Raycast and the OS vendor, not any of the four families as they stand today. Raycast is already resident, already extensible, already has clipboard history and snippets, and could bolt on a TTL'd, secret-safe store as an extension faster than a standalone app can build an audience. And Apple owns the clipboard itself; it has spent years adding *counter*-features (ConcealedType, paste prompts) instead of history, which is precisely the "hold briefly then forget" instinct this app productizes. The spec argues incumbents won't follow because doing so would undermine their own value proposition, and that's persuasive for the four families. It's weaker against a platform or an extensible launcher, where a secret-safe ephemeral staging pane is additive rather than self-cancelling. If this app has a peer to watch, it's those two, not Maccy.
+## Historical direction and transition
 
-One honest caveat on the whole framing: "the empty quadrant has no incumbent" and "the absence of a business model is the moat" are the same fact told twice. The quadrant may be empty partly because it's hard to sustain, not only because it's overlooked. That's survivable exactly because this is an open-source companion to an existing product, but it means the app's durability is tied to Onetime Secret's, not to anything the app captures on its own.
+The preceding [timeline-tabs design](spec/design/timeline-tabs/README.md)
+explored staging and time-oriented documents. Its source is retained, and the
+pre-change code is identified by
+`baseline/pre-operational-notebook-2026-11-14` at
+`832fc8505bbf80d51c9794deaf7972c13e81195b`.
 
-This all comes from the repo's own governing spec (docs/spec/01–03) and the code I read earlier; it's design-first and pre-alpha by its authors' own description, so "aspirations" is the operative word.
+The [transition record](spec/design/operational-notebook/transition.md) identifies
+accepted-contract excerpts and unresolved changes. The [tenets](tenets.md)
+remain available; this purpose update does not itself alter their substance or
+supersede any accepted law or ADR.
