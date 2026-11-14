@@ -73,7 +73,8 @@ the seam.
   installed. Markdown headings render styled with their markup kept
   visible; the bytes of the page never change.
 - The ledger records every event and is reached from its dashed ◌ tab,
-  ⌘0, View > Show Ledger or the command palette; Settings clears it. A
+  View > Show Ledger or the command palette; Settings clears it. ⌘0 is
+  the Scratch pad's (ADR-0039), so the ledger has no default chord. A
   line under the page names the pages that expired since a person last
   typed, and a page entering its last hour while the app is not active
   posts one local notification (ADR-0064).

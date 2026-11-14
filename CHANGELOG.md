@@ -53,8 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A page never expires without you being told** (ADR-0064). A line
   under the page names the pages that expired since you last typed or
   dismissed it, with Show Ledger and Dismiss beside it. The ledger is
-  reachable again: its tab, Command-0, View > Show Ledger, the command
-  palette and Clear the Ledger in Settings. When a page with content enters
+  reachable again: its tab, View > Show Ledger, the command palette and
+  Clear the Ledger in Settings. Command-0 stays with the Scratch pad, so
+  the ledger has no shortcut until you bind one in your keymap. When a
+  page with content enters
   its last hour while OnetimePad is not the active app, a quiet notification
   says so, once per page per deadline. See
   [ADR-0064](docs/adr/0064-a-page-never-expires-without-the-person-being-told.md).

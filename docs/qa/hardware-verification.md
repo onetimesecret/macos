@@ -16,14 +16,16 @@ sheets of ink and sealed chips, gesture-only sealing, the pausable
 countdown, bottom tabs, the ledger. Do it on the Mac you'll ship
 against.
 
-**Issue #78, as of 2026-11-10.** Three affordances are built and
+**Issue #78, as of 2026-11-14.** Three affordances are built and
 deliberately not drawn: the ↗ page button, the resize glyph in the bottom
-corner, and the ember dot in the header. The ledger's entry points (its
-tab, ⌘0, and the Settings clear) are drawn again, so the checks below that
-reach the ledger can be run. ⌘0 runs `ledger::Show`, which opens the
-ledger and does not close it; the checks that press ⌘0 a second time to
-return predate that and are closed with Esc or the tab. What the resize
-glyph advertised is still true, so the resize checks stand as they are.
+corner, and the ember dot in the header. The ledger's tab and the Settings
+clear are drawn again, so the checks below that reach the ledger can be
+run. ⌘0 does not reach it: ADR-0039 Amendment 2 removed the multiple-pads
+switch and its alternate shortcut map, so ⌘0 selects the Scratch pad.
+Where a check below says ⌘0, open the ledger from its tab, View > Show
+Ledger or the command palette, and return with Esc or the tab. What the
+resize glyph advertised is still true, so the resize checks stand as they
+are.
 
 Two prior results stand and are not re-run here:
 
