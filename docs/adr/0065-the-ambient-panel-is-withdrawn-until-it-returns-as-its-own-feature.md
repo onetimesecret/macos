@@ -29,7 +29,7 @@ card's keep above and reset controls.
 
 On 2026-11-11 the maintainer asked for the panel to default off and for its
 setting to be hidden, writing: "The feature is not polished enough and is more
-confusing than helpful." [MR !349](https://gitlab.com/onetimesecret/macos/-/merge_requests/349)
+confusing than helpful." [MR !349](https://gitlab.com/onetimesecret/applications/macos/-/merge_requests/349)
 records both requests.
 
 ## Decision

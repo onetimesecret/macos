@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 PROJECT_ID = 88480772
-PROJECT_PATH = "onetimesecret/macos"
+PROJECT_PATH = "onetimesecret/applications/macos"
 GITHUB_REPOSITORY = "onetimesecret/macos"
 WORKFLOW = "gitlab-macos.yml"
 WORKFLOW_PATH = ".github/workflows/" + WORKFLOW
