@@ -61,7 +61,7 @@ sources:
 
 Read [behaviour law conventions](README.md) before filing or changing a law.
 
-The [2026-10-31 interface record](../spec/design/2026-1031-sealed-content-ux-revision.md) states the
+The [2026-10-31 interface record](../spec/design/timeline-tabs/2026-1031-sealed-content-ux-revision.md) states the
 presentation revision. The operative rows below incorporate that revision;
 the dated amendment records its scope. The implementation checklist is a
 verification aid, not authority for this law.
@@ -302,7 +302,7 @@ resolve as unavailable rather than being guessed expired.
 
 ### Presentation invariants
 
-The [2026-10-31 interface record](../spec/design/2026-1031-sealed-content-ux-revision.md)
+The [2026-10-31 interface record](../spec/design/timeline-tabs/2026-1031-sealed-content-ux-revision.md)
 replaces the former slab, copy zones and hover-only handles. The name and
 existing excerpt form the primary identity row. The secondary row separates
 classification, a stable Note action and explicit Move, Copy decrypted and More
@@ -347,12 +347,12 @@ Fixed details the rows rely on:
   read through `companion_clipboard_clear_seconds`. The general pasteboard
   is cleared only if it still holds that write; no total-retention or
   clipboard-manager guarantee is made (D-29, D-43 of the accepted
-  [2026-09-16 clear-interval record](../spec/design/2026-0916-clipboard-clear-interval.md)).
+  [2026-09-16 clear-interval record](../spec/design/timeline-tabs/2026-0916-clipboard-clear-interval.md)).
 - Time belongs to the page. A detached object takes its page's clock; there
   is no per chip TTL (`sheet.rs` forbids per chip timers; maintainer
   decision 2026-08-07; D-33).
 - The object's menu uses the labels in the
-  [2026-10-31 interface record](../spec/design/2026-1031-sealed-content-ux-revision.md):
+  [2026-10-31 interface record](../spec/design/timeline-tabs/2026-1031-sealed-content-ux-revision.md):
 
   ```text
   Copy Sealed Reference
@@ -822,7 +822,7 @@ paths must stay dialog free.
   cluster; limited each cited test to the behaviour it directly proves; and
   recorded direct coverage that promotion retains the local payload.
 - 2026-09-15: Stream navigator amendment. The maintainer's interactive
-  design ([2026-0915-stream-navigator.md](../spec/design/2026-0915-stream-navigator.md))
+  design ([2026-0915-stream-navigator.md](../spec/design/timeline-tabs/2026-0915-stream-navigator.md))
   renamed the removal item back to *Remove protected content*, put the
   copy decrypted chord beside its verb, reworded the three lines that
   follow the menu's actions, set the clear after copy to 90 seconds, and
@@ -832,7 +832,7 @@ paths must stay dialog free.
   The operation classes, the contract table and the lifecycle are
   untouched; the removal's Undo remains owed to issue 170.
 - 2026-09-16: Authority amendment. The accepted
-  [general-pasteboard clear-interval record](../spec/design/2026-0916-clipboard-clear-interval.md)
+  [general-pasteboard clear-interval record](../spec/design/timeline-tabs/2026-0916-clipboard-clear-interval.md)
   supersedes the 2026-09-15 stream navigator record in full, incorporates
   D-34 through D-41 without change, amends D-42's interval confirmation,
   and replaces D-43 in full. The law therefore reads its clear-after-copy
@@ -1913,7 +1913,7 @@ paths must stay dialog free.
   the 2026-10-14 amendments keep the words of their day.
 
 - 2026-10-31: Explicit-controls amendment, authorized by the maintainer's
-  instruction quoted in the [interface revision](../spec/design/2026-1031-sealed-content-ux-revision.md).
+  instruction quoted in the [interface revision](../spec/design/timeline-tabs/2026-1031-sealed-content-ux-revision.md).
   Identity clicks select; the text copy zones and their hover prerequisite are
   removed. Copy decrypted clicks to copy and drags outward; Move and More are
   distinct controls. The menu labels, stable Note action, compact layout,

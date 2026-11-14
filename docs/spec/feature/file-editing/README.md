@@ -9,12 +9,12 @@ text or Markdown file from disk, edit it in the same editor a page
 uses, and save it back on an explicit request. Pages, their TTLs, the
 strip, the day roll and the sealed page format are untouched.
 Governs against:
-[`../../design/2026-0707-design-principles.md`](../../design/2026-0707-design-principles.md)
+[`../../design/2026-0707-design-principles.md`](../../design/timeline-tabs/2026-0707-design-principles.md)
 (§1 comfortable being temporary, §3 content plays second fiddle, §4
 frugal),
-[`../../design/2026-0707-interaction-model.md`](../../design/2026-0707-interaction-model.md)
+[`../../design/2026-0707-interaction-model.md`](../../design/timeline-tabs/2026-0707-interaction-model.md)
 (Markdown: styled, never rewritten, and the keyboard map),
-[`../../design/2026-0707-technical-direction.md`](../../design/2026-0707-technical-direction.md)
+[`../../design/2026-0707-technical-direction.md`](../../design/timeline-tabs/2026-0707-technical-direction.md)
 (the accessibility commitments),
 [ADR-0001](../../../adr/0001-rust-core-thin-shell.md) (a Rust core
 under a thin shell),
@@ -392,7 +392,7 @@ nothing. Locate asks for no confirmation and has no chord
 proposed). The accepted UI record counts three conflict actions (D-17
 in `../../design/2026-0915-ui-ux-decisions.md`); Locate and the banner
 for a file that cannot be reached are proposed as an amendment to it in
-[`../../design/2026-0930-file-conflict-locate.md`](../../design/2026-0930-file-conflict-locate.md),
+[`../../design/2026-0930-file-conflict-locate.md`](../../design/timeline-tabs/2026-0930-file-conflict-locate.md),
 a draft that has not been ratified.
 
 No merge, no diff view, no three way resolution in v1.

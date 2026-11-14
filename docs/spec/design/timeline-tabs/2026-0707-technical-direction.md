@@ -61,7 +61,7 @@ download as a target, no always-resident helper processes.
 
 **Publication clarification, 2026-10-14:** the memory-only and process-exit
 amnesia model below is superseded by accepted
-[ADR-0016](../../adr/0016-content-persists-across-restart.md#decision).
+[ADR-0016](../../../adr/0016-content-persists-across-restart.md#decision).
 The claims about non-reading, UI residence, runtime memory access, and
 network destinations are historical design assertions, not validation of
 current behavior. In particular, the runtime-dumping paragraph does not

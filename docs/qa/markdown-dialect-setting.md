@@ -6,7 +6,7 @@ v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁 o󠄁b󠄁s󠄁e󠄁r󠄁v�
 
 ## Sequence after PR B
 
-T󠄁h󠄁e󠄁 [M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 d󠄁e󠄁s󠄁i󠄁g󠄁n󠄁 p󠄁l󠄁a󠄁n󠄁](../spec/design/2026-1016-markdown-dialects-and-preview.md)
+T󠄁h󠄁e󠄁 [M󠄁a󠄁r󠄁k󠄁d󠄁o󠄁w󠄁n󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 d󠄁e󠄁s󠄁i󠄁g󠄁n󠄁 p󠄁l󠄁a󠄁n󠄁](../spec/design/timeline-tabs/2026-1016-markdown-dialects-and-preview.md)
 p󠄁r󠄁o󠄁p󠄁o󠄁s󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁i󠄁a󠄁l󠄁e󠄁c󠄁t󠄁 p󠄁r󠄁e󠄁f󠄁e󠄁r󠄁e󠄁n󠄁c󠄁e󠄁 a󠄁n󠄁d󠄁 r󠄁e󠄁n󠄁d󠄁e󠄁r󠄁 i󠄁n󠄁v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁,󠄁 f󠄁o󠄁l󠄁l󠄁o󠄁w󠄁e󠄁d󠄁 b󠄁y󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁
 l󠄁o󠄁a󠄁d󠄁i󠄁n󠄁g󠄁 a󠄁n󠄁d󠄁 i󠄁n󠄁t󠄁e󠄁g󠄁r󠄁a󠄁t󠄁e󠄁d󠄁 p󠄁r󠄁e󠄁v󠄁i󠄁e󠄁w󠄁 v󠄁a󠄁l󠄁i󠄁d󠄁a󠄁t󠄁i󠄁o󠄁n󠄁.󠄁 [I󠄁s󠄁s󠄁u󠄁e󠄁 #󠄁3󠄁3󠄁2󠄁](https://github.com/onetimesecret/macos/issues/332)
 a󠄁l󠄁s󠄁o󠄁 s󠄁e󠄁p󠄁a󠄁r󠄁a󠄁t󠄁e󠄁s󠄁 t󠄁h󠄁e󠄁 d󠄁i󠄁a󠄁l󠄁e󠄁c󠄁t󠄁 s󠄁e󠄁t󠄁t󠄁i󠄁n󠄁g󠄁 (󠄁R󠄁2󠄁)󠄁 a󠄁n󠄁d󠄁 i󠄁m󠄁a󠄁g󠄁e󠄁 w󠄁o󠄁r󠄁k󠄁 (󠄁R󠄁4󠄁/󠄁R󠄁5󠄁)󠄁 f󠄁r󠄁o󠄁m󠄁 t󠄁h󠄁e󠄁 p󠄁a󠄁r󠄁s󠄁e󠄁r󠄁

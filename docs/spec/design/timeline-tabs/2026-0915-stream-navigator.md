@@ -186,7 +186,7 @@ the mechanical excerpt and the size class on the row under them.
   zones, name, `=` and value, which act on the first click; a plain
   click outside the bottom row still only selects, and an unnamed block
   keeps this decision whole
-  ([Law 0001](../../law/0001-sealed-object.md)'s 2026-10-13 name and
+  ([Law 0001](../../../law/0001-sealed-object.md)'s 2026-10-13 name and
   note amendment and its zone rows).
 - **D-41 (fixed)** The menu, in the design's words and order:
 
@@ -212,12 +212,12 @@ the mechanical excerpt and the size class on the row under them.
   *Amended 2026-10-13:* the menu gains *Copy name*, *Copy name=value,
   decrypted*, *Name…* or *Rename…* and *Note…* or *Edit note…*, in the
   order and with the unnamed variants that the
-  [sealed row spec](../feature/sealed-content/sealed-row-note-and-handles.md)
+  [sealed row spec](../../feature/sealed-content/sealed-row-note-and-handles.md)
   records under The object's menu. The chord stays on *Copy decrypted contents*.
   *Amended 2026-10-14:* the items are title case, *Name* and *Rename*
   edit in place and carry no ellipsis, and the removal reads *Remove
   Sealed Content*
-  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
+  ([ADR-0055](../../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-42 (fixed)** The lines, in the design's words:
 
   - after a decrypted copy: `copied decrypted contents — small. the
@@ -239,7 +239,7 @@ the mechanical excerpt and the size class on the row under them.
   `PasteboardOfferTests.testACopyOutArmsTheClearAndFlashesTheInterval`.
   *Amended 2026-10-14:* the removal line reads `sealed content removed.`,
   one noun for the object
-  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
+  ([ADR-0055](../../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-43 (fixed)** The clear after copy is **90 seconds**, the interval
   the design names. It stays one core constant,
   `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi/src/lib.rs`, read by the

@@ -34,7 +34,7 @@ sources:
   - shell/Sources/CompanionKit/Theme.swift
 ---
 
-> Scoped successor, 2026-10-03: [ADR-0060](../../adr/0060-shared-pad-timeline-navigation.md)
+> Scoped successor, 2026-10-03: [ADR-0060](../../../adr/0060-shared-pad-timeline-navigation.md)
 > replaces fixed newest-first day ordering in Timeline. Its shared navigator, selectable day/checkpoint
 > ordering, density handling, and session reading-position rules are approved
 > design requirements, not an implementation verification report.
@@ -327,9 +327,9 @@ D-40 and D-41.
 *Amended 2026-10-13:* a named object's menu gains *Copy name* and *Copy
 name=value, decrypted*, and every object's gains *Name…* or *Rename…*
 and *Note…* or *Edit note…*
-([Law 0001](../../law/0001-sealed-object.md)'s 2026-10-13 name and note
+([Law 0001](../../../law/0001-sealed-object.md)'s 2026-10-13 name and note
 amendment; the order is the
-[sealed row spec](../feature/sealed-content/sealed-row-note-and-handles.md)'s).
+[sealed row spec](../../feature/sealed-content/sealed-row-note-and-handles.md)'s).
 
 After a decrypted copy, one line confirms the boundary crossing with the
 core's interval: `copied decrypted contents — small. the clipboard
@@ -422,7 +422,7 @@ in plain; the fragment adds order, not payload exposure.
   a *Cancel* left of the default button answers Escape and waits out a
   request in flight; each field has a label of its own; and the guest
   line ends in a *Connection Settings…* link that opens that tab
-  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
+  ([ADR-0055](../../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-10 (fixed)** Hover reveals affordances, never content, and the
   affordance keeps its seat whether visible or not (~120 ms opacity,
   0 ms under Reduce Motion): revealing it never nudges the ink or
@@ -440,7 +440,7 @@ in plain; the fragment adds order, not payload exposure.
   *Amended 2026-10-13:* a named block's bottom row carries three copy
   zones, each also in the object's menu, and a click on one copies;
   outside the bottom row a click still only selects
-  ([Law 0001](../../law/0001-sealed-object.md)'s 2026-10-13 name and
+  ([Law 0001](../../../law/0001-sealed-object.md)'s 2026-10-13 name and
   note amendment and its zone rows).
 - **D-27 (fixed)** Sealed content is a full-measure block, not an inline
   pill: 8px radius, hairline border, a tracked `SEALED CONTENT` label
@@ -458,7 +458,7 @@ in plain; the fragment adds order, not payload exposure.
   *Amended 2026-10-13:* a named block's bottom row reads
   `NAME=excerpt`, and its three copy zones show a pill and their
   consequence under the pointer before a click
-  (the [sealed row spec](../feature/sealed-content/sealed-row-note-and-handles.md)'s
+  (the [sealed row spec](../../feature/sealed-content/sealed-row-note-and-handles.md)'s
   named row).
 - **D-28 (fixed)** A sealed item is one object in the document and its
   plaintext is not part of the document's ambient text. Structural
@@ -591,7 +591,7 @@ timeline that keeps the page's full width.
 bottom) or Timeline (Days down the side). Slots + side and Days +
 bottom are no longer supported states; the metrics below stand for the
 two that remain
-([ADR-0037](../../adr/0037-one-page-layout-setting.md)).
+([ADR-0037](../../../adr/0037-one-page-layout-setting.md)).
 
 Metrics do not change with the choice. Along the bottom: 32 tall,
 padded 6 × 4, 2 between tabs, title row 18, gauge 3, capped 140 wide,
@@ -642,7 +642,7 @@ read as a page an instant from death rather than a slot standing ready.
   *Amended 2026-10-01:* D-26's two settings will not exist, so the gate
   is restated: Tabs stays the default until the prototype label comes
   off Timeline
-  ([ADR-0037](../../adr/0037-one-page-layout-setting.md)).
+  ([ADR-0037](../../../adr/0037-one-page-layout-setting.md)).
 - **D-26 (fixed)** Two settings, four combinations, as above. The single
   switch that flips grouping and orientation together is the defect this
   replaces: it pushed code names into user-facing copy and left one
@@ -658,7 +658,7 @@ read as a page an instant from death rather than a slot standing ready.
   acceptance stands: a flip moves no content and writes nothing new to
   disk, the caption says what each layout costs, and time-related
   settings sit under Timeline
-  ([ADR-0037](../../adr/0037-one-page-layout-setting.md)).
+  ([ADR-0037](../../../adr/0037-one-page-layout-setting.md)).
 
 ## 5 · Status lines and notices
 
@@ -694,7 +694,7 @@ in draw order: content-restore failure · ledger failure · cancelled quit
   *Amended 2026-10-14:* the register is the sentences'; a button in a
   status line is a button and is title case, *Quit Anyway (⌘Q)*,
   *Seal It (⇧⌘V)*
-  ([ADR-0055](../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
+  ([ADR-0055](../../../adr/0055-menus-and-buttons-use-the-platforms-wording.md)).
 - **D-16 (fixed)** The empty state is one calm sentence ("No page here
   yet.") over a hint naming the gesture that works on this surface and
   stance. No illustration, no onboarding flow.
@@ -828,7 +828,7 @@ wants applied.
 *Amended 2026-10-14:* a fifth form, Pads, stands after Code while the
 pads experiment exists: its switch, moved from General, and the pads with
 their folders and apps, saved on each change
-([ADR-0039](../../adr/0039-pad-selection-and-associations.md) Amendment 1,
+([ADR-0039](../../../adr/0039-pad-selection-and-associations.md) Amendment 1,
 proposed).
 
 Copy the forms carry:
@@ -965,6 +965,6 @@ moved a decision.
   D-19, issue 172, resolved 2026-09-16).
 - 2026-10-14, D-30's *Owed* clause: met under issue 170. A chip the
   page stops showing is detached, not zeroized
-  ([ADR-0046](../../adr/0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md)
+  ([ADR-0046](../../../adr/0046-a-removed-sealed-object-stays-recoverable-until-its-page-ends.md)
   point 1, accepted), so ⌘Z stands the same object again; Law 0001's
   two backspace rows cite the tests. The clause stays as written.
