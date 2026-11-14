@@ -2,10 +2,10 @@
 # docs/spec/design/timeline-tabs/README.md
 ---
 
-# macOS Companion — Design Spec for Timeline and Tabs UX
+# OnetimePad — Design Spec for Timeline and Tabs UX
 
 An open-source, Rust-based macOS desktop companion to Onetime Secret.
-Working title: **CompanionApp** (see naming note below).
+Working title: **OnetimePad** (see naming note below).
 
 This directory holds the milestone-1 design and later dated decision
 records. The milestone-1 interaction model reached **revision C**, with a
